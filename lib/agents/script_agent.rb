@@ -17,12 +17,12 @@ end
 class ScriptAgent
   MAX_RETRIES = 3
 
-  def initialize(logger: nil)
+  def initialize(guidelines:, script_path:, logger: nil)
     @logger = logger
-    @client = Anthropic::Client.new # reads ENV["ANTHROPIC_API_KEY"] automatically
+    @client = Anthropic::Client.new
     @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
-    @root = File.expand_path("../..", __dir__)
-    @guidelines = File.read(File.join(@root, "config", "guidelines.md"))
+    @guidelines = guidelines
+    @script_path = script_path
   end
 
   # Input: array of { topic:, findings: [{ title:, url:, summary: }] }
@@ -110,11 +110,9 @@ class ScriptAgent
   end
 
   def save_script_debug(script)
-    episodes_dir = File.join(@root, "output", "episodes")
-    FileUtils.mkdir_p(episodes_dir)
-    path = File.join(episodes_dir, "#{Date.today.strftime('%Y-%m-%d')}_script.md")
+    FileUtils.mkdir_p(File.dirname(@script_path))
 
-    File.open(path, "w") do |f|
+    File.open(@script_path, "w") do |f|
       f.puts "# #{script[:title]}"
       f.puts
       script[:segments].each do |seg|
@@ -125,7 +123,7 @@ class ScriptAgent
       end
     end
 
-    log("Script saved to #{path}")
+    log("Script saved to #{@script_path}")
   end
 
   def log_usage(message, elapsed)

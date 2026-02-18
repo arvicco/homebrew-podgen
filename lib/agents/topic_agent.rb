@@ -14,12 +14,11 @@ end
 class TopicAgent
   MAX_RETRIES = 3
 
-  def initialize(logger: nil)
+  def initialize(guidelines:, logger: nil)
     @logger = logger
     @client = Anthropic::Client.new
     @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
-    @root = File.expand_path("../..", __dir__)
-    @guidelines = File.read(File.join(@root, "config", "guidelines.md"))
+    @guidelines = guidelines
   end
 
   # Output: array of topic query strings (same format ResearchAgent expects)

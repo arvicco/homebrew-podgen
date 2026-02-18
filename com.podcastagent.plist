@@ -9,6 +9,7 @@
     <array>
         <string>/bin/bash</string>
         <string>PODGEN_DIR/scripts/run.sh</string>
+        <string>PODCAST_NAME</string>
     </array>
 
     <key>StartCalendarInterval</key>

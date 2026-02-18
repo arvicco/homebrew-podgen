@@ -21,37 +21,51 @@ podcast_agent/
 ├── .env.example # Committed template with blank values
 ├── .gitignore
 │
-├── config/
-│ └── guidelines.md # User-editable podcast format & style rules
-│
-├── topics/
-│ └── queue.yml # User-editable topic queue
+├── podcasts/ # One subfolder per podcast
+│ ├── fulgur_news/
+│ │ ├── guidelines.md # Podcast format & style rules
+│ │ └── queue.yml # Fallback topic queue
+│ └── ai_weekly/ # Example second podcast
+│   ├── guidelines.md
+│   └── queue.yml
 │
 ├── assets/
-│ ├── intro.mp3 # Intro music (user-supplied)
-│ └── outro.mp3 # Outro music (user-supplied)
+│ ├── intro.mp3 # Intro music (user-supplied, shared)
+│ └── outro.mp3 # Outro music (user-supplied, shared)
 │
 ├── lib/
+│ ├── podcast_config.rb # PodcastConfig — resolves all paths for a podcast
 │ ├── agents/
-│ │ ├── topic_agent.rb # Calls Claude API, generates timely search queries from guidelines
+│ │ ├── topic_agent.rb # Calls Claude API, generates timely search queries
 │ │ ├── research_agent.rb # Calls Exa.ai, returns structured research
 │ │ ├── script_agent.rb # Calls Claude API, returns structured script
 │ │ └── tts_agent.rb # Calls ElevenLabs, returns audio file paths
 │ ├── audio_assembler.rb # ffmpeg wrapper: stitches parts + adds music
-│ ├── rss_generator.rb # Generates RSS XML from output folder
+│ ├── rss_generator.rb # Generates RSS XML from episode folder
 │ └── logger.rb # Structured run logging
 │
 ├── scripts/
-│ └── orchestrator.rb # Main entry point — runs the full pipeline
+│ ├── orchestrator.rb # Main entry point — accepts podcast name argument
+│ ├── run.sh # launchd wrapper — passes podcast name through
+│ ├── generate_rss.rb # RSS generator — accepts podcast name argument
+│ └── install_scheduler.sh # Installs per-podcast launchd plist
 │
 ├── output/
-│ └── episodes/ # Final MP3s land here, named by date
+│ └── <podcast_name>/ # Per-podcast output
+│   ├── episodes/ # MP3s + debug scripts, named {name}-{date}[suffix]
+│   └── feed.xml # RSS feed
 │
 ├── logs/
-│ └── runs/ # One log file per run
+│ └── <podcast_name>/ # Per-podcast logs, named {name}-{date}[suffix].log
 │
-└── com.podcastagent.plist # macOS launchd plist for scheduling
+└── com.podcastagent.plist # Template launchd plist (install_scheduler.sh fills it in)
 ```
+### Multi-podcast support
+- Each podcast lives in `podcasts/<name>/` with its own `guidelines.md` and `queue.yml`
+- The orchestrator requires a podcast name argument: `ruby scripts/orchestrator.rb fulgur_news`
+- `PodcastConfig` resolves all paths (episodes, logs, feed) for a given podcast name
+- Same-day runs get suffixed: `name-2026-02-18.mp3`, then `name-2026-02-18a.mp3`, etc.
+- Scheduling is per-podcast via `scripts/install_scheduler.sh <podcast_name>`
 ---
 ## Build Order
 Build in this exact sequence. Complete and test each phase before moving to the next.
@@ -61,10 +75,10 @@ Build in this exact sequence. Complete and test each phase before moving to the 
 - Set up .env loading via dotenv gem
 - Write .env.example with all required key names
 - Write .gitignore (ignore .env, output/, logs/)
-- Verify scaffold runs without errors: ruby scripts/orchestrator.rb
+- Verify scaffold runs without errors: ruby scripts/orchestrator.rb <podcast_name>
 ### Phase 2 — Research Agent
 - Implement ResearchAgent using the official exa-ai Ruby gem
-- Input: array of topic strings from topics/queue.yml
+- Input: array of topic strings from podcasts/<name>/queue.yml
 - For each topic: search for the 5 most recent, relevant results with Summary content model
 - Output: structured Ruby hash { topic: String, findings: [{ title, url, summary }] }
 - Include error handling and retry logic (max 3 attempts per topic)
@@ -73,7 +87,7 @@ Build in this exact sequence. Complete and test each phase before moving to the 
 - Implement ScriptAgent using the official anthropic Ruby gem (claude-opus-4-6)
 - Use Structured Outputs (output_config with JSON schema) for guaranteed valid output
 - Use prompt caching for the system prompt (guidelines are identical each run)
-- Input: research hash + full contents of config/guidelines.md
+- Input: research hash + guidelines string (passed from orchestrator)
 - Output: structured script object with named segments, e.g.:
 ```ruby
 {
@@ -88,7 +102,7 @@ segments: [
 ```
 - Generate the full script in a single API call (not segment-by-segment) for narrative coherence
 - The system prompt must enforce guidelines strictly — tone, length, format
-- Save raw script to output/episodes/YYYY-MM-DD_script.md for debugging
+- Save raw script to output/<podcast>/episodes/<name>-YYYY-MM-DD_script.md for debugging
 - Write a standalone test script scripts/test_script.rb
 ### Phase 4 — TTS Agent
 - Implement TTSAgent using the ElevenLabs API (httparty, no official Ruby SDK)
@@ -110,26 +124,29 @@ segments: [
 - Two-pass loudnorm with linear=true at -16 LUFS (podcast standard):
   - Pass 1: analyze audio, capture JSON measurements from stderr
   - Pass 2: normalize with measured values, preserving natural speech dynamics
-- Final output: MP3 at 192 kbps, 44100 Hz, mono → output/episodes/YYYY-MM-DD.mp3
+- Final output: MP3 at 192 kbps, 44100 Hz, mono → output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3
 - Handle missing intro/outro gracefully (skip if files don't exist)
 - Write a standalone test: scripts/test_assembly.rb
 ### Phase 6 — Orchestrator
 - Wire all agents together in scripts/orchestrator.rb
+- Accepts podcast name as ARGV[0] (required); lists available podcasts if missing
+- Uses PodcastConfig to resolve all paths for the given podcast
 - Flow: load guidelines → generate topics (with queue.yml fallback) → research → script → TTS → assemble
-- Write a structured run log to logs/runs/YYYY-MM-DD.log including timings per phase
+- Write a structured run log to logs/<podcast>/<name>-YYYY-MM-DD.log including timings per phase
 - On any unrecoverable error: log the failure and exit cleanly (don't crash loudly)
-- Successful run should print: ✓ Episode ready: output/episodes/YYYY-MM-DD.mp3
+- Successful run should print: ✓ Episode ready: output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3
 ### Phase 7 — RSS Feed (optional, build last)
-- Implement RssGenerator that scans output/episodes/ for MP3s
-- Generates a valid podcast RSS 2.0 XML file at output/feed.xml
+- Implement RssGenerator that scans output/<podcast>/episodes/ for MP3s
+- Generates a valid podcast RSS 2.0 XML file at output/<podcast>/feed.xml
 - Each episode entry uses filename date as title and pubDate
-- Add a scripts/generate_rss.rb runner
+- scripts/generate_rss.rb accepts podcast name as ARGV[0]
 - Document how to serve this locally or via a static host
 ### Phase 8 — Scheduler
-- Write com.podcastagent.plist for macOS launchd
+- com.podcastagent.plist is a template — install_scheduler.sh fills in paths and podcast name
+- One launchd job per podcast: `scripts/install_scheduler.sh <podcast_name>`
+- Unique label per podcast: com.podcastagent.<podcast_name>
 - Default schedule: 6:00 AM daily
-- Point it to a wrapper shell script scripts/run.sh that sets the working directory and runs the orchestrator
-- Include setup instructions in README.md for launchctl load
+- scripts/run.sh passes podcast name through to orchestrator
 ---
 ## Coding Standards
 - Every class and method has a single, clear responsibility
@@ -143,9 +160,12 @@ segments: [
 - ffmpeg writes diagnostics to stderr — always capture and log it
 ---
 ## Configuration Files (user-facing)
-### config/guidelines.md — seed with this default content:
+Each podcast lives in `podcasts/<name>/` with two files:
+### podcasts/<name>/guidelines.md — example:
 ```markdown
 # Podcast Guidelines
+## Name
+My Podcast Name
 ## Format
 - Target length: 10–12 minutes
 - Open with a 60-second news brief covering the most interesting recent development
@@ -157,18 +177,16 @@ not a journalist or content creator. No filler phrases. No forced enthusiasm.
 ## Topics (default rotation — override with queue.yml)
 - AI and software development news
 - Ruby ecosystem updates
-- Anything technically interesting from Hacker News in the past week
 ## Do not include
 - Sponsor messages or calls to action
 - Recaps of what was just said
 - Phrases like "in today's episode" or "stay tuned"
 ```
-### topics/queue.yml — seed with this default:
+### podcasts/<name>/queue.yml — example:
 ```yaml
 topics:
 - AI developer tools and agent frameworks
 - Ruby on Rails ecosystem updates
-- Interesting open source releases this week
 ```
 ---
 ## Environment Variables
@@ -194,11 +212,12 @@ PODCAST_AUTHOR=
 ## README.md
 Generate a README that covers:
 1. Prerequisites (Ruby version, Homebrew, ffmpeg, API accounts)
-2. Installation bundle install, copying .env.example to .env)
-3. First run ruby scripts/orchestrator.rb)
-4. How to customize guidelines and topics
-5. Setting up the launchd scheduler
-6. Optional RSS setup
+2. Installation (bundle install, copying .env.example to .env)
+3. Creating a podcast (adding a folder under podcasts/ with guidelines.md and queue.yml)
+4. First run: `ruby scripts/orchestrator.rb <podcast_name>`
+5. How to customize guidelines and topics
+6. Setting up the launchd scheduler per podcast
+7. Optional RSS setup
 ---
 ## Known Constraints & Watch-outs
 - ElevenLabs eleven_multilingual_v2 has a 10,000 char per-request limit; split long segments if needed

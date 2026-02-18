@@ -5,11 +5,16 @@ require "time"
 
 module PodcastAgent
   class Logger
-    def initialize
-      @root = File.expand_path("../..", __dir__)
-      @log_dir = File.join(@root, "logs", "runs")
-      FileUtils.mkdir_p(@log_dir)
-      @log_file = File.join(@log_dir, "#{Date.today.strftime('%Y-%m-%d')}.log")
+    def initialize(log_path: nil)
+      if log_path
+        @log_file = log_path
+        FileUtils.mkdir_p(File.dirname(@log_file))
+      else
+        root = File.expand_path("../..", __dir__)
+        log_dir = File.join(root, "logs", "runs")
+        FileUtils.mkdir_p(log_dir)
+        @log_file = File.join(log_dir, "#{Date.today.strftime('%Y-%m-%d')}.log")
+      end
       @start_times = {}
     end
 
