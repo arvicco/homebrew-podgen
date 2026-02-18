@@ -1,8 +1,79 @@
 # frozen_string_literal: true
 
-# Phase 2: Research Agent — calls Exa.ai to gather topic research
+require "exa-ai"
+
 class ResearchAgent
-  def initialize
-    # TODO: implement in Phase 2
+  MAX_RETRIES = 3
+  RESULTS_PER_TOPIC = 5
+
+  def initialize(results_per_topic: RESULTS_PER_TOPIC, logger: nil)
+    @results_per_topic = results_per_topic
+    @logger = logger
+
+    Exa.configure do |config|
+      config.api_key = ENV.fetch("EXA_API_KEY") {
+        raise "EXA_API_KEY environment variable is not set"
+      }
+    end
+    @client = Exa::Client.new(timeout: 30)
+  end
+
+  # Input: array of topic strings
+  # Output: array of { topic:, findings: [{ title:, url:, summary: }] }
+  def research(topics)
+    topics.map do |topic|
+      log("Researching: #{topic}")
+      start = Time.now
+      findings = search_topic(topic)
+      elapsed = (Time.now - start).round(2)
+      log("Found #{findings.length} results for '#{topic}' (#{elapsed}s)")
+      { topic: topic, findings: findings }
+    end
+  end
+
+  private
+
+  def search_topic(topic)
+    results = search_with_retry(
+      topic,
+      num_results: @results_per_topic,
+      type: "auto",
+      category: "news",
+      summary: { query: "Summarize this article's key points for a podcast segment" },
+      start_published_date: (Date.today - 7).iso8601
+    )
+
+    results.results.map do |r|
+      {
+        title: r["title"],
+        url: r["url"],
+        summary: r["summary"]
+      }
+    end
+  rescue Exa::Error => e
+    log("Failed to research '#{topic}' after #{MAX_RETRIES} attempts: #{e.message}")
+    []
+  end
+
+  def search_with_retry(query, **params)
+    attempts = 0
+    begin
+      attempts += 1
+      @client.search(query, **params)
+    rescue Exa::TooManyRequests, Exa::ServerError => e
+      raise if attempts >= MAX_RETRIES
+      sleep_time = 2**attempts
+      log("#{e.class} on '#{query}', retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
+      sleep(sleep_time)
+      retry
+    end
+  end
+
+  def log(message)
+    if @logger
+      @logger.log("[ResearchAgent] #{message}")
+    else
+      puts "[ResearchAgent] #{message}"
+    end
   end
 end
