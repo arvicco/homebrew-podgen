@@ -8,6 +8,7 @@ require "bundler/setup"
 require "dotenv/load"
 
 root = File.expand_path("..", __dir__)
+require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "agents", "script_agent")
 
 puts "=== Script Agent Test ==="
@@ -42,7 +43,15 @@ research_data = [
   }
 ]
 
-agent = ScriptAgent.new
+podcast_name = ARGV[0] || PodcastConfig.available.first
+abort "No podcasts found" unless podcast_name
+config = PodcastConfig.new(podcast_name)
+config.ensure_directories!
+
+agent = ScriptAgent.new(
+  guidelines: config.guidelines,
+  script_path: config.script_path
+)
 script = agent.generate(research_data)
 
 puts

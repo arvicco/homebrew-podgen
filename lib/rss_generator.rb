@@ -5,12 +5,11 @@ require "date"
 require "fileutils"
 
 class RssGenerator
-  def initialize(logger: nil)
+  def initialize(episodes_dir:, feed_path:, podcast_name: nil, logger: nil)
     @logger = logger
-    @root = File.expand_path("..", __dir__)
-    @episodes_dir = File.join(@root, "output", "episodes")
-    @feed_path = File.join(@root, "output", "feed.xml")
-    @title = ENV.fetch("PODCAST_TITLE", "My Daily Brief")
+    @episodes_dir = episodes_dir
+    @feed_path = feed_path
+    @title = podcast_name || ENV.fetch("PODCAST_TITLE", "My Daily Brief")
     @author = ENV.fetch("PODCAST_AUTHOR", "Podcast Agent")
   end
 
@@ -43,7 +42,10 @@ class RssGenerator
       .reverse
       .map do |path|
         filename = File.basename(path, ".mp3")
-        date = Date.parse(filename) rescue nil
+        # Extract date from patterns like "name-2026-02-18" or "name-2026-02-18a"
+        date_match = filename.match(/(\d{4}-\d{2}-\d{2})/)
+        next unless date_match
+        date = Date.parse(date_match[1]) rescue nil
         next unless date
 
         {

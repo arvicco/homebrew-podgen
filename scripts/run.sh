@@ -1,5 +1,6 @@
 #!/bin/bash
 # Wrapper script for launchd — resolves paths dynamically and runs the orchestrator.
+# Usage: scripts/run.sh <podcast_name>
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -13,4 +14,4 @@ elif [ -f "$HOME/.zshrc" ]; then
   source "$HOME/.zshrc"
 fi
 
-exec bundle exec ruby scripts/orchestrator.rb
+exec bundle exec ruby scripts/orchestrator.rb "$@"

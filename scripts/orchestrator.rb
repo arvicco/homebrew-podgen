@@ -3,6 +3,7 @@
 
 # Podcast Agent — Main Orchestrator
 # Runs the full pipeline: research → script → TTS → audio assembly
+# Usage: ruby scripts/orchestrator.rb <podcast_name>
 
 require "bundler/setup"
 require "dotenv/load"
@@ -11,6 +12,7 @@ require "date"
 
 root = File.expand_path("..", __dir__)
 
+require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "topic_agent")
 require_relative File.join(root, "lib", "agents", "research_agent")
@@ -18,44 +20,51 @@ require_relative File.join(root, "lib", "agents", "script_agent")
 require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "audio_assembler")
 
-logger = PodcastAgent::Logger.new
-today = Date.today.strftime("%Y-%m-%d")
+# --- Parse podcast name argument ---
+podcast_name = ARGV[0]
+
+unless podcast_name
+  available = PodcastConfig.available
+  puts "Usage: ruby scripts/orchestrator.rb <podcast_name>"
+  puts
+  if available.any?
+    puts "Available podcasts:"
+    available.each { |name| puts "  - #{name}" }
+  else
+    puts "No podcasts found. Create a directory under podcasts/ with guidelines.md and queue.yml."
+  end
+  exit 1
+end
+
+config = PodcastConfig.new(podcast_name)
+config.ensure_directories!
+
+today = Date.today
+logger = PodcastAgent::Logger.new(log_path: config.log_path(today))
 
 begin
-  logger.log("Podcast Agent started")
+  logger.log("Podcast Agent started for '#{podcast_name}'")
   pipeline_start = Time.now
 
   # --- Verify prerequisites ---
-  %w[config topics lib/agents scripts output/episodes logs/runs].each do |dir|
-    path = File.join(root, dir)
-    unless Dir.exist?(path)
-      logger.error("Missing directory: #{dir}")
-      exit 1
-    end
-  end
-
-  %w[config/guidelines.md topics/queue.yml].each do |file|
-    path = File.join(root, file)
-    unless File.exist?(path)
-      logger.error("Missing config file: #{file}")
-      exit 1
-    end
+  unless File.exist?(config.guidelines_path)
+    logger.error("Missing guidelines: #{config.guidelines_path}")
+    exit 1
   end
 
   # --- Load config ---
-  guidelines = File.read(File.join(root, "config", "guidelines.md"))
+  guidelines = config.guidelines
   logger.log("Loaded guidelines (#{guidelines.length} chars)")
 
   # --- Phase 0: Topic generation ---
   logger.phase_start("Topics")
   begin
-    topic_agent = TopicAgent.new(logger: logger)
+    topic_agent = TopicAgent.new(guidelines: guidelines, logger: logger)
     topics = topic_agent.generate
     logger.log("Generated #{topics.length} topics from guidelines")
   rescue => e
     logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
-    topics_data = YAML.load_file(File.join(root, "topics", "queue.yml"))
-    topics = topics_data["topics"]
+    topics = config.queue_topics
     logger.log("Loaded #{topics.length} fallback topics: #{topics.join(', ')}")
   end
   logger.phase_end("Topics")
@@ -70,7 +79,11 @@ begin
 
   # --- Phase 2: Script generation ---
   logger.phase_start("Script")
-  script_agent = ScriptAgent.new(logger: logger)
+  script_agent = ScriptAgent.new(
+    guidelines: guidelines,
+    script_path: config.script_path(today),
+    logger: logger
+  )
   script = script_agent.generate(research_data)
   logger.log("Script generated: \"#{script[:title]}\" (#{script[:segments].length} segments)")
   logger.phase_end("Script")
@@ -84,7 +97,7 @@ begin
 
   # --- Phase 4: Audio assembly ---
   logger.phase_start("Assembly")
-  output_path = File.join(root, "output", "episodes", "#{today}.mp3")
+  output_path = config.episode_path(today)
   intro_path = File.join(root, "assets", "intro.mp3")
   outro_path = File.join(root, "assets", "outro.mp3")
 
