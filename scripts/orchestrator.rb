@@ -12,6 +12,7 @@ require "date"
 root = File.expand_path("..", __dir__)
 
 require_relative File.join(root, "lib", "logger")
+require_relative File.join(root, "lib", "agents", "topic_agent")
 require_relative File.join(root, "lib", "agents", "research_agent")
 require_relative File.join(root, "lib", "agents", "script_agent")
 require_relative File.join(root, "lib", "agents", "tts_agent")
@@ -45,9 +46,19 @@ begin
   guidelines = File.read(File.join(root, "config", "guidelines.md"))
   logger.log("Loaded guidelines (#{guidelines.length} chars)")
 
-  topics_data = YAML.load_file(File.join(root, "topics", "queue.yml"))
-  topics = topics_data["topics"]
-  logger.log("Loaded #{topics.length} topics: #{topics.join(', ')}")
+  # --- Phase 0: Topic generation ---
+  logger.phase_start("Topics")
+  begin
+    topic_agent = TopicAgent.new(logger: logger)
+    topics = topic_agent.generate
+    logger.log("Generated #{topics.length} topics from guidelines")
+  rescue => e
+    logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+    topics_data = YAML.load_file(File.join(root, "topics", "queue.yml"))
+    topics = topics_data["topics"]
+    logger.log("Loaded #{topics.length} fallback topics: #{topics.join(', ')}")
+  end
+  logger.phase_end("Topics")
 
   # --- Phase 1: Research ---
   logger.phase_start("Research")

@@ -33,6 +33,7 @@ podcast_agent/
 │
 ├── lib/
 │ ├── agents/
+│ │ ├── topic_agent.rb # Calls Claude API, generates timely search queries from guidelines
 │ │ ├── research_agent.rb # Calls Exa.ai, returns structured research
 │ │ ├── script_agent.rb # Calls Claude API, returns structured script
 │ │ └── tts_agent.rb # Calls ElevenLabs, returns audio file paths
@@ -114,7 +115,7 @@ segments: [
 - Write a standalone test: scripts/test_assembly.rb
 ### Phase 6 — Orchestrator
 - Wire all agents together in scripts/orchestrator.rb
-- Flow: load guidelines → load topics → research → script → TTS → assemble
+- Flow: load guidelines → generate topics (with queue.yml fallback) → research → script → TTS → assemble
 - Write a structured run log to logs/runs/YYYY-MM-DD.log including timings per phase
 - On any unrecoverable error: log the failure and exit cleanly (don't crash loudly)
 - Successful run should print: ✓ Episode ready: output/episodes/YYYY-MM-DD.mp3
