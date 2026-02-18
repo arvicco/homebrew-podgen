@@ -207,3 +207,6 @@ Generate a README that covers:
 - macOS may sleep before the scheduled time — document that "Prevent sleep" or a plugged-in machine is recommended
 - Stereo music + mono TTS will cause concat failures — always force all inputs to mono 44100 Hz in filter graph
 - Request mp3_44100_128 explicitly from ElevenLabs to guarantee a known sample rate
+---
+## Workflow Notes
+- When the user mentions screenshots or pics, check ~/Desktop for the most recent .png files sorted by date
