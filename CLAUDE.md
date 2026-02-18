@@ -3,13 +3,13 @@
 Build a fully autonomous podcast generation pipeline that runs on a schedule with zero human involvement. The system reads user-defined guidelines, researches topics, writes a script, generates audio via TTS, assembles a final MP3, and optionally publishes to a private RSS feed. The only human touchpoint is editing the guidelines and topic queue files.
 ---
 ## Tech Stack
-- Language: Ruby 3.x
+- Language: Ruby 3.2+ (required by Anthropic SDK)
 - Platform: macOS (launchd for scheduling)
 - Key APIs: Anthropic Claude (orchestration + scripting), Exa.ai (research/news), ElevenLabs (TTS)
-- Audio processing: ffmpeg (via Homebrew, called via shell)
+- Audio processing: ffmpeg (via Homebrew, called via Open3.capture3)
 - Config format: YAML and Markdown
-- HTTP: httparty gem
-- Dependencies managed via: Bundler Gemfile)
+- Gems: anthropic (official SDK), exa-ai (official SDK), httparty (ElevenLabs), dotenv
+- Dependencies managed via: Bundler (Gemfile)
 ---
 ## Project Structure
 ```
@@ -62,14 +62,16 @@ Build in this exact sequence. Complete and test each phase before moving to the 
 - Write .gitignore (ignore .env, output/, logs/)
 - Verify scaffold runs without errors: ruby scripts/orchestrator.rb
 ### Phase 2 — Research Agent
-- Implement ResearchAgent using the Exa.ai API
+- Implement ResearchAgent using the official exa-ai Ruby gem
 - Input: array of topic strings from topics/queue.yml
-- For each topic: search for the 5 most recent, relevant results
+- For each topic: search for the 5 most recent, relevant results with Summary content model
 - Output: structured Ruby hash { topic: String, findings: [{ title, url, summary }] }
 - Include error handling and retry logic (max 3 attempts per topic)
 - Write a standalone test script scripts/test_research.rb
 ### Phase 3 — Script Agent
-- Implement ScriptAgent using the Anthropic Claude API claude-opus-4-6)
+- Implement ScriptAgent using the official anthropic Ruby gem (claude-opus-4-6)
+- Use Structured Outputs (output_config with JSON schema) for guaranteed valid output
+- Use prompt caching for the system prompt (guidelines are identical each run)
 - Input: research hash + full contents of config/guidelines.md
 - Output: structured script object with named segments, e.g.:
 ```ruby
@@ -83,22 +85,31 @@ segments: [
 ]
 }
 ```
+- Generate the full script in a single API call (not segment-by-segment) for narrative coherence
 - The system prompt must enforce guidelines strictly — tone, length, format
 - Save raw script to output/episodes/YYYY-MM-DD_script.md for debugging
 - Write a standalone test script scripts/test_script.rb
 ### Phase 4 — TTS Agent
-- Implement TTSAgent using the ElevenLabs API
+- Implement TTSAgent using the ElevenLabs API (httparty, no official Ruby SDK)
 - Input: array of segment objects from script
 - For each segment: POST text to ElevenLabs, save returned audio to a temp file
-- Voice ID and model should be configurable via .env
+- Request mp3_44100_128 output format explicitly for consistent sample rate
+- Voice ID and model should be configurable via .env (default: eleven_multilingual_v2)
+- Note: eleven_multilingual_v2 has a 10,000 char per-request limit; split longer segments
 - Output: ordered array of file paths to segment audio files
 - Write a standalone test script scripts/test_tts.rb
 ### Phase 5 — Audio Assembly
-- Implement AudioAssembler as a wrapper around ffmpeg shell commands
+- Implement AudioAssembler as a wrapper around ffmpeg via Open3.capture3 (not system())
 - Input: segment audio paths, intro.mp3, outro.mp3, output path
 - Assembly order: intro → segments (in order) → outro
-- Normalize final output to -16 LUFS (podcast standard) using ffmpeg's loudnorm filter
-- Output: single MP3 at output/episodes/YYYY-MM-DD.mp3
+- Use filter_complex with concat filter (not concat demuxer) to handle mixed formats
+- Explicitly resample all inputs to 44100 Hz mono via aresample+aformat in the filter graph
+- Apply crossfades: 3s fade-out on intro into first segment, 2s fade-in on outro
+- Use ffprobe to get input durations for fade timing calculations
+- Two-pass loudnorm with linear=true at -16 LUFS (podcast standard):
+  - Pass 1: analyze audio, capture JSON measurements from stderr
+  - Pass 2: normalize with measured values, preserving natural speech dynamics
+- Final output: MP3 at 192 kbps, 44100 Hz, mono → output/episodes/YYYY-MM-DD.mp3
 - Handle missing intro/outro gracefully (skip if files don't exist)
 - Write a standalone test: scripts/test_assembly.rb
 ### Phase 6 — Orchestrator
@@ -127,7 +138,8 @@ segments: [
 - Use require_relative throughout, not require with load path hacks
 - Log meaningfully at each step: what's happening, how long it took, any warnings
 - Prefer plain Ruby stdlib over gems where reasonable; add gems only when they save significant complexity
-- All external shell commands (ffmpeg) use system() with explicit error checking
+- All external shell commands (ffmpeg) use Open3.capture3 to capture stdout, stderr, and exit status
+- ffmpeg writes diagnostics to stderr — always capture and log it
 ---
 ## Configuration Files (user-facing)
 ### config/guidelines.md — seed with this default content:
@@ -164,8 +176,10 @@ Document these in .env.example:
 ANTHROPIC_API_KEY=
 ELEVENLABS_API_KEY=
 ELEVENLABS_VOICE_ID=
-ELEVENLABS_MODEL_ID=eleven_turbo_v2
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128
 EXA_API_KEY=
+CLAUDE_MODEL=claude-opus-4-6
 PODCAST_TITLE=My Daily Brief
 PODCAST_AUTHOR=
 ```
@@ -186,8 +200,10 @@ Generate a README that covers:
 6. Optional RSS setup
 ---
 ## Known Constraints & Watch-outs
-- ElevenLabs has per-request character limits; split long segments if needed
+- ElevenLabs eleven_multilingual_v2 has a 10,000 char per-request limit; split long segments if needed
 - ffmpeg must be on $PATH — check at startup and fail with a helpful message if missing
 - Exa.ai returns varying result quality; the script agent should be resilient to thin research
 - The launchd plist requires absolute paths — the run.sh script should resolve these dynamically
 - macOS may sleep before the scheduled time — document that "Prevent sleep" or a plugged-in machine is recommended
+- Stereo music + mono TTS will cause concat failures — always force all inputs to mono 44100 Hz in filter graph
+- Request mp3_44100_128 explicitly from ElevenLabs to guarantee a known sample rate
