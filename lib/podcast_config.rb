@@ -44,6 +44,13 @@ class PodcastConfig
     @sources ||= parse_sources_section(guidelines)
   end
 
+  # Parses the ## Language section from guidelines.md
+  # Returns: [{ "code" => "en" }, { "code" => "es" }, { "code" => "fr", "voice_id" => "pN..." }]
+  # Defaults to [{ "code" => "en" }] if section is missing
+  def languages
+    @languages ||= parse_language_section(guidelines)
+  end
+
   # Extracts "## Name" from guidelines.md, falls back to directory name
   def title
     @title ||= extract_heading("Name") || @name
@@ -73,6 +80,7 @@ class PodcastConfig
     existing = Dir.glob(File.join(@episodes_dir, "#{prefix}*.mp3"))
       .map { |f| File.basename(f, ".mp3") }
       .reject { |f| f.include?("_concat") }
+      .reject { |f| f.match?(/-[a-z]{2}$/) } # exclude language-suffixed files (e.g. -es, -fr)
 
     if existing.empty?
       prefix
@@ -88,6 +96,20 @@ class PodcastConfig
 
   def script_path(date = Date.today)
     File.join(@episodes_dir, "#{episode_basename(date)}_script.md")
+  end
+
+  # Returns basename with language suffix for non-English, e.g. "ruby_world-2026-02-18-es"
+  def episode_basename_for_language(date, language_code:)
+    base = episode_basename(date)
+    language_code == "en" ? base : "#{base}-#{language_code}"
+  end
+
+  def episode_path_for_language(date, language_code:)
+    File.join(@episodes_dir, "#{episode_basename_for_language(date, language_code: language_code)}.mp3")
+  end
+
+  def script_path_for_language(date, language_code:)
+    File.join(@episodes_dir, "#{episode_basename_for_language(date, language_code: language_code)}_script.md")
   end
 
   def log_path(date = Date.today)
@@ -113,6 +135,29 @@ class PodcastConfig
   def extract_heading(heading)
     match = guidelines.match(/^## #{Regexp.escape(heading)}\s*\n(.+?)(?:\n|$)/)
     match ? match[1].strip : nil
+  end
+
+  def parse_language_section(text)
+    default = [{ "code" => "en" }]
+
+    match = text.match(/^## Language\s*\n(.*?)(?=^## |\z)/m)
+    return default unless match
+
+    languages = []
+    match[1].each_line do |line|
+      line = line.strip
+      next unless line.start_with?("- ")
+
+      entry = line.sub(/^- /, "").strip
+      if entry.include?(":")
+        code, voice_id = entry.split(":", 2).map(&:strip)
+        languages << { "code" => code, "voice_id" => voice_id }
+      else
+        languages << { "code" => entry }
+      end
+    end
+
+    languages.empty? ? default : languages
   end
 
   def parse_sources_section(text)

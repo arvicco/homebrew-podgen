@@ -5,12 +5,13 @@ require "date"
 require "fileutils"
 
 class RssGenerator
-  def initialize(episodes_dir:, feed_path:, title: "Podcast", author: "Podcast Agent", logger: nil)
+  def initialize(episodes_dir:, feed_path:, title: "Podcast", author: "Podcast Agent", language: "en", logger: nil)
     @logger = logger
     @episodes_dir = episodes_dir
     @feed_path = feed_path
     @title = title
     @author = author
+    @language = language
   end
 
   def generate
@@ -38,6 +39,7 @@ class RssGenerator
     pattern = File.join(@episodes_dir, "*.mp3")
     Dir.glob(pattern)
       .reject { |f| f.include?("_concat") }
+      .select { |f| matches_language?(File.basename(f, ".mp3")) }
       .sort
       .reverse
       .map do |path|
@@ -58,6 +60,15 @@ class RssGenerator
       .compact
   end
 
+  # English episodes have no language suffix; non-English end with -xx (e.g. -es, -fr)
+  def matches_language?(basename)
+    if @language == "en"
+      !basename.match?(/-[a-z]{2}$/)
+    else
+      basename.end_with?("-#{@language}")
+    end
+  end
+
   def build_feed(episodes)
     doc = REXML::Document.new
     rss = doc.add_element("rss", {
@@ -69,7 +80,7 @@ class RssGenerator
     channel = rss.add_element("channel")
     add_text(channel, "title", @title)
     add_text(channel, "description", "Auto-generated podcast by Podcast Agent")
-    add_text(channel, "language", "en")
+    add_text(channel, "language", @language)
     add_text(channel, "generator", "Podcast Agent (podgen)")
     add_text(channel, "itunes:author", @author)
     add_text(channel, "itunes:explicit", "false")
