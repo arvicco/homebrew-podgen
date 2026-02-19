@@ -112,9 +112,9 @@ module PodgenCLI
         # --- Phase 4: Audio assembly ---
         logger.phase_start("Assembly")
         output_path = config.episode_path(today)
-        root = File.expand_path("../..", __dir__)
-        intro_path = File.join(root, "assets", "intro.mp3")
-        outro_path = File.join(root, "assets", "outro.mp3")
+        project_root = PodcastConfig.root
+        intro_path = File.join(project_root, "assets", "intro.mp3")
+        outro_path = File.join(project_root, "assets", "outro.mp3")
 
         assembler = AudioAssembler.new(logger: logger)
         assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path)

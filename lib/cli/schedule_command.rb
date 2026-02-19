@@ -8,7 +8,7 @@ module PodgenCLI
     end
 
     def run
-      script_path = File.join(File.expand_path("../../..", __dir__), "scripts", "install_scheduler.sh")
+      script_path = File.join(File.expand_path("../..", __dir__), "scripts", "install_scheduler.sh")
 
       unless @podcast_name
         puts "Usage: podgen schedule <podcast_name>"

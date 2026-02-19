@@ -2,16 +2,35 @@
 # frozen_string_literal: true
 
 # podgen — Autonomous podcast generation pipeline
-# https://github.com/your-user/podgen
+# https://github.com/arvicco/homebrew-podgen
 
-root = File.expand_path("..", __dir__)
-ENV["BUNDLE_GEMFILE"] ||= File.join(root, "Gemfile")
+code_root = File.expand_path("..", __dir__)
 
-require "bundler/setup"
-require "dotenv/load"
+# Bundler setup — only when running from a git clone (Gemfile present)
+gemfile = File.join(code_root, "Gemfile")
+if File.exist?(gemfile)
+  ENV["BUNDLE_GEMFILE"] ||= gemfile
+  require "bundler/setup"
+end
+
+# Resolve the project root (where podcasts/, .env, output/ live).
+# Priority: CWD → $PODGEN_HOME → ~/.podgen → code location
+ENV["PODGEN_ROOT"] ||= if Dir.exist?(File.join(Dir.pwd, "podcasts"))
+  Dir.pwd
+elsif ENV["PODGEN_HOME"] && Dir.exist?(ENV["PODGEN_HOME"])
+  ENV["PODGEN_HOME"]
+elsif Dir.exist?(File.expand_path("~/.podgen/podcasts"))
+  File.expand_path("~/.podgen")
+else
+  code_root
+end
+
+# Load .env from the resolved project root
+require "dotenv"
+Dotenv.load(File.join(ENV["PODGEN_ROOT"], ".env"))
 
 Signal.trap("INT")  { $stderr.puts "\nInterrupted."; exit 130 }
 Signal.trap("TERM") { exit 143 }
 
-require_relative File.join(root, "lib", "cli")
+require_relative File.join(code_root, "lib", "cli")
 exit PodgenCLI.run(ARGV)

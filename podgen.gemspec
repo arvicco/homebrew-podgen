@@ -8,7 +8,7 @@ Gem::Specification.new do |spec|
   spec.authors       = ["Podcast Agent"]
   spec.summary       = "Autonomous podcast generation pipeline"
   spec.description   = "Researches topics, writes a script, generates TTS audio, and assembles a final MP3 podcast episode."
-  spec.homepage      = "https://github.com/your-user/podgen"
+  spec.homepage      = "https://github.com/arvicco/homebrew-podgen"
   spec.license       = "MIT"
   spec.required_ruby_version = ">= 3.2"
 

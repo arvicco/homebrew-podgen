@@ -14,8 +14,19 @@ Fully autonomous podcast generation pipeline. Researches topics, writes a script
 
 ## Installation
 
+### Via Homebrew (macOS)
+
 ```bash
-git clone <repo-url> && cd podgen
+brew tap arvicco/podgen
+brew install podgen
+```
+
+This installs the `podgen` command and creates a project skeleton at `~/.podgen`. Edit `~/.podgen/.env` to add your API keys.
+
+### From source
+
+```bash
+git clone https://github.com/arvicco/homebrew-podgen.git podgen && cd podgen
 bundle install
 cp .env.example .env
 ```
@@ -28,6 +39,15 @@ ELEVENLABS_API_KEY=...
 ELEVENLABS_VOICE_ID=...       # See: https://elevenlabs.io/app/voice-library
 EXA_API_KEY=...
 ```
+
+### Project root resolution
+
+podgen looks for its project directory (`podcasts/`, `.env`, `output/`) in this order:
+
+1. **Current directory** — if CWD contains a `podcasts/` folder
+2. **`$PODGEN_HOME`** — if the environment variable is set
+3. **`~/.podgen`** — default for Homebrew installs
+4. **Code location** — fallback for git clone usage
 
 ## Usage
 

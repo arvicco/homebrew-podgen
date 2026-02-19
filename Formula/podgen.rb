@@ -1,62 +1,81 @@
 # frozen_string_literal: true
 
-# Homebrew formula template for podgen.
+# Homebrew formula for podgen.
 #
-# To use this, create a tap repo (e.g. homebrew-podgen) and copy this file
-# into Formula/podgen.rb. Update the url and sha256 for each release.
-#
-# Users install with:
-#   brew tap <user>/podgen
+# This repo (arvicco/homebrew-podgen) doubles as a Homebrew tap.
+# Install with:
+#   brew tap arvicco/podgen
 #   brew install podgen
 #
 class Podgen < Formula
   desc "Autonomous podcast generation pipeline"
-  homepage "https://github.com/your-user/podgen"
-  url "https://github.com/your-user/podgen/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "UPDATE_WITH_ACTUAL_SHA256"
+  homepage "https://github.com/arvicco/homebrew-podgen"
+  url "https://github.com/arvicco/homebrew-podgen/archive/refs/tags/v1.0.0.tar.gz"
+  sha256 "PLACEHOLDER"
   license "MIT"
 
   depends_on "ruby"
   depends_on "ffmpeg"
 
   def install
+    # Install gems into libexec so they don't pollute the system gem path
     ENV["GEM_HOME"] = libexec
-    system "gem", "install", *std_gem_args(lib_dir: libexec),
-           "--no-document", *Dir["*.gemspec"]
+    ENV["GEM_PATH"] = libexec
 
-    bin.install Dir["bin/*"]
-    bin.env_script_all_files(libexec/"bin", GEM_HOME: ENV["GEM_HOME"])
+    system "gem", "build", "podgen.gemspec"
+    system "gem", "install", "--no-document", "--install-dir", libexec,
+           Dir["podgen-*.gem"].first
 
-    # Install supporting scripts (scheduler, test runners)
-    (libexec/"scripts").install Dir["scripts/*"]
+    # Create a wrapper that sets GEM_HOME/GEM_PATH and PODGEN_ROOT
+    (bin/"podgen").write <<~BASH
+      #!/bin/bash
+      export GEM_HOME="#{libexec}"
+      export GEM_PATH="#{libexec}"
+      export PODGEN_ROOT="${PODGEN_ROOT:-${PODGEN_HOME:-$HOME/.podgen}}"
+      exec "#{Formula["ruby"].opt_bin}/ruby" "#{libexec}/gems/podgen-#{version}/bin/podgen" "$@"
+    BASH
+  end
 
-    # Install assets directory placeholder
-    (libexec/"assets").mkpath
+  def post_install
+    # Create default project skeleton at ~/.podgen
+    podgen_home = Pathname.new(Dir.home) / ".podgen"
+    (podgen_home / "podcasts").mkpath
+    (podgen_home / "assets").mkpath
+    (podgen_home / "output").mkpath
+    (podgen_home / "logs").mkpath
+
+    # Create .env template if it doesn't exist
+    env_file = podgen_home / ".env"
+    unless env_file.exist?
+      env_file.write <<~ENV
+        # podgen API keys — fill these in
+        ANTHROPIC_API_KEY=
+        ELEVENLABS_API_KEY=
+        ELEVENLABS_VOICE_ID=
+        EXA_API_KEY=
+        ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+        ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128
+        CLAUDE_MODEL=claude-opus-4-6
+      ENV
+    end
   end
 
   def caveats
     <<~EOS
-      podgen requires a project directory with configuration files.
+      podgen has created a project directory at ~/.podgen
 
-      1. Create a working directory:
-         mkdir -p ~/podgen && cd ~/podgen
+      To get started:
+        1. Edit ~/.podgen/.env and add your API keys
+        2. Create a podcast:
+             mkdir -p ~/.podgen/podcasts/my_podcast
+             # Add guidelines.md and queue.yml (see README)
+        3. Optionally add intro/outro music:
+             cp intro.mp3 ~/.podgen/assets/intro.mp3
+        4. Generate an episode:
+             podgen generate my_podcast
 
-      2. Create a .env file with your API keys:
-         ANTHROPIC_API_KEY=sk-ant-...
-         ELEVENLABS_API_KEY=...
-         ELEVENLABS_VOICE_ID=...
-         EXA_API_KEY=...
-
-      3. Create a podcast:
-         mkdir -p podcasts/my_podcast
-         # Add guidelines.md and queue.yml (see README)
-
-      4. Drop intro/outro music (optional):
-         cp intro.mp3 assets/intro.mp3
-         cp outro.mp3 assets/outro.mp3
-
-      5. Run:
-         podgen generate my_podcast
+      You can also run podgen from any project directory that contains
+      a podcasts/ folder, or set $PODGEN_HOME to a custom location.
     EOS
   end
 

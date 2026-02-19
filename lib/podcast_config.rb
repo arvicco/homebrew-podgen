@@ -8,7 +8,7 @@ class PodcastConfig
 
   def initialize(name)
     @name = name
-    @root = File.expand_path("..", __dir__)
+    @root = self.class.root
     podcast_dir = File.join(@root, "podcasts", name)
 
     unless Dir.exist?(podcast_dir)
@@ -94,8 +94,13 @@ class PodcastConfig
     File.join(@log_dir, "#{episode_basename(date)}.log")
   end
 
+  # Project root: resolved via PODGEN_ROOT env var (set by bin/podgen),
+  # falling back to the code location (for direct script usage).
+  def self.root
+    ENV["PODGEN_ROOT"] || File.expand_path("..", __dir__)
+  end
+
   def self.available
-    root = File.expand_path("..", __dir__)
     Dir.glob(File.join(root, "podcasts", "*"))
       .select { |f| Dir.exist?(f) }
       .map { |f| File.basename(f) }
