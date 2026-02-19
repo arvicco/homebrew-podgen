@@ -26,6 +26,10 @@ not a journalist or content creator. No filler phrases. No forced enthusiasm. En
 - Beyond Ruby: Elixir/Crystal/CoffeeScript/Groovy ONLY if something major happened there recently
 - Ruby in Bitcoin/DeFi development
 
+## Language
+- en
+- ja: rrBxvYLJSqEU0KHpFpRp
+
 ## Sources
 - exa
 - hackernews

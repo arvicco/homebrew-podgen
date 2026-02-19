@@ -17,7 +17,8 @@ class RSSSource
   end
 
   # Returns: [{ topic: String, findings: [{ title:, url:, summary: }] }]
-  # All RSS items go under a single synthetic topic.
+  # RSS items are matched to user topics by keyword overlap;
+  # unmatched items go under a fallback topic.
   def research(topics, exclude_urls: Set.new)
     findings = []
 
@@ -41,10 +42,35 @@ class RSSSource
 
     return [] if findings.empty?
 
-    [{ topic: "Recent headlines (RSS)", findings: findings }]
+    distribute_by_topic(topics, findings)
   end
 
   private
+
+  # Distribute RSS items across user topics by keyword matching.
+  # Items that don't match any topic go under a fallback bucket.
+  def distribute_by_topic(topics, findings)
+    keyword_map = topics.map { |t| [t, topic_keywords(t)] }
+    buckets = {}
+
+    findings.each do |item|
+      text = "#{item[:title]} #{item[:summary]}".downcase
+      matched_topic = keyword_map.find { |_topic, keywords|
+        keywords.any? { |kw| text.include?(kw) }
+      }&.first
+
+      bucket_name = matched_topic || "Other recent headlines (RSS)"
+      buckets[bucket_name] ||= []
+      buckets[bucket_name] << item
+    end
+
+    buckets.map { |topic, items| { topic: topic, findings: items } }
+  end
+
+  # Tokenize a topic string into significant lowercase keywords (3+ chars).
+  def topic_keywords(topic)
+    topic.downcase.scan(/[a-z0-9]+/).select { |w| w.length >= 3 }
+  end
 
   def fetch_feed(feed_url)
     log("Fetching RSS: #{feed_url}")

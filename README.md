@@ -77,6 +77,7 @@ ruby bin/podgen <command> [options]
 |------|-------------|
 | `-v, --verbose` | Verbose output |
 | `-q, --quiet` | Suppress terminal output (errors still shown, log file gets full detail) |
+| `--dry-run` | Run pipeline without API calls or file output — validates config and shows what would happen |
 | `-V, --version` | Print version |
 | `-h, --help` | Show help |
 
@@ -85,6 +86,9 @@ ruby bin/podgen <command> [options]
 ```bash
 # Generate an episode
 podgen generate ruby_world
+
+# Dry run — validate config, no API calls
+podgen --dry-run generate ruby_world
 
 # Generate silently (for cron/launchd)
 podgen --quiet generate ruby_world
@@ -198,6 +202,27 @@ Add the section to `podcasts/<name>/guidelines.md`:
 - Sources not listed are disabled
 - Results from all sources are merged and deduplicated before script generation
 
+### Multi-Language Episodes
+
+Podgen can produce the same episode in multiple languages. The English script is generated first, then translated via Claude and synthesized with a per-language ElevenLabs voice.
+
+Add a `## Language` section to `podcasts/<name>/guidelines.md`:
+
+```markdown
+## Language
+- en
+- it: CITWdMEsnRduEUkNWXQv
+- ja: rrBxvYLJSqEU0KHpFpRp
+```
+
+- Each line is a 2-letter language code (ISO 639-1)
+- Optionally append `: <voice_id>` to use a different ElevenLabs voice for that language
+- If `## Language` is omitted, only English (`en`) is produced
+- English is never re-translated — the original script is used directly
+- Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
+
+Supported languages (matching ElevenLabs `eleven_multilingual_v2`): Arabic, Chinese, Czech, Danish, Dutch, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, Vietnamese.
+
 ## Scheduling (launchd)
 
 Run the installer to set up daily generation at 6:00 AM:
@@ -261,12 +286,14 @@ podgen/
 │   │   ├── topic_agent.rb    # Claude topic generation
 │   │   ├── research_agent.rb # Exa.ai search
 │   │   ├── script_agent.rb   # Claude script generation
-│   │   └── tts_agent.rb      # ElevenLabs TTS
+│   │   ├── tts_agent.rb      # ElevenLabs TTS
+│   │   └── translation_agent.rb # Claude script translation
 │   ├── sources/
 │   │   ├── rss_source.rb     # RSS/Atom feed fetcher
 │   │   ├── hn_source.rb      # Hacker News Algolia API
 │   │   └── claude_web_source.rb # Claude + web_search tool
 │   ├── audio_assembler.rb    # ffmpeg wrapper
+│   ├── research_cache.rb     # File-based research cache (24h TTL)
 │   ├── rss_generator.rb      # RSS 2.0 feed
 │   └── logger.rb             # Structured logging
 ├── scripts/
@@ -287,6 +314,7 @@ podgen test claude_web     # Claude web search
 podgen test script         # Claude script generation
 podgen test tts            # ElevenLabs TTS
 podgen test assembly       # ffmpeg assembly
+podgen test translation    # Claude script translation
 ```
 
 ## Cost Estimate
@@ -294,9 +322,11 @@ podgen test assembly       # ffmpeg assembly
 Per daily episode (~10 min), with all sources enabled:
 - Exa.ai: ~$0.03 (4 searches + summaries)
 - Claude Opus 4.6: ~$0.15 (script generation)
+- Claude Opus 4.6: ~$0.10 per extra language (translation)
 - Claude Haiku (web search): ~$0.08 (4 topics × web_search)
 - Hacker News: free (Algolia API)
 - RSS feeds: free
 - ElevenLabs: varies by plan ($22-99/month for daily use)
 
-With Exa only (default): ~$0.18 + ElevenLabs per episode.
+With Exa only (default), English only: ~$0.18 + ElevenLabs per episode.
+Each additional language adds ~$0.10 (translation) + ElevenLabs TTS cost.

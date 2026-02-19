@@ -28,6 +28,7 @@ class ScriptAgent
   # Input: array of { topic:, findings: [{ title:, url:, summary: }] }
   # Output: { title:, segments: [{ name:, text: }] }
   def generate(research_data)
+    validate_research_data(research_data)
     log("Generating script with #{@model}")
     research_text = format_research(research_data)
 
@@ -100,12 +101,32 @@ class ScriptAgent
     ]
   end
 
+  def validate_research_data(data)
+    raise ArgumentError, "Research data must be an Array, got #{data.class}" unless data.is_a?(Array)
+    raise ArgumentError, "Research data is empty — nothing to script" if data.empty?
+
+    data.each_with_index do |item, i|
+      raise ArgumentError, "Research item [#{i}] must be a Hash, got #{item.class}" unless item.is_a?(Hash)
+      raise ArgumentError, "Research item [#{i}] missing :topic key" unless item.key?(:topic)
+      raise ArgumentError, "Research item [#{i}] :topic must be a String" unless item[:topic].is_a?(String)
+      raise ArgumentError, "Research item [#{i}] missing :findings key" unless item.key?(:findings)
+      raise ArgumentError, "Research item [#{i}] :findings must be an Array" unless item[:findings].is_a?(Array)
+
+      item[:findings].each_with_index do |f, j|
+        raise ArgumentError, "Finding [#{i}][#{j}] must be a Hash, got #{f.class}" unless f.is_a?(Hash)
+        %i[title url summary].each do |key|
+          raise ArgumentError, "Finding [#{i}][#{j}] missing :#{key} key" unless f.key?(key)
+        end
+      end
+    end
+  end
+
   def format_research(research_data)
     research_data.map do |item|
       findings = item[:findings].map do |f|
-        "  - #{f[:title]} (#{f[:url]})\n    #{f[:summary]}"
+        "  - #{f[:title] || 'Untitled'} (#{f[:url] || 'no URL'})\n    #{f[:summary] || 'No summary available'}"
       end.join("\n")
-      "## #{item[:topic]}\n#{findings}"
+      "## #{item[:topic] || 'Unknown topic'}\n#{findings}"
     end.join("\n\n")
   end
 
