@@ -36,7 +36,8 @@ module PodgenCLI
       end
 
       script_path = File.join(File.expand_path("../..", __dir__), "scripts", script)
-      exec(RbConfig.ruby, script_path)
+      success = system(RbConfig.ruby, script_path)
+      success ? 0 : 1
     end
   end
 end

@@ -5,12 +5,14 @@ require "set"
 
 class ClaudeWebSource
   MAX_RETRIES = 3
-  MODEL = "claude-haiku-4-5-20251001"
+  DEFAULT_MODEL = "claude-haiku-4-5-20251001"
   MAX_SEARCH_USES = 3
 
-  def initialize(logger: nil, **_options)
+  def initialize(logger: nil, max_results: 5, **_options)
     @logger = logger
     @client = Anthropic::Client.new
+    @model = ENV.fetch("CLAUDE_WEB_MODEL", DEFAULT_MODEL)
+    @max_results = max_results
   end
 
   # Returns: [{ topic: String, findings: [{ title:, url:, summary: }] }]
@@ -44,7 +46,7 @@ class ClaudeWebSource
     begin
       attempts += 1
       @client.messages.create(
-        model: MODEL,
+        model: @model,
         max_tokens: 1024,
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: MAX_SEARCH_USES }],
         messages: [
@@ -120,7 +122,7 @@ class ClaudeWebSource
       end
     end
 
-    findings_by_url.values.first(5)
+    findings_by_url.values.first(@max_results)
   end
 
   def log(message)

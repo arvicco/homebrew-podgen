@@ -117,8 +117,9 @@ class TTSAgent
     while remaining.length > MAX_CHARS
       split_at = remaining.rindex(/\n\n/, MAX_CHARS) ||
                  remaining.rindex(/(?<=[.!?])\s+/, MAX_CHARS) ||
+                 remaining.rindex(/[,;:]\s+/, MAX_CHARS) ||
                  remaining.rindex(/\s+/, MAX_CHARS) ||
-                 MAX_CHARS
+                 find_safe_split_point(remaining, MAX_CHARS)
       split_at = [split_at, 1].max
 
       chunks << remaining[0...split_at].strip
@@ -127,6 +128,20 @@ class TTSAgent
 
     chunks << remaining unless remaining.empty?
     chunks
+  end
+
+  # Walk backward from max_pos to find a safe split point that doesn't
+  # break a multi-byte UTF-8 character or grapheme cluster.
+  def find_safe_split_point(text, max_pos)
+    pos = max_pos
+    # Walk backward to find an ASCII char or whitespace boundary
+    while pos > 0
+      char = text[pos]
+      break if char && (char.ascii_only? || char.match?(/\s/))
+      pos -= 1
+    end
+    # If we walked all the way back, just use max_pos (degenerate case)
+    pos > 0 ? pos : max_pos
   end
 
   def parse_error(response)

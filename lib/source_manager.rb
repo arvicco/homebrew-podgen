@@ -15,42 +15,76 @@ class SourceManager
     "claude_web" => ->(opts) { ClaudeWebSource.new(**opts) }
   }.freeze
 
-  def initialize(source_config:, exclude_urls: Set.new, logger: nil)
+  def initialize(source_config:, exclude_urls: Set.new, logger: nil, cache_dir: nil)
     @source_config = source_config
     @exclude_urls = exclude_urls
     @logger = logger
+    @cache = if cache_dir
+      require_relative "research_cache"
+      ResearchCache.new(cache_dir)
+    end
   end
 
-  # Runs all enabled sources and merges results.
+  # Runs all enabled sources in parallel and merges results.
   # Returns: [{ topic: String, findings: [{ title:, url:, summary: }] }]
   def research(topics)
+    sources = enabled_sources
+    results_by_source = {}
+
+    threads = sources.map do |name, source|
+      Thread.new(name, source) do |src_name, src|
+        Thread.current[:name] = src_name
+        log("Running source: #{src_name}")
+        start = Time.now
+
+        begin
+          # Check cache first
+          if @cache
+            cached = @cache.get(src_name, topics)
+            if cached
+              log("Cache hit for source '#{src_name}'")
+              results_by_source[src_name] = cached
+              next
+            end
+          end
+
+          accepts_keywords = src.method(:research).parameters.any? { |type, _| type == :key || type == :keyreq }
+          results = if accepts_keywords
+            src.research(topics, exclude_urls: @exclude_urls)
+          else
+            src.research(topics)
+          end
+
+          # Normalize keys to symbols
+          results = results.map { |r| normalize_result(r) }
+
+          elapsed = (Time.now - start).round(2)
+          finding_count = results.sum { |r| r[:findings].length }
+          log("Source '#{src_name}' returned #{finding_count} findings (#{elapsed}s)")
+
+          # Cache results
+          @cache&.set(src_name, topics, results)
+
+          results_by_source[src_name] = results
+        rescue => e
+          log("Source '#{src_name}' failed: #{e.message}")
+        end
+      end
+    end
+
+    threads.each(&:join)
+
+    # Merge results sequentially in original source order for deterministic output
     all_results = []
     seen_urls = @exclude_urls.dup
 
-    enabled_sources.each do |name, source|
-      log("Running source: #{name}")
-      start = Time.now
+    sources.each do |name, _source|
+      results = results_by_source[name]
+      next unless results
 
-      begin
-        # ResearchAgent (exa) takes exclude_urls in its constructor, not in research().
-        # Check if the source's research method accepts keyword args before passing them.
-        accepts_keywords = source.method(:research).parameters.any? { |type, _| type == :key || type == :keyreq }
-        results = if accepts_keywords
-          source.research(topics, exclude_urls: seen_urls)
-        else
-          source.research(topics)
-        end
-      rescue => e
-        log("Source '#{name}' failed: #{e.message}")
-        next
-      end
-
-      elapsed = (Time.now - start).round(2)
-      finding_count = results.sum { |r| r[:findings].length }
-      log("Source '#{name}' returned #{finding_count} findings (#{elapsed}s)")
-
-      # Track URLs from this source to dedup across sources
+      # Cross-source URL dedup
       results.each do |r|
+        r[:findings].reject! { |f| seen_urls.include?(f[:url]) }
         r[:findings].each { |f| seen_urls.add(f[:url]) }
       end
 
@@ -84,6 +118,20 @@ class SourceManager
 
       [name, factory.call(opts)]
     end
+  end
+
+  # Normalize a result hash to use symbol keys consistently.
+  # Accepts either string or symbol keys and outputs symbol keys.
+  def normalize_result(result)
+    topic = result[:topic] || result["topic"]
+    findings = (result[:findings] || result["findings"] || []).map do |f|
+      {
+        title: f[:title] || f["title"],
+        url: f[:url] || f["url"],
+        summary: f[:summary] || f["summary"]
+      }
+    end
+    { topic: topic, findings: findings }
   end
 
   # Merge new results into existing. Combine findings for matching topics; append new topics.

@@ -3,6 +3,7 @@
 require "yaml"
 require "date"
 require "set"
+require "fileutils"
 
 class EpisodeHistory
   LOOKBACK_DAYS = 7
@@ -33,7 +34,8 @@ class EpisodeHistory
     summary.empty? ? nil : summary
   end
 
-  # Append a new episode entry and prune old entries
+  # Append a new episode entry and prune old entries.
+  # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   def record!(date:, title:, topics:, urls:)
     entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
     entries << {
@@ -47,6 +49,15 @@ class EpisodeHistory
     cutoff = (Date.today - LOOKBACK_DAYS).to_s
     entries.select! { |e| e["date"] >= cutoff }
 
-    File.write(@path, entries.to_yaml)
+    dir = File.dirname(@path)
+    FileUtils.mkdir_p(dir)
+    tmp_path = File.join(dir, ".history.yml.tmp.#{Process.pid}")
+    begin
+      File.write(tmp_path, entries.to_yaml)
+      File.rename(tmp_path, @path)
+    rescue => e
+      File.delete(tmp_path) if File.exist?(tmp_path)
+      raise e
+    end
   end
 end

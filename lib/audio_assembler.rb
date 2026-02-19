@@ -16,6 +16,7 @@ class AudioAssembler
   def initialize(logger: nil)
     @logger = logger
     @root = File.expand_path("..", __dir__)
+    @duration_cache = {}
     verify_ffmpeg!
   end
 
@@ -148,6 +149,8 @@ class AudioAssembler
   end
 
   def probe_duration(path)
+    return @duration_cache[path] if @duration_cache.key?(path)
+
     stdout, stderr, status = Open3.capture3(
       "ffprobe", "-v", "quiet",
       "-show_entries", "format=duration",
@@ -159,7 +162,7 @@ class AudioAssembler
       raise "ffprobe failed for #{path}: #{stderr}"
     end
 
-    stdout.strip.to_f
+    @duration_cache[path] = stdout.strip.to_f
   end
 
   def run_ffmpeg(args, step_name)

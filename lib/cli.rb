@@ -28,6 +28,7 @@ module PodgenCLI
 
       opts.on("-v", "--verbose", "Verbose output") { options[:verbosity] = :verbose }
       opts.on("-q", "--quiet",   "Suppress terminal output (errors still shown)") { options[:verbosity] = :quiet }
+      opts.on("--dry-run", "Run pipeline without API calls or file output") { options[:dry_run] = true }
       opts.on("-V", "--version", "Print version and exit") do
         puts "podgen #{VERSION}"
         return 0

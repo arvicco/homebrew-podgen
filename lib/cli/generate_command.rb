@@ -21,6 +21,7 @@ module PodgenCLI
     def initialize(args, options)
       @podcast_name = args.shift
       @options = options
+      @dry_run = options[:dry_run] || false
     end
 
     def run
@@ -55,7 +56,7 @@ module PodgenCLI
       history = EpisodeHistory.new(config.history_path)
 
       begin
-        logger.log("Podcast Agent started for '#{@podcast_name}'")
+        logger.log("Podcast Agent started for '#{@podcast_name}'#{@dry_run ? ' (DRY RUN)' : ''}")
         pipeline_start = Time.now
 
         # --- Verify prerequisites ---
@@ -64,43 +65,84 @@ module PodgenCLI
           return 1
         end
 
+        # --- Check ffmpeg availability (skip in dry-run) ---
+        unless @dry_run
+          verify_ffmpeg!(logger)
+        end
+
         # --- Load config ---
         guidelines = config.guidelines
         logger.log("Loaded guidelines (#{guidelines.length} chars)")
 
         # --- Phase 0: Topic generation ---
         logger.phase_start("Topics")
-        begin
-          topic_agent = TopicAgent.new(guidelines: guidelines, recent_topics: history.recent_topics_summary, logger: logger)
-          topics = topic_agent.generate
-          logger.log("Generated #{topics.length} topics from guidelines")
-        rescue => e
-          logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+        if @dry_run
           topics = config.queue_topics
-          logger.log("Loaded #{topics.length} fallback topics: #{topics.join(', ')}")
+          logger.log("[dry-run] Using queue.yml topics: #{topics.join(', ')}")
+        else
+          begin
+            topic_agent = TopicAgent.new(guidelines: guidelines, recent_topics: history.recent_topics_summary, logger: logger)
+            topics = topic_agent.generate
+            logger.log("Generated #{topics.length} topics from guidelines")
+          rescue => e
+            logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+            topics = config.queue_topics
+            logger.log("Loaded #{topics.length} fallback topics: #{topics.join(', ')}")
+          end
         end
         logger.phase_end("Topics")
 
         # --- Phase 1: Research (multi-source) ---
         logger.phase_start("Research")
-        source_manager = SourceManager.new(
-          source_config: config.sources,
-          exclude_urls: history.recent_urls,
-          logger: logger
-        )
-        research_data = source_manager.research(topics)
+        if @dry_run
+          research_data = topics.map do |topic|
+            {
+              topic: topic,
+              findings: [
+                { title: "Example article about #{topic}", url: "https://example.com/#{topic.downcase.gsub(/\s+/, '-')}", summary: "This is a stub finding for dry-run testing of '#{topic}'." }
+              ]
+            }
+          end
+          logger.log("[dry-run] Generated #{research_data.length} synthetic research topics")
+        else
+          cache_dir = File.join(File.dirname(config.episodes_dir), "research_cache")
+          source_manager = SourceManager.new(
+            source_config: config.sources,
+            exclude_urls: history.recent_urls,
+            logger: logger,
+            cache_dir: cache_dir
+          )
+          research_data = source_manager.research(topics)
+        end
         total_findings = research_data.sum { |r| r[:findings].length }
         logger.log("Research complete: #{total_findings} findings across #{research_data.length} topics")
         logger.phase_end("Research")
 
         # --- Phase 2: Script generation ---
         logger.phase_start("Script")
-        script_agent = ScriptAgent.new(
-          guidelines: guidelines,
-          script_path: config.script_path(today),
-          logger: logger
-        )
-        script = script_agent.generate(research_data)
+        if @dry_run
+          script = {
+            title: "Dry Run Episode — #{today}",
+            segments: [
+              { name: "intro", text: "Welcome to this dry-run episode. Today we explore #{topics.first}." },
+              { name: "segment_1", text: "Here is segment one covering #{topics.first} in detail with synthetic content for testing purposes." },
+              { name: "segment_2", text: "Here is segment two covering #{topics.last} with more synthetic content." },
+              { name: "outro", text: "Thanks for listening to this dry-run episode. Until next time." }
+            ]
+          }
+          # Still save the debug script file
+          base_name = config.episode_basename(today)
+          script_debug_path = File.join(config.episodes_dir, "#{base_name}_script.md")
+          save_script_debug(script, script_debug_path, logger)
+          logger.log("[dry-run] Synthetic script generated: \"#{script[:title]}\"")
+        else
+          script_agent = ScriptAgent.new(
+            guidelines: guidelines,
+            script_path: config.script_path(today),
+            logger: logger
+          )
+          script = script_agent.generate(research_data)
+        end
         logger.log("Script generated: \"#{script[:title]}\" (#{script[:segments].length} segments)")
         logger.phase_end("Script")
 
@@ -108,83 +150,96 @@ module PodgenCLI
         languages = config.languages
         logger.log("Target languages: #{languages.map { |l| l['code'] }.join(', ')}")
 
-        # Compute basename ONCE before the loop — otherwise, after the English MP3
-        # is written to disk, episode_basename would see it and increment the suffix,
-        # causing non-English variants to get names like "name-2026-02-19a-it" instead
-        # of "name-2026-02-19-it".
-        base_name = config.episode_basename(today)
-
-        project_root = PodcastConfig.root
-        intro_path = File.join(project_root, "assets", "intro.mp3")
-        outro_path = File.join(project_root, "assets", "outro.mp3")
-        output_paths = []
-
-        languages.each do |lang|
-          lang_code = lang["code"]
-          voice_id = lang["voice_id"]
-          lang_basename = lang_code == "en" ? base_name : "#{base_name}-#{lang_code}"
-
-          begin
-            # --- Translation (skip for English) ---
-            if lang_code == "en"
-              lang_script = script
-            else
-              logger.phase_start("Translation (#{lang_code})")
-              translator = TranslationAgent.new(target_language: lang_code, logger: logger)
-              lang_script = translator.translate(script)
-              logger.phase_end("Translation (#{lang_code})")
-            end
-
-            # --- Save translated script for debugging ---
-            lang_script_path = File.join(config.episodes_dir, "#{lang_basename}_script.md")
-            save_script_debug(lang_script, lang_script_path, logger)
-
-            # --- TTS ---
-            logger.phase_start("TTS (#{lang_code})")
-            tts_agent = TTSAgent.new(logger: logger, voice_id_override: voice_id)
-            audio_paths = tts_agent.synthesize(lang_script[:segments])
-            logger.log("TTS complete (#{lang_code}): #{audio_paths.length} audio files")
-            logger.phase_end("TTS (#{lang_code})")
-
-            # --- Assembly ---
-            logger.phase_start("Assembly (#{lang_code})")
-            output_path = File.join(config.episodes_dir, "#{lang_basename}.mp3")
-
-            assembler = AudioAssembler.new(logger: logger)
-            assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path)
-            logger.phase_end("Assembly (#{lang_code})")
-
-            # --- Cleanup TTS temp files ---
-            audio_paths.each { |p| File.delete(p) if File.exist?(p) }
-
-            output_paths << output_path
-            logger.log("\u2713 Episode ready (#{lang_code}): #{output_path}")
-            puts "\u2713 Episode ready (#{lang_code}): #{output_path}" unless @options[:verbosity] == :quiet
-
-          rescue => e
-            logger.error("Language #{lang_code} failed: #{e.class}: #{e.message}")
-            logger.error(e.backtrace.first(5).join("\n"))
-            $stderr.puts "\u2717 Language #{lang_code} failed: #{e.message}" unless @options[:verbosity] == :quiet
+        if @dry_run
+          languages.each do |lang|
+            logger.log("[dry-run] Would synthesize + assemble for language: #{lang['code']}")
           end
+          logger.log("[dry-run] Skipping history.record!")
+
+          total_time = (Time.now - pipeline_start).round(2)
+          logger.log("Total pipeline time: #{total_time}s")
+          summary = "[dry-run] Config validated, #{topics.length} topics, #{total_findings} stub findings, #{script[:segments].length} segments, #{languages.length} language(s) — no API calls made"
+          logger.log(summary)
+          puts summary unless @options[:verbosity] == :quiet
+        else
+          # Compute basename ONCE before the loop — otherwise, after the English MP3
+          # is written to disk, episode_basename would see it and increment the suffix,
+          # causing non-English variants to get names like "name-2026-02-19a-it" instead
+          # of "name-2026-02-19-it".
+          base_name = config.episode_basename(today)
+
+          project_root = PodcastConfig.root
+          intro_path = File.join(project_root, "assets", "intro.mp3")
+          outro_path = File.join(project_root, "assets", "outro.mp3")
+          output_paths = []
+
+          languages.each do |lang|
+            lang_code = lang["code"]
+            voice_id = lang["voice_id"]
+            lang_basename = lang_code == "en" ? base_name : "#{base_name}-#{lang_code}"
+
+            begin
+              # --- Translation (skip for English) ---
+              if lang_code == "en"
+                lang_script = script
+              else
+                logger.phase_start("Translation (#{lang_code})")
+                translator = TranslationAgent.new(target_language: lang_code, logger: logger)
+                lang_script = translator.translate(script)
+                logger.phase_end("Translation (#{lang_code})")
+              end
+
+              # --- Save translated script for debugging ---
+              lang_script_path = File.join(config.episodes_dir, "#{lang_basename}_script.md")
+              save_script_debug(lang_script, lang_script_path, logger)
+
+              # --- TTS ---
+              logger.phase_start("TTS (#{lang_code})")
+              tts_agent = TTSAgent.new(logger: logger, voice_id_override: voice_id)
+              audio_paths = tts_agent.synthesize(lang_script[:segments])
+              logger.log("TTS complete (#{lang_code}): #{audio_paths.length} audio files")
+              logger.phase_end("TTS (#{lang_code})")
+
+              # --- Assembly ---
+              logger.phase_start("Assembly (#{lang_code})")
+              output_path = File.join(config.episodes_dir, "#{lang_basename}.mp3")
+
+              assembler = AudioAssembler.new(logger: logger)
+              assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path)
+              logger.phase_end("Assembly (#{lang_code})")
+
+              # --- Cleanup TTS temp files ---
+              audio_paths.each { |p| File.delete(p) if File.exist?(p) }
+
+              output_paths << output_path
+              logger.log("\u2713 Episode ready (#{lang_code}): #{output_path}")
+              puts "\u2713 Episode ready (#{lang_code}): #{output_path}" unless @options[:verbosity] == :quiet
+
+            rescue => e
+              logger.error("Language #{lang_code} failed: #{e.class}: #{e.message}")
+              logger.error(e.backtrace.first(5).join("\n"))
+              $stderr.puts "\u2717 Language #{lang_code} failed: #{e.message}" unless @options[:verbosity] == :quiet
+            end
+          end
+
+          if output_paths.empty?
+            raise "All languages failed — no episodes produced"
+          end
+
+          # --- Record episode history for deduplication ---
+          history.record!(
+            date: today,
+            title: script[:title],
+            topics: research_data.map { |r| r[:topic] },
+            urls: research_data.flat_map { |r| r[:findings].map { |f| f[:url] } }
+          )
+          logger.log("Episode recorded in history: #{config.history_path}")
+
+          # --- Done ---
+          total_time = (Time.now - pipeline_start).round(2)
+          logger.log("Total pipeline time: #{total_time}s")
+          logger.log("\u2713 #{output_paths.length} episode(s) produced")
         end
-
-        if output_paths.empty?
-          raise "All languages failed — no episodes produced"
-        end
-
-        # --- Record episode history for deduplication ---
-        history.record!(
-          date: today,
-          title: script[:title],
-          topics: research_data.map { |r| r[:topic] },
-          urls: research_data.flat_map { |r| r[:findings].map { |f| f[:url] } }
-        )
-        logger.log("Episode recorded in history: #{config.history_path}")
-
-        # --- Done ---
-        total_time = (Time.now - pipeline_start).round(2)
-        logger.log("Total pipeline time: #{total_time}s")
-        logger.log("\u2713 #{output_paths.length} episode(s) produced")
 
         0
       rescue => e
@@ -199,6 +254,18 @@ module PodgenCLI
     end
 
     private
+
+    def verify_ffmpeg!(logger)
+      require "open3"
+      _out, _err, status = Open3.capture3("ffmpeg", "-version")
+      unless status.success?
+        logger.error("ffmpeg is not working correctly. Install with: brew install ffmpeg")
+        raise "ffmpeg is not working correctly"
+      end
+    rescue Errno::ENOENT
+      logger.error("ffmpeg is not installed or not on $PATH. Install with: brew install ffmpeg")
+      raise "ffmpeg is not installed or not on $PATH. Install with: brew install ffmpeg"
+    end
 
     def save_script_debug(script, path, logger)
       FileUtils.mkdir_p(File.dirname(path))

@@ -42,13 +42,13 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  anthropic
-  base64
-  dotenv
-  exa-ai
-  httparty
-  rexml
-  rss
+  anthropic (~> 1.21)
+  base64 (~> 0.3)
+  dotenv (~> 3.2)
+  exa-ai (~> 0.8)
+  httparty (~> 0.24)
+  rexml (~> 3.4)
+  rss (~> 0.3)
 
 CHECKSUMS
   anthropic (1.21.0) sha256=3484f1b86d0f9488af1d17553607a32059c318b8f66d628687b717fd4594af46
