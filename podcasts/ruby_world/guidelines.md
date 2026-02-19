@@ -33,6 +33,8 @@ not a journalist or content creator. No filler phrases. No forced enthusiasm. En
 ## Sources
 - exa
 - hackernews
+- bluesky
+- x: @rails, @rubygems, @shopify, @maboroshi_llm
 - rss:
     - https://rubyweekly.com/rss
     - https://www.ruby-lang.org/en/feeds/news.rss
