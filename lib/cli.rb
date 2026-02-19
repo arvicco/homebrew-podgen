@@ -6,6 +6,7 @@ require_relative "cli/version"
 module PodgenCLI
   COMMANDS = {
     "generate"  => ["Run the full podcast pipeline",       "cli/generate_command",  "GenerateCommand"],
+    "scrap"     => ["Remove last episode and history",     "cli/scrap_command",     "ScrapCommand"],
     "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",       "RssCommand"],
     "list"      => ["List available podcasts",             "cli/list_command",      "ListCommand"],
     "test"      => ["Run a standalone test script",        "cli/test_command",      "TestCommand"],

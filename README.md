@@ -66,6 +66,7 @@ ruby bin/podgen <command> [options]
 | Command | Description |
 |---------|-------------|
 | `podgen generate <podcast>` | Run the full pipeline: research → script → TTS → assembly |
+| `podgen scrap <podcast>` | Remove last episode and its history entry |
 | `podgen rss <podcast>` | Generate RSS feed from existing episodes |
 | `podgen list` | List available podcasts with titles |
 | `podgen test <name>` | Run a standalone test (research, hn, rss, tts, etc.) |
@@ -92,6 +93,12 @@ podgen --dry-run generate ruby_world
 
 # Generate silently (for cron/launchd)
 podgen --quiet generate ruby_world
+
+# Scrap last episode (delete files + remove from history)
+podgen scrap ruby_world
+
+# Preview what scrap would remove (no changes)
+podgen --dry-run scrap ruby_world
 
 # List all configured podcasts
 podgen list

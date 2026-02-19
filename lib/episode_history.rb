@@ -34,6 +34,17 @@ class EpisodeHistory
     summary.empty? ? nil : summary
   end
 
+  # Remove the last entry and return it (or nil if empty).
+  # Uses atomic write (temp file + rename) to prevent corruption.
+  def remove_last!
+    entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
+    return nil if entries.empty?
+
+    removed = entries.pop
+    write_entries!(entries)
+    removed
+  end
+
   # Append a new episode entry and prune old entries.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   def record!(date:, title:, topics:, urls:)
@@ -49,6 +60,13 @@ class EpisodeHistory
     cutoff = (Date.today - LOOKBACK_DAYS).to_s
     entries.select! { |e| e["date"] >= cutoff }
 
+    write_entries!(entries)
+  end
+
+  private
+
+  # Atomic write: temp file + rename to prevent corruption.
+  def write_entries!(entries)
     dir = File.dirname(@path)
     FileUtils.mkdir_p(dir)
     tmp_path = File.join(dir, ".history.yml.tmp.#{Process.pid}")

@@ -29,6 +29,7 @@ podgen/
 │   ├── cli/
 │   │   ├── version.rb            # PodgenCLI::VERSION
 │   │   ├── generate_command.rb   # Full pipeline: topics → research → script → TTS → assembly
+│   │   ├── scrap_command.rb     # Remove last episode + history entry
 │   │   ├── rss_command.rb        # RSS feed generation
 │   │   ├── list_command.rb       # List available podcasts
 │   │   ├── test_command.rb       # Delegates to scripts/test_*.rb
@@ -80,6 +81,7 @@ generate_command.rb:
 - **Multi-language:** `## Language` section in guidelines.md. English script generated first, translated for other languages. Per-language voice IDs. Output: `name-date-lang.mp3`
 - **Same-day suffix:** `name-2026-02-18.mp3`, then `name-2026-02-18a.mp3`, etc.
 - **Episode dedup:** History records topics + URLs; TopicAgent avoids repeats, sources exclude used URLs. 7-day lookback window.
+- **Scrap:** `podgen scrap <name>` removes last episode files (MP3 + scripts, all languages) and last history entry. Supports `--dry-run`.
 - **Research sources:** Parallel execution via threads. Sources: `exa`, `hackernews`, `rss` (with feed URLs), `claude_web`. Default: exa only. 24h file-based cache per source+topics.
 - **`--dry-run`:** Validates config, uses queue.yml topics, generates synthetic data, saves debug script, skips all API calls/TTS/assembly/history.
 - **Lockfile:** Prevents concurrent runs of the same podcast via `flock`.
@@ -126,6 +128,7 @@ generate_command.rb:
 ```
 podgen [flags] <command> <args>
   generate <podcast>   # Full pipeline
+  scrap <podcast>      # Remove last episode + history entry
   rss <podcast>        # Generate RSS feed
   list                 # List podcasts
   test <name>          # Run test (research|rss|hn|claude_web|script|tts|assembly|translation|sources)
