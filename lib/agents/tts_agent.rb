@@ -11,10 +11,10 @@ class TTSAgent
   MAX_RETRIES = 3
   RETRIABLE_CODES = [429, 503].freeze
 
-  def initialize(logger: nil)
+  def initialize(logger: nil, voice_id_override: nil)
     @logger = logger
     @api_key = ENV.fetch("ELEVENLABS_API_KEY") { raise "ELEVENLABS_API_KEY environment variable is not set" }
-    @voice_id = ENV.fetch("ELEVENLABS_VOICE_ID") { raise "ELEVENLABS_VOICE_ID environment variable is not set" }
+    @voice_id = voice_id_override || ENV.fetch("ELEVENLABS_VOICE_ID") { raise "ELEVENLABS_VOICE_ID environment variable is not set" }
     @model_id = ENV.fetch("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
     @output_format = ENV.fetch("ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128")
   end
