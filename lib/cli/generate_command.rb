@@ -15,6 +15,7 @@ require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "cli", "language_pipeline")
 
 module PodgenCLI
   class GenerateCommand
@@ -73,6 +74,15 @@ module PodgenCLI
         # --- Load config ---
         guidelines = config.guidelines
         logger.log("Loaded guidelines (#{guidelines.length} chars)")
+
+        # --- Branch on pipeline type ---
+        if config.type == "language"
+          logger.log("Pipeline type: language")
+          pipeline = LanguagePipeline.new(config: config, options: @options, logger: logger, history: history, today: today)
+          return pipeline.run
+        end
+
+        logger.log("Pipeline type: news")
 
         # --- Phase 0: Topic generation ---
         logger.phase_start("Topics")

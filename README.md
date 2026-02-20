@@ -1,16 +1,23 @@
 # Podcast Agent (podgen)
 
-Fully autonomous podcast generation pipeline. Researches topics, writes a script, generates audio via TTS, and assembles a final MP3 — all on a daily schedule with zero human involvement.
+Fully autonomous podcast generation pipeline with two modes:
+
+- **News pipeline**: Researches topics, writes a script, generates audio via TTS, and assembles a final MP3.
+- **Language pipeline**: Downloads episodes from RSS feeds, strips intro/outro music, transcribes via OpenAI Whisper, and produces a clean MP3 + transcript.
+
+Runs on a daily schedule with zero human involvement.
 
 ## Prerequisites
 
 - **Ruby 3.2+** (tested with Ruby 4.0)
 - **Homebrew** (macOS)
 - **ffmpeg**: `brew install ffmpeg`
-- **API accounts**:
+- **API accounts** (news pipeline):
   - [Anthropic](https://console.anthropic.com/) — Claude API for script generation (also powers Claude Web Search source)
   - [Exa.ai](https://exa.ai/) — research/news search (default source)
   - [ElevenLabs](https://elevenlabs.io/) — text-to-speech
+- **API accounts** (language pipeline):
+  - [OpenAI](https://platform.openai.com/) — Whisper transcription
 
 ## Installation
 
@@ -41,6 +48,8 @@ EXA_API_KEY=...
 BLUESKY_HANDLE=...            # Optional: your-handle.bsky.social
 BLUESKY_APP_PASSWORD=...      # Optional: https://bsky.app/settings/app-passwords
 SOCIALDATA_API_KEY=...        # Optional: https://socialdata.tools
+OPENAI_API_KEY=...            # Required for language pipeline (Whisper transcription)
+WHISPER_MODEL=gpt-4o-mini-transcribe  # Optional: default gpt-4o-mini-transcribe, alt whisper-1
 ```
 
 ### Project root resolution
@@ -68,7 +77,7 @@ ruby bin/podgen <command> [options]
 
 | Command | Description |
 |---------|-------------|
-| `podgen generate <podcast>` | Run the full pipeline: research → script → TTS → assembly |
+| `podgen generate <podcast>` | Run the full pipeline (news: research → script → TTS → assembly; language: RSS → trim → transcribe → assembly) |
 | `podgen scrap <podcast>` | Remove last episode and its history entry |
 | `podgen rss <podcast>` | Generate RSS feed from existing episodes |
 | `podgen list` | List available podcasts with titles |
@@ -119,13 +128,23 @@ podgen test hn
 podgen generate <podcast_name>
 ```
 
-This will:
+### News pipeline (default)
+
 1. Research your configured topics via enabled sources (~23s with Exa only, longer with multiple)
 2. Generate a podcast script via Claude (~48s)
 3. Synthesize speech via ElevenLabs (~90s)
 4. Assemble and normalize the final MP3 (~22s)
 
 Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` (~10 min episode, ~12 MB)
+
+### Language pipeline
+
+1. Fetch the latest episode from configured RSS feeds
+2. Download and strip intro/outro music using bandpass + silence detection
+3. Transcribe via OpenAI Whisper (~15s for a 7-min episode)
+4. Assemble with custom intro/outro jingles + loudness normalization
+
+Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` + `<name>-YYYY-MM-DD_transcript.md`
 
 ## Creating a Podcast
 
@@ -238,6 +257,31 @@ Add a `## Language` section to `podcasts/<name>/guidelines.md`:
 
 Supported languages (matching ElevenLabs `eleven_multilingual_v2`): Arabic, Chinese, Czech, Danish, Dutch, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, Vietnamese.
 
+### Language Learning Pipeline
+
+For podcasts that repackage existing audio content (e.g. children's stories in a target language), use the language pipeline. It downloads episodes from RSS, strips music, transcribes, and produces a clean MP3 + transcript.
+
+Add `## Type` and `## Transcription Language` to `podcasts/<name>/guidelines.md`:
+
+```markdown
+## Type
+language
+
+## Transcription Language
+sl
+
+## Sources
+- rss:
+  - https://podcast.rtvslo.si/lahko_noc_otroci
+```
+
+- `## Type` must be `language` to activate this pipeline
+- `## Transcription Language` is an ISO-639-1 code passed to OpenAI Whisper
+- RSS sources must include feeds with audio enclosures
+- Place `intro.mp3` and `outro.mp3` in the podcast directory for custom jingles
+- Music detection uses bandpass filtering (300-3000 Hz) for intros and silence detection for outros
+- Default transcription model is `gpt-4o-mini-transcribe` (set `WHISPER_MODEL=whisper-1` for timestamps/segments)
+
 ## Scheduling (launchd)
 
 Run the installer to set up daily generation at 6:00 AM:
@@ -291,7 +335,8 @@ podgen/
 │   ├── cli.rb                # CLI dispatcher (OptionParser)
 │   ├── cli/
 │   │   ├── version.rb        # PodgenCLI::VERSION
-│   │   ├── generate_command.rb # Full pipeline command
+│   │   ├── generate_command.rb # Pipeline dispatcher (news or language)
+│   │   ├── language_pipeline.rb # Language pipeline
 │   │   ├── rss_command.rb    # RSS feed generation
 │   │   ├── list_command.rb   # List available podcasts
 │   │   ├── test_command.rb   # Run test scripts
@@ -302,12 +347,13 @@ podgen/
 │   │   ├── research_agent.rb # Exa.ai search
 │   │   ├── script_agent.rb   # Claude script generation
 │   │   ├── tts_agent.rb      # ElevenLabs TTS
-│   │   └── translation_agent.rb # Claude script translation
+│   │   ├── translation_agent.rb # Claude script translation
+│   │   └── transcription_agent.rb # OpenAI Whisper transcription
 │   ├── sources/
-│   │   ├── rss_source.rb     # RSS/Atom feed fetcher
+│   │   ├── rss_source.rb     # RSS/Atom feed fetcher + episode fetcher
 │   │   ├── hn_source.rb      # Hacker News Algolia API
 │   │   └── claude_web_source.rb # Claude + web_search tool
-│   ├── audio_assembler.rb    # ffmpeg wrapper
+│   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, music detection)
 │   ├── research_cache.rb     # File-based research cache (24h TTL)
 │   ├── rss_generator.rb      # RSS 2.0 feed
 │   └── logger.rb             # Structured logging
@@ -332,6 +378,7 @@ podgen test script         # Claude script generation
 podgen test tts            # ElevenLabs TTS
 podgen test assembly       # ffmpeg assembly
 podgen test translation    # Claude script translation
+podgen test transcription  # OpenAI Whisper transcription
 ```
 
 ## Cost Estimate
@@ -349,3 +396,7 @@ Per daily episode (~10 min), with all sources enabled:
 
 With Exa only (default), English only: ~$0.18 + ElevenLabs per episode.
 Each additional language adds ~$0.10 (translation) + ElevenLabs TTS cost.
+
+**Language pipeline** per episode:
+- OpenAI transcription (gpt-4o-mini-transcribe): ~$0.01-0.03 depending on duration
+- No TTS or research costs

@@ -62,6 +62,21 @@ class PodcastConfig
     @author ||= extract_heading("Author") || "Podcast Agent"
   end
 
+  # Extracts "## Type" from guidelines.md, falls back to "news"
+  def type
+    @type ||= extract_heading("Type") || "news"
+  end
+
+  # Extracts "## Target Language" from guidelines.md (e.g. "Slovenian")
+  def target_language
+    @target_language ||= extract_heading("Target Language")
+  end
+
+  # Extracts "## Transcription Language" from guidelines.md (ISO-639-1 code, e.g. "sl")
+  def transcription_language
+    @transcription_language ||= extract_heading("Transcription Language")
+  end
+
   def queue_topics
     YAML.load_file(@queue_path)["topics"]
   end
@@ -97,6 +112,10 @@ class PodcastConfig
 
   def script_path(date = Date.today)
     File.join(@episodes_dir, "#{episode_basename(date)}_script.md")
+  end
+
+  def transcript_path(date = Date.today)
+    File.join(@episodes_dir, "#{episode_basename(date)}_transcript.md")
   end
 
   # Returns basename with language suffix for non-English, e.g. "ruby_world-2026-02-18-es"
