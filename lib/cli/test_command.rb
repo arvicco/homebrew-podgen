@@ -13,11 +13,13 @@ module PodgenCLI
       "sources"    => "test_sources_no_exa.rb",
       "translation" => "test_translation.rb",
       "bluesky"    => "test_bluesky.rb",
-      "x"          => "test_x.rb"
+      "x"              => "test_x.rb",
+      "transcription"  => "test_transcription.rb"
     }.freeze
 
     def initialize(args, options)
       @test_name = args.shift
+      @test_args = args
       @options = options
     end
 
@@ -38,7 +40,7 @@ module PodgenCLI
       end
 
       script_path = File.join(File.expand_path("../..", __dir__), "scripts", script)
-      success = system(RbConfig.ruby, script_path)
+      success = system(RbConfig.ruby, script_path, *@test_args)
       success ? 0 : 1
     end
   end

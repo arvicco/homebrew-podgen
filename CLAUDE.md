@@ -1,7 +1,12 @@
 # Podcast Agent — Claude Code Instructions
 
 ## Project Overview
-Fully autonomous podcast generation pipeline. Reads guidelines, researches topics, writes a script, generates multi-language audio via TTS, assembles final MP3s, and optionally publishes to RSS. Zero human involvement beyond editing config files.
+Fully autonomous podcast generation pipeline. Two pipeline types:
+
+1. **News pipeline** (`type: news`): Researches topics, writes a script, generates multi-language audio via TTS, assembles final MP3s.
+2. **Language pipeline** (`type: language`): Downloads episodes from RSS, strips intro/outro music, transcribes via OpenAI Whisper, assembles clean MP3 + transcript.
+
+Zero human involvement beyond editing config files.
 
 **Status:** Production-ready. All phases complete.
 
@@ -9,7 +14,7 @@ Fully autonomous podcast generation pipeline. Reads guidelines, researches topic
 
 ## Tech Stack
 - **Language:** Ruby 3.2+ — **Gems:** anthropic, exa-ai, httparty, dotenv, rexml, rss (all pinned `~> x.y` in Gemfile)
-- **APIs:** Anthropic Claude (topics, scripting, translation, web search), Exa.ai (research), ElevenLabs (TTS)
+- **APIs:** Anthropic Claude (topics, scripting, translation, web search), Exa.ai (research), ElevenLabs (TTS), OpenAI (transcription — language pipeline)
 - **Audio:** ffmpeg via `Open3.capture3` — concat filter, two-pass loudnorm, 44100 Hz mono, 192 kbps MP3
 - **Config:** YAML + Markdown — **Platform:** macOS (launchd scheduling)
 
@@ -28,7 +33,8 @@ podgen/
 │   ├── cli.rb                    # CLI dispatcher (OptionParser + command registry)
 │   ├── cli/
 │   │   ├── version.rb            # PodgenCLI::VERSION
-│   │   ├── generate_command.rb   # Full pipeline: topics → research → script → TTS → assembly
+│   │   ├── generate_command.rb   # Pipeline dispatcher: news or language (based on ## Type)
+│   │   ├── language_pipeline.rb  # Language pipeline: RSS → download → trim → transcribe → assemble
 │   │   ├── scrap_command.rb     # Remove last episode + history entry
 │   │   ├── rss_command.rb        # RSS feed generation
 │   │   ├── list_command.rb       # List available podcasts
@@ -42,20 +48,21 @@ podgen/
 │   │   ├── research_agent.rb     # Exa.ai search
 │   │   ├── script_agent.rb       # Claude script generation (structured output)
 │   │   ├── tts_agent.rb          # ElevenLabs TTS (chunking, UTF-8-safe splitting)
-│   │   └── translation_agent.rb  # Claude script translation
+│   │   ├── translation_agent.rb  # Claude script translation
+│   │   └── transcription_agent.rb # OpenAI Whisper transcription (language pipeline)
 │   ├── sources/
-│   │   ├── rss_source.rb         # RSS/Atom feeds (keyword-based topic matching)
+│   │   ├── rss_source.rb         # RSS/Atom feeds (topic matching + episode fetching)
 │   │   ├── hn_source.rb          # Hacker News Algolia API
 │   │   ├── claude_web_source.rb  # Claude + web_search tool (configurable model/max_results)
 │   │   ├── bluesky_source.rb    # Bluesky AT Protocol authenticated post search
 │   │   └── x_source.rb          # X (Twitter) via SocialData.tools API
 │   ├── episode_history.rb        # Episode dedup (atomic YAML writes, 7-day lookback)
-│   ├── audio_assembler.rb        # ffmpeg wrapper (duration caching, crossfades, loudnorm)
+│   ├── audio_assembler.rb        # ffmpeg wrapper (crossfades, loudnorm, music detection/stripping)
 │   ├── rss_generator.rb          # RSS 2.0 XML feed
 │   └── logger.rb                 # Structured run logging with phase timings
 ├── scripts/                      # Legacy entry points + test scripts
 ├── output/<name>/
-│   ├── episodes/                 # MP3s + debug scripts: {name}-{date}[-lang].mp3
+│   ├── episodes/                 # MP3s + scripts/transcripts: {name}-{date}[-lang].mp3
 │   ├── research_cache/           # Cached research results (auto-managed)
 │   ├── history.yml               # Episode history for deduplication
 │   └── feed.xml                  # RSS feed
@@ -65,6 +72,8 @@ podgen/
 ---
 
 ## Pipeline Flow
+
+### News pipeline (`## Type` = `news`, default)
 ```
 generate_command.rb:
   1. Load config + verify prerequisites (ffmpeg, guidelines)
@@ -76,6 +85,19 @@ generate_command.rb:
      b. TTS → TTSAgent (ElevenLabs, chunked)
      c. Assembly → AudioAssembler (ffmpeg: concat + crossfade + loudnorm)
   6. Record history → done
+```
+
+### Language pipeline (`## Type` = `language`)
+```
+language_pipeline.rb:
+  1. Fetch next episode from RSS (exclude already-processed URLs)
+  2. Download source audio
+  3. Trim music: bandpass intro detection + silence-based outro detection
+  4. Transcribe via OpenAI (gpt-4o-mini-transcribe default, whisper-1 fallback)
+  5. Build transcript (gpt-4o: text direct; whisper-1: metadata + acoustic filtering)
+  6. Assemble: intro.mp3 + trimmed audio + outro.mp3 → loudnorm
+  7. Save transcript as _transcript.md
+  8. Record history → done
 ```
 
 ### Key behaviors
@@ -96,16 +118,19 @@ generate_command.rb:
 | Section | Required | Description |
 |---------|----------|-------------|
 | `## Name` | No | Podcast title (fallback: directory name) |
+| `## Type` | No | `news` (default) or `language` — selects pipeline |
 | `## Author` | No | Author name (fallback: "Podcast Agent") |
 | `## Format` | Yes | Length, segment structure, pacing |
 | `## Tone` | Yes | Voice and style directions |
-| `## Topics` | Yes | Default topic rotation |
-| `## Language` | No | `- en`, `- it: <voice_id>`. Default: `[en]` |
+| `## Topics` | Yes (news) | Default topic rotation |
+| `## Language` | No | `- en`, `- it: <voice_id>`. Default: `[en]` (news pipeline) |
 | `## Sources` | No | `- exa`, `- hackernews`, `- rss:` (with URLs), `- claude_web`. Default: exa |
+| `## Transcription Language` | Yes (language) | ISO-639-1 code (e.g. `sl`). Used by language pipeline |
+| `## Target Language` | No | Human-readable language name (e.g. `Slovenian`) |
 | `## Do not include` | No | Content restrictions |
 
 ### Environment variables
-**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (default: eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (default: mp3_44100_128), `EXA_API_KEY`, `CLAUDE_MODEL` (default: claude-opus-4-6), `CLAUDE_WEB_MODEL` (default: claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`
+**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (default: eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (default: mp3_44100_128), `EXA_API_KEY`, `CLAUDE_MODEL` (default: claude-opus-4-6), `CLAUDE_WEB_MODEL` (default: claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY` (language pipeline), `WHISPER_MODEL` (default: gpt-4o-mini-transcribe)
 
 **Per-podcast `.env`** (optional): overrides for `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID`, `CLAUDE_MODEL`. Loaded via `Dotenv.overload`.
 
@@ -133,7 +158,7 @@ podgen [flags] <command> <args>
   scrap <podcast>      # Remove last episode + history entry
   rss <podcast>        # Generate RSS feed
   list                 # List podcasts
-  test <name>          # Run test (research|rss|hn|claude_web|bluesky|x|script|tts|assembly|translation|sources)
+  test <name>          # Run test (research|rss|hn|claude_web|bluesky|x|script|tts|assembly|translation|transcription|sources)
   schedule <podcast>   # Install launchd scheduler
 
 Flags: -v/--verbose  -q/--quiet  --dry-run  -V/--version  -h/--help

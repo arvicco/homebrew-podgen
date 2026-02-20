@@ -45,6 +45,32 @@ class RSSSource
     distribute_by_topic(topics, findings)
   end
 
+  # Fetches episode metadata with audio enclosures from configured feeds.
+  # Returns: [{ title:, description:, audio_url:, pub_date:, link: }]
+  # Sorted newest-first. Excludes URLs in exclude_urls set.
+  def fetch_episodes(exclude_urls: Set.new)
+    episodes = []
+
+    @feeds.each do |feed_url|
+      items = fetch_feed_episodes(feed_url)
+      items.each do |item|
+        next if exclude_urls.include?(item[:audio_url])
+        episodes << item
+      end
+    end
+
+    # Deduplicate by audio URL
+    seen = Set.new
+    episodes.select! do |ep|
+      next false if seen.include?(ep[:audio_url])
+      seen.add(ep[:audio_url])
+      true
+    end
+
+    # Sort newest-first
+    episodes.sort_by { |ep| ep[:pub_date] || Time.at(0) }.reverse
+  end
+
   private
 
   # Distribute RSS items across user topics by keyword matching.
@@ -143,6 +169,61 @@ class RSSSource
 
   def strip_html(html)
     html.gsub(/<[^>]+>/, " ").gsub(/\s+/, " ").strip
+  end
+
+  def fetch_feed_episodes(feed_url)
+    log("Fetching RSS episodes: #{feed_url}")
+    attempts = 0
+    begin
+      attempts += 1
+      body = http_get_with_redirects(feed_url)
+      parse_feed_episodes(body)
+    rescue => e
+      if attempts <= MAX_RETRIES
+        sleep_time = 2**attempts
+        log("Error fetching #{feed_url}: #{e.message}, retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
+        sleep(sleep_time)
+        retry
+      end
+      log("Failed to fetch #{feed_url} after #{MAX_RETRIES} retries: #{e.message}")
+      []
+    end
+  end
+
+  def parse_feed_episodes(xml)
+    feed = RSS::Parser.parse(xml, false)
+    return [] unless feed
+
+    feed.items.filter_map do |item|
+      # Only include items with audio enclosures
+      enclosure = item.respond_to?(:enclosure) ? item.enclosure : nil
+      next unless enclosure
+      next unless enclosure.respond_to?(:url) && enclosure.url
+      next unless enclosure.respond_to?(:type) && enclosure.type.to_s.start_with?("audio")
+
+      pub_date = item.respond_to?(:pubDate) ? item.pubDate : nil
+      pub_date ||= item.respond_to?(:dc_date) ? item.dc_date : nil
+      pub_time = if pub_date
+        pub_date.is_a?(Time) ? pub_date : Time.parse(pub_date.to_s)
+      end
+
+      title = item.title.to_s.strip
+      next if title.empty?
+
+      description = strip_html(item.description.to_s).strip
+      link = item.link.to_s.strip
+
+      {
+        title: title,
+        description: description,
+        audio_url: enclosure.url.to_s.strip,
+        pub_date: pub_time,
+        link: link
+      }
+    end
+  rescue RSS::Error, RSS::NotWellFormedError => e
+    log("RSS parse error: #{e.message}")
+    []
   end
 
   def log(message)
