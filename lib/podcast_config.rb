@@ -45,43 +45,74 @@ class PodcastConfig
     @sources ||= parse_sources_section(guidelines)
   end
 
-  # Parses the ## Language section from guidelines.md
+  # Parses languages from ## Podcast section (new format) or ## Language section (legacy)
   # Returns: [{ "code" => "en" }, { "code" => "es" }, { "code" => "fr", "voice_id" => "pN..." }]
   # Defaults to [{ "code" => "en" }] if section is missing
   def languages
-    @languages ||= parse_language_section(guidelines)
+    @languages ||= podcast_section[:languages] || parse_language_section(guidelines)
   end
 
-  # Extracts "## Name" from guidelines.md, falls back to directory name
+  # Extracts name from ## Podcast (new) or ## Name (legacy), falls back to directory name
   def title
-    @title ||= extract_heading("Name") || @name
+    @title ||= podcast_section[:name] || extract_heading("Name") || @name
   end
 
-  # Extracts "## Author" from guidelines.md, falls back to "Podcast Agent"
+  # Extracts author from ## Podcast (new) or ## Author (legacy), falls back to "Podcast Agent"
   def author
-    @author ||= extract_heading("Author") || "Podcast Agent"
+    @author ||= podcast_section[:author] || extract_heading("Author") || "Podcast Agent"
   end
 
-  # Extracts "## Type" from guidelines.md, falls back to "news"
+  # Extracts type from ## Podcast (new) or ## Type (legacy), falls back to "news"
   def type
-    @type ||= extract_heading("Type") || "news"
+    @type ||= podcast_section[:type] || extract_heading("Type") || "news"
   end
 
-  # Extracts "## Target Language" from guidelines.md (e.g. "Slovenian")
+  # Extracts target_language from ## Audio (new) or ## Target Language (legacy)
   def target_language
-    @target_language ||= extract_heading("Target Language")
+    @target_language ||= audio_section[:target_language] || extract_heading("Target Language")
   end
 
-  # Extracts "## Transcription Language" from guidelines.md (ISO-639-1 code, e.g. "sl")
+  # Extracts language from ## Audio (new) or ## Transcription Language (legacy)
   def transcription_language
-    @transcription_language ||= extract_heading("Transcription Language")
+    @transcription_language ||= audio_section[:language] || extract_heading("Transcription Language")
   end
 
-  # Parses "## Transcription Engine" from guidelines.md
+  # Extracts skip_intro from ## Audio (new) or ## Skip Intro (legacy)
+  # Returns Float or nil if not configured
+  def skip_intro
+    @skip_intro ||= begin
+      val = audio_section[:skip_intro]
+      return val if val
+      val = extract_heading("Skip Intro")
+      val ? val.to_f : nil
+    end
+  end
+
+  # Parses engines from ## Audio (new) or ## Transcription Engine (legacy)
   # Returns array of engine codes: ["open"], ["open", "elab", "groq"], etc.
   # Default (missing section): ["open"]
   def transcription_engines
-    @transcription_engines ||= parse_transcription_engine_section(guidelines)
+    @transcription_engines ||= audio_section[:engines] || parse_transcription_engine_section(guidelines)
+  end
+
+  # Parses "## LingQ" section from guidelines.md
+  # Returns hash: { collection:, level:, tags:, image:, accent:, status:,
+  #   base_image:, font:, font_color:, font_size:, text_width:,
+  #   text_gravity:, text_x_offset:, text_y_offset: } or nil
+  def lingq_config
+    @lingq_config ||= parse_lingq_section(guidelines)
+  end
+
+  # LingQ upload enabled if section exists with collection AND API key is set
+  def lingq_enabled?
+    config = lingq_config
+    config && config[:collection] && ENV["LINGQ_API_KEY"] && !ENV["LINGQ_API_KEY"].empty?
+  end
+
+  # Cover generation enabled if base_image is configured and exists on disk
+  def cover_generation_enabled?
+    config = lingq_config
+    config && config[:base_image] && File.exist?(config[:base_image])
   end
 
   def queue_topics
@@ -158,6 +189,92 @@ class PodcastConfig
 
   private
 
+  # Memoized parse of ## Podcast section (new consolidated format)
+  def podcast_section
+    @podcast_section ||= parse_podcast_section(guidelines)
+  end
+
+  # Memoized parse of ## Audio section (new consolidated format)
+  def audio_section
+    @audio_section ||= parse_audio_section(guidelines)
+  end
+
+  # Parses ## Podcast key-value list: name, type, author, language (with sub-items)
+  def parse_podcast_section(text)
+    match = text.match(/^## Podcast\s*\n(.*?)(?=^## |\z)/m)
+    return {} unless match
+
+    config = {}
+    current_key = nil
+
+    match[1].each_line do |line|
+      next if line.strip.start_with?("<!--") || line.strip.start_with?("-->")
+
+      if line.match?(/^- \S/)
+        item = line.strip.sub(/^- /, "")
+        if item.include?(":")
+          key, value = item.split(":", 2)
+          key = key.strip
+          value = value.strip
+          if value.empty?
+            current_key = key
+          else
+            current_key = nil
+            config[key.to_sym] = value
+          end
+        end
+      elsif current_key == "language" && line.match?(/^\s+- \S/)
+        entry = line.strip.sub(/^- /, "").strip
+        config[:languages] ||= []
+        if entry.include?(":")
+          code, voice_id = entry.split(":", 2).map(&:strip)
+          config[:languages] << { "code" => code, "voice_id" => voice_id }
+        else
+          config[:languages] << { "code" => entry }
+        end
+      end
+    end
+
+    config
+  end
+
+  # Parses ## Audio key-value list: engine (with sub-items), language, target_language, skip_intro
+  def parse_audio_section(text)
+    match = text.match(/^## Audio\s*\n(.*?)(?=^## |\z)/m)
+    return {} unless match
+
+    config = {}
+    current_key = nil
+
+    match[1].each_line do |line|
+      if line.match?(/^- \S/)
+        item = line.strip.sub(/^- /, "")
+        if item.include?(":")
+          key, value = item.split(":", 2)
+          key = key.strip
+          value = value.strip
+          if value.empty?
+            current_key = key
+          else
+            current_key = nil
+            case key
+            when "skip_intro"
+              config[:skip_intro] = value.to_f
+            else
+              config[key.to_sym] = value
+            end
+          end
+        end
+      elsif current_key == "engine" && line.match?(/^\s+- \S/)
+        entry = line.strip.sub(/^- /, "").strip
+        config[:engines] ||= []
+        config[:engines] << entry unless entry.empty?
+      end
+    end
+
+    config
+  end
+
   # Extracts the first line of content under a ## heading
   def extract_heading(heading)
     match = guidelines.match(/^## #{Regexp.escape(heading)}\s*\n(.+?)(?:\n|$)/)
@@ -203,6 +320,62 @@ class PodcastConfig
     end
 
     engines.empty? ? default : engines
+  end
+
+  def parse_lingq_section(text)
+    match = text.match(/^## LingQ\s*\n(.*?)(?=^## |\z)/m)
+    return nil unless match
+
+    config = {}
+    match[1].each_line do |line|
+      line = line.strip
+      next unless line.start_with?("- ")
+
+      entry = line.sub(/^- /, "").strip
+      next unless entry.include?(":")
+
+      key, value = entry.split(":", 2).map(&:strip)
+      case key
+      when "collection"
+        config[:collection] = value.to_i
+      when "level"
+        config[:level] = value.to_i
+      when "tags"
+        config[:tags] = value.split(",").map(&:strip)
+      when "image"
+        config[:image] = resolve_path(value)
+      when "base_image"
+        config[:base_image] = resolve_path(value)
+      when "font"
+        config[:font] = value
+      when "font_color"
+        config[:font_color] = value
+      when "font_size"
+        config[:font_size] = value.to_i
+      when "text_width"
+        config[:text_width] = value.to_i
+      when "text_gravity"
+        config[:text_gravity] = value
+      when "text_x_offset"
+        config[:text_x_offset] = value.to_i
+      when "text_y_offset"
+        config[:text_y_offset] = value.to_i
+      when "accent"
+        config[:accent] = value
+      when "status"
+        config[:status] = value
+      end
+    end
+
+    config.empty? ? nil : config
+  end
+
+  # Resolves a path relative to the podcast directory.
+  # Absolute paths are returned as-is.
+  def resolve_path(value)
+    return value if value.start_with?("/")
+
+    File.join(@podcast_dir, value)
   end
 
   def parse_sources_section(text)

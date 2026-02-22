@@ -16,6 +16,7 @@ Zero human involvement beyond editing config files.
 - **Language:** Ruby 3.2+ — **Gems:** anthropic, exa-ai, httparty, dotenv, rexml, rss (all pinned `~> x.y` in Gemfile)
 - **APIs:** Anthropic Claude (topics, scripting, translation, web search), Exa.ai (research), ElevenLabs (TTS), OpenAI (transcription — language pipeline)
 - **Audio:** ffmpeg via `Open3.capture3` — concat filter, two-pass loudnorm, 44100 Hz mono, 192 kbps MP3
+- **Images:** ImageMagick (`magick`) + librsvg (`rsvg-convert`) — SVG text rendering via pango/fontconfig, then composite onto base image
 - **Config:** YAML + Markdown — **Platform:** macOS (launchd scheduling)
 
 ---
@@ -33,7 +34,7 @@ podgen/
 │   ├── cli.rb                    # CLI dispatcher (OptionParser + command registry)
 │   ├── cli/
 │   │   ├── version.rb            # PodgenCLI::VERSION
-│   │   ├── generate_command.rb   # Pipeline dispatcher: news or language (based on ## Type)
+│   │   ├── generate_command.rb   # Pipeline dispatcher: news or language (based on type in ## Podcast)
 │   │   ├── language_pipeline.rb  # Language pipeline: RSS → download → trim → transcribe → assemble
 │   │   ├── scrap_command.rb     # Remove last episode + history entry
 │   │   ├── rss_command.rb        # RSS feed generation
@@ -56,7 +57,9 @@ podgen/
 │   │   ├── script_agent.rb       # Claude script generation (structured output)
 │   │   ├── tts_agent.rb          # ElevenLabs TTS (chunking, UTF-8-safe splitting)
 │   │   ├── translation_agent.rb  # Claude script translation
-│   │   └── transcription_agent.rb # Backward-compat shim → Transcription::OpenaiEngine
+│   │   ├── transcription_agent.rb # Backward-compat shim → Transcription::OpenaiEngine
+│   │   ├── lingq_agent.rb        # LingQ lesson upload (language pipeline)
+│   │   └── cover_agent.rb        # ImageMagick cover image generation (language pipeline)
 │   ├── sources/
 │   │   ├── rss_source.rb         # RSS/Atom feeds (topic matching + episode fetching)
 │   │   ├── hn_source.rb          # Hacker News Algolia API
@@ -80,7 +83,7 @@ podgen/
 
 ## Pipeline Flow
 
-### News pipeline (`## Type` = `news`, default)
+### News pipeline (type: `news`, default)
 ```
 generate_command.rb:
   1. Load config + verify prerequisites (ffmpeg, guidelines)
@@ -94,7 +97,7 @@ generate_command.rb:
   6. Record history → done
 ```
 
-### Language pipeline (`## Type` = `language`)
+### Language pipeline (type: `language`)
 ```
 language_pipeline.rb:
   1. Fetch next episode from RSS (exclude already-processed URLs)
@@ -104,18 +107,22 @@ language_pipeline.rb:
   5. Build transcript (gpt-4o: text direct; whisper-1: metadata + acoustic filtering)
   6. Assemble: intro.mp3 + trimmed audio + outro.mp3 → loudnorm
   7. Save transcript(s) — primary + per-engine files in comparison mode
-  8. Record history → done
+  8. LingQ upload (if ## LingQ section + LINGQ_API_KEY present) — non-fatal
+     - Cover generation: if `base_image` configured, overlays uppercased title via ImageMagick
+  9. Record history → done
 ```
 
 ### Key behaviors
 - **Multi-podcast:** Each podcast in `podcasts/<name>/` with own config. CLI: `podgen generate <name>`
-- **Multi-language:** `## Language` section in guidelines.md. English script generated first, translated for other languages. Per-language voice IDs. Output: `name-date-lang.mp3`
+- **Multi-language:** `language` list in `## Podcast` section. English script generated first, translated for other languages. Per-language voice IDs. Output: `name-date-lang.mp3`
 - **Same-day suffix:** `name-2026-02-18.mp3`, then `name-2026-02-18a.mp3`, etc.
 - **Episode dedup:** History records topics + URLs; TopicAgent avoids repeats, sources exclude used URLs. 7-day lookback window.
 - **Scrap:** `podgen scrap <name>` removes last episode files (MP3 + scripts, all languages) and last history entry. Supports `--dry-run`.
 - **Research sources:** Parallel execution via threads. Sources: `exa`, `hackernews`, `rss` (with feed URLs), `claude_web`, `bluesky`, `x`. Default: exa only. 24h file-based cache per source+topics.
 - **Transcript post-processing:** Claude Opus processes all transcripts. Multi-engine (2+ engines): reconciles sentence-by-sentence, picks best rendering, removes hallucination artifacts. Single engine: cleans up grammar, punctuation, and STT artifacts. Result becomes primary transcript. Non-fatal if post-processing fails.
-- **`--dry-run`:** Validates config, uses queue.yml topics, generates synthetic data, saves debug script, skips all API calls/TTS/assembly/history.
+- **LingQ upload:** Language pipeline auto-uploads lessons if `## LingQ` section (with `collection`) and `LINGQ_API_KEY` are present. Uploads audio + transcript, triggers timestamp generation. Non-fatal on failure.
+- **Cover generation:** If `base_image` is configured in `## LingQ`, generates per-episode cover images by overlaying the uppercased episode title onto the base image via ImageMagick. Falls back to static `image` if generation fails or ImageMagick is not installed. Non-fatal.
+- **`--dry-run`:** Validates config, uses queue.yml topics, generates synthetic data, saves debug script, skips all API calls/TTS/assembly/history/LingQ upload.
 - **Lockfile:** Prevents concurrent runs of the same podcast via `flock`.
 
 ---
@@ -125,21 +132,17 @@ language_pipeline.rb:
 ### guidelines.md sections
 | Section | Required | Description |
 |---------|----------|-------------|
-| `## Name` | No | Podcast title (fallback: directory name) |
-| `## Type` | No | `news` (default) or `language` — selects pipeline |
-| `## Author` | No | Author name (fallback: "Podcast Agent") |
+| `## Podcast` | No | Key-value list: `name` (fallback: dir name), `type` (`news`/`language`, default: news), `author` (fallback: "Podcast Agent"), `language` (sub-list: `- en`, `- it: <voice_id>`, default: `[en]`) |
 | `## Format` | Yes | Length, segment structure, pacing |
 | `## Tone` | Yes | Voice and style directions |
 | `## Topics` | Yes (news) | Default topic rotation |
-| `## Language` | No | `- en`, `- it: <voice_id>`. Default: `[en]` (news pipeline) |
-| `## Sources` | No | `- exa`, `- hackernews`, `- rss:` (with URLs), `- claude_web`. Default: exa |
-| `## Transcription Engine` | No | `- open`, `- elab`, `- groq`. Multiple = comparison mode. Default: `[open]` |
-| `## Transcription Language` | Yes (language) | ISO-639-1 code (e.g. `sl`). Used by language pipeline |
-| `## Target Language` | No | Human-readable language name (e.g. `Slovenian`) |
+| `## Sources` | No | `- exa`, `- hackernews`, `- rss:` (with URLs), `- claude_web`, `- bluesky`, `- x:`. Default: exa |
+| `## Audio` | No | Key-value list: `engine` (sub-list: `- open`, `- elab`, `- groq`, default: `[open]`), `language` (ISO-639-1 code), `target_language` (human-readable name), `skip_intro` (seconds to cut) |
+| `## LingQ` | No | LingQ upload config: `collection`, `level`, `tags`, `image`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset`, `accent`, `status`. Requires `LINGQ_API_KEY` |
 | `## Do not include` | No | Content restrictions |
 
 ### Environment variables
-**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (default: eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (default: mp3_44100_128), `ELEVENLABS_SCRIBE_MODEL` (default: scribe_v2), `EXA_API_KEY`, `CLAUDE_MODEL` (default: claude-opus-4-6), `CLAUDE_WEB_MODEL` (default: claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY` (language pipeline), `WHISPER_MODEL` (default: gpt-4o-mini-transcribe), `GROQ_API_KEY`, `GROQ_WHISPER_MODEL` (default: whisper-large-v3)
+**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (default: eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (default: mp3_44100_128), `ELEVENLABS_SCRIBE_MODEL` (default: scribe_v2), `EXA_API_KEY`, `CLAUDE_MODEL` (default: claude-opus-4-6), `CLAUDE_WEB_MODEL` (default: claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY` (language pipeline), `WHISPER_MODEL` (default: gpt-4o-mini-transcribe), `GROQ_API_KEY`, `GROQ_WHISPER_MODEL` (default: whisper-large-v3), `LINGQ_API_KEY` (language pipeline LingQ upload)
 
 **Per-podcast `.env`** (optional): overrides any root `.env` variable. Loaded via `Dotenv.overload`.
 
@@ -167,7 +170,7 @@ podgen [flags] <command> <args>
   scrap <podcast>      # Remove last episode + history entry
   rss <podcast>        # Generate RSS feed
   list                 # List podcasts
-  test <name>          # Run test (research|rss|hn|claude_web|bluesky|x|script|tts|assembly|translation|transcription|sources)
+  test <name>          # Run test (research|rss|hn|claude_web|bluesky|x|script|tts|assembly|translation|transcription|sources|cover)
   schedule <podcast>   # Install launchd scheduler
 
 Flags: -v/--verbose  -q/--quiet  --dry-run  -V/--version  -h/--help
@@ -181,6 +184,7 @@ Flags: -v/--verbose  -q/--quiet  --dry-run  -V/--version  -h/--help
 - Stereo music + mono TTS: all inputs forced to mono 44100 Hz in filter graph
 - macOS must be awake at scheduled time — recommend plugged-in + sleep disabled
 - launchd plist requires absolute paths — `run.sh` resolves dynamically
+- Cover generation requires `imagemagick` + `librsvg` (`brew install imagemagick librsvg`) and fonts via `fontconfig` (`brew install fontconfig`). Homebrew ImageMagick lacks Freetype, so text is rendered via SVG/rsvg-convert/pango instead
 
 ---
 

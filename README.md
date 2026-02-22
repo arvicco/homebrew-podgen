@@ -240,18 +240,20 @@ Add the section to `podcasts/<name>/guidelines.md`:
 
 Podgen can produce the same episode in multiple languages. The English script is generated first, then translated via Claude and synthesized with a per-language ElevenLabs voice.
 
-Add a `## Language` section to `podcasts/<name>/guidelines.md`:
+Add a `language` list to the `## Podcast` section in `podcasts/<name>/guidelines.md`:
 
 ```markdown
-## Language
-- en
-- it: CITWdMEsnRduEUkNWXQv
-- ja: rrBxvYLJSqEU0KHpFpRp
+## Podcast
+- name: Ruby World
+- language:
+  - en
+  - it: CITWdMEsnRduEUkNWXQv
+  - ja: rrBxvYLJSqEU0KHpFpRp
 ```
 
-- Each line is a 2-letter language code (ISO 639-1)
+- Each sub-item is a 2-letter language code (ISO 639-1)
 - Optionally append `: <voice_id>` to use a different ElevenLabs voice for that language
-- If `## Language` is omitted, only English (`en`) is produced
+- If `language` is omitted, only English (`en`) is produced
 - English is never re-translated — the original script is used directly
 - Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
 
@@ -261,22 +263,29 @@ Supported languages (matching ElevenLabs `eleven_multilingual_v2`): Arabic, Chin
 
 For podcasts that repackage existing audio content (e.g. children's stories in a target language), use the language pipeline. It downloads episodes from RSS, strips music, transcribes, and produces a clean MP3 + transcript.
 
-Add `## Type` and `## Transcription Language` to `podcasts/<name>/guidelines.md`:
+Set `type: language` in `## Podcast` and configure `## Audio` in `podcasts/<name>/guidelines.md`:
 
 ```markdown
-## Type
-language
-
-## Transcription Language
-sl
+## Podcast
+- name: Lahko noč
+- type: language
 
 ## Sources
 - rss:
   - https://podcast.rtvslo.si/lahko_noc_otroci
+
+## Audio
+- engine:
+  - open
+- language: sl
+- target_language: Slovenian
+- skip_intro: 27
 ```
 
-- `## Type` must be `language` to activate this pipeline
-- `## Transcription Language` is an ISO-639-1 code passed to OpenAI Whisper
+- `type: language` in `## Podcast` activates this pipeline
+- `language` in `## Audio` is an ISO-639-1 code passed to the transcription engine
+- `engine` in `## Audio` selects transcription engines (`open`, `elab`, `groq`); multiple = comparison mode
+- `skip_intro` cuts N seconds from the start of downloaded audio before processing
 - RSS sources must include feeds with audio enclosures
 - Place `intro.mp3` and `outro.mp3` in the podcast directory for custom jingles
 - Music detection uses bandpass filtering (300-3000 Hz) for intros and silence detection for outros

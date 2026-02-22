@@ -1,10 +1,11 @@
 # Podcast Guidelines
 
-## Name
-Ruby World
-
-## Author
-Ruby Boy
+## Podcast
+- name: Ruby World
+- author: Ruby Boy
+- language:
+  - en
+  - ja: rrBxvYLJSqEU0KHpFpRp
 
 ## Format
 - Always lead with podcast name and author
@@ -25,10 +26,6 @@ not a journalist or content creator. No filler phrases. No forced enthusiasm. En
 - The benefits of Ruby compared to other programming languages
 - Beyond Ruby: Elixir/Crystal/CoffeeScript/Groovy ONLY if something major happened there recently
 - Ruby in Bitcoin/DeFi development
-
-## Language
-- en
-- ja: rrBxvYLJSqEU0KHpFpRp
 
 ## Sources
 - exa

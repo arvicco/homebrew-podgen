@@ -14,7 +14,9 @@ module PodgenCLI
       "translation" => "test_translation.rb",
       "bluesky"    => "test_bluesky.rb",
       "x"              => "test_x.rb",
-      "transcription"  => "test_transcription.rb"
+      "transcription"  => "test_transcription.rb",
+      "cover"          => "test_cover.rb",
+      "lingq_upload"   => "test_lingq_upload.rb"
     }.freeze
 
     def initialize(args, options)
