@@ -8,7 +8,7 @@ require "fileutils"
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "sources", "rss_source")
-require_relative File.join(root, "lib", "agents", "transcription_agent")
+require_relative File.join(root, "lib", "transcription", "engine_manager")
 require_relative File.join(root, "lib", "audio_assembler")
 
 module PodgenCLI
@@ -192,8 +192,26 @@ module PodgenCLI
       language = @config.transcription_language
       raise "Language pipeline requires ## Transcription Language in guidelines.md" unless language
 
-      agent = TranscriptionAgent.new(language: language, logger: logger)
-      agent.transcribe(audio_path)
+      engine_codes = @config.transcription_engines
+      manager = Transcription::EngineManager.new(
+        engine_codes: engine_codes,
+        language: language,
+        target_language: @config.target_language,
+        logger: logger
+      )
+      result = manager.transcribe(audio_path)
+
+      if engine_codes.length > 1
+        # Comparison mode — stash per-engine results for save_transcript
+        @comparison_results = result[:all]
+        @comparison_errors = result[:errors]
+        @reconciled_text = result[:reconciled]
+        result[:primary]
+      else
+        # Single engine — use cleaned text if available
+        @reconciled_text = result[:cleaned]
+        result
+      end
     end
 
     # Whisper-1 fallback: filter segments by metadata + acoustic music regions.
@@ -328,20 +346,45 @@ module PodgenCLI
     end
 
     def save_transcript(episode, transcript, base_name)
+      # Use reconciled text as primary if available (multi-engine mode)
+      primary_text = @reconciled_text || transcript
       transcript_path = File.join(@config.episodes_dir, "#{base_name}_transcript.md")
-      FileUtils.mkdir_p(File.dirname(transcript_path))
+      write_transcript_file(transcript_path, episode, primary_text)
+      if @reconciled_text
+        logger.log("Reconciled transcript saved to #{transcript_path}")
+      else
+        logger.log("Transcript saved to #{transcript_path}")
+      end
 
-      File.open(transcript_path, "w") do |f|
+      # Save per-engine transcripts in comparison mode
+      return unless @comparison_results&.any?
+
+      @comparison_results.each do |code, result|
+        engine_path = File.join(@config.episodes_dir, "#{base_name}_transcript_#{code}.md")
+        write_transcript_file(engine_path, episode, result[:text])
+        logger.log("Comparison transcript (#{code}) saved to #{engine_path}")
+      end
+
+      if @comparison_errors&.any?
+        @comparison_errors.each do |code, error|
+          logger.log("Comparison engine '#{code}' failed: #{error}")
+        end
+      end
+    end
+
+    def write_transcript_file(path, episode, transcript)
+      FileUtils.mkdir_p(File.dirname(path))
+      formatted = transcript.gsub(/([.!?])(\s+)/, "\\1\n").strip
+
+      File.open(path, "w") do |f|
         f.puts "# #{episode[:title]}"
         f.puts
         f.puts "#{episode[:description]}" unless episode[:description].to_s.empty?
         f.puts
         f.puts "## Transcript"
         f.puts
-        f.puts transcript
+        f.puts formatted
       end
-
-      logger.log("Transcript saved to #{transcript_path}")
     end
 
     def cleanup_temp_files

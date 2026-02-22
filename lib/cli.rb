@@ -17,19 +17,39 @@ module PodgenCLI
     options = { verbosity: :normal }
 
     global = OptionParser.new do |opts|
-      opts.banner = "Usage: podgen [options] <command> [command-options]"
+      opts.banner = "Usage: podgen [options] <command> [args]"
+      opts.separator ""
+      opts.separator "Fully autonomous podcast generation pipeline."
       opts.separator ""
       opts.separator "Commands:"
-      max_name = COMMANDS.keys.map(&:length).max
-      COMMANDS.each do |name, (desc, _, _)|
-        opts.separator "  #{name.ljust(max_name)}   #{desc}"
-      end
+      opts.separator "  generate <podcast>             Run the full pipeline (news or language)"
+      opts.separator "  scrap <podcast>                Remove last episode files + history entry"
+      opts.separator "  rss <podcast>                  Generate RSS feed"
+      opts.separator "  list                           List available podcasts"
+      opts.separator "  test <name> [args]             Run a standalone test"
+      opts.separator "  schedule <podcast>             Install launchd scheduler"
       opts.separator ""
-      opts.separator "Global options:"
+      opts.separator "Pipelines (configured via ## Type in guidelines.md):"
+      opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"
+      opts.separator "  language  Download from RSS, trim music, transcribe, assemble MP3"
+      opts.separator ""
+      opts.separator "Transcription engines (## Transcription Engine in guidelines.md):"
+      opts.separator "  open      OpenAI Whisper / gpt-4o-transcribe (default)"
+      opts.separator "  elab      ElevenLabs Scribe v2"
+      opts.separator "  groq      Groq hosted Whisper"
+      opts.separator "  List multiple engines for side-by-side comparison mode."
+      opts.separator ""
+      opts.separator "Tests:"
+      opts.separator "  research, rss, hn, claude_web, bluesky, x, script, tts,"
+      opts.separator "  assembly, translation, transcription, sources"
+      opts.separator "  Example: podgen test transcription lahko_noc elab"
+      opts.separator "           podgen test transcription audio.mp3 all"
+      opts.separator ""
+      opts.separator "Options:"
 
       opts.on("-v", "--verbose", "Verbose output") { options[:verbosity] = :verbose }
       opts.on("-q", "--quiet",   "Suppress terminal output (errors still shown)") { options[:verbosity] = :quiet }
-      opts.on("--dry-run", "Run pipeline without API calls or file output") { options[:dry_run] = true }
+      opts.on("--dry-run", "Validate config, skip API calls and file output") { options[:dry_run] = true }
       opts.on("-V", "--version", "Print version and exit") do
         puts "podgen #{VERSION}"
         return 0
