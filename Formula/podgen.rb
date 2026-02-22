@@ -10,11 +10,16 @@
 class Podgen < Formula
   desc "Autonomous podcast generation pipeline"
   homepage "https://github.com/arvicco/homebrew-podgen"
-  url "https://github.com/arvicco/homebrew-podgen/archive/refs/tags/v1.4.0.tar.gz"
-  sha256 "85b47bb51010accc8a3678ae6accbdb18080661b5aab610db250a9ef96783b60"
+  url "https://github.com/arvicco/homebrew-podgen/archive/refs/tags/v1.5.0.tar.gz"
+  sha256 "595e96aa9a9e0da221079bda3fd99fe2b5aab26d4526f21cccc23ba1051499d9"
   license "MIT"
 
   depends_on "ffmpeg"
+
+  # Optional: cover image generation (language pipeline LingQ upload)
+  depends_on "imagemagick" => :recommended
+  depends_on "librsvg" => :recommended
+  depends_on "fontconfig" => :recommended
 
   # Ruby 3.2+ required — uses whatever ruby is on PATH (rbenv, asdf, system, etc.)
   # No `depends_on "ruby"` to avoid pulling Homebrew's heavyweight Ruby build.
@@ -83,6 +88,9 @@ class Podgen < Formula
              cp intro.mp3 ~/.podgen/podcasts/my_podcast/intro.mp3
         4. Generate an episode:
              podgen generate my_podcast
+
+      For per-episode cover images (language pipeline), install a handwriting font:
+        brew install --cask font-patrick-hand
 
       You can also run podgen from any project directory that contains
       a podcasts/ folder, or set $PODGEN_HOME to a custom location.
