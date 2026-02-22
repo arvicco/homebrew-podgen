@@ -43,13 +43,20 @@ podgen/
 │   ├── podcast_config.rb         # Resolves all paths, parses sources/languages from guidelines
 │   ├── source_manager.rb         # Parallel multi-source research coordinator + cache integration
 │   ├── research_cache.rb         # File-based research cache (SHA256 keys, 24h TTL, atomic writes)
+│   ├── transcription/
+│   │   ├── base_engine.rb        # Shared base class (retries, logging, validation)
+│   │   ├── openai_engine.rb      # OpenAI Whisper/gpt-4o-transcribe (engine: "open")
+│   │   ├── elevenlabs_engine.rb  # ElevenLabs Scribe v2 (engine: "elab")
+│   │   ├── groq_engine.rb        # Groq hosted Whisper (engine: "groq")
+│   │   ├── engine_manager.rb     # Orchestrator: single or parallel comparison mode
+│   │   └── reconciler.rb         # Claude Opus reconciliation of multi-engine transcripts
 │   ├── agents/
 │   │   ├── topic_agent.rb        # Claude topic generation
 │   │   ├── research_agent.rb     # Exa.ai search
 │   │   ├── script_agent.rb       # Claude script generation (structured output)
 │   │   ├── tts_agent.rb          # ElevenLabs TTS (chunking, UTF-8-safe splitting)
 │   │   ├── translation_agent.rb  # Claude script translation
-│   │   └── transcription_agent.rb # OpenAI Whisper transcription (language pipeline)
+│   │   └── transcription_agent.rb # Backward-compat shim → Transcription::OpenaiEngine
 │   ├── sources/
 │   │   ├── rss_source.rb         # RSS/Atom feeds (topic matching + episode fetching)
 │   │   ├── hn_source.rb          # Hacker News Algolia API
@@ -93,10 +100,10 @@ language_pipeline.rb:
   1. Fetch next episode from RSS (exclude already-processed URLs)
   2. Download source audio
   3. Trim music: bandpass intro detection + silence-based outro detection
-  4. Transcribe via OpenAI (gpt-4o-mini-transcribe default, whisper-1 fallback)
+  4. Transcribe via EngineManager → Claude Opus post-processing (reconcile multi-engine / cleanup single)
   5. Build transcript (gpt-4o: text direct; whisper-1: metadata + acoustic filtering)
   6. Assemble: intro.mp3 + trimmed audio + outro.mp3 → loudnorm
-  7. Save transcript as _transcript.md
+  7. Save transcript(s) — primary + per-engine files in comparison mode
   8. Record history → done
 ```
 
@@ -107,6 +114,7 @@ language_pipeline.rb:
 - **Episode dedup:** History records topics + URLs; TopicAgent avoids repeats, sources exclude used URLs. 7-day lookback window.
 - **Scrap:** `podgen scrap <name>` removes last episode files (MP3 + scripts, all languages) and last history entry. Supports `--dry-run`.
 - **Research sources:** Parallel execution via threads. Sources: `exa`, `hackernews`, `rss` (with feed URLs), `claude_web`, `bluesky`, `x`. Default: exa only. 24h file-based cache per source+topics.
+- **Transcript post-processing:** Claude Opus processes all transcripts. Multi-engine (2+ engines): reconciles sentence-by-sentence, picks best rendering, removes hallucination artifacts. Single engine: cleans up grammar, punctuation, and STT artifacts. Result becomes primary transcript. Non-fatal if post-processing fails.
 - **`--dry-run`:** Validates config, uses queue.yml topics, generates synthetic data, saves debug script, skips all API calls/TTS/assembly/history.
 - **Lockfile:** Prevents concurrent runs of the same podcast via `flock`.
 
@@ -125,14 +133,15 @@ language_pipeline.rb:
 | `## Topics` | Yes (news) | Default topic rotation |
 | `## Language` | No | `- en`, `- it: <voice_id>`. Default: `[en]` (news pipeline) |
 | `## Sources` | No | `- exa`, `- hackernews`, `- rss:` (with URLs), `- claude_web`. Default: exa |
+| `## Transcription Engine` | No | `- open`, `- elab`, `- groq`. Multiple = comparison mode. Default: `[open]` |
 | `## Transcription Language` | Yes (language) | ISO-639-1 code (e.g. `sl`). Used by language pipeline |
 | `## Target Language` | No | Human-readable language name (e.g. `Slovenian`) |
 | `## Do not include` | No | Content restrictions |
 
 ### Environment variables
-**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (default: eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (default: mp3_44100_128), `EXA_API_KEY`, `CLAUDE_MODEL` (default: claude-opus-4-6), `CLAUDE_WEB_MODEL` (default: claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY` (language pipeline), `WHISPER_MODEL` (default: gpt-4o-mini-transcribe)
+**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (default: eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (default: mp3_44100_128), `ELEVENLABS_SCRIBE_MODEL` (default: scribe_v2), `EXA_API_KEY`, `CLAUDE_MODEL` (default: claude-opus-4-6), `CLAUDE_WEB_MODEL` (default: claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY` (language pipeline), `WHISPER_MODEL` (default: gpt-4o-mini-transcribe), `GROQ_API_KEY`, `GROQ_WHISPER_MODEL` (default: whisper-large-v3)
 
-**Per-podcast `.env`** (optional): overrides for `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID`, `CLAUDE_MODEL`. Loaded via `Dotenv.overload`.
+**Per-podcast `.env`** (optional): overrides any root `.env` variable. Loaded via `Dotenv.overload`.
 
 ---
 

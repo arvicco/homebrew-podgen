@@ -77,6 +77,13 @@ class PodcastConfig
     @transcription_language ||= extract_heading("Transcription Language")
   end
 
+  # Parses "## Transcription Engine" from guidelines.md
+  # Returns array of engine codes: ["open"], ["open", "elab", "groq"], etc.
+  # Default (missing section): ["open"]
+  def transcription_engines
+    @transcription_engines ||= parse_transcription_engine_section(guidelines)
+  end
+
   def queue_topics
     YAML.load_file(@queue_path)["topics"]
   end
@@ -178,6 +185,24 @@ class PodcastConfig
     end
 
     languages.empty? ? default : languages
+  end
+
+  def parse_transcription_engine_section(text)
+    default = ["open"]
+
+    match = text.match(/^## Transcription Engine\s*\n(.*?)(?=^## |\z)/m)
+    return default unless match
+
+    engines = []
+    match[1].each_line do |line|
+      line = line.strip
+      next unless line.start_with?("- ")
+
+      code = line.sub(/^- /, "").strip
+      engines << code unless code.empty?
+    end
+
+    engines.empty? ? default : engines
   end
 
   def parse_sources_section(text)
