@@ -86,13 +86,16 @@ module PodgenCLI
         bp_start = [bp_start - 3, 0].max # extra padding — greeting sits at music boundary
       end
 
+      source_duration = assembler.probe_duration(source_audio_path)
       trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}.mp3")
       @temp_files << trimmed_path
       assembler.extract_segment(source_audio_path, trimmed_path, bp_start, bp_end)
       logger.log("Trimmed to #{bp_start.round(1)}s → #{bp_end.round(1)}s")
 
-      # Refine: if bandpass left trailing music, detect it and re-trim
-      trimmed_path = refine_tail_trim(assembler, trimmed_path)
+      # Refine: if bandpass didn't trim the outro, try silence-based detection
+      # with transcription verification to avoid cutting speech.
+      bandpass_trimmed_outro = (source_duration - bp_end) > 5
+      trimmed_path = refine_tail_trim(assembler, trimmed_path) unless bandpass_trimmed_outro
       logger.phase_end("Trim Music")
 
       # --- Phase 4: Transcribe trimmed audio ---
@@ -159,15 +162,15 @@ module PodgenCLI
     attr_reader :logger
 
     # Bandpass outro detection misses music with speech-band energy.
-    # Use raw silence detection: the last silence gap followed by 15+ seconds
-    # of continuous audio marks where the narrator stops and music begins.
-    MIN_OUTRO_MUSIC = 15 # seconds of continuous audio to count as outro music
+    # Use silence detection to find a suspected tail, then verify via transcription:
+    # if the tail contains speech, keep it; if only music/noise, trim it.
+    MIN_OUTRO_MUSIC = 15 # seconds of continuous audio to count as suspected outro
 
     def refine_tail_trim(assembler, trimmed_path)
       total_duration = assembler.probe_duration(trimmed_path)
       silences = assembler.detect_silences(trimmed_path)
 
-      # Find the last silence gap where the remaining audio is all continuous (outro music)
+      # Find the last silence gap where the remaining audio is all continuous (suspected outro)
       speech_end = nil
       silences.reverse_each do |s|
         remaining = total_duration - s[:end]
@@ -179,17 +182,54 @@ module PodgenCLI
 
       return trimmed_path unless speech_end
 
-      # Only re-trim if we'd actually cut something meaningful (> 10s)
       savings = total_duration - speech_end
       return trimmed_path if savings < 10
 
-      logger.log("Refining tail: speech ends at #{speech_end.round(1)}s, " \
-        "cutting #{savings.round(1)}s of trailing music (total was #{total_duration.round(1)}s)")
+      # Extract the suspected tail and transcribe it to check for speech
+      tail_path = File.join(Dir.tmpdir, "podgen_tail_check_#{Process.pid}.mp3")
+      @temp_files << tail_path
+      assembler.extract_segment(trimmed_path, tail_path, speech_end, total_duration)
+
+      if tail_contains_speech?(tail_path, savings)
+        logger.log("Tail check: speech detected in #{savings.round(1)}s tail segment — keeping")
+        return trimmed_path
+      end
+
+      logger.log("Refining tail: no speech in #{savings.round(1)}s tail — trimming " \
+        "(#{total_duration.round(1)}s → #{(speech_end + 1.5).round(1)}s)")
 
       refined_path = File.join(Dir.tmpdir, "podgen_refined_#{Process.pid}.mp3")
       @temp_files << refined_path
       assembler.trim_to_duration(trimmed_path, refined_path, speech_end + 1.5)
       refined_path
+    end
+
+    # Quick transcription of a short audio clip to detect speech.
+    # Uses Groq (fastest) with fallback to OpenAI. Returns true if meaningful text found.
+    def tail_contains_speech?(audio_path, duration)
+      language = @config.transcription_language
+      text = nil
+
+      begin
+        if ENV["GROQ_API_KEY"]
+          engine = Transcription::GroqEngine.new(language: language, logger: logger)
+        else
+          engine = Transcription::OpenaiEngine.new(language: language, logger: logger)
+        end
+        result = engine.transcribe(audio_path)
+        text = result.is_a?(Hash) ? result[:text] : result.to_s
+      rescue => e
+        logger.log("Tail transcription failed (#{e.message}) — keeping tail to be safe")
+        return true # fail-safe: don't trim if we can't verify
+      end
+
+      # Meaningful speech: at least 1 word per 5 seconds of audio
+      words = text.to_s.strip.split(/\s+/).length
+      min_words = [duration / 5, 3].max.to_i
+      has_speech = words >= min_words
+      logger.log("Tail transcription: #{words} words in #{duration.round(1)}s " \
+        "(threshold: #{min_words}) → #{has_speech ? 'speech' : 'music/silence'}")
+      has_speech
     end
 
     def fetch_next_episode
