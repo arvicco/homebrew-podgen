@@ -10,6 +10,8 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "sources", "rss_source")
 require_relative File.join(root, "lib", "transcription", "engine_manager")
 require_relative File.join(root, "lib", "audio_assembler")
+require_relative File.join(root, "lib", "agents", "lingq_agent")
+require_relative File.join(root, "lib", "agents", "cover_agent")
 
 module PodgenCLI
   class LanguagePipeline
@@ -61,9 +63,21 @@ module PodgenCLI
       logger.log("Downloaded source audio: #{(File.size(source_audio_path) / (1024.0 * 1024)).round(2)} MB")
       logger.phase_end("Download Audio")
 
+      # --- Phase 2b: Skip fixed intro if configured ---
+      if @config.skip_intro && @config.skip_intro > 0
+        assembler = AudioAssembler.new(logger: logger)
+        total = assembler.probe_duration(source_audio_path)
+        skip = @config.skip_intro
+        skipped_path = File.join(Dir.tmpdir, "podgen_skipped_#{Process.pid}.mp3")
+        @temp_files << skipped_path
+        assembler.extract_segment(source_audio_path, skipped_path, skip, total)
+        logger.log("Skipped fixed intro: #{skip}s (#{total.round(1)}s → #{(total - skip).round(1)}s)")
+        source_audio_path = skipped_path
+      end
+
       # --- Phase 3: Bandpass trim (remove intro/outro music) ---
       logger.phase_start("Trim Music")
-      assembler = AudioAssembler.new(logger: logger)
+      assembler ||= AudioAssembler.new(logger: logger)
       bp_start, bp_end = assembler.estimate_speech_boundaries(source_audio_path)
       bp_start = [bp_start - 3, 0].max # extra padding — greeting sits at music boundary
 
@@ -107,7 +121,10 @@ module PodgenCLI
       # --- Save transcript ---
       save_transcript(episode, transcript, base_name)
 
-      # --- Phase 7: Record history ---
+      # --- Phase 7: LingQ Upload (if enabled) ---
+      upload_to_lingq(episode, @reconciled_text || transcript, output_path)
+
+      # --- Phase 8: Record history ---
       @history.record!(
         date: @today,
         title: episode[:title],
@@ -356,8 +373,8 @@ module PodgenCLI
         logger.log("Transcript saved to #{transcript_path}")
       end
 
-      # Save per-engine transcripts in comparison mode
-      return unless @comparison_results&.any?
+      # Save per-engine transcripts only in verbose mode (for comparison/debugging)
+      return unless @comparison_results&.any? && @options[:verbosity] == :verbose
 
       @comparison_results.each do |code, result|
         engine_path = File.join(@config.episodes_dir, "#{base_name}_transcript_#{code}.md")
@@ -385,6 +402,72 @@ module PodgenCLI
         f.puts
         f.puts formatted
       end
+    end
+
+    def upload_to_lingq(episode, transcript, audio_path)
+      return unless @config.lingq_enabled?
+
+      if @dry_run
+        logger.log("[dry-run] Skipping LingQ upload")
+        return
+      end
+
+      logger.phase_start("LingQ Upload")
+      lc = @config.lingq_config
+      language = @config.transcription_language
+
+      image_path = generate_cover_image(episode[:title], lc)
+
+      agent = LingQAgent.new(logger: logger)
+      agent.upload(
+        title: episode[:title],
+        text: transcript,
+        audio_path: audio_path,
+        language: language,
+        collection: lc[:collection],
+        level: lc[:level],
+        tags: lc[:tags],
+        image_path: image_path,
+        accent: lc[:accent],
+        status: lc[:status],
+        description: episode[:description],
+        original_url: episode[:audio_url]
+      )
+      logger.phase_end("LingQ Upload")
+    rescue => e
+      logger.log("Warning: LingQ upload failed: #{e.message} (non-fatal, continuing)")
+      logger.log(e.backtrace.first(3).join("\n"))
+    end
+
+    # Generates a per-episode cover image with the title overlaid on the base image.
+    # Returns the generated image path, or falls back to the static image path.
+    def generate_cover_image(title, lingq_config)
+      return lingq_config[:image] unless @config.cover_generation_enabled?
+
+      cover_path = File.join(Dir.tmpdir, "podgen_cover_#{Process.pid}.jpg")
+      @temp_files << cover_path
+
+      options = {}
+      options[:font] = lingq_config[:font] if lingq_config[:font]
+      options[:font_color] = lingq_config[:font_color] if lingq_config[:font_color]
+      options[:font_size] = lingq_config[:font_size] if lingq_config[:font_size]
+      options[:text_width] = lingq_config[:text_width] if lingq_config[:text_width]
+      options[:gravity] = lingq_config[:text_gravity] if lingq_config[:text_gravity]
+      options[:x_offset] = lingq_config[:text_x_offset] if lingq_config[:text_x_offset]
+      options[:y_offset] = lingq_config[:text_y_offset] if lingq_config[:text_y_offset]
+
+      agent = CoverAgent.new(logger: logger)
+      agent.generate(
+        title: title,
+        base_image: lingq_config[:base_image],
+        output_path: cover_path,
+        options: options
+      )
+
+      cover_path
+    rescue => e
+      logger.log("Warning: Cover generation failed: #{e.message} (falling back to static image)")
+      lingq_config[:image]
     end
 
     def cleanup_temp_files
