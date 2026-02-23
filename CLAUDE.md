@@ -4,7 +4,7 @@
 Fully autonomous podcast generation pipeline. Two pipeline types:
 
 1. **News pipeline** (`type: news`): Researches topics, writes a script, generates multi-language audio via TTS, assembles final MP3s.
-2. **Language pipeline** (`type: language`): Downloads episodes from RSS, strips intro/outro music, transcribes via OpenAI Whisper, assembles clean MP3 + transcript.
+2. **Language pipeline** (`type: language`): Downloads episodes from RSS, transcribes via multi-engine STT + Claude reconciliation, auto-trims outro music via word timestamps, assembles clean MP3 + formatted transcript.
 
 Zero human involvement beyond editing config files.
 
@@ -35,7 +35,7 @@ podgen/
 │   ├── cli/
 │   │   ├── version.rb            # PodgenCLI::VERSION
 │   │   ├── generate_command.rb   # Pipeline dispatcher: news or language (based on type in ## Podcast)
-│   │   ├── language_pipeline.rb  # Language pipeline: RSS → download → trim → transcribe → assemble
+│   │   ├── language_pipeline.rb  # Language pipeline: RSS → download → transcribe → trim outro → assemble
 │   │   ├── scrap_command.rb     # Remove last episode + history entry
 │   │   ├── rss_command.rb        # RSS feed generation + cover copy + transcript conversion
 │   │   ├── list_command.rb       # List available podcasts
@@ -48,9 +48,9 @@ podgen/
 │   │   ├── base_engine.rb        # Shared base class (retries, logging, validation)
 │   │   ├── openai_engine.rb      # OpenAI Whisper/gpt-4o-transcribe (engine: "open")
 │   │   ├── elevenlabs_engine.rb  # ElevenLabs Scribe v2 (engine: "elab")
-│   │   ├── groq_engine.rb        # Groq hosted Whisper (engine: "groq")
-│   │   ├── engine_manager.rb     # Orchestrator: single or parallel comparison mode
-│   │   └── reconciler.rb         # Claude Opus reconciliation of multi-engine transcripts
+│   │   ├── groq_engine.rb        # Groq hosted Whisper + word timestamps (engine: "groq")
+│   │   ├── engine_manager.rb     # Orchestrator: single or parallel comparison mode, primary fallback
+│   │   └── reconciler.rb         # Claude Opus reconciliation + formatting of multi-engine transcripts
 │   ├── agents/
 │   │   ├── topic_agent.rb        # Claude topic generation
 │   │   ├── research_agent.rb     # Exa.ai search
@@ -67,7 +67,7 @@ podgen/
 │   │   ├── bluesky_source.rb    # Bluesky AT Protocol authenticated post search
 │   │   └── x_source.rb          # X (Twitter) via SocialData.tools API
 │   ├── episode_history.rb        # Episode dedup (atomic YAML writes, 7-day lookback)
-│   ├── audio_assembler.rb        # ffmpeg wrapper (crossfades, loudnorm, music detection/stripping)
+│   ├── audio_assembler.rb        # ffmpeg wrapper (crossfades, loudnorm, trim, extract)
 │   ├── rss_generator.rb          # RSS 2.0 + iTunes + Podcasting 2.0 feed (cover, transcripts)
 │   └── logger.rb                 # Structured run logging with phase timings
 ├── scripts/
@@ -75,6 +75,7 @@ podgen/
 │   └── test_*.rb                 # Test scripts
 ├── output/<name>/
 │   ├── episodes/                 # MP3s + scripts/transcripts: {name}-{date}[-lang].mp3
+│   ├── tails/                    # Trimmed outro tails for review: {name}-{date}_tail.mp3
 │   ├── research_cache/           # Cached research results (auto-managed)
 │   ├── history.yml               # Episode history for deduplication
 │   ├── cover.jpg                 # Podcast cover (copied from podcasts/<name>/ by rss command)
@@ -104,10 +105,16 @@ generate_command.rb:
 ```
 language_pipeline.rb:
   1. Fetch next episode from RSS (exclude already-processed URLs)
-  2. Download source audio
-  3. Trim music: bandpass intro detection + silence-based outro detection
-  4. Transcribe via EngineManager → Claude Opus post-processing (reconcile multi-engine / cleanup single)
-  5. Build transcript (gpt-4o: text direct; whisper-1: metadata + acoustic filtering)
+  2. Download source audio + skip fixed intro (if configured)
+  3. Transcribe full audio via EngineManager (all engines in parallel)
+     - Groq returns word-level timestamps alongside text
+     - Reconciler (Claude Opus) drops hallucinated content, produces clean text
+  4. Trim outro via reconciled text + Groq word timestamps:
+     a. Match last words of reconciled text in Groq's word timestamps
+     b. speech_end = matched word's end timestamp + 2s padding
+     c. Trim audio at speech_end, save tail for review
+     (Requires 2+ engines with groq; single engine → no outro detection)
+  5. Build transcript from reconciled text (or raw text if single engine)
   6. Assemble: intro.mp3 + trimmed audio + outro.mp3 → loudnorm
   7. Save transcript(s) — primary + per-engine files in comparison mode
   8. LingQ upload (if ## LingQ section + LINGQ_API_KEY present) — non-fatal
@@ -122,7 +129,8 @@ language_pipeline.rb:
 - **Episode dedup:** History records topics + URLs; TopicAgent avoids repeats, sources exclude used URLs. 7-day lookback window.
 - **Scrap:** `podgen scrap <name>` removes last episode files (MP3 + scripts, all languages) and last history entry. Supports `--dry-run`.
 - **Research sources:** Parallel execution via threads. Sources: `exa`, `hackernews`, `rss` (with feed URLs), `claude_web`, `bluesky`, `x`. Default: exa only. 24h file-based cache per source+topics.
-- **Transcript post-processing:** Claude Opus processes all transcripts. Multi-engine (2+ engines): reconciles sentence-by-sentence, picks best rendering, removes hallucination artifacts. Single engine: cleans up grammar, punctuation, and STT artifacts. Result becomes primary transcript. Non-fatal if post-processing fails.
+- **Transcript post-processing:** Claude Opus processes all transcripts. Multi-engine (2+ engines): reconciles sentence-by-sentence, picks best rendering, removes hallucination artifacts. Single engine: cleans up grammar, punctuation, and STT artifacts. Both modes format output with paragraphs, dialog in straight quotes `"..."`, separate speaker turns. Result becomes primary transcript. Non-fatal if post-processing fails.
+- **Outro detection:** In multi-engine mode with Groq, the reconciled text (hallucination-free) is mapped back to Groq's word-level timestamps to find precise speech end. Audio is trimmed at speech_end + 2s; the tail is saved to `output/<podcast>/tails/` for review. Requires 2+ engines with "groq" included. Single engine or no Groq → no outro detection.
 - **LingQ upload:** Language pipeline auto-uploads lessons if `## LingQ` section (with `collection`) and `LINGQ_API_KEY` are present. Uploads audio + transcript, triggers timestamp generation. Non-fatal on failure.
 - **Cover generation:** If `base_image` is configured in `## LingQ`, generates per-episode cover images by overlaying the uppercased episode title onto the base image via ImageMagick. Falls back to static `image` if generation fails or ImageMagick is not installed. Non-fatal.
 - **RSS feed:** `podgen rss <name>` generates feed with iTunes + Podcasting 2.0 namespaces. Copies cover image from `podcasts/<name>/` to output. Converts markdown transcripts to HTML and adds `<podcast:transcript>` tags. Episode titles pulled from `history.yml`. `base_url` from config ensures correct absolute enclosure URLs.

@@ -1,18 +1,20 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Diagnostic script: downloads one episode and saves each trim stage
-# as a separate file so you can listen to what's being cut.
+# Diagnostic script: tests reconciliation-based outro detection.
+#
+# Downloads one episode, skips intro, transcribes with all 3 engines
+# (EngineManager), then uses reconciled text + Groq word timestamps
+# to find the precise speech end point.
 #
 # Usage: ruby scripts/test_trim.rb [episode_url]
 #   If no URL given, fetches the next unprocessed episode from RSS.
 #
 # Output (in output/trim_test/):
-#   1_original.mp3        — raw download
+#   1_original.mp3         — raw download
 #   2_after_skip_intro.mp3 — after fixed skip_intro cut
-#   3_after_bandpass.mp3   — after bandpass music detection trim
-#
-# Listen to each file to identify where the over-trimming happens.
+#   3_trimmed.mp3          — after reconciliation-based outro trim
+#   3_tail.mp3             — the trimmed tail (should be pure music)
 
 require "dotenv"
 Dotenv.load
@@ -23,6 +25,7 @@ require "podcast_config"
 require "audio_assembler"
 require "episode_history"
 require_relative "../lib/logger"
+require_relative "../lib/transcription/engine_manager"
 require "fileutils"
 require "open-uri"
 require "rss"
@@ -74,136 +77,140 @@ puts "  Saved: #{original}"
 
 # --- Phase 2: Skip intro ---
 skip = config.skip_intro
+audio_path = original
 if skip && skip > 0
   puts "\n=== Phase 2: Skip fixed intro (#{skip}s) ==="
   after_skip = File.join(OUTPUT_DIR, "2_after_skip_intro.mp3")
   assembler.extract_segment(original, after_skip, skip, dur)
   dur2 = assembler.probe_duration(after_skip)
-  puts "  Duration: #{dur.round(1)}s → #{dur2.round(1)}s"
+  puts "  Duration: #{dur.round(1)}s -> #{dur2.round(1)}s"
   puts "  Saved: #{after_skip}"
-  trim_input = after_skip
+  audio_path = after_skip
 else
   puts "\n=== Phase 2: No skip_intro configured, skipping ==="
-  trim_input = original
 end
 
-# --- Phase 3: Bandpass detection ---
-puts "\n=== Phase 3: Bandpass speech boundary detection ==="
-bp_start, bp_end = assembler.estimate_speech_boundaries(trim_input)
-trim_input_dur = assembler.probe_duration(trim_input)
+# --- Phase 3: Transcribe with all engines ---
+puts "\n=== Phase 3: Transcribe with all engines ==="
+language = config.transcription_language || "sl"
+engine_codes = config.transcription_engines
+puts "  Engines: #{engine_codes.join(', ')}"
+puts "  Language: #{language}"
 
-# Show what the pipeline does: skip intro detection if skip_intro is set
-if skip && skip > 0
-  puts "  (skip_intro is set → skipping bandpass intro detection, only trimming outro)"
-  effective_start = 0
+manager = Transcription::EngineManager.new(
+  engine_codes: engine_codes,
+  language: language,
+  target_language: config.target_language,
+  logger: logger
+)
+result = manager.transcribe(audio_path)
+
+if engine_codes.length > 1
+  reconciled_text = result[:reconciled]
+  groq_words = result[:all]["groq"]&.dig(:words) || []
+  all_results = result[:all]
+
+  puts "\n  Per-engine results:"
+  all_results.each do |code, r|
+    puts "    #{code}: #{r[:text].length} chars"
+  end
+  puts "  Reconciled: #{reconciled_text&.length || 'FAILED'} chars"
+  puts "  Groq words: #{groq_words.length}"
 else
-  effective_start = [bp_start - 3, 0].max
-end
-puts "  Raw bandpass: #{bp_start.round(1)}s → #{bp_end.round(1)}s"
-puts "  After -3s padding: #{effective_start.round(1)}s → #{bp_end.round(1)}s"
-puts "  Cutting: #{effective_start.round(1)}s from start, #{(trim_input_dur - bp_end).round(1)}s from end"
-
-after_bp = File.join(OUTPUT_DIR, "3_after_bandpass.mp3")
-assembler.extract_segment(trim_input, after_bp, effective_start, bp_end)
-dur3 = assembler.probe_duration(after_bp)
-puts "  Duration: #{trim_input_dur.round(1)}s → #{dur3.round(1)}s"
-puts "  Saved: #{after_bp}"
-
-# --- Phase 3b: Save the bit that bandpass would cut from the end ---
-if bp_end < trim_input_dur
-  cut_tail_bp = File.join(OUTPUT_DIR, "3b_cut_tail_bandpass.mp3")
-  assembler.extract_segment(trim_input, cut_tail_bp, bp_end, trim_input_dur)
-  puts "  Saved cut tail: #{cut_tail_bp} (#{(trim_input_dur - bp_end).round(1)}s)"
+  puts "  Single engine mode — reconciliation-based trim requires 2+ engines"
+  reconciled_text = result[:cleaned] || result[:text]
+  groq_words = result[:words] || []
 end
 
-# --- Phase 4: Refine tail (silence-based outro detection) ---
-puts "\n=== Phase 4: Refine tail (silence-based outro detection) ==="
-MIN_OUTRO_MUSIC = 15
-silences = assembler.detect_silences(after_bp)
-puts "  Silence gaps found: #{silences.length} (threshold: -30dB)"
-
-# Show last 10 silence gaps to understand the decision
-puts "  Last 10 silence gaps:"
-silences.last(10).each do |s|
-  remaining = dur3 - s[:end]
-  marker = remaining >= MIN_OUTRO_MUSIC ? " ← CANDIDATE (#{remaining.round(1)}s remaining >= #{MIN_OUTRO_MUSIC}s)" : ""
-  puts "    #{s[:start].round(1)}s → #{s[:end].round(1)}s  (gap: #{(s[:end] - s[:start]).round(1)}s, remaining: #{remaining.round(1)}s)#{marker}"
-end
-
-# Replicate the pipeline logic
-speech_end = nil
-silences.reverse_each do |s|
-  remaining = dur3 - s[:end]
-  if remaining >= MIN_OUTRO_MUSIC
-    speech_end = s[:start]
-    break
+# --- Phase 4: Show Groq word timestamps ---
+if groq_words.any?
+  puts "\n=== Phase 4: Groq word timestamps (last 15) ==="
+  groq_words.last(15).each do |w|
+    puts "    #{w[:start].round(2)}s - #{w[:end].round(2)}s: \"#{w[:word]}\""
   end
 end
 
-if speech_end && (dur3 - speech_end) >= 10
-  savings = dur3 - speech_end
-  puts "  Suspected tail: #{speech_end.round(1)}s → #{dur3.round(1)}s (#{savings.round(1)}s)"
+# --- Phase 5: Show reconciled text ending ---
+if reconciled_text
+  puts "\n=== Phase 5: Reconciled text ending ==="
+  words = reconciled_text.split(/\s+/).reject(&:empty?)
+  puts "  Total words: #{words.length}"
+  puts "  Last 10 words: #{words.last(10).join(' ')}"
+end
 
-  # Save the suspected tail
-  tail_path = File.join(OUTPUT_DIR, "5_suspected_tail.mp3")
-  assembler.extract_segment(after_bp, tail_path, speech_end, dur3)
-  puts "  Saved: #{tail_path}"
+# --- Phase 6: Match reconciled ending to Groq timestamps ---
+if reconciled_text && groq_words.any?
+  puts "\n=== Phase 6: Word matching ==="
 
-  # Transcribe the tail to check for speech
-  puts "\n=== Phase 5: Transcription-verify tail ==="
-  require_relative "../lib/transcription/engine_manager"
-  lang = config.transcription_language || "sl"
-  begin
-    if ENV["GROQ_API_KEY"]
-      engine = Transcription::GroqEngine.new(language: lang, logger: logger)
-    else
-      engine = Transcription::OpenaiEngine.new(language: lang, logger: logger)
+  reconciled_words = reconciled_text.split(/\s+/).reject(&:empty?)
+  normalize = ->(w) { w.downcase.gsub(/[^\p{L}\p{N}]/, "") }
+  min_prefix = 3
+  fuzzy_match = ->(a, b) {
+    return true if a == b
+    shorter, longer = [a, b].sort_by(&:length)
+    return false if shorter.length < min_prefix
+    longer.start_with?(shorter)
+  }
+  matched_end = nil
+  matched_n = nil
+
+  [5, 4, 3, 2, 1].each do |n|
+    next if reconciled_words.length < n
+
+    target = reconciled_words.last(n).map { |w| normalize.call(w) }
+    next if target.any?(&:empty?)
+
+    (groq_words.length - n).downto(0) do |i|
+      candidate = groq_words[i, n].map { |w| normalize.call(w[:word]) }
+      if target.zip(candidate).all? { |a, b| fuzzy_match.call(a, b) }
+        matched_end = groq_words[i + n - 1][:end]
+        matched_n = n
+        break
+      end
     end
-    result = engine.transcribe(tail_path)
-    text = result.is_a?(Hash) ? result[:text] : result.to_s
-    words = text.to_s.strip.split(/\s+/).length
-    min_words = [savings / 5, 3].max.to_i
-    has_speech = words >= min_words
-    puts "  Transcription: #{words} words (threshold: #{min_words})"
-    puts "  Text: #{text.to_s.strip[0..200]}..." if text.to_s.strip.length > 0
-    puts "  Verdict: #{has_speech ? 'SPEECH DETECTED — keep tail' : 'NO SPEECH — safe to trim'}"
-  rescue => e
-    puts "  Transcription failed: #{e.message} — would keep tail (fail-safe)"
-    has_speech = true
+    break if matched_end
   end
 
-  if has_speech
-    puts "  Decision: keeping tail (speech detected)"
-    final_dur = dur3
-    refine_applied = false
+  if matched_end
+    puts "  Matched last #{matched_n} words at #{matched_end.round(2)}s"
+    puts "  Matched words: #{reconciled_words.last(matched_n).join(' ')}"
+
+    audio_dur = assembler.probe_duration(audio_path)
+    savings = audio_dur - matched_end
+    trim_point = matched_end + 2
+
+    puts "  Audio duration: #{audio_dur.round(1)}s"
+    puts "  Speech end: #{matched_end.round(1)}s"
+    puts "  Trim point: #{trim_point.round(1)}s (+2s padding)"
+    puts "  Would save: #{savings.round(1)}s"
+
+    if savings >= 5
+      # Save trimmed version
+      trimmed = File.join(OUTPUT_DIR, "3_trimmed.mp3")
+      assembler.trim_to_duration(audio_path, trimmed, trim_point)
+      puts "\n  Saved trimmed: #{trimmed}"
+
+      # Save tail
+      tail = File.join(OUTPUT_DIR, "3_tail.mp3")
+      assembler.extract_segment(audio_path, tail, trim_point, audio_dur)
+      puts "  Saved tail: #{tail} (#{(audio_dur - trim_point).round(1)}s — should be pure music)"
+    else
+      puts "  Savings < 5s — would not trim"
+    end
   else
-    puts "  Decision: trimming tail (no speech)"
-    after_refine = File.join(OUTPUT_DIR, "4_after_refine.mp3")
-    assembler.extract_segment(after_bp, after_refine, 0, speech_end + 1.5)
-    dur4 = assembler.probe_duration(after_refine)
-    puts "  Duration: #{dur3.round(1)}s → #{dur4.round(1)}s"
-    puts "  Saved: #{after_refine}"
-    final_dur = dur4
-    refine_applied = true
+    puts "  No match found between reconciled text and Groq timestamps"
   end
 else
-  puts "  Decision: no significant trailing music detected, keeping as-is"
-  final_dur = dur3
-  refine_applied = false
+  puts "\n  Skipping word matching (need reconciled text + groq words)"
 end
 
 # --- Summary ---
 puts "\n=== Summary ==="
-puts "  Original:         #{dur.round(1)}s"
-puts "  After skip_intro: #{(dur - (skip || 0)).round(1)}s  (cut #{skip || 0}s)" if skip && skip > 0
-puts "  After bandpass:   #{dur3.round(1)}s  (cut #{(trim_input_dur - dur3).round(1)}s from end)"
-puts "  After refine:     #{final_dur.round(1)}s" if refine_applied
-puts "  Total removed:    #{(dur - final_dur).round(1)}s"
+puts "  Original:    #{dur.round(1)}s"
+puts "  After skip:  #{assembler.probe_duration(audio_path).round(1)}s" if skip && skip > 0
+if matched_end
+  puts "  Speech end:  #{matched_end.round(1)}s"
+  puts "  Trim point:  #{(matched_end + 2).round(1)}s"
+end
 puts ""
 puts "Listen to files in: #{OUTPUT_DIR}"
-puts "  1_original.mp3              — full download"
-puts "  2_after_skip_intro.mp3      — after #{skip}s fixed cut" if skip && skip > 0
-puts "  3_after_bandpass.mp3        — after bandpass trim"
-puts "  3b_cut_tail_bandpass.mp3    — what bandpass cut from end" if bp_end < trim_input_dur
-puts "  5_suspected_tail.mp3        — suspected tail (transcription-verified)" if speech_end && (dur3 - speech_end) >= 10
-puts "  4_after_refine.mp3          — after tail refinement (final)" if refine_applied
