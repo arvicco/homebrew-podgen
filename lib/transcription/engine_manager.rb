@@ -55,12 +55,19 @@ module Transcription
 
       threads.each(&:join)
 
+      # Use configured primary, fall back to first successful engine
       primary_code = @engine_codes.first
       primary_result = results[primary_code]
 
       unless primary_result
-        raise "Primary engine '#{primary_code}' failed: #{errors[primary_code]}"
+        fallback_code = @engine_codes.find { |c| results[c] }
+        raise "All engines failed: #{errors}" unless fallback_code
+        log("Primary engine '#{primary_code}' failed, falling back to '#{fallback_code}'")
+        primary_code = fallback_code
+        primary_result = results[fallback_code]
       end
+
+      raise "No engines succeeded" if results.empty?
 
       comparison = {
         primary: primary_result,

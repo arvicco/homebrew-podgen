@@ -85,8 +85,18 @@ module Transcription
       - Do NOT change the meaning or rephrase sentences — only fix errors and clean up
       - Do NOT add content that isn't in the original
       - Preserve the original language — do NOT translate into English or any other language
-      - Output one sentence per line
       - Output ONLY the cleaned transcript text — no commentary, no headers, no engine labels
+    RULES
+
+    FORMATTING_RULES = <<~RULES
+      - Divide text into paragraphs — separate them with a blank line
+      - Start a new paragraph on topic shifts, scene changes, or after dialog exchanges
+      - Format direct speech with straight double quotes "..."
+        Example: Pirina je rekla: "Povej še kaj!"
+        Example: "Kako si ljubezniva," je odvrnila Pirina. "Tudi ti si se zelo potrudila."
+      - Use straight double quotes "..." for all direct speech (never »...« or „...")
+      - When a speaker's dialog continues across multiple sentences, keep it in ONE paragraph
+      - Separate different speakers' turns with a blank line
     RULES
 
     # --- Multi-engine reconciliation ---
@@ -102,6 +112,8 @@ module Transcription
 
         Cleanup rules:
         #{CLEANUP_RULES}
+        Formatting rules:
+        #{FORMATTING_RULES}
       PROMPT
     end
 
@@ -115,7 +127,7 @@ module Transcription
         ---
 
         Reconcile these #{transcripts.size} transcripts of the same #{@language} audio into a single best transcript.
-        Output one sentence per line. Only output the transcript text, nothing else.
+        Format with paragraphs and uniform dialog markers. Only output the transcript text, nothing else.
       INSTRUCTIONS
     end
 
@@ -127,6 +139,8 @@ module Transcription
 
         Rules:
         #{CLEANUP_RULES}
+        Formatting rules:
+        #{FORMATTING_RULES}
       PROMPT
     end
 
@@ -138,7 +152,7 @@ module Transcription
 
         ---
 
-        Output the cleaned transcript, one sentence per line. Only output the transcript text, nothing else.
+        Format with paragraphs and uniform dialog markers. Only output the transcript text, nothing else.
       PROMPT
     end
 

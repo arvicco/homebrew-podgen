@@ -17,11 +17,7 @@ module PodgenCLI
   class LanguagePipeline
     MAX_DOWNLOAD_RETRIES = 3
     MAX_DOWNLOAD_SIZE = 200 * 1024 * 1024 # 200 MB
-
-    # Whisper segment quality thresholds (only used with whisper-1).
-    NO_SPEECH_PROB_THRESHOLD = 0.6
-    COMPRESSION_RATIO_THRESHOLD = 2.4
-    AVG_LOGPROB_THRESHOLD = -1.0
+    MIN_OUTRO_SAVINGS = 5 # minimum seconds saved to bother trimming outro
 
     def initialize(config:, options:, logger:, history:, today:)
       @config = config
@@ -75,55 +71,33 @@ module PodgenCLI
         source_audio_path = skipped_path
       end
 
-      # --- Phase 3: Bandpass trim (remove intro/outro music) ---
-      # When skip_intro is set, it already handled the intro jingle — only detect outro.
-      logger.phase_start("Trim Music")
-      assembler ||= AudioAssembler.new(logger: logger)
-      bp_start, bp_end = assembler.estimate_speech_boundaries(source_audio_path)
-      if @config.skip_intro && @config.skip_intro > 0
-        bp_start = 0
-      else
-        bp_start = [bp_start - 3, 0].max # extra padding — greeting sits at music boundary
-      end
-
-      source_duration = assembler.probe_duration(source_audio_path)
-      trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}.mp3")
-      @temp_files << trimmed_path
-      assembler.extract_segment(source_audio_path, trimmed_path, bp_start, bp_end)
-      logger.log("Trimmed to #{bp_start.round(1)}s → #{bp_end.round(1)}s")
-
-      # Refine: if bandpass didn't trim the outro, try silence-based detection
-      # with transcription verification to avoid cutting speech.
-      bandpass_trimmed_outro = (source_duration - bp_end) > 5
-      trimmed_path = refine_tail_trim(assembler, trimmed_path) unless bandpass_trimmed_outro
-      logger.phase_end("Trim Music")
-
-      # --- Phase 4: Transcribe trimmed audio ---
+      # --- Phase 3: Transcribe full audio ---
       logger.phase_start("Transcription")
-      result = transcribe_audio(trimmed_path)
+      assembler ||= AudioAssembler.new(logger: logger)
+      base_name = @config.episode_basename(@today)
+      result = transcribe_audio(source_audio_path)
       logger.phase_end("Transcription")
 
+      # --- Phase 4: Trim outro via reconciled text + Groq word timestamps ---
+      if @reconciled_text && @groq_words&.any?
+        logger.phase_start("Trim Outro")
+        source_audio_path = trim_outro(assembler, source_audio_path, base_name)
+        logger.phase_end("Trim Outro")
+      else
+        logger.log("Skipping outro trim (requires 2+ engines with groq)")
+      end
+
       # --- Phase 5: Build transcript ---
-      # gpt-4o-transcribe: use text directly (no segments to filter)
-      # whisper-1: filter segments by metadata + acoustic music detection
-      logger.phase_start("Build Transcript")
-      transcript = if result[:segments].empty?
-                     logger.log("Using transcript text directly (no segments)")
-                     result[:text]
-                   else
-                     filter_transcript(assembler, trimmed_path, result[:segments])
-                   end
-      logger.phase_end("Build Transcript")
+      transcript = @reconciled_text || result[:text]
 
       # --- Phase 6: Assemble (trimmed audio as single piece) ---
       logger.phase_start("Assembly")
-      base_name = @config.episode_basename(@today)
       output_path = File.join(@config.episodes_dir, "#{base_name}.mp3")
 
       intro_music_path = File.join(@config.podcast_dir, "intro.mp3")
       outro_music_path = File.join(@config.podcast_dir, "outro.mp3")
 
-      assembler.assemble([trimmed_path], output_path, intro_path: intro_music_path, outro_path: outro_music_path)
+      assembler.assemble([source_audio_path], output_path, intro_path: intro_music_path, outro_path: outro_music_path)
       logger.phase_end("Assembly")
 
       # --- Save transcript ---
@@ -161,77 +135,6 @@ module PodgenCLI
 
     attr_reader :logger
 
-    # Bandpass outro detection misses music with speech-band energy.
-    # Use silence detection to find a suspected tail, then verify via transcription:
-    # if the tail contains speech, keep it; if only music/noise, trim it.
-    MIN_OUTRO_MUSIC = 15 # seconds of continuous audio to count as suspected outro
-
-    def refine_tail_trim(assembler, trimmed_path)
-      total_duration = assembler.probe_duration(trimmed_path)
-      silences = assembler.detect_silences(trimmed_path)
-
-      # Find the last silence gap where the remaining audio is all continuous (suspected outro)
-      speech_end = nil
-      silences.reverse_each do |s|
-        remaining = total_duration - s[:end]
-        if remaining >= MIN_OUTRO_MUSIC
-          speech_end = s[:start]
-          break
-        end
-      end
-
-      return trimmed_path unless speech_end
-
-      savings = total_duration - speech_end
-      return trimmed_path if savings < 10
-
-      # Extract the suspected tail and transcribe it to check for speech
-      tail_path = File.join(Dir.tmpdir, "podgen_tail_check_#{Process.pid}.mp3")
-      @temp_files << tail_path
-      assembler.extract_segment(trimmed_path, tail_path, speech_end, total_duration)
-
-      if tail_contains_speech?(tail_path, savings)
-        logger.log("Tail check: speech detected in #{savings.round(1)}s tail segment — keeping")
-        return trimmed_path
-      end
-
-      logger.log("Refining tail: no speech in #{savings.round(1)}s tail — trimming " \
-        "(#{total_duration.round(1)}s → #{(speech_end + 1.5).round(1)}s)")
-
-      refined_path = File.join(Dir.tmpdir, "podgen_refined_#{Process.pid}.mp3")
-      @temp_files << refined_path
-      assembler.trim_to_duration(trimmed_path, refined_path, speech_end + 1.5)
-      refined_path
-    end
-
-    # Quick transcription of a short audio clip to detect speech.
-    # Uses Groq (fastest) with fallback to OpenAI. Returns true if meaningful text found.
-    def tail_contains_speech?(audio_path, duration)
-      language = @config.transcription_language
-      text = nil
-
-      begin
-        if ENV["GROQ_API_KEY"]
-          engine = Transcription::GroqEngine.new(language: language, logger: logger)
-        else
-          engine = Transcription::OpenaiEngine.new(language: language, logger: logger)
-        end
-        result = engine.transcribe(audio_path)
-        text = result.is_a?(Hash) ? result[:text] : result.to_s
-      rescue => e
-        logger.log("Tail transcription failed (#{e.message}) — keeping tail to be safe")
-        return true # fail-safe: don't trim if we can't verify
-      end
-
-      # Meaningful speech: at least 1 word per 5 seconds of audio
-      words = text.to_s.strip.split(/\s+/).length
-      min_words = [duration / 5, 3].max.to_i
-      has_speech = words >= min_words
-      logger.log("Tail transcription: #{words} words in #{duration.round(1)}s " \
-        "(threshold: #{min_words}) → #{has_speech ? 'speech' : 'music/silence'}")
-      has_speech
-    end
-
     def fetch_next_episode
       rss_feeds = @config.sources["rss"]
       unless rss_feeds.is_a?(Array) && rss_feeds.any?
@@ -264,10 +167,11 @@ module PodgenCLI
       result = manager.transcribe(audio_path)
 
       if engine_codes.length > 1
-        # Comparison mode — stash per-engine results for save_transcript
+        # Comparison mode — stash per-engine results for save_transcript and outro trim
         @comparison_results = result[:all]
         @comparison_errors = result[:errors]
         @reconciled_text = result[:reconciled]
+        @groq_words = result[:all]["groq"]&.dig(:words)
         result[:primary]
       else
         # Single engine — use cleaned text if available
@@ -276,81 +180,92 @@ module PodgenCLI
       end
     end
 
-    # Whisper-1 fallback: filter segments by metadata + acoustic music regions.
-    # Returns transcript string.
-    def filter_transcript(assembler, trimmed_path, segments)
-      logger.log("Filtering #{segments.length} Whisper segments")
+    # Trims outro music by mapping the end of reconciled text back to Groq word timestamps.
+    # Returns trimmed audio path, or original path if no trim needed.
+    def trim_outro(assembler, audio_path, base_name)
+      speech_end = find_speech_end_timestamp(@reconciled_text, @groq_words)
 
-      # 1. Metadata filter (2+ flags)
-      kept = filter_speech_segments(segments)
+      unless speech_end
+        logger.log("Could not match reconciled text ending to Groq timestamps — skipping trim")
+        return audio_path
+      end
 
-      # 2. Acoustic music region filter
-      music_regions = assembler.detect_music_regions(trimmed_path)
-      kept = exclude_music_segments(kept, music_regions)
+      total_duration = assembler.probe_duration(audio_path)
+      savings = total_duration - speech_end
+      trim_point = speech_end + 2 # 2s padding after last word
 
-      kept.map { |s| s[:text] }.join(" ").strip
+      if savings < MIN_OUTRO_SAVINGS
+        logger.log("Outro trim would only save #{savings.round(1)}s (< #{MIN_OUTRO_SAVINGS}s) — skipping")
+        return audio_path
+      end
+
+      logger.log("Speech ends at #{speech_end.round(1)}s, trimming at #{trim_point.round(1)}s " \
+        "(saving #{savings.round(1)}s of #{total_duration.round(1)}s)")
+
+      # Save tail for review
+      tails_dir = File.join(File.dirname(@config.episodes_dir), "tails")
+      FileUtils.mkdir_p(tails_dir)
+      tail_path = File.join(tails_dir, "#{base_name}_tail.mp3")
+      assembler.extract_segment(audio_path, tail_path, trim_point, total_duration)
+      logger.log("Saved tail for review: #{tail_path}")
+
+      # Trim audio
+      trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}.mp3")
+      @temp_files << trimmed_path
+      assembler.trim_to_duration(audio_path, trimmed_path, trim_point)
+      trimmed_path
     end
 
-    # Filters Whisper segments using the model's own confidence signals.
-    # Require 2+ signals to agree before dropping.
-    def filter_speech_segments(segments)
-      return segments if segments.empty?
+    # Maps the last words of reconciled text back to Groq's word-level timestamps.
+    # Tries matching last 5 words, then 4, 3, 2, 1.
+    # Returns the end timestamp of the matched word, or nil if no match.
+    def find_speech_end_timestamp(reconciled_text, groq_words)
+      reconciled_words = reconciled_text.split(/\s+/).reject(&:empty?)
+      return nil if reconciled_words.empty?
 
-      kept = []
-      dropped = 0
+      # Try matching last N words (5 down to 1), using fuzzy prefix matching
+      # to handle inflection differences (e.g. "sanjam" vs "sanja", "noč" vs "noči")
+      [5, 4, 3, 2, 1].each do |n|
+        next if reconciled_words.length < n
 
-      segments.each do |seg|
-        flags = []
+        target = reconciled_words.last(n).map { |w| normalize_word(w) }
+        next if target.any?(&:empty?)
 
-        if seg[:no_speech_prob] > NO_SPEECH_PROB_THRESHOLD
-          flags << "no_speech=#{seg[:no_speech_prob].round(2)}"
-        end
-
-        if seg[:compression_ratio] > COMPRESSION_RATIO_THRESHOLD
-          flags << "compression=#{seg[:compression_ratio].round(2)}"
-        end
-
-        if seg[:avg_logprob] < AVG_LOGPROB_THRESHOLD
-          flags << "logprob=#{seg[:avg_logprob].round(2)}"
-        end
-
-        if flags.length >= 2
-          dropped += 1
-          logger.log("  Drop #{seg[:start].round(1)}s→#{seg[:end].round(1)}s " \
-            "(#{flags.join(', ')}): \"#{seg[:text].strip[0, 50]}\"")
-        else
-          kept << seg
+        # Search backwards through Groq words for matching sequence
+        (groq_words.length - n).downto(0) do |i|
+          candidate = groq_words[i, n].map { |w| normalize_word(w[:word]) }
+          if words_match?(target, candidate)
+            matched_end = groq_words[i + n - 1][:end]
+            logger.log("Matched last #{n} words at Groq timestamp #{matched_end.round(1)}s: #{candidate.join(' ')} ~ #{target.join(' ')}")
+            return matched_end
+          end
         end
       end
 
-      if dropped > 0
-        logger.log("Metadata filter: kept #{kept.length}/#{segments.length} (dropped #{dropped})")
-      end
-
-      kept
+      logger.log("No word sequence match found between reconciled text and Groq timestamps")
+      nil
     end
 
-    # Excludes Whisper segments that fall within acoustically-detected music regions.
-    def exclude_music_segments(segments, music_regions)
-      return segments if music_regions.empty?
+    def normalize_word(word)
+      word.downcase.gsub(/[^\p{L}\p{N}]/, "")
+    end
 
-      before = segments.length
-      kept = segments.reject do |seg|
-        region = music_regions.find { |r| seg[:start] >= r[:start] && seg[:start] < r[:end] }
-        if region
-          logger.log("  Excluding #{seg[:start].round(1)}s→#{seg[:end].round(1)}s " \
-            "(in music #{region[:start].round(1)}→#{region[:end].round(1)}): " \
-            "\"#{seg[:text].strip[0, 50]}\"")
-          true
-        end
-      end
+    # Fuzzy sequence match: all word pairs must match.
+    def words_match?(target, candidate)
+      target.zip(candidate).all? { |a, b| word_match?(a, b) }
+    end
 
-      dropped = before - kept.length
-      if dropped > 0
-        logger.log("Music filter: excluded #{dropped} segments in #{music_regions.length} region(s)")
-      end
+    # Two normalized words match if they share a common prefix of 3+ chars.
+    # Handles inflection differences (e.g. "sanjam"/"sanja", "noč"/"noči").
+    MIN_PREFIX = 3
 
-      kept
+    def word_match?(a, b)
+      return true if a == b
+
+      shorter, longer = [a, b].sort_by(&:length)
+      return false if shorter.length < MIN_PREFIX
+
+      longer.start_with?(shorter)
     end
 
     def download_audio(url)
@@ -436,7 +351,6 @@ module PodgenCLI
 
     def write_transcript_file(path, episode, transcript)
       FileUtils.mkdir_p(File.dirname(path))
-      formatted = transcript.gsub(/([.!?])(\s+)/, "\\1\n").strip
 
       File.open(path, "w") do |f|
         f.puts "# #{episode[:title]}"
@@ -445,7 +359,7 @@ module PodgenCLI
         f.puts
         f.puts "## Transcript"
         f.puts
-        f.puts formatted
+        f.puts transcript.strip
       end
     end
 

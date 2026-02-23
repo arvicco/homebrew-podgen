@@ -45,7 +45,8 @@ module Transcription
           file: File.open(audio_path, "rb"),
           model: @model,
           language: @language,
-          response_format: "verbose_json"
+          response_format: "verbose_json",
+          "timestamp_granularities[]" => "word"
         }
 
         response = HTTParty.post(
@@ -78,13 +79,17 @@ module Transcription
           }
         end
 
+        words = (result["words"] || []).map do |w|
+          { word: w["word"].to_s, start: w["start"].to_f, end: w["end"].to_f }
+        end
+
         speech_start = parsed_segments.any? ? parsed_segments.first[:start] : 0.0
         speech_end = parsed_segments.any? ? parsed_segments.last[:end] : (duration || 0.0)
 
-        log("Transcription complete in #{elapsed}s (audio duration: #{duration}s, #{transcript.length} chars, #{parsed_segments.length} segments)")
+        log("Transcription complete in #{elapsed}s (audio duration: #{duration}s, #{transcript.length} chars, #{parsed_segments.length} segments, #{words.length} words)")
         log("Speech boundaries: #{speech_start.round(1)}s → #{speech_end.round(1)}s")
 
-        { text: transcript, speech_start: speech_start, speech_end: speech_end, segments: parsed_segments }
+        { text: transcript, speech_start: speech_start, speech_end: speech_end, segments: parsed_segments, words: words }
 
       rescue => e
         if retries <= MAX_RETRIES && retryable?(e)
