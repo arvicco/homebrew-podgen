@@ -3,15 +3,18 @@
 require "rexml/document"
 require "date"
 require "fileutils"
+require "yaml"
 
 class RssGenerator
-  def initialize(episodes_dir:, feed_path:, title: "Podcast", author: "Podcast Agent", language: "en", logger: nil)
+  def initialize(episodes_dir:, feed_path:, title: "Podcast", author: "Podcast Agent", language: "en", base_url: nil, history_path: nil, logger: nil)
     @logger = logger
     @episodes_dir = episodes_dir
     @feed_path = feed_path
     @title = title
     @author = author
     @language = language
+    @base_url = base_url&.chomp("/")
+    @title_map = build_title_map(history_path)
   end
 
   def generate
@@ -80,6 +83,7 @@ class RssGenerator
     channel = rss.add_element("channel")
     add_text(channel, "title", @title)
     add_text(channel, "description", "Auto-generated podcast by Podcast Agent")
+    add_text(channel, "link", @base_url) if @base_url
     add_text(channel, "language", @language)
     add_text(channel, "generator", "Podcast Agent (podgen)")
     add_text(channel, "itunes:author", @author)
@@ -88,14 +92,16 @@ class RssGenerator
 
     episodes.each do |ep|
       item = channel.add_element("item")
-      title = "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
+      ep_title = @title_map[ep[:filename]]
+      title = ep_title || "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
       add_text(item, "title", title)
       add_text(item, "pubDate", ep[:date].to_time.strftime("%a, %d %b %Y 06:00:00 %z"))
       add_text(item, "itunes:author", @author)
       add_text(item, "itunes:duration", estimate_duration(ep[:size]))
 
+      ep_url = @base_url ? "#{@base_url}/episodes/#{ep[:filename]}" : ep[:filename]
       enclosure = item.add_element("enclosure", {
-        "url" => ep[:filename],
+        "url" => ep_url,
         "length" => ep[:size].to_s,
         "type" => "audio/mpeg"
       })
@@ -110,6 +116,38 @@ class RssGenerator
     el = parent.add_element(name)
     el.text = text
     el
+  end
+
+  # Build a map from MP3 filename → episode title using history.yml.
+  # History entries are chronological; same-day episodes get suffixes: "", "a", "b", etc.
+  SUFFIXES = [""] + ("a".."z").to_a
+
+  def build_title_map(history_path)
+    return {} unless history_path && File.exist?(history_path)
+
+    entries = YAML.load_file(history_path) rescue nil
+    return {} unless entries.is_a?(Array)
+
+    # Determine the podcast name prefix from the episodes directory
+    podcast_name = File.basename(File.dirname(@episodes_dir))
+
+    # Group entries by date, preserving order within each date
+    by_date = {}
+    entries.each do |entry|
+      date = entry["date"]
+      next unless date
+      (by_date[date] ||= []) << entry
+    end
+
+    map = {}
+    by_date.each do |date, date_entries|
+      date_entries.each_with_index do |entry, idx|
+        suffix = SUFFIXES[idx] || idx.to_s
+        filename = "#{podcast_name}-#{date}#{suffix}.mp3"
+        map[filename] = entry["title"] if entry["title"]
+      end
+    end
+    map
   end
 
   # Rough estimate: 192kbps MP3 → bytes / (192000/8) = seconds

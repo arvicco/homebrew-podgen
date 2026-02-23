@@ -2,14 +2,20 @@
 
 root = File.expand_path("../..", __dir__)
 
+require "optparse"
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "rss_generator")
 
 module PodgenCLI
   class RssCommand
     def initialize(args, options)
-      @podcast_name = args.shift
       @options = options
+      OptionParser.new do |opts|
+        opts.on("--base-url URL", "Base URL for enclosures (e.g. https://host.ts.net/podcast)") do |u|
+          @options[:base_url] = u
+        end
+      end.parse!(args)
+      @podcast_name = args.shift
     end
 
     def run
@@ -27,6 +33,8 @@ module PodgenCLI
       config = PodcastConfig.new(@podcast_name)
       config.load_env!
 
+      base_url = @options[:base_url] || config.base_url
+
       feed_paths = []
 
       config.languages.each do |lang|
@@ -43,7 +51,9 @@ module PodgenCLI
           feed_path: feed_path,
           title: config.title,
           author: config.author,
-          language: lang_code
+          language: lang_code,
+          base_url: base_url,
+          history_path: config.history_path
         )
         generator.generate
         feed_paths << feed_path
@@ -51,10 +61,14 @@ module PodgenCLI
 
       unless @options[:verbosity] == :quiet
         feed_paths.each { |fp| puts "Feed: #{fp}" }
-        puts
-        puts "To serve locally:"
-        puts "  cd #{File.dirname(config.feed_path)} && ruby -run -e httpd . -p 8080"
-        puts "  Feed URL: http://localhost:8080/feed.xml"
+        if base_url
+          puts "Feed URL: #{base_url}/feed.xml"
+        else
+          puts
+          puts "To serve locally:"
+          puts "  cd #{File.dirname(config.feed_path)} && ruby -run -e httpd . -p 8080"
+          puts "  Feed URL: http://localhost:8080/feed.xml"
+        end
       end
 
       0
