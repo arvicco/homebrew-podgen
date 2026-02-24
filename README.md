@@ -80,6 +80,7 @@ ruby bin/podgen <command> [options]
 | `podgen generate <podcast>` | Run the full pipeline (news: research → script → TTS → assembly; language: RSS → trim → transcribe → assembly) |
 | `podgen scrap <podcast>` | Remove last episode and its history entry |
 | `podgen rss <podcast>` | Generate RSS feed from existing episodes |
+| `podgen publish <podcast>` | Publish podcast to Cloudflare R2 via rclone |
 | `podgen list` | List available podcasts with titles |
 | `podgen test <name>` | Run a standalone test (research, hn, rss, tts, etc.) |
 | `podgen schedule <podcast>` | Install a daily launchd scheduler |
@@ -117,6 +118,12 @@ podgen list
 
 # Generate RSS feed
 podgen rss ruby_world
+
+# Publish to Cloudflare R2
+podgen publish ruby_world
+
+# Dry-run publish (see what would sync)
+podgen --dry-run publish ruby_world
 
 # Run a component test
 podgen test hn
@@ -358,6 +365,42 @@ cd output/ruby_world && ruby -run -e httpd . -p 8080
 
 Then add `http://localhost:8080/feed.xml` to your podcast app. For remote access, host the `output/` directory on any static file server (nginx, S3, Cloudflare Pages, etc.) and update the enclosure URLs in the feed accordingly.
 
+## Publishing to Cloudflare R2
+
+Publish your podcast to [Cloudflare R2](https://developers.cloudflare.com/r2/) for always-available hosting at $0/month (free tier covers typical podcast usage).
+
+### Setup
+
+1. **Install rclone**: `brew install rclone`
+2. **Create an R2 bucket** in the Cloudflare dashboard
+3. **Create an R2 API token** (R2 → Manage R2 API Tokens → Create API Token, "Object Read & Write" permission)
+4. **Add to `.env`**:
+
+```
+R2_ACCESS_KEY_ID=...          # API token access key
+R2_SECRET_ACCESS_KEY=...      # API token secret key
+R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
+R2_BUCKET=podgen              # Your bucket name
+```
+
+5. **Set `base_url`** in `podcasts/<name>/guidelines.md` to your public R2 URL (via custom domain or r2.dev subdomain)
+6. **Connect a custom domain** (recommended): R2 → bucket → Settings → Public access → Custom Domains
+
+### Usage
+
+```bash
+# Generate feed, then publish
+podgen rss ruby_world
+podgen publish ruby_world
+
+# Preview what would be synced
+podgen --dry-run publish ruby_world
+```
+
+The publish command syncs only public-facing files: MP3 episodes, HTML transcripts, feed XML, and cover image. Internal files (history, research cache, markdown sources) are excluded.
+
+No `rclone config` is needed — credentials are passed via environment variables.
+
 ## Project Structure
 
 ```
@@ -375,6 +418,7 @@ podgen/
 │   │   ├── generate_command.rb # Pipeline dispatcher (news or language)
 │   │   ├── language_pipeline.rb # Language pipeline
 │   │   ├── rss_command.rb    # RSS feed generation
+│   │   ├── publish_command.rb # Publish to Cloudflare R2
 │   │   ├── list_command.rb   # List available podcasts
 │   │   ├── test_command.rb   # Run test scripts
 │   │   └── schedule_command.rb # Install launchd scheduler
