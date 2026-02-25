@@ -40,7 +40,7 @@ podgen/
 │   │   ├── rss_command.rb        # RSS feed generation + cover copy + transcript conversion
 │   │   ├── publish_command.rb    # Publish podcast output to Cloudflare R2 via rclone
 │   │   ├── list_command.rb       # List available podcasts
-│   │   ├── test_command.rb       # Delegates to scripts/test_*.rb
+│   │   ├── test_command.rb       # Delegates to test/ (minitest) and scripts/ (diagnostic)
 │   │   └── schedule_command.rb   # Installs launchd plist
 │   ├── podcast_config.rb         # Resolves all paths, parses sources/languages from guidelines
 │   ├── source_manager.rb         # Parallel multi-source research coordinator + cache integration
@@ -71,9 +71,15 @@ podgen/
 │   ├── audio_assembler.rb        # ffmpeg wrapper (crossfades, loudnorm, trim, extract)
 │   ├── rss_generator.rb          # RSS 2.0 + iTunes + Podcasting 2.0 feed (cover, transcripts)
 │   └── logger.rb                 # Structured run logging with phase timings
+├── Rakefile                      # rake test, rake test:unit, test:integration, test:api
+├── test/
+│   ├── test_helper.rb            # Minitest setup, skip helpers
+│   ├── unit/                     # Pure logic tests (no external deps)
+│   ├── integration/              # Needs ffmpeg or filesystem fixtures
+│   └── api/                      # Needs API keys + network (auto-skip when missing)
 ├── scripts/
 │   ├── serve.rb                  # WEBrick static file server (correct MIME types for mp3/xml/md)
-│   └── test_*.rb                 # Test scripts
+│   └── test_*.rb                 # Diagnostic scripts (transcription, cover, lingq_upload, trim)
 ├── output/<name>/
 │   ├── episodes/                 # MP3s + scripts/transcripts: {name}-{date}[-lang].mp3
 │   ├── tails/                    # Trimmed outro tails for review: {name}-{date}_tail.mp3
@@ -187,7 +193,7 @@ podgen [flags] <command> <args>
   stats <podcast>      # Show podcast statistics (--all for summary table)
   validate <podcast>   # Validate config and output (--all for all podcasts)
   list                 # List podcasts
-  test <name>          # Run test (research|rss|hn|claude_web|bluesky|x|script|tts|assembly|translation|transcription|sources|cover)
+  test <name>          # Run test (research|rss|hn|claude_web|bluesky|x|script|tts|assembly|translation|transcription|sources|cover|stats_validate|trim|lingq_upload|all)
   schedule <podcast>   # Install launchd scheduler
 
 Flags: -v/--verbose  -q/--quiet  --dry-run  -V/--version  -h/--help
