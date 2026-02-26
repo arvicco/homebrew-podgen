@@ -39,7 +39,7 @@ module PodgenCLI
       opts.separator ""
       opts.separator "Pipelines (configured via ## Type in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"
-      opts.separator "  language  Download from RSS, trim music, transcribe, assemble MP3"
+      opts.separator "  language  Download from RSS (or --file), trim music, transcribe, assemble MP3"
       opts.separator ""
       opts.separator "Transcription engines (## Transcription Engine in guidelines.md):"
       opts.separator "  open      OpenAI Whisper / gpt-4o-transcribe (default)"

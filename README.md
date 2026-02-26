@@ -3,7 +3,7 @@
 Fully autonomous podcast generation pipeline with two modes:
 
 - **News pipeline**: Researches topics, writes a script, generates audio via TTS, and assembles a final MP3.
-- **Language pipeline**: Downloads episodes from RSS feeds, strips intro/outro music, transcribes via OpenAI Whisper, and produces a clean MP3 + transcript.
+- **Language pipeline**: Downloads episodes from RSS feeds (or processes local MP3 files via `--file`), strips intro/outro music, transcribes via OpenAI Whisper, and produces a clean MP3 + transcript.
 
 Runs on a daily schedule with zero human involvement.
 
@@ -77,8 +77,8 @@ ruby bin/podgen <command> [options]
 
 | Command | Description |
 |---------|-------------|
-| `podgen generate <podcast>` | Run the full pipeline (news: research → script → TTS → assembly; language: RSS → trim → transcribe → assembly) |
-| `podgen scrap <podcast>` | Remove last episode and its history entry |
+| `podgen generate <podcast>` | Run the full pipeline (news: research → script → TTS → assembly; language: RSS or `--file` → trim → transcribe → assembly) |
+| `podgen scrap <podcast>` | Remove last episode (MP3 + transcript + cover), history entry, and LingQ tracking |
 | `podgen rss <podcast>` | Generate RSS feed from existing episodes |
 | `podgen publish <podcast>` | Publish to Cloudflare R2 via rclone (`--lingq` for LingQ) |
 | `podgen list` | List available podcasts with titles |
@@ -126,6 +126,18 @@ podgen publish ruby_world
 # Dry-run publish (see what would sync)
 podgen --dry-run publish ruby_world
 
+# Process a local MP3 through the language pipeline
+podgen generate lahko_noc --file ~/Downloads/story.mp3
+
+# Local MP3 with custom title and intro trimming
+podgen generate lahko_noc --file story.mp3 --title "The Three Bears" --skip-intro 10
+
+# Local MP3 with custom cover image for LingQ (persisted with episode)
+podgen generate lahko_noc --file story.mp3 --lingq --image cover.png
+
+# Local MP3 with title-overlay cover generation
+podgen generate lahko_noc --file story.mp3 --lingq --base-image cover.jpg
+
 # Publish episodes to LingQ (bulk upload with tracking)
 podgen publish lahko_noc --lingq
 
@@ -153,8 +165,8 @@ Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` (~10 min episode, ~12 
 
 ### Language pipeline
 
-1. Fetch the latest episode from configured RSS feeds
-2. Download and strip intro/outro music using bandpass + silence detection
+1. Fetch the latest episode from configured RSS feeds (or use a local MP3 via `--file`)
+2. Download and strip intro/outro music
 3. Transcribe via OpenAI Whisper (~15s for a 7-min episode)
 4. Assemble with custom intro/outro jingles + loudness normalization
 
@@ -331,8 +343,27 @@ Set `type: language` in `## Podcast` and configure `## Audio` in `podcasts/<name
 - `type: language` in `## Podcast` activates this pipeline
 - `language` in `## Audio` is an ISO-639-1 code passed to the transcription engine
 - `engine` in `## Audio` selects transcription engines (`open`, `elab`, `groq`); multiple = comparison mode
-- `skip_intro` cuts N seconds from the start of downloaded audio before processing
+- `skip_intro` cuts N seconds from the start of downloaded RSS audio before processing
 - RSS sources must include feeds with audio enclosures
+
+#### Local file import
+
+Instead of fetching from RSS, you can process any local MP3 file:
+
+```bash
+podgen generate lahko_noc --file path/to/episode.mp3
+podgen generate lahko_noc --file episode.mp3 --title "Custom Title"
+```
+
+| Flag | Description |
+|------|-------------|
+| `--file PATH` | Local MP3 to process (skips RSS fetch) |
+| `--title TEXT` | Episode title (default: titleized filename, e.g. `my_story.mp3` → "My Story") |
+| `--skip-intro N` | Seconds to skip from the start (config's `skip_intro` only applies to RSS) |
+| `--image PATH` | Per-episode cover image (saved alongside MP3, used for LingQ — overrides cover generation) |
+| `--base-image PATH` | Base image for title-overlay cover generation |
+
+The rest of the pipeline (transcription, outro trimming, assembly, LingQ upload) works identically. The file's name and size are recorded in history for dedup (survives file moves).
 - Place `intro.mp3` and `outro.mp3` in the podcast directory for custom jingles
 - Music detection uses bandpass filtering (300-3000 Hz) for intros and silence detection for outros
 - Default transcription model is `gpt-4o-mini-transcribe` (set `WHISPER_MODEL=whisper-1` for timestamps/segments)
@@ -346,7 +377,9 @@ Two ways to upload:
 1. **During generation**: `podgen generate lahko_noc --lingq` — uploads the newly generated episode
 2. **Bulk publish**: `podgen publish lahko_noc --lingq` — uploads all un-uploaded episodes from the episodes directory
 
-The publish command tracks uploads in `output/<podcast>/lingq_uploads.yml` (keyed by collection ID), so running it again skips already-uploaded episodes. Switching `collection` in your config uploads to the new collection without losing previous tracking.
+Both modes track uploads in `output/<podcast>/lingq_uploads.yml` (keyed by collection ID), so running publish after generate skips already-uploaded episodes. Switching `collection` in your config uploads to the new collection without losing previous tracking.
+
+Per-episode covers provided via `--image` are saved as `{base_name}_cover.{ext}` in the episodes directory. The publish command uses these per-episode covers when available, falling back to cover generation for episodes without one.
 
 ```markdown
 ## LingQ

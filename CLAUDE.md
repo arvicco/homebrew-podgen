@@ -4,7 +4,7 @@
 Fully autonomous podcast generation pipeline. Two pipeline types:
 
 1. **News pipeline** (`type: news`): Researches topics, writes a script, generates multi-language audio via TTS, assembles final MP3s.
-2. **Language pipeline** (`type: language`): Downloads episodes from RSS, transcribes via multi-engine STT + Claude reconciliation, auto-trims outro music via word timestamps, assembles clean MP3 + formatted transcript.
+2. **Language pipeline** (`type: language`): Downloads episodes from RSS (or accepts local MP3 via `--file`), transcribes via multi-engine STT + Claude reconciliation, auto-trims outro music via word timestamps, assembles clean MP3 + formatted transcript.
 
 Zero human involvement beyond editing config files.
 
@@ -117,8 +117,10 @@ generate_command.rb:
 ### Language pipeline (type: `language`)
 ```
 language_pipeline.rb:
-  1. Fetch next episode from RSS (exclude already-processed URLs)
-  2. Download source audio + skip fixed intro (if configured)
+  1. Get episode: --file local MP3 (derive title from filename or --title)
+     OR fetch next episode from RSS (exclude already-processed URLs)
+  2. Download source audio (RSS) or use local file directly
+     + skip intro: --skip-intro N (local files) or config skip_intro (RSS)
   3. Transcribe full audio via EngineManager (all engines in parallel)
      - Groq returns word-level timestamps alongside text
      - Reconciler (Claude Opus) drops hallucinated content, produces clean text
@@ -130,23 +132,27 @@ language_pipeline.rb:
   5. Build transcript from reconciled text (or raw text if single engine)
   6. Assemble: intro.mp3 + trimmed audio + outro.mp3 → loudnorm
   7. Save transcript(s) — primary + per-engine files in comparison mode
+  7b. Save custom cover (if --image provided) → {base_name}_cover.{ext} in episodes dir
   8. LingQ upload (only with --lingq flag, if ## LingQ section + LINGQ_API_KEY present) — non-fatal
-     - Cover generation: if `base_image` configured, overlays uppercased title via ImageMagick
+     - --image overrides cover generation entirely (uses saved per-episode cover)
+     - Otherwise: if `base_image` configured (or --base-image), overlays uppercased title via ImageMagick
+     - Records upload in lingq_uploads.yml (so publish --lingq won't re-upload)
   9. Record history → done
 ```
 
 ### Key behaviors
 - **Multi-podcast:** Each podcast in `podcasts/<name>/` with own config. CLI: `podgen generate <name>`
+- **Local file import:** `podgen generate <name> --file path/to/episode.mp3` processes a local MP3 through the language pipeline (skips RSS fetch + download). Optional flags: `--title "Custom Title"` (default: titleized filename), `--skip-intro N` (seconds to trim from start; config's `skip_intro` only applies to RSS episodes), `--image PATH` (per-episode cover image, copied to episodes dir as `{base_name}_cover.{ext}` and used for LingQ — overrides cover generation), `--base-image PATH` (base image for title-overlay cover generation). `--file` only works with `type: language` podcasts. History records `file://filename:size` for dedup (survives file moves).
 - **Multi-language:** `language` list in `## Podcast` section. English script generated first, translated for other languages. Per-language voice IDs. Output: `name-date-lang.mp3`
 - **Same-day suffix:** `name-2026-02-18.mp3`, then `name-2026-02-18a.mp3`, etc.
 - **Episode dedup:** History records topics + URLs; TopicAgent avoids repeats, sources exclude used URLs. 7-day lookback window.
 - **Translate:** `podgen translate <name>` backfills translations for existing episodes. Discovers untranslated episodes by checking if `{basename}-{lang}.mp3` exists for each English `_script.md`. Translates, synthesizes TTS, assembles MP3s, then regenerates RSS feeds. Supports `--last N` (limit to N most recent), `--lang xx` (single language), `--dry-run`.
-- **Scrap:** `podgen scrap <name>` removes last episode files (MP3 + scripts, all languages) and last history entry. Supports `--dry-run`.
+- **Scrap:** `podgen scrap <name>` removes last episode files (MP3 + scripts + cover, all languages), last history entry, and LingQ tracking entry (from `lingq_uploads.yml`). Supports `--dry-run`.
 - **Research sources:** Parallel execution via threads. Sources: `exa`, `hackernews`, `rss` (with feed URLs), `claude_web`, `bluesky`, `x`. Default: exa only. 24h file-based cache per source+topics.
 - **Transcript post-processing:** Claude Opus processes all transcripts. Multi-engine (2+ engines): reconciles sentence-by-sentence, picks best rendering, removes hallucination artifacts. Single engine: cleans up grammar, punctuation, and STT artifacts. Both modes format output with paragraphs, dialog in straight quotes `"..."`, separate speaker turns. Result becomes primary transcript. Non-fatal if post-processing fails.
 - **Outro detection:** In multi-engine mode with Groq, the reconciled text (hallucination-free) is mapped back to Groq's word-level timestamps to find precise speech end. Audio is trimmed at speech_end + 2s; the tail is saved to `output/<podcast>/tails/` for review. Requires 2+ engines with "groq" included. Single engine or no Groq → no outro detection.
-- **LingQ upload:** Requires `--lingq` flag. Two modes: (1) `podgen generate <name> --lingq` uploads during generation (same as before, non-fatal). (2) `podgen publish <name> --lingq` bulk-uploads all un-uploaded episodes from episodes dir. Tracks uploads in `output/<podcast>/lingq_uploads.yml` (keyed by collection ID → base_name → lesson_id). Switching `collection` in config uploads to the new collection without losing previous tracking. Supports `--dry-run`.
-- **Cover generation:** If `base_image` is configured in `## LingQ`, generates per-episode cover images by overlaying the uppercased episode title onto the base image via ImageMagick. Falls back to static `image` if generation fails or ImageMagick is not installed. Non-fatal.
+- **LingQ upload:** Requires `--lingq` flag. Two modes: (1) `podgen generate <name> --lingq` uploads during generation and records in `lingq_uploads.yml` (non-fatal). (2) `podgen publish <name> --lingq` bulk-uploads all un-uploaded episodes from episodes dir. Both modes track uploads in `output/<podcast>/lingq_uploads.yml` (keyed by collection ID → base_name → lesson_id). Switching `collection` in config uploads to the new collection without losing previous tracking. Supports `--dry-run`.
+- **Cover generation:** If `base_image` is configured in `## LingQ`, generates per-episode cover images by overlaying the uppercased episode title onto the base image via ImageMagick. `--image` overrides cover generation entirely — the image is copied to `{base_name}_cover.{ext}` in episodes dir and reused by `publish --lingq`. Publish checks for per-episode covers before generating. Falls back to static `image` if generation fails or ImageMagick is not installed. Non-fatal.
 - **Pronunciation dictionaries:** Optional `podcasts/<name>/pronunciation.pls` file with alias or IPA rules for mispronounced terms. Uploaded to ElevenLabs on first TTS run; cached in `pronunciation.yml` (re-uploads when PLS file changes). Alias rules work with all models; IPA phoneme rules only work with `eleven_flash_v2`/`eleven_turbo_v2`/`eleven_monolingual_v1`. Max 3 dictionaries per request. Non-fatal if upload fails. See `docs/pronunciation.md` for PLS format and IPA reference.
 - **TTS trailing hallucination trimming:** TTSAgent uses `/with-timestamps` endpoint to get character-level alignment. Audio after the last character's end time + 0.5s threshold is replaced with silence (preserving segment duration/pacing). Logged per-chunk.
 - **RSS feed:** `podgen rss <name>` generates feed with iTunes + Podcasting 2.0 namespaces. Copies cover image from `podcasts/<name>/` to output. Converts markdown transcripts and scripts to HTML and adds `<podcast:transcript>` tags. Episode titles pulled from `history.yml`. `base_url` from config ensures correct absolute enclosure URLs.
@@ -196,6 +202,11 @@ language_pipeline.rb:
 ```
 podgen [flags] <command> <args>
   generate <podcast>   # Full pipeline (--lingq to upload to LingQ during generation)
+                       #   --file PATH        Local MP3 (language pipeline, skips RSS)
+                       #   --title TEXT        Episode title (with --file)
+                       #   --skip-intro N      Seconds to skip from start (with --file)
+                       #   --image PATH        Per-episode cover image, saved with episode (with --file)
+                       #   --base-image PATH   Base image for cover generation (with --file)
   translate <podcast>  # Translate episodes to new languages (--last N, --lang xx)
   scrap <podcast>      # Remove last episode + history entry
   rss <podcast>        # Generate RSS feed (--base-url URL to override config)
