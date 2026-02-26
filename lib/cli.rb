@@ -5,15 +5,16 @@ require_relative "cli/version"
 
 module PodgenCLI
   COMMANDS = {
-    "generate"  => ["Run the full podcast pipeline",       "cli/generate_command",  "GenerateCommand"],
-    "scrap"     => ["Remove last episode and history",     "cli/scrap_command",     "ScrapCommand"],
-    "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",       "RssCommand"],
-    "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",   "PublishCommand"],
-    "stats"     => ["Show podcast statistics",             "cli/stats_command",     "StatsCommand"],
-    "validate"  => ["Validate podcast config and output",  "cli/validate_command",  "ValidateCommand"],
-    "list"      => ["List available podcasts",             "cli/list_command",      "ListCommand"],
-    "test"      => ["Run a standalone test script",        "cli/test_command",      "TestCommand"],
-    "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",  "ScheduleCommand"]
+    "generate"  => ["Run the full podcast pipeline",       "cli/generate_command",    "GenerateCommand"],
+    "translate" => ["Translate episodes to new languages",  "cli/translate_command",   "TranslateCommand"],
+    "scrap"     => ["Remove last episode and history",     "cli/scrap_command",       "ScrapCommand"],
+    "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",         "RssCommand"],
+    "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",    "PublishCommand"],
+    "stats"     => ["Show podcast statistics",             "cli/stats_command",       "StatsCommand"],
+    "validate"  => ["Validate podcast config and output",  "cli/validate_command",    "ValidateCommand"],
+    "list"      => ["List available podcasts",             "cli/list_command",        "ListCommand"],
+    "test"      => ["Run a standalone test script",        "cli/test_command",        "TestCommand"],
+    "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",    "ScheduleCommand"]
   }.freeze
 
   def self.run(argv)
@@ -26,6 +27,7 @@ module PodgenCLI
       opts.separator ""
       opts.separator "Commands:"
       opts.separator "  generate <podcast>             Run the full pipeline (news or language)"
+      opts.separator "  translate <podcast>            Translate episodes to new languages"
       opts.separator "  scrap <podcast>                Remove last episode files + history entry"
       opts.separator "  rss <podcast>                  Generate RSS feed"
       opts.separator "  publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)"

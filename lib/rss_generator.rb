@@ -88,7 +88,7 @@ class RssGenerator
     add_text(channel, "description", @description || "Podcast by #{@author}")
     add_text(channel, "link", @base_url) if @base_url
     add_text(channel, "language", @language)
-    add_text(channel, "generator", "Podcast Agent (podgen)")
+    add_text(channel, "generator", "podgen")
     add_text(channel, "itunes:author", @author)
     if @image && @base_url
       image_url = "#{@base_url}/#{@image}"
@@ -171,6 +171,18 @@ class RssGenerator
         suffix = SUFFIXES[idx] || idx.to_s
         filename = "#{podcast_name}-#{date}#{suffix}.mp3"
         map[filename] = entry["title"] if entry["title"]
+
+        # For non-English feeds, map language-suffixed filenames to translated
+        # titles from script files, falling back to the English title.
+        if @language != "en"
+          lang_filename = "#{podcast_name}-#{date}#{suffix}-#{@language}.mp3"
+          lang_script = File.join(@episodes_dir, "#{podcast_name}-#{date}#{suffix}-#{@language}_script.md")
+          if File.exist?(lang_script)
+            translated_title = File.read(lang_script)[/^# (.+)$/, 1]
+            map[lang_filename] = translated_title if translated_title
+          end
+          map[lang_filename] ||= entry["title"] if entry["title"]
+        end
       end
     end
     map

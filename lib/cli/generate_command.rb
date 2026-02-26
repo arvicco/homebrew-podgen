@@ -134,16 +134,12 @@ module PodgenCLI
           script = {
             title: "Dry Run Episode — #{today}",
             segments: [
-              { name: "intro", text: "Welcome to this dry-run episode. Today we explore #{topics.first}." },
-              { name: "segment_1", text: "Here is segment one covering #{topics.first} in detail with synthetic content for testing purposes." },
-              { name: "segment_2", text: "Here is segment two covering #{topics.last} with more synthetic content." },
-              { name: "outro", text: "Thanks for listening to this dry-run episode. Until next time." }
+              { name: "Opening", text: "Welcome to this dry-run episode. Today we explore #{topics.first}." },
+              { name: topics.first.to_s, text: "Here is segment one covering #{topics.first} in detail with synthetic content for testing purposes." },
+              { name: topics.last.to_s, text: "Here is segment two covering #{topics.last} with more synthetic content." },
+              { name: "Wrap-Up", text: "Thanks for listening to this dry-run episode. Until next time." }
             ]
           }
-          # Still save the debug script file
-          base_name = config.episode_basename(today)
-          script_debug_path = File.join(config.episodes_dir, "#{base_name}_script.md")
-          save_script_debug(script, script_debug_path, logger)
           logger.log("[dry-run] Synthetic script generated: \"#{script[:title]}\"")
         else
           script_agent = ScriptAgent.new(
@@ -214,7 +210,8 @@ module PodgenCLI
               output_path = File.join(config.episodes_dir, "#{lang_basename}.mp3")
 
               assembler = AudioAssembler.new(logger: logger)
-              assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path)
+              assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path,
+                metadata: { title: lang_script[:title], artist: config.author })
               logger.phase_end("Assembly (#{lang_code})")
 
               # --- Cleanup TTS temp files ---

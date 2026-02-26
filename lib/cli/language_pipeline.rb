@@ -97,7 +97,8 @@ module PodgenCLI
       intro_music_path = File.join(@config.podcast_dir, "intro.mp3")
       outro_music_path = File.join(@config.podcast_dir, "outro.mp3")
 
-      assembler.assemble([source_audio_path], output_path, intro_path: intro_music_path, outro_path: outro_music_path)
+      assembler.assemble([source_audio_path], output_path, intro_path: intro_music_path, outro_path: outro_music_path,
+        metadata: { title: episode[:title], artist: @config.author })
       logger.phase_end("Assembly")
 
       # --- Save transcript ---

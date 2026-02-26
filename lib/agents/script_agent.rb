@@ -84,10 +84,12 @@ class ScriptAgent
         type: "text",
         text: <<~PROMPT
           You are an expert podcast scriptwriter. Generate a complete podcast script
-          following the provided guidelines exactly. The script must include:
-          - An "intro" segment with a brief news hook
-          - Numbered main segments ("segment_1", "segment_2") covering one topic each
-          - An "outro" segment with a practical takeaway
+          following the provided guidelines exactly.
+
+          Each segment must have a short descriptive name that reflects its content
+          (e.g. "Opening", "Bitcoin ETF Surge", "Rails 8 Authentication", "Wrap-Up").
+          These names are internal labels, not read aloud — they serve as section titles.
+          Do NOT use generic names like "intro", "segment_1", or "outro".
 
           Write naturally as spoken word — no stage directions, no timestamps, no markdown.
           Each segment's text should be the exact words the host will speak aloud.

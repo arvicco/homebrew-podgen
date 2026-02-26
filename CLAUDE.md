@@ -35,6 +35,7 @@ podgen/
 │   ├── cli/
 │   │   ├── version.rb            # PodgenCLI::VERSION
 │   │   ├── generate_command.rb   # Pipeline dispatcher: news or language (based on type in ## Podcast)
+│   │   ├── translate_command.rb  # Backfill translations for existing episodes + regenerate RSS
 │   │   ├── language_pipeline.rb  # Language pipeline: RSS → download → transcribe → trim outro → assemble
 │   │   ├── scrap_command.rb     # Remove last episode + history entry
 │   │   ├── rss_command.rb        # RSS feed generation + cover copy + transcript conversion
@@ -135,6 +136,7 @@ language_pipeline.rb:
 - **Multi-language:** `language` list in `## Podcast` section. English script generated first, translated for other languages. Per-language voice IDs. Output: `name-date-lang.mp3`
 - **Same-day suffix:** `name-2026-02-18.mp3`, then `name-2026-02-18a.mp3`, etc.
 - **Episode dedup:** History records topics + URLs; TopicAgent avoids repeats, sources exclude used URLs. 7-day lookback window.
+- **Translate:** `podgen translate <name>` backfills translations for existing episodes. Discovers untranslated episodes by checking if `{basename}-{lang}.mp3` exists for each English `_script.md`. Translates, synthesizes TTS, assembles MP3s, then regenerates RSS feeds. Supports `--last N` (limit to N most recent), `--lang xx` (single language), `--dry-run`.
 - **Scrap:** `podgen scrap <name>` removes last episode files (MP3 + scripts, all languages) and last history entry. Supports `--dry-run`.
 - **Research sources:** Parallel execution via threads. Sources: `exa`, `hackernews`, `rss` (with feed URLs), `claude_web`, `bluesky`, `x`. Default: exa only. 24h file-based cache per source+topics.
 - **Transcript post-processing:** Claude Opus processes all transcripts. Multi-engine (2+ engines): reconciles sentence-by-sentence, picks best rendering, removes hallucination artifacts. Single engine: cleans up grammar, punctuation, and STT artifacts. Both modes format output with paragraphs, dialog in straight quotes `"..."`, separate speaker turns. Result becomes primary transcript. Non-fatal if post-processing fails.
@@ -188,6 +190,7 @@ language_pipeline.rb:
 ```
 podgen [flags] <command> <args>
   generate <podcast>   # Full pipeline (--lingq to upload to LingQ during generation)
+  translate <podcast>  # Translate episodes to new languages (--last N, --lang xx)
   scrap <podcast>      # Remove last episode + history entry
   rss <podcast>        # Generate RSS feed (--base-url URL to override config)
   publish <podcast>    # Publish to Cloudflare R2 (--lingq to publish to LingQ instead)
