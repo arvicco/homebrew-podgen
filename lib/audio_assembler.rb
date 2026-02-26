@@ -23,7 +23,8 @@ class AudioAssembler
 
   # Input: segment_paths (array of MP3 paths), output_path (final MP3 path)
   # Optional: intro_path, outro_path (skipped if nil or file doesn't exist)
-  def assemble(segment_paths, output_path, intro_path: nil, outro_path: nil)
+  # Optional: metadata hash (e.g. { title: "...", artist: "..." }) — sets ID3 tags on output
+  def assemble(segment_paths, output_path, intro_path: nil, outro_path: nil, metadata: {})
     intro_path = nil unless intro_path && File.exist?(intro_path)
     outro_path = nil unless outro_path && File.exist?(outro_path)
 
@@ -47,7 +48,7 @@ class AudioAssembler
     # Step 2: Two-pass loudness normalization
     log("Normalizing loudness to #{TARGET_LUFS} LUFS...")
     measurements = loudnorm_analyze(concat_path)
-    loudnorm_apply(concat_path, output_path, measurements)
+    loudnorm_apply(concat_path, output_path, measurements, metadata: metadata)
 
     # Clean up intermediate file
     File.delete(concat_path) if File.exist?(concat_path)
@@ -168,7 +169,7 @@ class AudioAssembler
     JSON.parse(json_match[0])
   end
 
-  def loudnorm_apply(input_path, output_path, measurements)
+  def loudnorm_apply(input_path, output_path, measurements, metadata: {})
     params = [
       "I=#{TARGET_LUFS}",
       "TP=#{TRUE_PEAK}",
@@ -187,8 +188,10 @@ class AudioAssembler
       "-af", loudnorm_filter,
       "-ar", SAMPLE_RATE.to_s,
       "-c:a", "libmp3lame", "-b:a", BITRATE,
-      "-y", output_path
+      "-map_metadata", "-1"
     ]
+    metadata.each { |key, value| args.push("-metadata", "#{key}=#{value}") }
+    args.push("-y", output_path)
 
     run_ffmpeg(args, "loudnorm apply")
   end

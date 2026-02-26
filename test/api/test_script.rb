@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "tmpdir"
 require "podcast_config"
 require "agents/script_agent"
 
@@ -12,7 +13,7 @@ class TestScript < Minitest::Test
     skip "No podcasts configured" if available.empty?
 
     @config = PodcastConfig.new(available.first)
-    @config.ensure_directories!
+    @tmpdir = Dir.mktmpdir("podgen_test_script")
 
     @research_data = [
       {
@@ -43,10 +44,15 @@ class TestScript < Minitest::Test
     ]
   end
 
+  def teardown
+    FileUtils.rm_rf(@tmpdir) if @tmpdir
+  end
+
   def test_generate_returns_script_with_segments
+    script_path = File.join(@tmpdir, "test_script.md")
     agent = ScriptAgent.new(
       guidelines: @config.guidelines,
-      script_path: @config.script_path
+      script_path: script_path
     )
     script = agent.generate(@research_data)
 
