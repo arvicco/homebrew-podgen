@@ -145,7 +145,7 @@ module PodgenCLI
 
       pending.each do |ep|
         title, description, transcript = parse_transcript(ep[:transcript_path])
-        image_path = generate_cover_image(title, lc)
+        image_path = find_episode_cover(ep[:base_name]) || generate_cover_image(title, lc)
 
         puts "  uploading: #{ep[:base_name]} — \"#{title}\"" unless @options[:verbosity] == :quiet
 
@@ -221,6 +221,13 @@ module PodgenCLI
       end
 
       [title, description, transcript]
+    end
+
+    # Check for a per-episode cover saved by generate --image
+    def find_episode_cover(base_name)
+      pattern = File.join(@config.episodes_dir, "#{base_name}_cover.*")
+      covers = Dir.glob(pattern)
+      covers.first
     end
 
     def generate_cover_image(title, lingq_config)

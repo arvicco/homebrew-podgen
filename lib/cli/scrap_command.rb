@@ -69,8 +69,8 @@ module PodgenCLI
         puts "  Date:   #{last_entry['date']}"
         topics = last_entry['topics'] || []
         topics.each { |t| puts "  Topic:  #{t}" }
-        url_count = last_entry['urls']&.length || 0
-        puts "  URLs:   #{url_count} (will be freed for reuse)"
+        source_count = last_entry['urls']&.length || 0
+        puts "  Sources: #{source_count} (will be freed for reuse)"
         puts
       end
 
@@ -100,9 +100,39 @@ module PodgenCLI
       # Remove last history entry (atomic write)
       removed = history.remove_last!
 
+      # Remove LingQ tracking entry for this episode
+      remove_lingq_tracking(config, latest_base)
+
       title = removed ? "\"#{removed['title']}\"" : latest_base
       puts "\u2713 Scrapped #{related_files.length} file(s): #{title}"
       0
+    end
+
+    private
+
+    def remove_lingq_tracking(config, base_name)
+      tracking_path = File.join(File.dirname(config.episodes_dir), "lingq_uploads.yml")
+      return unless File.exist?(tracking_path)
+
+      tracking = YAML.load_file(tracking_path)
+      return unless tracking.is_a?(Hash)
+
+      changed = false
+      tracking.each_value do |collection_entries|
+        next unless collection_entries.is_a?(Hash)
+        changed = true if collection_entries.delete(base_name)
+      end
+
+      return unless changed
+
+      tmp = "#{tracking_path}.tmp.#{Process.pid}"
+      begin
+        File.write(tmp, tracking.to_yaml)
+        File.rename(tmp, tracking_path)
+      rescue => e
+        File.delete(tmp) if File.exist?(tmp)
+        raise e
+      end
     end
   end
 end

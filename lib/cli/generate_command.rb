@@ -3,6 +3,7 @@
 require "yaml"
 require "date"
 require "fileutils"
+require "optparse"
 
 root = File.expand_path("../..", __dir__)
 
@@ -20,9 +21,19 @@ require_relative File.join(root, "lib", "cli", "language_pipeline")
 module PodgenCLI
   class GenerateCommand
     def initialize(args, options)
-      @podcast_name = args.shift
       @options = options
       @dry_run = options[:dry_run] || false
+
+      OptionParser.new do |opts|
+        opts.on("--file PATH", "Local audio file (language pipeline)") { |f| @options[:file] = f }
+        opts.on("--title TEXT", "Episode title (with --file)") { |t| @options[:title] = t }
+        opts.on("--skip-intro N", Float, "Seconds to skip from start (with --file)") { |n| @options[:skip_intro] = n }
+        opts.on("--image PATH", "Static cover image (with --file)") { |p| @options[:image] = p }
+        opts.on("--base-image PATH", "Base image for cover generation (with --file)") { |p| @options[:base_image] = p }
+        opts.on("--lingq", "Enable LingQ upload during generation") { @options[:lingq] = true }
+      end.parse!(args)
+
+      @podcast_name = args.shift
     end
 
     def run
@@ -74,6 +85,12 @@ module PodgenCLI
         # --- Load config ---
         guidelines = config.guidelines
         logger.log("Loaded guidelines (#{guidelines.length} chars)")
+
+        # --- Validate --file flag ---
+        if @options[:file] && config.type != "language"
+          $stderr.puts "Error: --file is only supported for language pipeline podcasts (type: language)"
+          return 1
+        end
 
         # --- Branch on pipeline type ---
         if config.type == "language"

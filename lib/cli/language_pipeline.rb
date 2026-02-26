@@ -23,6 +23,8 @@ module PodgenCLI
       @config = config
       @options = options
       @dry_run = options[:dry_run] || false
+      @local_file = options[:file]
+      @file_title = options[:title]
       @logger = logger
       @history = history
       @today = today
@@ -33,41 +35,59 @@ module PodgenCLI
       pipeline_start = Time.now
       logger.log("Language pipeline started#{@dry_run ? ' (DRY RUN)' : ''}")
 
-      # --- Phase 1: Fetch next episode from RSS ---
-      logger.phase_start("Fetch Episode")
-      episode = fetch_next_episode
-      unless episode
-        logger.error("No new episodes found in RSS feeds")
-        return 1
+      # --- Phase 1 + 2: Get episode and source audio ---
+      if @local_file
+        logger.phase_start("Local File")
+        episode = build_local_episode(@local_file, @file_title)
+        logger.log("Local file: \"#{episode[:title]}\" (#{@local_file})")
+        logger.phase_end("Local File")
+
+        if @dry_run
+          logger.log("[dry-run] Skipping transcription, assembly, and history")
+          total_time = (Time.now - pipeline_start).round(2)
+          summary = "[dry-run] Config validated, local file \"#{episode[:title]}\" — no API calls"
+          logger.log("Total pipeline time: #{total_time}s")
+          logger.log(summary)
+          puts summary unless @options[:verbosity] == :quiet
+          return 0
+        end
+
+        source_audio_path = File.expand_path(@local_file)
+      else
+        logger.phase_start("Fetch Episode")
+        episode = fetch_next_episode
+        unless episode
+          logger.error("No new episodes found in RSS feeds")
+          return 1
+        end
+        logger.log("Selected episode: \"#{episode[:title]}\" (#{episode[:audio_url]})")
+        logger.phase_end("Fetch Episode")
+
+        if @dry_run
+          logger.log("[dry-run] Skipping download, transcription, assembly, and history")
+          total_time = (Time.now - pipeline_start).round(2)
+          summary = "[dry-run] Config validated, episode \"#{episode[:title]}\" — no API calls"
+          logger.log("Total pipeline time: #{total_time}s")
+          logger.log(summary)
+          puts summary unless @options[:verbosity] == :quiet
+          return 0
+        end
+
+        logger.phase_start("Download Audio")
+        source_audio_path = download_audio(episode[:audio_url])
+        logger.log("Downloaded source audio: #{(File.size(source_audio_path) / (1024.0 * 1024)).round(2)} MB")
+        logger.phase_end("Download Audio")
       end
-      logger.log("Selected episode: \"#{episode[:title]}\" (#{episode[:audio_url]})")
-      logger.phase_end("Fetch Episode")
 
-      if @dry_run
-        logger.log("[dry-run] Skipping download, transcription, assembly, and history")
-        total_time = (Time.now - pipeline_start).round(2)
-        summary = "[dry-run] Config validated, episode \"#{episode[:title]}\" — no API calls"
-        logger.log("Total pipeline time: #{total_time}s")
-        logger.log(summary)
-        puts summary unless @options[:verbosity] == :quiet
-        return 0
-      end
-
-      # --- Phase 2: Download source audio ---
-      logger.phase_start("Download Audio")
-      source_audio_path = download_audio(episode[:audio_url])
-      logger.log("Downloaded source audio: #{(File.size(source_audio_path) / (1024.0 * 1024)).round(2)} MB")
-      logger.phase_end("Download Audio")
-
-      # --- Phase 2b: Skip fixed intro if configured ---
-      if @config.skip_intro && @config.skip_intro > 0
+      # --- Phase 2b: Skip intro (--skip-intro for local files, config for RSS) ---
+      skip_intro = @local_file ? @options[:skip_intro] : @config.skip_intro
+      if skip_intro && skip_intro > 0
         assembler = AudioAssembler.new(logger: logger)
         total = assembler.probe_duration(source_audio_path)
-        skip = @config.skip_intro
         skipped_path = File.join(Dir.tmpdir, "podgen_skipped_#{Process.pid}.mp3")
         @temp_files << skipped_path
-        assembler.extract_segment(source_audio_path, skipped_path, skip, total)
-        logger.log("Skipped fixed intro: #{skip}s (#{total.round(1)}s → #{(total - skip).round(1)}s)")
+        assembler.extract_segment(source_audio_path, skipped_path, skip_intro, total)
+        logger.log("Skipped intro: #{skip_intro}s (#{total.round(1)}s → #{(total - skip_intro).round(1)}s)")
         source_audio_path = skipped_path
       end
 
@@ -104,8 +124,16 @@ module PodgenCLI
       # --- Save transcript ---
       save_transcript(episode, transcript, base_name)
 
+      # --- Save custom cover image (if --image provided) ---
+      if @options[:image]
+        ext = File.extname(@options[:image])
+        cover_dest = File.join(@config.episodes_dir, "#{base_name}_cover#{ext}")
+        FileUtils.cp(File.expand_path(@options[:image]), cover_dest)
+        logger.log("Custom cover saved: #{cover_dest}")
+      end
+
       # --- Phase 7: LingQ Upload (if enabled via --lingq flag) ---
-      upload_to_lingq(episode, @reconciled_text || transcript, output_path) if @options[:lingq]
+      upload_to_lingq(episode, @reconciled_text || transcript, output_path, base_name) if @options[:lingq]
 
       # --- Phase 8: Record history ---
       @history.record!(
@@ -135,6 +163,28 @@ module PodgenCLI
     private
 
     attr_reader :logger
+
+    def build_local_episode(path, title)
+      expanded = File.expand_path(path)
+      raise "File not found: #{expanded}" unless File.exist?(expanded)
+      raise "File is empty: #{expanded}" unless File.size(expanded) > 0
+
+      title ||= File.basename(path, File.extname(path))
+        .gsub(/[_-]/, " ")
+        .gsub(/\b\w/) { |m| m.upcase }
+
+      # Use filename:size as the dedup key so moving the file doesn't break history
+      file_id = "file://#{File.basename(path)}:#{File.size(expanded)}"
+
+      {
+        title: title,
+        description: "",
+        audio_url: file_id,
+        source_path: expanded,
+        pub_date: Time.now,
+        link: nil
+      }
+    end
 
     def fetch_next_episode
       rss_feeds = @config.sources["rss"]
@@ -364,7 +414,7 @@ module PodgenCLI
       end
     end
 
-    def upload_to_lingq(episode, transcript, audio_path)
+    def upload_to_lingq(episode, transcript, audio_path, base_name)
       return unless @config.lingq_enabled?
 
       if @dry_run
@@ -373,13 +423,19 @@ module PodgenCLI
       end
 
       logger.phase_start("LingQ Upload")
-      lc = @config.lingq_config
+      lc = @config.lingq_config.dup
+      lc[:image] = File.expand_path(@options[:image]) if @options[:image]
+      lc[:base_image] = File.expand_path(@options[:base_image]) if @options[:base_image]
       language = @config.transcription_language
 
-      image_path = generate_cover_image(episode[:title], lc)
+      image_path = if @options[:image]
+                     File.expand_path(@options[:image])
+                   else
+                     generate_cover_image(episode[:title], lc)
+                   end
 
       agent = LingQAgent.new(logger: logger)
-      agent.upload(
+      lesson_id = agent.upload(
         title: episode[:title],
         text: transcript,
         audio_path: audio_path,
@@ -391,18 +447,52 @@ module PodgenCLI
         accent: lc[:accent],
         status: lc[:status],
         description: episode[:description],
-        original_url: episode[:audio_url]
+        original_url: episode[:link]
       )
+
+      # Record in tracking so publish --lingq doesn't re-upload
+      record_lingq_upload(lc[:collection], base_name, lesson_id)
+
       logger.phase_end("LingQ Upload")
     rescue => e
       logger.log("Warning: LingQ upload failed: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
     end
 
+    # Records a LingQ upload in the tracking file (same format as publish command)
+    # so that publish --lingq won't re-upload episodes already uploaded during generate.
+    def record_lingq_upload(collection, base_name, lesson_id)
+      tracking_path = File.join(File.dirname(@config.episodes_dir), "lingq_uploads.yml")
+      tracking = if File.exist?(tracking_path)
+                   data = YAML.load_file(tracking_path)
+                   data.is_a?(Hash) ? data.transform_keys(&:to_s) : {}
+                 else
+                   {}
+                 end
+
+      collection_key = collection.to_s
+      tracking[collection_key] ||= {}
+      tracking[collection_key][base_name] = lesson_id
+
+      dir = File.dirname(tracking_path)
+      FileUtils.mkdir_p(dir)
+      tmp = File.join(dir, ".lingq_uploads.yml.tmp.#{Process.pid}")
+      begin
+        File.write(tmp, tracking.to_yaml)
+        File.rename(tmp, tracking_path)
+      rescue => e
+        File.delete(tmp) if File.exist?(tmp)
+        raise e
+      end
+
+      logger.log("Recorded LingQ upload: #{base_name} → lesson #{lesson_id}")
+    end
+
     # Generates a per-episode cover image with the title overlaid on the base image.
     # Returns the generated image path, or falls back to the static image path.
     def generate_cover_image(title, lingq_config)
-      return lingq_config[:image] unless @config.cover_generation_enabled?
+      base_image = lingq_config[:base_image]
+      return lingq_config[:image] unless base_image && File.exist?(base_image)
 
       cover_path = File.join(Dir.tmpdir, "podgen_cover_#{Process.pid}.jpg")
       @temp_files << cover_path
