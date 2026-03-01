@@ -31,7 +31,7 @@ module PodgenCLI
         opts.on("--cut-outro N", "--cut N", Float, "Seconds to cut from end") { |n| @options[:cut] = n }
         opts.on("--autotrim", "Enable outro auto-detection via word timestamps") { @options[:autotrim] = true }
         opts.on("--force", "Process even if already in history (skip dedup check)") { @options[:force] = true }
-        opts.on("--image PATH", "Static cover image (with --file or --url)") { |p| @options[:image] = p }
+        opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }
         opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| @options[:base_image] = p }
         opts.on("--lingq", "Enable LingQ upload during generation") { @options[:lingq] = true }
         opts.on("--dry-run", "Validate config, skip API calls") { @options[:dry_run] = true }

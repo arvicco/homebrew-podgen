@@ -35,7 +35,7 @@ class PodcastConfig
   end
 
   def guidelines
-    @guidelines_text ||= File.read(@guidelines_path)
+    @guidelines_text ||= File.read(@guidelines_path).gsub(/<!--.*?-->/m, "")
   end
 
   # Parses the ## Sources section from guidelines.md
@@ -288,7 +288,6 @@ class PodcastConfig
     current_key = nil
 
     match[1].each_line do |line|
-      next if line.strip.start_with?("<!--") || line.strip.start_with?("-->")
 
       if line.match?(/^- \S/)
         item = line.strip.sub(/^- /, "")

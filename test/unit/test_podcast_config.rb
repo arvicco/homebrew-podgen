@@ -107,6 +107,31 @@ class TestPodcastConfig < Minitest::Test
     assert_equal({ "code" => "fr", "voice_id" => "voice_fr_456" }, langs[2])
   end
 
+  def test_html_comments_are_stripped
+    write_guidelines(<<~MD)
+      ## Podcast
+      - name: Show
+      - language:
+        - en
+      <!--  - it: voice_it_123
+            - jp: voice_jp_456 -->
+
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Topics
+      - News
+    MD
+
+    config = PodcastConfig.new("myshow")
+    langs = config.languages
+    assert_equal 1, langs.length
+    assert_equal({ "code" => "en" }, langs[0])
+  end
+
   def test_defaults_when_podcast_section_missing
     write_guidelines(<<~MD)
       ## Format

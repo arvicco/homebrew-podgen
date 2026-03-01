@@ -210,7 +210,7 @@ topics:
 
 ### Podcast Guidelines
 
-Edit `podcasts/<name>/guidelines.md` to change format, tone, length, and content rules. The script agent follows these strictly.
+Edit `podcasts/<name>/guidelines.md` to change format, tone, length, and content rules. The script agent follows these strictly. HTML comments (`<!-- ... -->`) are stripped before parsing, so you can use them to temporarily disable config entries (e.g. languages, sources).
 
 ### Topics
 
@@ -411,7 +411,7 @@ podgen generate lahko_noc --file episode.mp3 --title "Custom Title"
 | `--cut-outro N` | Seconds to cut from the end (overrides config) |
 | `--autotrim` | Enable outro auto-detection via word timestamps |
 | `--force` | Process even if already in history (skip dedup check) |
-| `--image PATH` | Per-episode cover image (overrides cover generation) |
+| `--image PATH\|last` | Per-episode cover image, or `last` for latest ~/Desktop screenshot |
 | `--base-image PATH` | Base image for title-overlay cover generation |
 
 The rest of the pipeline (transcription, outro trimming, assembly, LingQ upload) works identically. The file's name and size are recorded in history for dedup (survives file moves). Re-running the same `--file` command within the 7-day lookback window exits with a warning; use `--force` to re-process.
@@ -433,7 +433,7 @@ podgen generate lahko_noc --url "https://youtube.com/watch?v=abc123" --title "Cu
 | `--cut-outro N` | Seconds to cut from the end (overrides config) |
 | `--autotrim` | Enable outro auto-detection via word timestamps |
 | `--force` | Process even if already in history (skip dedup check) |
-| `--image PATH\|thumb` | Per-episode cover image, or `thumb` to use YouTube thumbnail |
+| `--image PATH\|thumb\|last` | Per-episode cover image, `thumb` for YouTube thumbnail, or `last` for latest ~/Desktop screenshot |
 | `--base-image PATH` | Base image for title-overlay cover generation |
 
 The video thumbnail is always downloaded as a fallback. When `base_image` is configured (via `## Image` section, per-feed, or `--base-image`), title-overlay generation runs instead of using the raw thumbnail. Use `--image thumb` to explicitly prefer the YouTube thumbnail over generation, or `--image PATH` for a custom static image. YouTube auto-captions in the target language are automatically fetched (when available) and passed to the transcription reconciler as an additional reference source. The captions are treated as lower quality and used only as a tiebreaker when STT engines disagree. Requires `yt-dlp` on `$PATH` (`brew install yt-dlp`). Authentication uses browser cookies via `--cookies-from-browser` (default: Chrome, override with `YOUTUBE_BROWSER` env var). The canonical YouTube URL is recorded in history for dedup. Re-running the same `--url` command within the 7-day lookback window exits with a warning; use `--force` to re-process.
@@ -485,7 +485,7 @@ Cover and title-overlay generation settings are configured in a dedicated `## Im
 | `text_y_offset` | Vertical offset in pixels |
 
 **Per-episode cover priority chain:**
-1. `--image PATH` — explicit static file override
+1. `--image PATH` — explicit static file override (also `last` for latest ~/Desktop screenshot)
 2. `--image thumb` — explicitly use YouTube auto-thumbnail (YouTube only; error for non-YouTube)
 3. Per-feed `image: none` — disables cover generation for this feed
 4. `--base-image PATH` — CLI override for title-overlay generation base
