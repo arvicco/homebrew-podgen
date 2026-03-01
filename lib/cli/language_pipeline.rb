@@ -44,6 +44,16 @@ module PodgenCLI
         return 1
       end
 
+      if @options[:image] == "last"
+        screenshot = Dir.glob(File.join(Dir.home, "Desktop", "Screenshot *.png")).max_by { |f| File.mtime(f) }
+        unless screenshot
+          $stderr.puts "Error: no screenshots found on ~/Desktop"
+          return 1
+        end
+        @options[:image] = screenshot
+        logger.log("Resolved --image last → #{screenshot}")
+      end
+
       # --- Phase 1 + 2: Get episode and source audio ---
       if @local_file
         logger.phase_start("Local File")
@@ -602,7 +612,7 @@ module PodgenCLI
     end
 
     # Resolves the episode cover image path using the priority chain:
-    # 1. --image PATH → static file
+    # 1. --image PATH/last → static file (last = latest ~/Desktop screenshot, resolved at startup)
     # 2. --image thumb → YouTube thumbnail
     # 3. Per-feed image: none → YouTube thumbnail fallback
     # 4. --base-image PATH → title overlay on file
