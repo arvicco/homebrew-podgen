@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wrapper script for launchd — resolves paths dynamically and runs the orchestrator.
+# Wrapper script for launchd — resolves paths dynamically and runs podgen generate.
 # Usage: scripts/run.sh <podcast_name>
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

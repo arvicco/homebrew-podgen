@@ -12,18 +12,27 @@ class EpisodeHistory
     @path = history_path
   end
 
-  # Returns array of recent episode hashes (within lookback window)
-  def recent_episodes
+  # Returns all episode hashes
+  def all_episodes
     return [] unless File.exist?(@path)
 
-    entries = YAML.load_file(@path) || []
+    YAML.load_file(@path) || []
+  end
+
+  # Returns array of recent episode hashes (within lookback window)
+  def recent_episodes
     cutoff = (Date.today - LOOKBACK_DAYS).to_s
-    entries.select { |e| e["date"] >= cutoff }
+    all_episodes.select { |e| e["date"] >= cutoff }
   end
 
   # Returns Set of all URLs from recent episodes
   def recent_urls
     recent_episodes.flat_map { |e| e["urls"] || [] }.to_set
+  end
+
+  # Returns Set of all URLs ever recorded (for language pipeline dedup)
+  def all_urls
+    all_episodes.flat_map { |e| e["urls"] || [] }.to_set
   end
 
   # Returns formatted string of recent topics for the topic agent prompt
@@ -45,7 +54,7 @@ class EpisodeHistory
     removed
   end
 
-  # Append a new episode entry and prune old entries.
+  # Append a new episode entry.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   def record!(date:, title:, topics:, urls:)
     entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
@@ -55,10 +64,6 @@ class EpisodeHistory
       "topics" => topics,
       "urls" => urls
     }
-
-    # Prune entries older than lookback window
-    cutoff = (Date.today - LOOKBACK_DAYS).to_s
-    entries.select! { |e| e["date"] >= cutoff }
 
     write_entries!(entries)
   end

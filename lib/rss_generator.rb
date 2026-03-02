@@ -6,6 +6,26 @@ require "fileutils"
 require "yaml"
 
 class RssGenerator
+  # Converts markdown transcripts/scripts to HTML for podcast apps.
+  # Skips files where the HTML is already up-to-date.
+  def self.convert_transcripts(episodes_dir)
+    Dir.glob(File.join(episodes_dir, "*_{transcript,script}.md")).each do |md_path|
+      html_path = md_path.sub(/\.md$/, ".html")
+      next if File.exist?(html_path) && File.mtime(html_path) >= File.mtime(md_path)
+
+      text = File.read(md_path)
+      body = if text.include?("## Transcript")
+        text.split("## Transcript", 2).last
+      else
+        text.sub(/\A#[^\n]*\n+([^\n]*\n+)?/, "")
+      end
+
+      paragraphs = body.strip.split(/\n{2,}/).map { |p| "<p>#{p.strip}</p>" }
+      html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n#{paragraphs.join("\n")}\n</body></html>\n"
+      File.write(html_path, html)
+    end
+  end
+
   def initialize(episodes_dir:, feed_path:, title: "Podcast", description: nil, author: "Podcast Agent", language: "en", base_url: nil, image: nil, history_path: nil, logger: nil)
     @logger = logger
     @episodes_dir = episodes_dir
