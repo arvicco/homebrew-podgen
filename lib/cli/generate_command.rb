@@ -270,7 +270,9 @@ module PodgenCLI
             date: today,
             title: script[:title],
             topics: research_data.map { |r| r[:topic] },
-            urls: research_data.flat_map { |r| r[:findings].map { |f| f[:url] } }
+            urls: research_data.flat_map { |r| r[:findings].map { |f| f[:url] } },
+            duration: AudioAssembler.probe_duration(output_paths.first),
+            timestamp: Time.now.iso8601
           )
           logger.log("Episode recorded in history: #{config.history_path}")
 

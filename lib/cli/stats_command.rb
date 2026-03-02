@@ -7,6 +7,7 @@ require "date"
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "podcast_config")
+require_relative File.join(root, "lib", "audio_assembler")
 
 module PodgenCLI
   class StatsCommand
@@ -153,8 +154,13 @@ module PodgenCLI
         []
       end
 
+      # Build duration map from history to avoid ffprobe calls where possible
+      duration_map = build_duration_map(config)
+
       total_size = mp3s.sum { |f| File.size(f) rescue 0 }
-      total_seconds = total_size / (192_000.0 / 8)
+      total_seconds = mp3s.sum { |f|
+        duration_map[File.basename(f)] || AudioAssembler.probe_duration(f) || File.size(f) / (192_000.0 / 8)
+      }
 
       # Date range from filenames
       dates = mp3s.filter_map { |f|
@@ -196,10 +202,11 @@ module PodgenCLI
 
       # Per-episode details (for verbose)
       episode_details = mp3s.map do |path|
+        fname = File.basename(path)
         size = File.size(path) rescue 0
-        secs = size / (192_000.0 / 8)
+        secs = duration_map[fname] || AudioAssembler.probe_duration(path) || size / (192_000.0 / 8)
         {
-          filename: File.basename(path),
+          filename: fname,
           size_str: format_size(size),
           duration_str: format_duration_short(secs)
         }
@@ -218,6 +225,35 @@ module PodgenCLI
         has_url: !config.base_url.nil?,
         episodes: episode_details
       }
+    end
+
+    # Build a map of MP3 filename → duration (seconds) from history entries.
+    # Same suffix logic as RssGenerator to match filenames to history entries.
+    SUFFIXES = [""] + ("a".."z").to_a
+
+    def build_duration_map(config)
+      return {} unless File.exist?(config.history_path)
+
+      entries = YAML.load_file(config.history_path) rescue nil
+      return {} unless entries.is_a?(Array)
+
+      podcast_name = File.basename(File.dirname(config.episodes_dir))
+      by_date = {}
+      entries.each do |entry|
+        date = entry["date"]
+        next unless date
+        (by_date[date] ||= []) << entry
+      end
+
+      map = {}
+      by_date.each do |date, date_entries|
+        date_entries.each_with_index do |entry, idx|
+          next unless entry["duration"]
+          suffix = SUFFIXES[idx] || idx.to_s
+          map["#{podcast_name}-#{date}#{suffix}.mp3"] = entry["duration"]
+        end
+      end
+      map
     end
 
     def format_sources(sources)

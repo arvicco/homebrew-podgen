@@ -230,7 +230,9 @@ module PodgenCLI
         date: @today,
         title: episode[:title],
         topics: [episode[:title]],
-        urls: [episode[:audio_url]]
+        urls: [episode[:audio_url]],
+        duration: AudioAssembler.probe_duration(output_path),
+        timestamp: Time.now.iso8601
       )
       logger.log("Episode recorded in history: #{@config.history_path}")
 
