@@ -3,7 +3,7 @@
 Fully autonomous podcast generation pipeline with two modes:
 
 - **News pipeline**: Researches topics, writes a script, generates audio via TTS, and assembles a final MP3.
-- **Language pipeline**: Downloads episodes from RSS feeds, local MP3 files (`--file`), or YouTube videos (`--url`), strips intro/outro music, transcribes via OpenAI Whisper, and produces a clean MP3 + transcript.
+- **Language pipeline**: Downloads episodes from RSS feeds, local MP3 files (`--file`), or YouTube videos (`--url`), strips intro/outro music and unwanted segments, transcribes via OpenAI Whisper, and produces a clean MP3 + transcript.
 
 Runs on a daily schedule with zero human involvement.
 
@@ -136,8 +136,8 @@ podgen --dry-run publish ruby_world
 # Process a local MP3 through the language pipeline
 podgen generate lahko_noc --file ~/Downloads/story.mp3
 
-# Local MP3 with custom title and intro trimming
-podgen generate lahko_noc --file story.mp3 --title "The Three Bears" --skip 10
+# Local MP3 with custom title and intro trimming (seconds or min:sec)
+podgen generate lahko_noc --file story.mp3 --title "The Three Bears" --skip 1:20
 
 # Local MP3 with custom cover image for LingQ (persisted with episode)
 podgen generate lahko_noc --file story.mp3 --lingq --image cover.png
@@ -179,7 +179,7 @@ Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` (~10 min episode, ~12 
 ### Language pipeline
 
 1. Fetch the latest episode from configured RSS feeds, a local MP3 (`--file`), or a YouTube video (`--url`)
-2. Download and strip intro/outro music (outro auto-detection requires `--autotrim`)
+2. Download and strip intro/outro/interior segments via unified trimming (outro auto-detection requires `--autotrim`)
 3. Transcribe via OpenAI Whisper (~15s for a 7-min episode)
 4. Clean episode title and description (or generate description from transcript for local files) via Claude Haiku
 5. Assemble with custom intro/outro jingles + loudness normalization
@@ -356,21 +356,54 @@ Set `type: language` in `## Podcast` and configure `## Audio` in `podcasts/<name
 - `type: language` in `## Podcast` activates this pipeline
 - `language` in `## Audio` is an ISO-639-1 code passed to the transcription engine
 - `engine` in `## Audio` selects transcription engines (`open`, `elab`, `groq`); multiple = comparison mode
-- RSS feeds support per-feed `skip:` and `cut:` options (see below)
+- RSS feeds support per-feed `skip:` and `cut:` options in seconds or min:sec format (see below)
 - RSS sources must include feeds with audio enclosures
 
 #### Per-feed audio trimming
 
-RSS feeds can specify `skip:` (seconds to cut from start) and `cut:` (seconds to cut from end) inline:
+RSS feeds can specify `skip:` and `cut:` inline, in seconds or min:sec format:
 
 ```markdown
 ## Sources
 - rss:
   - https://podcast.example.com/feed skip: 38 cut: 10
-  - https://other.example.com/feed skip: 5
+  - https://other.example.com/feed skip: 1:20 cut: 11:20
 ```
 
+Both `skip` and `cut` accept plain seconds (`38`) or min:sec (`1:20`). For `cut`, the format determines behavior:
+- **Plain seconds** (e.g. `cut: 10`): removes that many seconds from the end (relative)
+- **min:sec** (e.g. `cut: 11:20`): cuts at that timestamp, keeping audio up to 11m20s (absolute)
+
+For `skip`, both formats mean "start playback from this point" — `skip: 80` and `skip: 1:20` are equivalent.
+
 CLI flags `--skip N` / `--cut N` override per-feed values. `skip`/`cut` in `## Audio` is used as a fallback if neither CLI flag nor per-feed config is set.
+
+#### Snip format
+
+The `--snip` flag removes arbitrary interior segments from the audio. All timestamps reference the original audio file (before skip/cut). Multiple intervals are comma-separated.
+
+| Format | Example | Meaning |
+|--------|---------|---------|
+| Range (seconds) | `--snip 20-30` | Remove seconds 20 through 30 |
+| Range (min:sec) | `--snip 1:20-2:30` | Remove from 1m20s to 2m30s |
+| Offset | `--snip 1:20+30` | Remove 30s starting at 1m20s |
+| Open-ended | `--snip 1:20-end` | Remove from 1m20s to the end |
+| Multiple | `--snip 1:20-2:30,3:40+33` | Remove two segments |
+
+Skip, cut, and snip are unified into a single trimming pass: all removal intervals are merged and the audio is processed in one ffmpeg operation.
+
+`--snip` is CLI-only (not available in per-feed config or `## Audio`) since interior snipping is a per-episode manual operation.
+
+```bash
+# Remove an ad break from 1:20 to 2:30
+podgen generate lahko_noc --file story.mp3 --snip 1:20-2:30
+
+# Remove two segments
+podgen generate lahko_noc --file story.mp3 --snip 1:20-2:30,5:00+45
+
+# Combine with skip and cut
+podgen generate lahko_noc --file story.mp3 --skip 30 --cut 10 --snip 3:00-3:30
+```
 
 #### Outro auto-detection (autotrim)
 
@@ -407,8 +440,9 @@ podgen generate lahko_noc --file episode.mp3 --title "Custom Title"
 |------|-------------|
 | `--file PATH` | Local MP3 to process (skips RSS fetch) |
 | `--title TEXT` | Episode title (default: titleized filename, e.g. `my_story.mp3` → "My Story") |
-| `--skip N` | Seconds to skip from start (overrides config) |
-| `--cut N` | Seconds to cut from end (overrides config) |
+| `--skip N\|M:SS` | Seconds or min:sec to skip from start (overrides config) |
+| `--cut N\|M:SS` | Seconds to cut from end, or min:sec to cut at timestamp (overrides config) |
+| `--snip INTERVALS` | Remove interior segments (see [Snip format](#snip-format) below) |
 | `--autotrim` | Enable outro auto-detection via word timestamps |
 | `--force` | Process even if already in history (skip dedup check) |
 | `--image PATH\|last` | Per-episode cover image, or `last` for latest ~/Desktop screenshot |
@@ -429,8 +463,9 @@ podgen generate lahko_noc --url "https://youtube.com/watch?v=abc123" --title "Cu
 |------|-------------|
 | `--url URL` | YouTube video URL (downloads audio via yt-dlp, mutually exclusive with `--file`) |
 | `--title TEXT` | Episode title (default: YouTube video title) |
-| `--skip N` | Seconds to skip from start (overrides config) |
-| `--cut N` | Seconds to cut from end (overrides config) |
+| `--skip N\|M:SS` | Seconds or min:sec to skip from start (overrides config) |
+| `--cut N\|M:SS` | Seconds to cut from end, or min:sec to cut at timestamp (overrides config) |
+| `--snip INTERVALS` | Remove interior segments (see [Snip format](#snip-format) below) |
 | `--autotrim` | Enable outro auto-detection via word timestamps |
 | `--force` | Process even if already in history (skip dedup check) |
 | `--image PATH\|thumb\|last` | Per-episode cover image, `thumb` for YouTube thumbnail, or `last` for latest ~/Desktop screenshot |
@@ -621,6 +656,8 @@ podgen/
 │   │   ├── list_command.rb   # List available podcasts
 │   │   ├── test_command.rb   # Run test scripts
 │   │   └── schedule_command.rb # Install launchd scheduler
+│   ├── time_value.rb          # TimeValue: seconds or min:sec with absolute? flag
+│   ├── snip_interval.rb      # SnipInterval: unified skip/cut/snip interval math
 │   ├── podcast_config.rb     # Resolves all paths, parses config from guidelines
 │   ├── source_manager.rb     # Multi-source research coordinator
 │   ├── research_cache.rb     # File-based research cache (24h TTL)

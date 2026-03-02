@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "open3"
 require "audio_assembler"
+require "snip_interval"
 
 class TestAssembly < Minitest::Test
   def setup
@@ -75,6 +76,44 @@ class TestAssembly < Minitest::Test
     )
     assert status.success?
     assert_includes stdout.strip, "mp3"
+  end
+
+  def test_snip_segments_removes_middle
+    # Generate a 30s tone, snip out 10-20, verify ~20s output
+    source = generate_tone(440, 30, "snip_source")
+    output = File.join(@tmpdir, "snipped.mp3")
+
+    si = SnipInterval.parse("10-20")
+    keeps = si.keep_segments(30)
+    @assembler.snip_segments(source, output, keeps)
+
+    assert File.exist?(output), "Snipped output should exist"
+    duration = probe_duration(output)
+    assert_in_delta 20.0, duration, 1.5, "Snipped output should be ~20s (removed 10s from middle)"
+  end
+
+  def test_snip_segments_from_start
+    source = generate_tone(440, 30, "snip_start_src")
+    output = File.join(@tmpdir, "snip_start_out.mp3")
+
+    si = SnipInterval.parse("0-10")
+    keeps = si.keep_segments(30)
+    @assembler.snip_segments(source, output, keeps)
+
+    duration = probe_duration(output)
+    assert_in_delta 20.0, duration, 1.5
+  end
+
+  def test_snip_segments_multiple
+    source = generate_tone(440, 30, "snip_multi_src")
+    output = File.join(@tmpdir, "snip_multi_out.mp3")
+
+    si = SnipInterval.parse("5-10,20-25")
+    keeps = si.keep_segments(30)
+    @assembler.snip_segments(source, output, keeps)
+
+    duration = probe_duration(output)
+    assert_in_delta 20.0, duration, 1.5, "Should remove two 5s segments"
   end
 
   private

@@ -7,6 +7,7 @@ require "fileutils"
 
 root = File.expand_path("../..", __dir__)
 
+require_relative File.join(root, "lib", "snip_interval")
 require_relative File.join(root, "lib", "sources", "rss_source")
 require_relative File.join(root, "lib", "transcription", "engine_manager")
 require_relative File.join(root, "lib", "audio_assembler")
@@ -144,32 +145,49 @@ module PodgenCLI
         logger.phase_end("Download Audio")
       end
 
-      # --- Phase 2b: Skip intro (CLI flag → per-feed config → ## Audio config) ---
+      # --- Phase 2b: Unified trim (skip + cut + snip → single aselect pass) ---
       skip = @options[:skip] || episode[:skip] || @config.skip
-      if skip && skip > 0
+      cut = @options[:cut] || episode[:cut] || @config.cut
+      snip = @options[:snip]
+
+      has_trim = (skip && skip > 0) || (cut && cut > 0) || snip
+      if has_trim
         assembler = AudioAssembler.new(logger: logger)
         total = assembler.probe_duration(source_audio_path)
-        skipped_path = File.join(Dir.tmpdir, "podgen_skipped_#{Process.pid}.mp3")
-        @temp_files << skipped_path
-        assembler.extract_segment(source_audio_path, skipped_path, skip, total)
-        logger.log("Skipped intro: #{skip}s (#{total.round(1)}s → #{(total - skip).round(1)}s)")
-        source_audio_path = skipped_path
-      end
+        removal = snip ? snip.dup : SnipInterval.allocate.tap { |si| si.instance_variable_set(:@intervals, []) }
 
-      # --- Phase 2c: Cut outro (CLI flag → per-feed config → ## Audio config) ---
-      cut = @options[:cut] || episode[:cut] || @config.cut
-      if cut && cut > 0
-        assembler ||= AudioAssembler.new(logger: logger)
-        total = assembler.probe_duration(source_audio_path)
-        keep = total - cut
-        if keep > 0
-          cut_path = File.join(Dir.tmpdir, "podgen_cut_#{Process.pid}.mp3")
-          @temp_files << cut_path
-          assembler.trim_to_duration(source_audio_path, cut_path, keep)
-          logger.log("Cut outro: #{cut}s (#{total.round(1)}s → #{keep.round(1)}s)")
-          source_audio_path = cut_path
+        # Fold in skip → remove [0, skip_time]
+        if skip && skip > 0
+          skip_to = skip.respond_to?(:absolute?) && skip.absolute? ? skip.to_f : skip.to_f
+          removal.add(0, skip_to)
+          logger.log("Skip: removing 0-#{format_timestamp(skip_to)}")
+        end
+
+        # Fold in cut → remove [cut_point, total]
+        if cut && cut > 0
+          cut_point = cut.respond_to?(:absolute?) && cut.absolute? ? cut.to_f : total - cut.to_f
+          if cut_point > 0 && cut_point < total
+            removal.add(cut_point, total)
+            logger.log("Cut: removing #{format_timestamp(cut_point)}-#{format_timestamp(total)}")
+          else
+            logger.log("Warning: cut value results in invalid cut point (#{cut_point.round(1)}s of #{total.round(1)}s) — skipping cut")
+          end
+        end
+
+        if snip
+          logger.log("Snip: removing #{snip}")
+        end
+
+        keeps = removal.keep_segments(total)
+        if keeps.any? && keeps != [SnipInterval::Interval.new(0.0, total)]
+          trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}.mp3")
+          @temp_files << trimmed_path
+          assembler.snip_segments(source_audio_path, trimmed_path, keeps)
+          kept_duration = keeps.sum { |s| s.to - s.from }
+          logger.log("Trimmed: #{total.round(1)}s → #{kept_duration.round(1)}s (removed #{(total - kept_duration).round(1)}s)")
+          source_audio_path = trimmed_path
         else
-          logger.log("Warning: cut #{cut}s exceeds audio duration #{total.round(1)}s — skipping")
+          logger.log("No effective trimming needed after resolving skip/cut/snip")
         end
       end
 
@@ -663,6 +681,12 @@ module PodgenCLI
     rescue => e
       logger.log("Warning: Cover generation failed: #{e.message} (falling back)")
       nil
+    end
+
+    def format_timestamp(seconds)
+      mins = (seconds / 60).to_i
+      secs = (seconds % 60).round(1)
+      format("%d:%04.1f", mins, secs)
     end
 
     def cleanup_temp_files

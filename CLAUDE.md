@@ -23,6 +23,8 @@ lib/
     rss_command.rb                # RSS feed generation
     publish_command.rb            # Publish to R2 or LingQ
     list_command.rb | test_command.rb | schedule_command.rb
+  time_value.rb                  # TimeValue: seconds or min:sec with absolute? flag
+  snip_interval.rb               # SnipInterval: unified skip/cut/snip interval math
   podcast_config.rb              # Config resolver (paths, sources, languages from guidelines)
   source_manager.rb              # Parallel multi-source research
   research_cache.rb              # File cache (SHA256, 24h TTL, atomic writes)
@@ -53,7 +55,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 
 ### Language: `language_pipeline.rb`
 1. Get episode: `--file` (local MP3) | `--url` (YouTube) | RSS (next unprocessed)
-2. Download + apply skip/cut trimming (priority: CLI → per-feed → `## Audio`)
+2. Download + unified trim: skip/cut/snip → SnipInterval → single `atrim+concat` pass (priority: CLI → per-feed → `## Audio`)
 3. Transcribe via EngineManager (parallel engines). Groq provides word timestamps. Reconciler (Claude Opus) produces clean text
 4. Clean title/description via DescriptionAgent (Claude Haiku) — non-fatal
 5. Autotrim outro (opt-in): map reconciled text → Groq timestamps → trim at speech_end + 2s, save tail
@@ -64,7 +66,9 @@ scripts/serve.rb                 # WEBrick server for RSS
 ### Key behaviors
 - **Multi-podcast:** `podcasts/<name>/` each with own config. `podgen generate <name>`
 - **Input sources:** `--file PATH` (local MP3, dedup via `file://name:size`), `--url URL` (YouTube via yt-dlp, auto-thumbnail+captions), RSS (per-feed `skip: N cut: N autotrim: true base_image: PATH image: none`)
-- **Flags:** `--title`, `--skip N`, `--cut N`, `--autotrim`, `--force` (skip dedup), `--image PATH|thumb|last`, `--base-image PATH`, `--lingq`, `--dry-run`
+- **Flags:** `--title`, `--skip N` (seconds or min:sec), `--cut N` (seconds=relative from end, min:sec=absolute cut point), `--snip INTERVALS` (remove interior segments, CLI-only), `--autotrim`, `--force` (skip dedup), `--image PATH|thumb|last`, `--base-image PATH`, `--lingq`, `--dry-run`
+- **TimeValue:** `skip`/`cut` accept plain seconds (`30`) or min:sec (`1:20`). Plain seconds are relative (skip/cut that many seconds); min:sec is absolute (skip to / cut at that timestamp). Implemented via `TimeValue` class (`DelegateClass(Float)` + `absolute?` flag)
+- **SnipInterval:** Unified interval math for all trimming. Formats: `1:20-2:30` (range), `1:20+30` (offset), `1:20-end` (open-ended), comma-separated for multiple. Skip/cut/snip fold into removal intervals → merged → inverted to keep segments → single ffmpeg `atrim+concat` pass. `--snip` is CLI-only (per-episode manual operation)
 - **Autotrim:** Opt-in via `--autotrim`, per-feed, or `## Audio`. Requires 2+ engines including groq
 - **Episode dedup:** News pipeline uses 7-day lookback; language pipeline checks all history (permanent). `--force` to bypass
 - **Same-day suffix:** `name-date.mp3`, then `name-date-a.mp3`, etc.
@@ -114,8 +118,8 @@ Per-podcast `.env` overrides root via `Dotenv.overload`.
 ```
 podgen [flags] <command> <args>
   generate <podcast>   # Full pipeline
-    --file PATH | --url URL | --title TEXT | --skip N | --cut N
-    --autotrim | --force | --image PATH|thumb|last | --base-image PATH | --lingq
+    --file PATH | --url URL | --title TEXT | --skip N|M:SS | --cut N|M:SS
+    --snip INTERVALS | --autotrim | --force | --image PATH|thumb|last | --base-image PATH | --lingq
   translate <podcast>  # Backfill translations (--last N, --lang xx)
   scrap <podcast>      # Remove last episode
   rss <podcast>        # Generate RSS (--base-url URL)
