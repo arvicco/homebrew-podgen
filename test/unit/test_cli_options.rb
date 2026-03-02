@@ -102,8 +102,8 @@ class TestCLIOptions < Minitest::Test
       ["--skip", "5", "--cut", "10", "test_pod"],
       { dry_run: true }
     )
-    assert_equal 5.0, cmd.instance_variable_get(:@options)[:skip]
-    assert_equal 10.0, cmd.instance_variable_get(:@options)[:cut]
+    assert_in_delta 5.0, cmd.instance_variable_get(:@options)[:skip]
+    assert_in_delta 10.0, cmd.instance_variable_get(:@options)[:cut]
   end
 
   def test_generate_accepts_long_form_skip_and_cut
@@ -111,8 +111,28 @@ class TestCLIOptions < Minitest::Test
       ["--skip-intro", "3", "--cut-outro", "7", "test_pod"],
       { dry_run: true }
     )
-    assert_equal 3.0, cmd.instance_variable_get(:@options)[:skip]
-    assert_equal 7.0, cmd.instance_variable_get(:@options)[:cut]
+    assert_in_delta 3.0, cmd.instance_variable_get(:@options)[:skip]
+    assert_in_delta 7.0, cmd.instance_variable_get(:@options)[:cut]
+  end
+
+  def test_generate_accepts_minsec_skip
+    cmd = PodgenCLI::GenerateCommand.new(
+      ["--skip", "1:20", "test_pod"],
+      { dry_run: true }
+    )
+    skip_val = cmd.instance_variable_get(:@options)[:skip]
+    assert_in_delta 80.0, skip_val
+    assert skip_val.absolute?
+  end
+
+  def test_generate_accepts_minsec_cut
+    cmd = PodgenCLI::GenerateCommand.new(
+      ["--cut", "11:20", "test_pod"],
+      { dry_run: true }
+    )
+    cut_val = cmd.instance_variable_get(:@options)[:cut]
+    assert_in_delta 680.0, cut_val
+    assert cut_val.absolute?
   end
 
   def test_publish_accepts_lingq
@@ -191,6 +211,26 @@ class TestCLIOptions < Minitest::Test
   def test_generate_accepts_force_flag
     cmd = PodgenCLI::GenerateCommand.new(["--force", "test_pod"], {})
     assert_equal true, cmd.instance_variable_get(:@options)[:force]
+  end
+
+  def test_generate_accepts_snip
+    cmd = PodgenCLI::GenerateCommand.new(["--snip", "1:20-2:30", "test_pod"], {})
+    snip = cmd.instance_variable_get(:@options)[:snip]
+    assert_instance_of SnipInterval, snip
+    assert_equal 1, snip.intervals.length
+    assert_in_delta 80.0, snip.intervals[0].from
+    assert_in_delta 150.0, snip.intervals[0].to
+  end
+
+  def test_generate_accepts_multi_snip
+    cmd = PodgenCLI::GenerateCommand.new(["--snip", "10-20,1:00+30", "test_pod"], {})
+    snip = cmd.instance_variable_get(:@options)[:snip]
+    assert_instance_of SnipInterval, snip
+    assert_equal 2, snip.intervals.length
+    assert_in_delta 10.0, snip.intervals[0].from
+    assert_in_delta 20.0, snip.intervals[0].to
+    assert_in_delta 60.0, snip.intervals[1].from
+    assert_in_delta 90.0, snip.intervals[1].to
   end
 
   # ── Unknown command should fail ──────────────────────────────────

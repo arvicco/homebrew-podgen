@@ -7,6 +7,8 @@ require "optparse"
 
 root = File.expand_path("../..", __dir__)
 
+require_relative File.join(root, "lib", "time_value")
+require_relative File.join(root, "lib", "snip_interval")
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "topic_agent")
@@ -27,8 +29,9 @@ module PodgenCLI
         opts.on("--file PATH", "Local audio file (language pipeline)") { |f| @options[:file] = f }
         opts.on("--url URL", "YouTube video URL (language pipeline)") { |u| @options[:url] = u }
         opts.on("--title TEXT", "Episode title (with --file or --url)") { |t| @options[:title] = t }
-        opts.on("--skip-intro N", "--skip N", Float, "Seconds to skip from start") { |n| @options[:skip] = n }
-        opts.on("--cut-outro N", "--cut N", Float, "Seconds to cut from end") { |n| @options[:cut] = n }
+        opts.on("--skip-intro N", "--skip N", String, "Seconds or min:sec to skip from start") { |n| @options[:skip] = TimeValue.parse(n) }
+        opts.on("--cut-outro N", "--cut N", String, "Seconds or min:sec to cut from end (min:sec = absolute)") { |n| @options[:cut] = TimeValue.parse(n) }
+        opts.on("--snip INTERVALS", String, "Remove interior segments (e.g. 1:20-2:30,3:40+33)") { |s| @options[:snip] = SnipInterval.parse(s) }
         opts.on("--autotrim", "Enable outro auto-detection via word timestamps") { @options[:autotrim] = true }
         opts.on("--force", "Process even if already in history (skip dedup check)") { @options[:force] = true }
         opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }

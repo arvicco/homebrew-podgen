@@ -328,6 +328,33 @@ class TestPodcastConfig < Minitest::Test
     assert_equal [{ url: "https://example.com/feed", skip: 38.0, autotrim: true }], feeds
   end
 
+  def test_parses_rss_with_minsec_skip_and_cut
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Topics
+      - News
+
+      ## Sources
+      - rss:
+        - https://example.com/feed skip: 1:20 cut: 11:20
+    MD
+
+    config = PodcastConfig.new("myshow")
+    feeds = config.sources["rss"]
+    assert_equal 1, feeds.length
+    feed = feeds[0]
+    assert_equal "https://example.com/feed", feed[:url]
+    assert_in_delta 80.0, feed[:skip]
+    assert feed[:skip].absolute?
+    assert_in_delta 680.0, feed[:cut]
+    assert feed[:cut].absolute?
+  end
+
   def test_parses_audio_bare_autotrim
     write_guidelines(<<~MD)
       ## Format
@@ -408,6 +435,46 @@ class TestPodcastConfig < Minitest::Test
 
     config = PodcastConfig.new("myshow")
     assert_equal true, config.autotrim
+  end
+
+  def test_parses_audio_skip_minsec
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Audio
+      - engine:
+        - open
+      - language: sl
+      - skip: 1:20
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_in_delta 80.0, config.skip
+    assert config.skip.absolute?
+  end
+
+  def test_parses_audio_cut_minsec
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Audio
+      - engine:
+        - open
+      - language: sl
+      - cut: 11:20
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_in_delta 680.0, config.cut
+    assert config.cut.absolute?
   end
 
   def test_audio_defaults

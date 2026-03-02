@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "date"
+require_relative "time_value"
 
 class PodcastConfig
   attr_reader :name, :podcast_dir, :guidelines_path, :queue_path, :episodes_dir, :feed_path, :log_dir, :history_path
@@ -147,7 +148,7 @@ class PodcastConfig
       val = audio_section[:skip]
       return val if val
       val = extract_heading("Skip Intro")
-      val ? val.to_f : nil
+      val ? TimeValue.parse(val) : nil
     end
   end
 
@@ -338,9 +339,9 @@ class PodcastConfig
             current_key = nil
             case key
             when "skip"
-              config[:skip] = value.to_f
+              config[:skip] = TimeValue.parse(value)
             when "cut"
-              config[:cut] = value.to_f
+              config[:cut] = TimeValue.parse(value)
             when "autotrim"
               config[:autotrim] = true
             else
@@ -545,7 +546,8 @@ class PodcastConfig
 
     # Check for inline options: "URL key: val ..." or "URL flag ..."
     # Split on whitespace before "key:" or known bare flags (autotrim)
-    parts = value.split(/\s+(?=\w+:|\bautotrim\b)/, -1)
+    # Use [a-z_] to avoid matching min:sec timestamps like "1:20"
+    parts = value.split(/\s+(?=[a-z_]\w*:|\bautotrim\b)/, -1)
     return value if parts.length == 1
 
     url = parts.shift
@@ -561,8 +563,8 @@ class PodcastConfig
       k = k.strip
       v = v.strip
       case k
-      when "skip" then options[:skip] = v.to_f
-      when "cut" then options[:cut] = v.to_f
+      when "skip" then options[:skip] = TimeValue.parse(v)
+      when "cut" then options[:cut] = TimeValue.parse(v)
       when "autotrim" then options[:autotrim] = true
       when "base_image" then options[:base_image] = resolve_path(v)
       when "image" then options[:image] = v

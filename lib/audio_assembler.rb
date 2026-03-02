@@ -98,6 +98,37 @@ class AudioAssembler
     output_path
   end
 
+  # Removes interior segments from audio via atrim + concat filter_complex.
+  # keep_segments: array of SnipInterval::Interval (or anything responding to .from/.to)
+  # Each segment defines a time range to KEEP from the original audio.
+  def snip_segments(input_path, output_path, keep_segments)
+    filter_parts = []
+    labels = []
+
+    keep_segments.each_with_index do |seg, i|
+      label = "[s#{i}]"
+      filter_parts << "[0:a]atrim=#{seg.from.round(6)}:#{seg.to.round(6)},asetpts=PTS-STARTPTS,aresample=#{SAMPLE_RATE},aformat=sample_fmts=fltp:channel_layouts=mono#{label}"
+      labels << label
+    end
+
+    n = keep_segments.length
+    filter_parts << "#{labels.join}concat=n=#{n}:v=0:a=1[out]"
+    filter_complex = filter_parts.join(";")
+
+    args = [
+      "-i", input_path,
+      "-filter_complex", filter_complex,
+      "-map", "[out]",
+      "-c:a", "libmp3lame", "-b:a", BITRATE,
+      "-ar", SAMPLE_RATE.to_s,
+      "-y", output_path
+    ]
+
+    log("Snipping audio: keeping #{keep_segments.length} segment(s)")
+    run_ffmpeg(args, "snip")
+    output_path
+  end
+
   # Extracts a time range from an audio file. Resamples to mono 44100 Hz.
   def extract_segment(input_path, output_path, start_time, end_time)
     extract_speech(input_path, output_path, start_time, end_time)
