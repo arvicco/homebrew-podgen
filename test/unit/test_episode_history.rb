@@ -39,10 +39,8 @@ class TestEpisodeHistory < Minitest::Test
     @history.record!(date: old_date, title: "Old", topics: ["old"], urls: [])
     @history.record!(date: recent_date, title: "Recent", topics: ["new"], urls: [])
 
-    # re-read fresh to avoid prune side-effect — record! prunes on write
     history = EpisodeHistory.new(@history_path)
     recent = history.recent_episodes
-    # The old entry was pruned on the second record! call
     assert_equal 1, recent.length
     assert_equal "Recent", recent[0]["title"]
   end
@@ -103,14 +101,35 @@ class TestEpisodeHistory < Minitest::Test
     assert_nil history.remove_last!
   end
 
-  def test_record_prunes_old_entries
+  def test_record_preserves_all_entries
     old_date = Date.today - 10
-    @history.record!(date: old_date, title: "Old", topics: ["old"], urls: [])
-    @history.record!(date: Date.today, title: "New", topics: ["new"], urls: [])
+    @history.record!(date: old_date, title: "Old", topics: ["old"], urls: ["https://old.com"])
+    @history.record!(date: Date.today, title: "New", topics: ["new"], urls: ["https://new.com"])
 
     entries = YAML.load_file(@history_path)
-    # Old entry should have been pruned
-    assert_equal 1, entries.length
-    assert_equal "New", entries[0]["title"]
+    assert_equal 2, entries.length
+    assert_equal "Old", entries[0]["title"]
+    assert_equal "New", entries[1]["title"]
+  end
+
+  def test_all_urls_returns_all_entries
+    old_date = Date.today - 10
+    @history.record!(date: old_date, title: "Old", topics: ["old"], urls: ["https://old.com"])
+    @history.record!(date: Date.today, title: "New", topics: ["new"], urls: ["https://new.com"])
+
+    urls = @history.all_urls
+    assert_kind_of Set, urls
+    assert_includes urls, "https://old.com"
+    assert_includes urls, "https://new.com"
+  end
+
+  def test_recent_urls_excludes_old_entries
+    old_date = Date.today - 10
+    @history.record!(date: old_date, title: "Old", topics: ["old"], urls: ["https://old.com"])
+    @history.record!(date: Date.today, title: "New", topics: ["new"], urls: ["https://new.com"])
+
+    urls = @history.recent_urls
+    refute_includes urls, "https://old.com"
+    assert_includes urls, "https://new.com"
   end
 end

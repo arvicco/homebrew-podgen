@@ -97,6 +97,9 @@ class SourceManager
 
     total = all_results.sum { |r| r[:findings].length }
     log("All sources complete: #{total} total findings across #{all_results.length} topics")
+
+    @cache&.prune!
+
     all_results
   end
 

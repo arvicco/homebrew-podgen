@@ -291,9 +291,9 @@ module PodgenCLI
 
     def already_processed?(episode)
       return false if @options[:force] || @dry_run
-      return false unless @history.recent_urls.include?(episode[:audio_url])
+      return false unless @history.all_urls.include?(episode[:audio_url])
 
-      logger.log("Warning: Already processed within lookback window: #{episode[:audio_url]}")
+      logger.log("Warning: Already processed: #{episode[:audio_url]}")
       $stderr.puts "Already processed: \"#{episode[:title]}\" — use --force to re-process"
       true
     end
@@ -305,7 +305,7 @@ module PodgenCLI
       end
 
       source = RSSSource.new(feeds: rss_feeds, logger: logger)
-      exclude = force ? Set.new : @history.recent_urls
+      exclude = force ? Set.new : @history.all_urls
       episodes = source.fetch_episodes(exclude_urls: exclude)
 
       if episodes.empty?

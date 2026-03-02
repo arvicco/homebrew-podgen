@@ -137,7 +137,7 @@ podgen --dry-run publish ruby_world
 podgen generate lahko_noc --file ~/Downloads/story.mp3
 
 # Local MP3 with custom title and intro trimming
-podgen generate lahko_noc --file story.mp3 --title "The Three Bears" --skip-intro 10
+podgen generate lahko_noc --file story.mp3 --title "The Three Bears" --skip 10
 
 # Local MP3 with custom cover image for LingQ (persisted with episode)
 podgen generate lahko_noc --file story.mp3 --lingq --image cover.png
@@ -407,14 +407,14 @@ podgen generate lahko_noc --file episode.mp3 --title "Custom Title"
 |------|-------------|
 | `--file PATH` | Local MP3 to process (skips RSS fetch) |
 | `--title TEXT` | Episode title (default: titleized filename, e.g. `my_story.mp3` → "My Story") |
-| `--skip-intro N` | Seconds to skip from the start (overrides config) |
-| `--cut-outro N` | Seconds to cut from the end (overrides config) |
+| `--skip N` | Seconds to skip from start (overrides config) |
+| `--cut N` | Seconds to cut from end (overrides config) |
 | `--autotrim` | Enable outro auto-detection via word timestamps |
 | `--force` | Process even if already in history (skip dedup check) |
 | `--image PATH\|last` | Per-episode cover image, or `last` for latest ~/Desktop screenshot |
 | `--base-image PATH` | Base image for title-overlay cover generation |
 
-The rest of the pipeline (transcription, outro trimming, assembly, LingQ upload) works identically. The file's name and size are recorded in history for dedup (survives file moves). Re-running the same `--file` command within the 7-day lookback window exits with a warning; use `--force` to re-process.
+The rest of the pipeline (transcription, outro trimming, assembly, LingQ upload) works identically. The file's name and size are recorded in history for dedup (survives file moves). Re-running the same `--file` command exits with a warning if already processed; use `--force` to re-process.
 
 #### YouTube video import
 
@@ -429,14 +429,14 @@ podgen generate lahko_noc --url "https://youtube.com/watch?v=abc123" --title "Cu
 |------|-------------|
 | `--url URL` | YouTube video URL (downloads audio via yt-dlp, mutually exclusive with `--file`) |
 | `--title TEXT` | Episode title (default: YouTube video title) |
-| `--skip-intro N` | Seconds to skip from the start (overrides config) |
-| `--cut-outro N` | Seconds to cut from the end (overrides config) |
+| `--skip N` | Seconds to skip from start (overrides config) |
+| `--cut N` | Seconds to cut from end (overrides config) |
 | `--autotrim` | Enable outro auto-detection via word timestamps |
 | `--force` | Process even if already in history (skip dedup check) |
 | `--image PATH\|thumb\|last` | Per-episode cover image, `thumb` for YouTube thumbnail, or `last` for latest ~/Desktop screenshot |
 | `--base-image PATH` | Base image for title-overlay cover generation |
 
-The video thumbnail is always downloaded as a fallback. When `base_image` is configured (via `## Image` section, per-feed, or `--base-image`), title-overlay generation runs instead of using the raw thumbnail. Use `--image thumb` to explicitly prefer the YouTube thumbnail over generation, or `--image PATH` for a custom static image. YouTube auto-captions in the target language are automatically fetched (when available) and passed to the transcription reconciler as an additional reference source. The captions are treated as lower quality and used only as a tiebreaker when STT engines disagree. Requires `yt-dlp` on `$PATH` (`brew install yt-dlp`). Authentication uses browser cookies via `--cookies-from-browser` (default: Chrome, override with `YOUTUBE_BROWSER` env var). The canonical YouTube URL is recorded in history for dedup. Re-running the same `--url` command within the 7-day lookback window exits with a warning; use `--force` to re-process.
+The video thumbnail is always downloaded as a fallback. When `base_image` is configured (via `## Image` section, per-feed, or `--base-image`), title-overlay generation runs instead of using the raw thumbnail. Use `--image thumb` to explicitly prefer the YouTube thumbnail over generation, or `--image PATH` for a custom static image. YouTube auto-captions in the target language are automatically fetched (when available) and passed to the transcription reconciler as an additional reference source. The captions are treated as lower quality and used only as a tiebreaker when STT engines disagree. Requires `yt-dlp` on `$PATH` (`brew install yt-dlp`). Authentication uses browser cookies via `--cookies-from-browser` (default: Chrome, override with `YOUTUBE_BROWSER` env var). The canonical YouTube URL is recorded in history for dedup. Re-running the same `--url` command exits with a warning if already processed; use `--force` to re-process.
 
 - Place `intro.mp3` and `outro.mp3` in the podcast directory for custom jingles
 - Music detection uses bandpass filtering (300-3000 Hz) for intros and silence detection for outros
@@ -648,7 +648,7 @@ podgen/
 │   │   ├── bluesky_source.rb # Bluesky AT Protocol post search
 │   │   └── x_source.rb       # X (Twitter) via SocialData.tools API
 │   ├── youtube_downloader.rb # yt-dlp wrapper (metadata, audio download, captions)
-│   ├── episode_history.rb    # Episode dedup (atomic YAML writes, 7-day lookback)
+│   ├── episode_history.rb    # Episode dedup (atomic YAML writes)
 │   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, trim)
 │   ├── rss_generator.rb      # RSS 2.0 + iTunes + Podcasting 2.0 feed
 │   └── logger.rb             # Structured logging with phase timings

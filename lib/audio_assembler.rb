@@ -225,18 +225,6 @@ class AudioAssembler
     run_ffmpeg(args, "extract speech")
   end
 
-  def resample_to_standard(input_path, output_path)
-    args = [
-      "-i", input_path,
-      "-af", "aresample=#{SAMPLE_RATE},aformat=sample_fmts=fltp:channel_layouts=mono",
-      "-c:a", "libmp3lame", "-b:a", BITRATE,
-      "-ar", SAMPLE_RATE.to_s,
-      "-y", output_path
-    ]
-
-    run_ffmpeg(args, "resample")
-  end
-
   def verify_ffmpeg!
     _out, _err, status = Open3.capture3("ffmpeg", "-version")
     return if status.success?
