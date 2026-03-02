@@ -2,8 +2,10 @@
 
 require "rexml/document"
 require "date"
+require "time"
 require "fileutils"
 require "yaml"
+require "open3"
 
 class RssGenerator
   # Converts markdown transcripts/scripts to HTML for podcast apps.
@@ -36,7 +38,7 @@ class RssGenerator
     @language = language
     @base_url = base_url&.chomp("/")
     @image = image
-    @title_map = build_title_map(history_path)
+    @title_map, @timestamp_map, @duration_map = build_history_maps(history_path)
   end
 
   def generate
@@ -127,9 +129,15 @@ class RssGenerator
       ep_title = @title_map[ep[:filename]]
       title = ep_title || "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
       add_text(item, "title", title)
-      add_text(item, "pubDate", ep[:date].to_time.strftime("%a, %d %b %Y 06:00:00 %z"))
+      pub_time = @timestamp_map[ep[:filename]]
+      pub_date = if pub_time
+        Time.parse(pub_time).strftime("%a, %d %b %Y %H:%M:%S %z")
+      else
+        ep[:date].to_time.strftime("%a, %d %b %Y 06:00:00 %z")
+      end
+      add_text(item, "pubDate", pub_date)
       add_text(item, "itunes:author", @author)
-      add_text(item, "itunes:duration", estimate_duration(ep[:size]))
+      add_text(item, "itunes:duration", format_duration(ep))
 
       ep_url = @base_url ? "#{@base_url}/episodes/#{ep[:filename]}" : ep[:filename]
       enclosure = item.add_element("enclosure", {
@@ -164,15 +172,17 @@ class RssGenerator
     el
   end
 
-  # Build a map from MP3 filename → episode title using history.yml.
+  # Build maps from MP3 filename → title/timestamp/duration using history.yml.
   # History entries are chronological; same-day episodes get suffixes: "", "a", "b", etc.
+  # Returns [title_map, timestamp_map, duration_map].
   SUFFIXES = [""] + ("a".."z").to_a
 
-  def build_title_map(history_path)
-    return {} unless history_path && File.exist?(history_path)
+  def build_history_maps(history_path)
+    empty = [{}, {}, {}]
+    return empty unless history_path && File.exist?(history_path)
 
     entries = YAML.load_file(history_path) rescue nil
-    return {} unless entries.is_a?(Array)
+    return empty unless entries.is_a?(Array)
 
     # Determine the podcast name prefix from the episodes directory
     podcast_name = File.basename(File.dirname(@episodes_dir))
@@ -185,12 +195,17 @@ class RssGenerator
       (by_date[date] ||= []) << entry
     end
 
-    map = {}
+    title_map = {}
+    timestamp_map = {}
+    duration_map = {}
+
     by_date.each do |date, date_entries|
       date_entries.each_with_index do |entry, idx|
         suffix = SUFFIXES[idx] || idx.to_s
         filename = "#{podcast_name}-#{date}#{suffix}.mp3"
-        map[filename] = entry["title"] if entry["title"]
+        title_map[filename] = entry["title"] if entry["title"]
+        timestamp_map[filename] = entry["timestamp"] if entry["timestamp"]
+        duration_map[filename] = entry["duration"] if entry["duration"]
 
         # For non-English feeds, map language-suffixed filenames to translated
         # titles from script files, falling back to the English title.
@@ -199,21 +214,41 @@ class RssGenerator
           lang_script = File.join(@episodes_dir, "#{podcast_name}-#{date}#{suffix}-#{@language}_script.md")
           if File.exist?(lang_script)
             translated_title = File.read(lang_script)[/^# (.+)$/, 1]
-            map[lang_filename] = translated_title if translated_title
+            title_map[lang_filename] = translated_title if translated_title
           end
-          map[lang_filename] ||= entry["title"] if entry["title"]
+          title_map[lang_filename] ||= entry["title"] if entry["title"]
+          timestamp_map[lang_filename] = entry["timestamp"] if entry["timestamp"]
+          duration_map[lang_filename] = entry["duration"] if entry["duration"]
         end
       end
     end
-    map
+
+    [title_map, timestamp_map, duration_map]
   end
 
-  # Rough estimate: 192kbps MP3 → bytes / (192000/8) = seconds
-  def estimate_duration(size_bytes)
-    seconds = size_bytes / (192_000.0 / 8)
+  # Duration from history, falling back to ffprobe, then 192kbps estimate
+  def format_duration(ep)
+    seconds = @duration_map[ep[:filename]] || probe_duration(ep[:path]) || ep[:size] / (192_000.0 / 8)
     minutes = (seconds / 60).to_i
     secs = (seconds % 60).to_i
     format("%d:%02d", minutes, secs)
+  end
+
+  def probe_duration(path)
+    return nil unless path
+
+    stdout, _stderr, status = Open3.capture3(
+      "ffprobe", "-v", "quiet",
+      "-show_entries", "format=duration",
+      "-of", "csv=p=0",
+      path
+    )
+    return nil unless status.success?
+
+    duration = stdout.strip.to_f
+    duration > 0 ? duration : nil
+  rescue Errno::ENOENT
+    nil
   end
 
   def log(message)

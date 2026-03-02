@@ -14,6 +14,24 @@ class AudioAssembler
   INTRO_FADE_OUT = 3 # seconds
   OUTRO_FADE_IN = 2  # seconds
 
+  # Returns the duration of an audio file in seconds via ffprobe.
+  # Standalone class method — no instance needed, no verify_ffmpeg! side effect.
+  # Returns nil if ffprobe fails or isn't installed.
+  def self.probe_duration(path)
+    stdout, _stderr, status = Open3.capture3(
+      "ffprobe", "-v", "quiet",
+      "-show_entries", "format=duration",
+      "-of", "csv=p=0",
+      path
+    )
+    return nil unless status.success?
+
+    duration = stdout.strip.to_f
+    duration > 0 ? duration : nil
+  rescue Errno::ENOENT
+    nil
+  end
+
   def initialize(logger: nil)
     @logger = logger
     @root = File.expand_path("..", __dir__)

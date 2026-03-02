@@ -56,15 +56,18 @@ class EpisodeHistory
 
   # Append a new episode entry.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
-  def record!(date:, title:, topics:, urls:)
+  def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil)
     entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
-    entries << {
+    entry = {
       "date" => date.to_s,
       "title" => title,
       "topics" => topics,
       "urls" => urls
     }
+    entry["duration"] = duration if duration
+    entry["timestamp"] = timestamp if timestamp
 
+    entries << entry
     write_entries!(entries)
   end
 

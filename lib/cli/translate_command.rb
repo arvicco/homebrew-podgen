@@ -5,6 +5,7 @@ root = File.expand_path("../..", __dir__)
 require "optparse"
 require "fileutils"
 require_relative File.join(root, "lib", "podcast_config")
+require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "audio_assembler")
@@ -41,6 +42,9 @@ module PodgenCLI
       config = PodcastConfig.new(@podcast_name)
       config.load_env!
 
+      logger = PodcastAgent::Logger.new(log_path: config.log_path(Date.today), verbosity: @options[:verbosity])
+      logger.log("Translate started for '#{@podcast_name}'")
+
       # Resolve target languages (exclude English)
       languages = config.languages.reject { |l| l["code"] == "en" }
 
@@ -60,7 +64,7 @@ module PodgenCLI
       # Discover English episodes with _script.md files
       episodes = discover_episodes(config.episodes_dir)
       if episodes.empty?
-        puts "No English episodes found in #{config.episodes_dir}"
+        logger.log("No English episodes found in #{config.episodes_dir}")
         return 0
       end
 
@@ -71,14 +75,14 @@ module PodgenCLI
       pending = pending_translations(episodes, languages, config.episodes_dir)
 
       if pending.empty?
-        puts "All episodes already translated"
+        logger.log("All episodes already translated")
         return 0
       end
 
       if @options[:dry_run]
-        puts "Pending translations for #{@podcast_name}:"
-        pending.each { |p| puts "  #{p[:basename]} \u2192 #{p[:lang_code]}" }
-        puts "#{pending.length} episode(s) to translate"
+        logger.log("Pending translations for #{@podcast_name}:")
+        pending.each { |p| logger.log("  #{p[:basename]} \u2192 #{p[:lang_code]}") }
+        logger.log("#{pending.length} episode(s) to translate")
         return 0
       end
 
@@ -89,7 +93,7 @@ module PodgenCLI
       outro_path = File.join(config.podcast_dir, "outro.mp3")
 
       pending.each_with_index do |item, idx|
-        print "Translating #{item[:basename]} \u2192 #{item[:lang_code]}... " unless @options[:verbosity] == :quiet
+        logger.phase_start("Translate #{item[:basename]} → #{item[:lang_code]}")
         begin
           translate_episode(
             script_path: item[:script_path],
@@ -101,22 +105,23 @@ module PodgenCLI
             outro_path: outro_path,
             podcast_title: config.title,
             author: config.author,
-            pronunciation_pls_path: config.pronunciation_pls_path
+            pronunciation_pls_path: config.pronunciation_pls_path,
+            logger: logger
           )
           translated += 1
-          puts "done (#{idx + 1}/#{pending.length})" unless @options[:verbosity] == :quiet
+          logger.phase_end("Translate #{item[:basename]} → #{item[:lang_code]}")
+          logger.log("Done (#{idx + 1}/#{pending.length})")
         rescue => e
           failed += 1
-          puts "FAILED" unless @options[:verbosity] == :quiet
-          $stderr.puts "  Error: #{e.message}"
-          $stderr.puts "  #{e.backtrace.first}" if @options[:verbosity] == :verbose
+          logger.error("Translation failed for #{item[:basename]} → #{item[:lang_code]}: #{e.message}")
+          logger.error(e.backtrace.first) if @options[:verbosity] == :verbose
         end
       end
 
-      puts "Translated #{translated} episode(s), #{failed} failed" unless @options[:verbosity] == :quiet
+      logger.log("Translated #{translated} episode(s), #{failed} failed")
 
       # Regenerate RSS feeds
-      regenerate_rss(config)
+      regenerate_rss(config, logger)
 
       translated > 0 ? 0 : 1
     end
@@ -158,11 +163,11 @@ module PodgenCLI
       pending
     end
 
-    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, pronunciation_pls_path: nil)
+    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, pronunciation_pls_path: nil, logger: nil)
       script = parse_script(script_path)
 
       # Translate
-      translator = TranslationAgent.new(target_language: lang_code)
+      translator = TranslationAgent.new(target_language: lang_code, logger: logger)
       lang_script = translator.translate(script)
 
       # Save translated script
@@ -170,12 +175,12 @@ module PodgenCLI
       save_script(lang_script, lang_script_path)
 
       # TTS
-      tts_agent = TTSAgent.new(voice_id_override: voice_id, pronunciation_pls_path: pronunciation_pls_path)
+      tts_agent = TTSAgent.new(logger: logger, voice_id_override: voice_id, pronunciation_pls_path: pronunciation_pls_path)
       audio_paths = tts_agent.synthesize(lang_script[:segments])
 
       # Assemble
       output_path = File.join(episodes_dir, "#{basename}-#{lang_code}.mp3")
-      assembler = AudioAssembler.new
+      assembler = AudioAssembler.new(logger: logger)
       assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path,
         metadata: { title: lang_script[:title], artist: author })
 
@@ -206,8 +211,8 @@ module PodgenCLI
       end
     end
 
-    def regenerate_rss(config)
-      puts "Regenerating RSS feeds..." unless @options[:verbosity] == :quiet
+    def regenerate_rss(config, logger)
+      logger.log("Regenerating RSS feeds...")
 
       # Convert markdown transcripts to HTML for podcast apps
       RssGenerator.convert_transcripts(config.episodes_dir)
@@ -228,15 +233,14 @@ module PodgenCLI
           language: lang_code,
           base_url: base_url,
           image: config.image,
-          history_path: config.history_path
+          history_path: config.history_path,
+          logger: logger
         )
         generator.generate
         feed_paths << feed_path
       end
 
-      unless @options[:verbosity] == :quiet
-        feed_paths.each { |fp| puts "Feed: #{fp}" }
-      end
+      feed_paths.each { |fp| logger.log("Feed: #{fp}") }
     end
 
   end

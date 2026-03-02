@@ -281,7 +281,7 @@ Available sources:
 
 | Source | Key | API needed | Cost per run | Description |
 |--------|-----|-----------|--------------|-------------|
-| Exa.ai | `exa` | EXA_API_KEY | ~$0.03 | AI-powered news search (default) |
+| Exa.ai | `exa` | EXA_API_KEY | ~$0.03 | AI-powered search (default category: `news`; override with `- exa: research`) |
 | Hacker News | `hackernews` | None (free) | $0 | HN Algolia API, top stories per topic |
 | RSS feeds | `rss` | None | $0 | Fetch any RSS/Atom feed |
 | Claude Web Search | `claude_web` | ANTHROPIC_API_KEY | ~$0.02/topic | Claude with web_search tool (Haiku) |
@@ -302,7 +302,7 @@ Add the section to `podcasts/<name>/guidelines.md`:
 - claude_web
 ```
 
-- Plain items (`- exa`) are boolean toggles
+- Plain items (`- exa`) use defaults; items with values (`- exa: research`) pass configuration (e.g. Exa search category — default `news`)
 - Items with sub-lists (`- rss:` with feed URLs) or inline values (`- x: @user1, @user2`) carry parameters
 - `- x` (no handles) does general search only; `- x: @handle, ...` searches those accounts first, then fills with general results
 - Sources not listed are disabled

@@ -132,4 +132,24 @@ class TestEpisodeHistory < Minitest::Test
     refute_includes urls, "https://old.com"
     assert_includes urls, "https://new.com"
   end
+
+  def test_record_stores_duration_and_timestamp
+    ts = "2026-03-02T10:30:00+00:00"
+    @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [],
+                     duration: 123.45, timestamp: ts)
+
+    entries = YAML.load_file(@history_path)
+    assert_equal 1, entries.length
+    assert_equal 123.45, entries[0]["duration"]
+    assert_equal ts, entries[0]["timestamp"]
+  end
+
+  def test_record_omits_nil_duration_and_timestamp
+    @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
+
+    entries = YAML.load_file(@history_path)
+    assert_equal 1, entries.length
+    refute entries[0].key?("duration")
+    refute entries[0].key?("timestamp")
+  end
 end

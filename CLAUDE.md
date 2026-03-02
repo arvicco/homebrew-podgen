@@ -49,7 +49,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 2. SourceManager → parallel sources → cache → merge
 3. ScriptAgent (Claude structured output) → `_script.md`
 4. Per language: translate → TTS (chunked) → assemble (ffmpeg: concat + crossfade + loudnorm)
-5. Record history
+5. Record history (with duration + timestamp)
 
 ### Language: `language_pipeline.rb`
 1. Get episode: `--file` (local MP3) | `--url` (YouTube) | RSS (next unprocessed)
@@ -59,7 +59,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 5. Autotrim outro (opt-in): map reconciled text → Groq timestamps → trim at speech_end + 2s, save tail
 6. Assemble: intro + trimmed audio + outro → loudnorm
 7. Save transcript, resolve cover, optional LingQ upload (`--lingq`)
-8. Record history
+8. Record history (with duration + timestamp)
 
 ### Key behaviors
 - **Multi-podcast:** `podcasts/<name>/` each with own config. `podgen generate <name>`
@@ -75,7 +75,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 - **Publish:** `podgen publish <name>` → regenerate RSS → sync to R2 via rclone. `--lingq` for LingQ instead
 - **Scrap:** `podgen scrap <name>` removes last episode files + history + LingQ tracking
 - **Translate:** `podgen translate <name>` backfills translations (`--last N`, `--lang xx`)
-- **RSS:** iTunes + Podcasting 2.0 namespaces, transcript tags, `base_url` for absolute URLs
+- **RSS:** iTunes + Podcasting 2.0 namespaces, transcript tags, `base_url` for absolute URLs. pubDate from history timestamp (fallback: date + 06:00). Duration from history (fallback: ffprobe → size estimate)
 - **Lockfile:** `flock` prevents concurrent runs per podcast
 
 ## Configuration
@@ -87,7 +87,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 | `## Format` | Length, structure, pacing (required for news) |
 | `## Tone` | Voice and style (required for news) |
 | `## Topics` | Default topic rotation (required for news) |
-| `## Sources` | `exa`, `hackernews`, `rss:` (with URLs + per-feed options), `claude_web`, `bluesky`, `x:` |
+| `## Sources` | `exa` (or `exa: category`), `hackernews`, `rss:` (with URLs + per-feed options), `claude_web`, `bluesky`, `x:` |
 | `## Audio` | `engine` list (`open`/`elab`/`groq`), `language`, `target_language`, `skip`, `cut`, `autotrim` |
 | `## Image` | `cover`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset` |
 | `## LingQ` | `collection`, `level`, `tags`, `accent`, `status`. Image keys are legacy → prefer `## Image` |

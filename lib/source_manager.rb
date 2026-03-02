@@ -119,6 +119,7 @@ class SourceManager
       case name
       when "exa"
         opts[:exclude_urls] = @exclude_urls
+        opts[:category] = config.first if config.is_a?(Array)
       when "rss"
         opts[:feeds] = config.is_a?(Array) ? config : []
       when "x"

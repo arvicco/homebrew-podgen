@@ -7,9 +7,10 @@ class ResearchAgent
   MAX_RETRIES = 3
   RESULTS_PER_TOPIC = 5
 
-  def initialize(results_per_topic: RESULTS_PER_TOPIC, exclude_urls: Set.new, logger: nil)
+  def initialize(results_per_topic: RESULTS_PER_TOPIC, exclude_urls: Set.new, category: "news", logger: nil)
     @results_per_topic = results_per_topic
     @exclude_urls = exclude_urls
+    @category = category
     @logger = logger
 
     Exa.configure do |config|
@@ -40,7 +41,7 @@ class ResearchAgent
       topic,
       num_results: @results_per_topic,
       type: "auto",
-      category: "news",
+      category: @category,
       summary: { query: "Summarize this article's key points for a podcast segment" },
       start_published_date: (Date.today - 7).iso8601
     )
