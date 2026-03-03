@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
 
   spec.files         = Dir["lib/**/*.rb", "bin/*", "assets/.keep", "scripts/*.rb", "scripts/*.sh"]
   spec.bindir        = "bin"
-  spec.executables   = ["podgen"]
+  spec.executables   = ["podgen", "tell"]
 
   spec.add_dependency "dotenv"
   spec.add_dependency "anthropic"
@@ -23,4 +23,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "rexml"
   spec.add_dependency "rss"
   spec.add_dependency "base64"
+  spec.add_dependency "deepl-rb"
 end

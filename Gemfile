@@ -9,6 +9,8 @@ gem "exa-ai",    "~> 0.8"   # Official Exa.ai Ruby SDK (research/search)
 gem "httparty",  "~> 0.24"  # HTTP client for ElevenLabs (no official Ruby SDK)
 gem "rexml",     "~> 3.4"   # XML generation for RSS feed (removed from Ruby 4.0 defaults)
 gem "rss",       "~> 0.3"   # RSS/Atom feed parsing for RSSSource (removed from Ruby 4.0 defaults)
+gem "reline",    "~> 0.6"   # Line editing + history for interactive mode (removed from Ruby 4.0 defaults)
+gem "deepl-rb",  "~> 3.0"   # DeepL translation API (for tell tool)
 
 group :test do
   gem "minitest", "~> 5.25"
