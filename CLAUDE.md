@@ -7,11 +7,15 @@ Autonomous podcast pipeline. Ruby 3.2+, macOS, ffmpeg, yt-dlp, ImageMagick+librs
 1. **News** (`type: news`): Research topics → Claude script → TTS (ElevenLabs) → multi-language MP3s
 2. **Language** (`type: language`): RSS/YouTube/local MP3 → multi-engine STT → Claude reconciliation → auto-trim outro → clean MP3 + transcript
 
-**APIs:** Claude (topics, scripting, translation, reconciliation, description cleanup), Exa.ai (research), ElevenLabs (TTS + Scribe), OpenAI/Groq (transcription), yt-dlp (YouTube)
+**Standalone tool:**
+- **tell**: Interactive TTS pronunciation with auto-translation and grammatical glossing
+
+**APIs:** Claude (topics, scripting, translation, reconciliation, description cleanup, glossing), Exa.ai (research), ElevenLabs (TTS + Scribe), OpenAI/Groq (transcription), DeepL (translation), Google TTS, yt-dlp (YouTube)
 
 ## Project Structure
 ```
 bin/podgen                       # CLI entry point
+bin/tell                         # TTS pronunciation CLI (standalone)
 podcasts/<name>/                 # Per-podcast: guidelines.md, queue.yml, pronunciation.pls, .env
 lib/
   cli.rb                         # CLI dispatcher
@@ -39,6 +43,13 @@ lib/
   sources/
     rss_source.rb | hn_source.rb | claude_web_source.rb | bluesky_source.rb | x_source.rb
   youtube_downloader.rb | episode_history.rb | audio_assembler.rb | rss_generator.rb | logger.rb
+  tell/
+    config.rb                     # Config loader (~/.tell.yml)
+    detector.rb                   # Language detection (Unicode scripts + stop words)
+    translator.rb                 # Translation engines (DeepL, Claude, OpenAI) + failover chain
+    tts.rb                        # TTS engines (ElevenLabs, Google)
+    glosser.rb                    # Grammatical glossing via Claude
+    processor.rb                  # Main processing: detect → translate → synthesize → play
 output/<name>/                   # episodes/, tails/, research_cache/, history.yml, feed.xml
 test/                            # unit/, integration/, api/ (minitest)
 scripts/serve.rb                 # WEBrick server for RSS
@@ -113,6 +124,64 @@ Per-podcast `.env` overrides root via `Dotenv.overload`.
 - Gems pinned `~> x.y`
 - Research data: `[{ topic:, findings: [{ title:, url:, summary: }] }]`
 - TTS splitting: paragraph → sentence → comma → whitespace → UTF-8-safe char boundary
+
+## Tell (TTS Pronunciation Tool)
+
+Standalone CLI (`bin/tell`) for pronouncing text via TTS with auto-translation. Designed for language learning — type a word or phrase in your native language and hear it spoken in the target language.
+
+### Architecture
+1. Input: argument (`tell "hello"`), pipe (`echo "hello" | tell`), or interactive REPL
+2. Detect language via `Detector` (Unicode script analysis + stop words + characteristic diacritics)
+3. If input is in original language → translate to target language via `TranslatorChain`, then speak
+4. If input is already in target language → speak directly, fire add-ons (reverse translate, gloss)
+5. Synthesize via `ElevenlabsTts` or `GoogleTts`, play via `afplay` (macOS)
+
+### Key behaviors
+- **Language detection:** Unicode script ranges (CJK, Hangul, Cyrillic, Arabic, Hebrew, Thai, Devanagari) then Latin stop-word scoring across 20+ languages. Fallback: characteristic diacritics (e.g. č/š/ž → Slovenian)
+- **Translation failover:** `TranslatorChain` tries engines in order with per-engine timeout (default 8s, `TELL_TRANSLATE_TIMEOUT`). Engines: DeepL, Claude, OpenAI
+- **Explanation detection:** If translation is 3x+ longer than input, it's displayed but not spoken (original is spoken instead)
+- **Interactive mode:** Reline-based REPL with persistent history (`~/.tell_history`, 1000 entries), dedup, non-blocking playback (new input interrupts current audio)
+- **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), gloss+translate (`--gr`) — run in background threads
+- **Gloss:** Claude Haiku produces `word(grammar)` interlinear analysis. `--gr` adds translations: `word(grammar)translation`
+- **Output:** `afplay` (terminal), file (`-o`), stdout (pipe)
+
+### Configuration: `~/.tell.yml`
+```yaml
+original_language: en
+target_language: sl
+voice_id: "elevenlabs_voice_id"
+tts_engine: elevenlabs              # elevenlabs | google
+translation_engine: deepl           # deepl | claude | openai (or array for failover)
+# translation_engine:              # failover chain example
+#   - deepl
+#   - claude
+model_id: eleven_multilingual_v2    # ElevenLabs model
+output_format: mp3_44100_128        # ElevenLabs output format
+reverse_translate: false            # Show reverse translation by default
+gloss: false                        # Show grammatical gloss by default
+gloss_reverse: false                # Show gloss with translations by default
+translation_timeout: 8.0            # Per-engine timeout in seconds
+```
+
+### Environment variables
+`ELEVENLABS_API_KEY`, `GOOGLE_API_KEY`, `DEEPL_AUTH_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TELL_TRANSLATE_TIMEOUT`, `CLAUDE_MODEL` (for Claude translator), `OPENAI_TRANSLATE_MODEL` (gpt-4o-mini), `TELL_GLOSS_MODEL` (claude-haiku-4-5-20251001)
+
+Loads `.env` from code root + `~/.env`.
+
+### CLI
+```
+tell [options] [text...]
+  -f, --from LANG       Override origin language
+  -t, --to LANG         Override target language
+  -e, --engine NAME     Override TTS engine (elevenlabs|google)
+  -v, --voice ID        Override voice ID
+  -o, --output FILE     Save audio to file instead of playing
+  -r, --reverse         Show reverse translation for target-language input
+  -g, --gloss           Show word-by-word grammatical analysis
+  --gr                  Gloss with word translations: word(grammar)translation
+  -n, --no-translate    Speak text as-is without translation
+  -h, --help            Show help
+```
 
 ## CLI Reference
 ```

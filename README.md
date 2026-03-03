@@ -1,9 +1,10 @@
 # Podcast Agent (podgen)
 
-Fully autonomous podcast generation pipeline with two modes:
+Fully autonomous podcast generation pipeline with two modes, plus a standalone TTS pronunciation tool:
 
 - **News pipeline**: Researches topics, writes a script, generates audio via TTS, and assembles a final MP3.
 - **Language pipeline**: Downloads episodes from RSS feeds, local MP3 files (`--file`), or YouTube videos (`--url`), strips intro/outro music and unwanted segments, transcribes via OpenAI Whisper, and produces a clean MP3 + transcript.
+- **tell**: Interactive TTS pronunciation tool with auto-translation and grammatical glossing for language learning.
 
 Runs on a daily schedule with zero human involvement.
 
@@ -11,7 +12,7 @@ Runs on a daily schedule with zero human involvement.
 
 - **Ruby 3.2+** (tested with Ruby 4.0)
 - **Homebrew** (macOS)
-- **ffmpeg**: `brew install ffmpeg`
+- **ffmpeg**: `brew install ffmpeg` (podgen only)
 - **yt-dlp** (for `--url` YouTube support): `brew install yt-dlp`
 - **API accounts** (news pipeline):
   - [Anthropic](https://console.anthropic.com/) — Claude API for script generation (also powers Claude Web Search source)
@@ -635,7 +636,8 @@ No `rclone config` is needed — credentials are passed via environment variable
 ```
 podgen/
 ├── bin/
-│   └── podgen               # CLI executable
+│   ├── podgen               # CLI executable
+│   └── tell                 # TTS pronunciation tool (standalone)
 ├── podcasts/<name>/
 │   ├── guidelines.md         # Podcast format, style, & sources config
 │   ├── queue.yml             # Fallback topic queue
@@ -688,7 +690,14 @@ podgen/
 │   ├── episode_history.rb    # Episode dedup (atomic YAML writes)
 │   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, trim)
 │   ├── rss_generator.rb      # RSS 2.0 + iTunes + Podcasting 2.0 feed
-│   └── logger.rb             # Structured logging with phase timings
+│   ├── logger.rb             # Structured logging with phase timings
+│   └── tell/                 # TTS pronunciation tool modules
+│       ├── config.rb         # Config loader (~/.tell.yml)
+│       ├── detector.rb       # Language detection (Unicode + stop words)
+│       ├── translator.rb     # Translation engines (DeepL, Claude, OpenAI)
+│       ├── tts.rb            # TTS engines (ElevenLabs, Google)
+│       ├── glosser.rb        # Grammatical glossing via Claude
+│       └── processor.rb      # Main processing pipeline
 ├── docs/
 │   └── pronunciation.md      # PLS format guide & IPA reference
 ├── scripts/
@@ -738,3 +747,198 @@ Each additional language adds ~$0.10 (translation) + ElevenLabs TTS cost.
 - OpenAI transcription (gpt-4o-mini-transcribe): ~$0.01-0.03 depending on duration
 - Claude Haiku (description cleanup/generation): ~$0.001
 - No TTS or research costs
+
+## Tell — TTS Pronunciation Tool
+
+`tell` is a standalone command-line tool for pronouncing text via TTS with automatic translation. Designed for language learning: type a word or phrase in your native language and hear it spoken in the target language.
+
+### Prerequisites
+
+- **Ruby 3.2+**
+- At least one TTS API: [ElevenLabs](https://elevenlabs.io/) or [Google Cloud TTS](https://cloud.google.com/text-to-speech)
+- At least one translation API: [DeepL](https://www.deepl.com/pro-api), [Anthropic](https://console.anthropic.com/) (Claude), or [OpenAI](https://platform.openai.com/)
+
+### Setup
+
+Create `~/.tell.yml`:
+
+```yaml
+original_language: en
+target_language: sl
+voice_id: "your_elevenlabs_voice_id"
+tts_engine: elevenlabs              # elevenlabs | google
+translation_engine: deepl           # deepl | claude | openai
+```
+
+Set API keys in your environment (or `.env` / `~/.env`):
+
+```
+ELEVENLABS_API_KEY=...    # Required for ElevenLabs TTS
+DEEPL_AUTH_KEY=...        # Required for DeepL translation
+```
+
+Or use alternative engines:
+
+```yaml
+# Google TTS
+tts_engine: google
+voice_id: "sl-SI-Wavenet-A"
+# Requires GOOGLE_API_KEY
+
+# Claude translation
+translation_engine: claude
+# Requires ANTHROPIC_API_KEY
+
+# OpenAI translation
+translation_engine: openai
+# Requires OPENAI_API_KEY
+```
+
+#### Translation failover
+
+Configure multiple engines as a failover chain — if the primary times out or fails, the next engine is tried automatically:
+
+```yaml
+translation_engine:
+  - deepl
+  - claude
+```
+
+The per-engine timeout defaults to 8 seconds (override with `TELL_TRANSLATE_TIMEOUT` env var or `translation_timeout` in config).
+
+### Usage
+
+Three input modes:
+
+```bash
+# Argument mode — translate and speak
+tell "good morning"
+
+# Pipe mode — read from stdin
+echo "good morning" | tell
+
+# Interactive mode — REPL with history (up/down arrows)
+tell
+```
+
+In interactive mode, just start typing. History is saved to `~/.tell_history` (1000 entries) and supports up/down arrow navigation. New input interrupts any currently playing audio.
+
+### How it works
+
+1. **Auto-detects** the language of your input (Unicode script analysis + stop words)
+2. If input is in your **native language** → translates to target language, prints translation, speaks it
+3. If input is already in the **target language** → speaks it directly
+
+```
+$ tell "good morning"
+SL: dobro jutro
+[audio plays]
+
+$ tell "dobro jutro"
+[audio plays directly — already in target language]
+```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `-f, --from LANG` | Override origin language (e.g. `en`) |
+| `-t, --to LANG` | Override target language (e.g. `ja`) |
+| `-e, --engine NAME` | Override TTS engine (`elevenlabs` or `google`) |
+| `-v, --voice ID` | Override voice ID |
+| `-o, --output FILE` | Save audio to file instead of playing |
+| `-r, --reverse` | Show reverse translation for target-language input |
+| `-g, --gloss` | Show word-by-word grammatical analysis |
+| `--gr` | Gloss with translations: `word(grammar)translation` |
+| `-n, --no-translate` | Speak text as-is without translation |
+| `-h, --help` | Show help |
+
+### Reverse translation
+
+When you type text in the target language, use `-r` (or set `reverse_translate: true` in config) to see a translation back to your native language:
+
+```
+$ tell -r "dobro jutro"
+EN: good morning
+[audio plays]
+```
+
+### Grammatical glossing
+
+Use `-g` to see word-by-word grammatical analysis (powered by Claude):
+
+```
+$ tell -g "dobro jutro"
+GL: dobro(adj.n.sg.A) jutro(n.n.sg.A)
+[audio plays]
+```
+
+Use `--gr` for glossing with translations:
+
+```
+$ tell --gr "dobro jutro"
+GR: dobro(adj.n.sg.A)good jutro(n.n.sg.A)morning
+[audio plays]
+```
+
+Glossing requires `ANTHROPIC_API_KEY`. The model defaults to Claude Haiku (override with `TELL_GLOSS_MODEL`).
+
+### Advanced configuration
+
+Full `~/.tell.yml` options:
+
+```yaml
+original_language: en               # Your native language (ISO 639-1)
+target_language: sl                  # Language you're learning
+voice_id: "elevenlabs_voice_id"     # TTS voice
+tts_engine: elevenlabs              # elevenlabs | google
+translation_engine: deepl           # deepl | claude | openai (or array)
+model_id: eleven_multilingual_v2    # ElevenLabs model
+output_format: mp3_44100_128        # ElevenLabs output format
+reverse_translate: false            # Always show reverse translation
+gloss: false                        # Always show grammatical gloss
+gloss_reverse: false                # Always show gloss with translations
+translation_timeout: 8.0            # Per-engine timeout (seconds)
+
+# API keys (can also be set via environment variables)
+# deepl_auth_key: "..."            # or DEEPL_AUTH_KEY env
+# anthropic_api_key: "..."         # or ANTHROPIC_API_KEY env
+# openai_api_key: "..."            # or OPENAI_API_KEY env
+# elevenlabs_api_key: "..."        # or ELEVENLABS_API_KEY env
+# google_api_key: "..."            # or GOOGLE_API_KEY env
+```
+
+### Supported languages
+
+`tell` auto-detects 30+ languages including: Arabic, Chinese, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Latvian, Lithuanian, Norwegian, Polish, Portuguese, Romanian, Russian, Serbian, Slovak, Slovenian, Spanish, Swedish, Thai, Turkish, Ukrainian, Vietnamese.
+
+### Examples
+
+```bash
+# Quick translation + pronunciation
+tell "How are you?"
+
+# Override target language on the fly
+tell -t ja "good morning"
+
+# Save pronunciation to file
+tell -o morning.mp3 "good morning"
+
+# Pipe text through tell
+echo "I love programming" | tell
+
+# Speak without translating (already in target language)
+tell -n "dobro jutro"
+
+# Interactive mode with reverse translation and glossing
+tell -r --gr
+```
+
+### Cost
+
+- **DeepL translation**: Free tier available (500k chars/month)
+- **Claude translation**: ~$0.001 per phrase (Sonnet)
+- **OpenAI translation**: ~$0.0001 per phrase (gpt-4o-mini)
+- **ElevenLabs TTS**: varies by plan
+- **Google TTS**: $4 per 1M characters (Standard), $16 per 1M characters (WaveNet)
+- **Glossing**: ~$0.0005 per phrase (Claude Haiku)
