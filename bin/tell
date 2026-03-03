@@ -20,14 +20,22 @@ Dotenv.load(File.join(code_root, ".env"))
 home_env = File.expand_path("~/.env")
 Dotenv.load(home_env) if File.exist?(home_env)
 
-Signal.trap("INT")  { $stderr.puts; exit 130 }
-Signal.trap("TERM") { exit 143 }
+history_file = File.expand_path("~/.tell_history")
+
+save_history = -> {
+  return unless defined?(Reline::HISTORY) && Reline::HISTORY.length > 0
+  File.write(history_file, Reline::HISTORY.to_a.last(1000).join("\n") + "\n")
+}
+
+Signal.trap("INT")  { save_history.call; $stderr.puts; exit 130 }
+Signal.trap("TERM") { save_history.call; exit 143 }
 
 require "optparse"
 require_relative File.join(code_root, "lib", "tell", "config")
 require_relative File.join(code_root, "lib", "tell", "detector")
 require_relative File.join(code_root, "lib", "tell", "translator")
 require_relative File.join(code_root, "lib", "tell", "tts")
+require_relative File.join(code_root, "lib", "tell", "glosser")
 require_relative File.join(code_root, "lib", "tell", "processor")
 
 output_path = nil
@@ -46,6 +54,9 @@ parser = OptionParser.new do |opts|
   opts.on("-e", "--engine NAME", "Override TTS engine (elevenlabs|google)") { |e| overrides[:tts_engine] = e }
   opts.on("-v", "--voice ID", "Override voice ID") { |v| overrides[:voice] = v }
   opts.on("-o", "--output FILE", "Save audio to FILE instead of playing") { |f| output_path = f }
+  opts.on("-r", "--reverse", "Show reverse translation for target-language input") { overrides[:reverse] = true }
+  opts.on("-g", "--gloss", "Show word-by-word grammatical analysis") { overrides[:gloss] = true }
+  opts.on("--gr", "Gloss with word translations: word(grammar)translation") { overrides[:gloss_reverse] = true }
   opts.on("-n", "--no-translate", "Speak text as-is without translation") { no_translate = true }
   opts.on("-h", "--help", "Show this help") { puts opts; exit }
 end
@@ -53,7 +64,8 @@ parser.parse!
 
 begin
   config = Tell::Config.new(overrides: overrides)
-  processor = Tell::Processor.new(config)
+  interactive = ARGV.empty? && $stdin.tty?
+  processor = Tell::Processor.new(config, interactive: interactive)
 
   if !ARGV.empty?
     # Argument mode: tell "hello world"
@@ -67,13 +79,27 @@ begin
   else
     # Interactive mode: readline for history (up/down) and line editing
     require "reline"
+
+    # Load persistent history
+    if File.exist?(history_file)
+      File.readlines(history_file, chomp: true).each { |h| Reline::HISTORY << h }
+    end
+
     while (line = Reline.readline("", true))
       line = line.strip
       Reline::HISTORY.pop if line.empty?
       next if line.empty?
 
+      # Deduplicate: remove all older occurrences, keeping only the latest
+      while (idx = Reline::HISTORY.to_a[0...-1].rindex(line))
+        Reline::HISTORY.delete_at(idx)
+      end
+
       processor.process(line, output_path: output_path, no_translate: no_translate)
     end
+
+    # Save history on clean exit
+    File.write(history_file, Reline::HISTORY.to_a.last(1000).join("\n") + "\n")
   end
 
 rescue => e

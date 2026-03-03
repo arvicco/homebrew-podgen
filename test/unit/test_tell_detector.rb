@@ -90,4 +90,26 @@ class TestTellDetector < Minitest::Test
     # Japanese text with some ASCII — CJK should dominate
     assert_equal "ja", Tell::Detector.detect("今日はRubyのテストです hello")
   end
+
+  # --- Characteristic character detection ---
+
+  def test_characteristic_chars_slovenian
+    assert Tell::Detector.has_characteristic_chars?("živjo", "sl")
+    assert Tell::Detector.has_characteristic_chars?("škrati", "sl")
+    assert Tell::Detector.has_characteristic_chars?("človek", "sl")
+  end
+
+  def test_characteristic_chars_not_english
+    refute Tell::Detector.has_characteristic_chars?("hello world", "sl")
+    refute Tell::Detector.has_characteristic_chars?("hello world", "de")
+  end
+
+  def test_characteristic_chars_german
+    assert Tell::Detector.has_characteristic_chars?("Straße", "de")
+    assert Tell::Detector.has_characteristic_chars?("über", "de")
+  end
+
+  def test_characteristic_chars_unknown_language
+    refute Tell::Detector.has_characteristic_chars?("hello", "xx")
+  end
 end

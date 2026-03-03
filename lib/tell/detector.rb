@@ -118,5 +118,32 @@ module Tell
 
       best_lang
     end
+
+    # Diacritics/characters that are distinctive to specific languages
+    # and NOT used in English. Used as a fallback when stop-word detection
+    # fails (short text, content words only, etc.)
+    CHARACTERISTIC_CHARS = {
+      "sl" => /[čšž]/i,
+      "hr" => /[čšžćđ]/i,
+      "sr" => /[čšžćđ]/i,
+      "cs" => /[čšžřůěďťň]/i,
+      "sk" => /[čšžťďňľĺŕô]/i,
+      "pl" => /[ąęćśźżłń]/i,
+      "de" => /[ßäöü]/i,
+      "fr" => /[éèêëàâùûçœæ]/i,
+      "tr" => /[çşğı]/i,
+      "ro" => /[șțăî]/i,
+      "hu" => /[őű]/i,
+      "lt" => /[ąčęėįšųūž]/i,
+      "lv" => /[āčēģīķļņšūž]/i,
+      "et" => /[äöüõšž]/i,
+    }.freeze
+
+    # Check if text contains characters characteristic of a given language.
+    def self.has_characteristic_chars?(text, lang)
+      pattern = CHARACTERISTIC_CHARS[lang]
+      return false unless pattern
+      text.match?(pattern)
+    end
   end
 end
