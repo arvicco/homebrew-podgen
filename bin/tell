@@ -1,0 +1,82 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# tell — Pronounce text via ElevenLabs TTS with auto-translation
+# Part of the podgen toolkit
+
+code_root = File.expand_path("..", __dir__)
+
+# Bundler setup — only when running from a git clone (Gemfile present)
+gemfile = File.join(code_root, "Gemfile")
+if File.exist?(gemfile)
+  ENV["BUNDLE_GEMFILE"] ||= gemfile
+  require "bundler/setup"
+end
+
+require "dotenv"
+Dotenv.load(File.join(code_root, ".env"))
+
+# Also load home directory .env if present
+home_env = File.expand_path("~/.env")
+Dotenv.load(home_env) if File.exist?(home_env)
+
+Signal.trap("INT")  { $stderr.puts; exit 130 }
+Signal.trap("TERM") { exit 143 }
+
+require "optparse"
+require_relative File.join(code_root, "lib", "tell", "config")
+require_relative File.join(code_root, "lib", "tell", "detector")
+require_relative File.join(code_root, "lib", "tell", "translator")
+require_relative File.join(code_root, "lib", "tell", "tts")
+require_relative File.join(code_root, "lib", "tell", "processor")
+
+output_path = nil
+no_translate = false
+overrides = {}
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: tell [options] [text...]"
+  opts.separator ""
+  opts.separator "Pronounce text via TTS (ElevenLabs or Google). Translates from"
+  opts.separator "your native language to the target language automatically."
+  opts.separator ""
+
+  opts.on("-f", "--from LANG", "Override origin language (e.g. en)") { |l| overrides[:from] = l }
+  opts.on("-t", "--to LANG", "Override target language (e.g. ja)") { |l| overrides[:to] = l }
+  opts.on("-e", "--engine NAME", "Override TTS engine (elevenlabs|google)") { |e| overrides[:tts_engine] = e }
+  opts.on("-v", "--voice ID", "Override voice ID") { |v| overrides[:voice] = v }
+  opts.on("-o", "--output FILE", "Save audio to FILE instead of playing") { |f| output_path = f }
+  opts.on("-n", "--no-translate", "Speak text as-is without translation") { no_translate = true }
+  opts.on("-h", "--help", "Show this help") { puts opts; exit }
+end
+parser.parse!
+
+begin
+  config = Tell::Config.new(overrides: overrides)
+  processor = Tell::Processor.new(config)
+
+  if !ARGV.empty?
+    # Argument mode: tell "hello world"
+    processor.process(ARGV.join(" "), output_path: output_path, no_translate: no_translate)
+
+  elsif !$stdin.tty?
+    # Pipe mode: echo "hello" | tell
+    text = $stdin.read
+    processor.process(text, output_path: output_path, no_translate: no_translate) unless text.strip.empty?
+
+  else
+    # Interactive mode: readline for history (up/down) and line editing
+    require "reline"
+    while (line = Reline.readline("", true))
+      line = line.strip
+      Reline::HISTORY.pop if line.empty?
+      next if line.empty?
+
+      processor.process(line, output_path: output_path, no_translate: no_translate)
+    end
+  end
+
+rescue => e
+  $stderr.puts "tell: #{e.message}"
+  exit 1
+end
