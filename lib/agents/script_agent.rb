@@ -4,6 +4,7 @@ require "anthropic"
 require "fileutils"
 require "date"
 require_relative "../loggable"
+require_relative "../retryable"
 
 class Segment < Anthropic::BaseModel
   required :name, String
@@ -17,6 +18,7 @@ end
 
 class ScriptAgent
   include Loggable
+  include Retryable
 
   MAX_RETRIES = 3
 
@@ -35,9 +37,7 @@ class ScriptAgent
     log("Generating script with #{@model}")
     research_text = format_research(research_data)
 
-    retries = 0
-    begin
-      retries += 1
+    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
       start = Time.now
 
       message = @client.messages.create(
@@ -66,16 +66,6 @@ class ScriptAgent
 
       save_script_debug(result)
       result
-
-    rescue Anthropic::Errors::APIError => e
-      if retries <= MAX_RETRIES
-        sleep_time = 2**retries
-        log("API error (attempt #{retries}/#{MAX_RETRIES}): #{e.message}. Retrying in #{sleep_time}s...")
-        sleep(sleep_time)
-        retry
-      else
-        raise "ScriptAgent failed after #{MAX_RETRIES} retries: #{e.message}"
-      end
     end
   end
 

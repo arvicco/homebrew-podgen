@@ -3,9 +3,12 @@
 require "httparty"
 require "json"
 require_relative "../loggable"
+require_relative "../retryable"
 
 class LingQAgent
   include Loggable
+  include Retryable
+
   BASE_URL = "https://www.lingq.com/api"
   MAX_RETRIES = 3
   RETRIABLE_CODES = [429, 503].freeze
@@ -63,10 +66,7 @@ class LingQAgent
   end
 
   def post_with_retry(url, body)
-    retries = 0
-    begin
-      retries += 1
-
+    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
       response = HTTParty.post(
         url,
         headers: { "Authorization" => "Token #{@api_key}" },
@@ -82,16 +82,6 @@ class LingQAgent
         raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
       else
         raise "LingQ upload failed: HTTP #{response.code}: #{parse_error(response)}"
-      end
-
-    rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
-      if retries <= MAX_RETRIES
-        sleep_time = 2**retries
-        log("Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}")
-        sleep(sleep_time)
-        retry
-      else
-        raise "LingQ upload failed after #{MAX_RETRIES} retries: #{e.message}"
       end
     end
   end
