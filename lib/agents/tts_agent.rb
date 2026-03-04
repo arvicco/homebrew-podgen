@@ -11,6 +11,7 @@ require "tmpdir"
 require_relative "../loggable"
 require_relative "../retryable"
 require_relative "../audio_assembler"
+require_relative "../text_splitter"
 
 class TTSAgent
   include Loggable
@@ -30,6 +31,7 @@ class TTSAgent
     @model_id = ENV.fetch("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
     @output_format = ENV.fetch("ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128")
     @pronunciation_locators = resolve_pronunciation_dictionary(pronunciation_pls_path)
+    @splitter = TextSplitter.new(max_chars: MAX_CHARS)
   end
 
   # Input: array of { name:, text: } segment hashes
@@ -42,7 +44,7 @@ class TTSAgent
       log("Synthesizing segment #{idx + 1}/#{segments.length}: #{segment[:name]} (#{segment[:text].length} chars)")
       start = Time.now
 
-      chunks = split_text(segment[:text])
+      chunks = @splitter.split(segment[:text])
 
       chunks.each_with_index do |chunk, chunk_idx|
         log("  Chunk #{chunk_idx + 1}/#{chunks.length} (#{chunk.length} chars)") if chunks.length > 1
@@ -206,42 +208,6 @@ class TTSAgent
       "version_id" => version_id,
       "file_sha256" => file_sha
     }))
-  end
-
-  def split_text(text)
-    return [text] if text.length <= MAX_CHARS
-
-    chunks = []
-    remaining = text.dup
-
-    while remaining.length > MAX_CHARS
-      split_at = remaining.rindex(/\n\n/, MAX_CHARS) ||
-                 remaining.rindex(/(?<=[.!?])\s+/, MAX_CHARS) ||
-                 remaining.rindex(/[,;:]\s+/, MAX_CHARS) ||
-                 remaining.rindex(/\s+/, MAX_CHARS) ||
-                 find_safe_split_point(remaining, MAX_CHARS)
-      split_at = [split_at, 1].max
-
-      chunks << remaining[0...split_at].strip
-      remaining = remaining[split_at..].strip
-    end
-
-    chunks << remaining unless remaining.empty?
-    chunks
-  end
-
-  # Walk backward from max_pos to find a safe split point that doesn't
-  # break a multi-byte UTF-8 character or grapheme cluster.
-  def find_safe_split_point(text, max_pos)
-    pos = max_pos
-    # Walk backward to find an ASCII char or whitespace boundary
-    while pos > 0
-      char = text[pos]
-      break if char && (char.ascii_only? || char.match?(/\s/))
-      pos -= 1
-    end
-    # If we walked all the way back, just use max_pos (degenerate case)
-    pos > 0 ? pos : max_pos
   end
 
   def parse_error(response)
