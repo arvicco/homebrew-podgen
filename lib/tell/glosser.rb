@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../language_names"
+
 module Tell
   class Glosser
     def initialize(api_key)

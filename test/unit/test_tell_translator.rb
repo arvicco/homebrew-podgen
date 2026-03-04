@@ -25,12 +25,12 @@ class TestTellTranslator < Minitest::Test
 
   def test_language_names_includes_common_languages
     %w[en sl ja ko zh de fr es ru].each do |code|
-      refute_nil Tell::LANGUAGE_NAMES[code], "Missing language name for #{code}"
+      refute_nil LANGUAGE_NAMES[code], "Missing language name for #{code}"
     end
   end
 
   def test_language_names_frozen
-    assert Tell::LANGUAGE_NAMES.frozen?
+    assert LANGUAGE_NAMES.frozen?
   end
 
   # --- TranslatorChain ---
