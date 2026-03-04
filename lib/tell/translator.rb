@@ -1,47 +1,9 @@
 # frozen_string_literal: true
 
 require_relative "colors"
+require_relative "../language_names"
 
 module Tell
-  LANGUAGE_NAMES = {
-    "en" => "English",
-    "es" => "Spanish",
-    "fr" => "French",
-    "de" => "German",
-    "it" => "Italian",
-    "pt" => "Portuguese",
-    "nl" => "Dutch",
-    "pl" => "Polish",
-    "ja" => "Japanese",
-    "ko" => "Korean",
-    "zh" => "Chinese",
-    "ar" => "Arabic",
-    "hi" => "Hindi",
-    "ru" => "Russian",
-    "tr" => "Turkish",
-    "sv" => "Swedish",
-    "da" => "Danish",
-    "no" => "Norwegian",
-    "fi" => "Finnish",
-    "uk" => "Ukrainian",
-    "cs" => "Czech",
-    "ro" => "Romanian",
-    "hu" => "Hungarian",
-    "el" => "Greek",
-    "he" => "Hebrew",
-    "th" => "Thai",
-    "vi" => "Vietnamese",
-    "id" => "Indonesian",
-    "ms" => "Malay",
-    "sl" => "Slovenian",
-    "hr" => "Croatian",
-    "sr" => "Serbian",
-    "bg" => "Bulgarian",
-    "sk" => "Slovak",
-    "lt" => "Lithuanian",
-    "lv" => "Latvian",
-    "et" => "Estonian"
-  }.freeze
 
   def self.build_translator(engine, api_key)
     case engine

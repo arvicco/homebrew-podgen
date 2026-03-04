@@ -3,6 +3,7 @@
 require "anthropic"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../language_names"
 
 class TranslatedSegment < Anthropic::BaseModel
   required :name, String
@@ -19,37 +20,6 @@ class TranslationAgent
   include Retryable
 
   MAX_RETRIES = 3
-
-  LANGUAGE_NAMES = {
-    "es" => "Spanish",
-    "fr" => "French",
-    "de" => "German",
-    "it" => "Italian",
-    "pt" => "Portuguese",
-    "nl" => "Dutch",
-    "pl" => "Polish",
-    "ja" => "Japanese",
-    "ko" => "Korean",
-    "zh" => "Chinese",
-    "ar" => "Arabic",
-    "hi" => "Hindi",
-    "ru" => "Russian",
-    "tr" => "Turkish",
-    "sv" => "Swedish",
-    "da" => "Danish",
-    "no" => "Norwegian",
-    "fi" => "Finnish",
-    "uk" => "Ukrainian",
-    "cs" => "Czech",
-    "ro" => "Romanian",
-    "hu" => "Hungarian",
-    "el" => "Greek",
-    "he" => "Hebrew",
-    "th" => "Thai",
-    "vi" => "Vietnamese",
-    "id" => "Indonesian",
-    "ms" => "Malay"
-  }.freeze
 
   def initialize(target_language:, logger: nil)
     @logger = logger
