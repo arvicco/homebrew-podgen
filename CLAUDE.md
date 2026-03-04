@@ -142,7 +142,7 @@ Standalone CLI (`bin/tell`) for pronouncing text via TTS with auto-translation. 
 - **Explanation detection:** If translation is 3x+ longer than input, it's displayed but not spoken (original is spoken instead)
 - **Interactive mode:** Reline-based REPL with persistent history (`~/.tell_history`, 1000 entries), dedup, non-blocking playback (new input interrupts current audio)
 - **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), gloss+translate (`--gr`) — run in background threads
-- **Gloss:** Claude Haiku produces `word(grammar)` interlinear analysis. `--gr` adds translations: `word(grammar)translation`
+- **Gloss:** Claude produces `word(grammar)` interlinear analysis with agrammatical marking (`*wrong*correction(grammar)`). `--gr` adds translations: `word(grammar)translation`. Multi-model consensus: `gloss_models: [opus, sonnet]` runs models in parallel, reconciler (first model) keeps error markings only when models agree. Single model still works: `gloss_models: opus`
 - **Output:** `afplay` (terminal), file (`-o`), stdout (pipe)
 
 ### Configuration: `~/.tell.yml`
@@ -160,11 +160,15 @@ output_format: mp3_44100_128        # ElevenLabs output format
 reverse_translate: false            # Show reverse translation by default
 gloss: false                        # Show grammatical gloss by default
 gloss_reverse: false                # Show gloss with translations by default
+gloss_models: opus                   # opus | sonnet | haiku (or array for multi-model consensus)
+# gloss_models:                     # multi-model consensus example
+#   - opus
+#   - sonnet
 translation_timeout: 8.0            # Per-engine timeout in seconds
 ```
 
 ### Environment variables
-`ELEVENLABS_API_KEY`, `GOOGLE_API_KEY`, `DEEPL_AUTH_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TELL_TRANSLATE_TIMEOUT`, `CLAUDE_MODEL` (for Claude translator), `OPENAI_TRANSLATE_MODEL` (gpt-4o-mini), `TELL_GLOSS_MODEL` (claude-haiku-4-5-20251001)
+`ELEVENLABS_API_KEY`, `GOOGLE_API_KEY`, `DEEPL_AUTH_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TELL_TRANSLATE_TIMEOUT`, `CLAUDE_MODEL` (for Claude translator), `OPENAI_TRANSLATE_MODEL` (gpt-4o-mini), `TELL_GLOSS_MODEL` (overrides config gloss_models, single model)
 
 Loads `.env` from code root + `~/.env`.
 

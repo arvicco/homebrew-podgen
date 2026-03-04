@@ -23,7 +23,8 @@ class TestTellProcessor < Minitest::Test
       translation_timeout: 8.0,
       reverse_translate: false,
       gloss: false,
-      gloss_reverse: false
+      gloss_reverse: false,
+      gloss_models: ["claude-opus-4-6"]
     )
   end
 
@@ -268,6 +269,186 @@ class TestTellProcessor < Minitest::Test
     assert_equal ["danes je lep dan"], @tts.calls
   end
 
+  # --- Multi-model glossing ---
+
+  def test_multi_model_gloss_calls_reconcile
+    @config.gloss = true
+    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    processor = Tell::Processor.new(@config, interactive: false)
+    @tts = MockTts.new
+    @translator = MockTranslator.new
+    glosser_opus = MockGlosser.new(gloss_result: "opus_gloss")
+    glosser_sonnet = MockGlosser.new(gloss_result: "sonnet_gloss")
+    processor.instance_variable_set(:@tts, @tts)
+    processor.instance_variable_set(:@translator, @translator)
+    processor.instance_variable_set(:@glossers, {
+      "claude-opus-4-6" => glosser_opus,
+      "claude-sonnet-4-6" => glosser_sonnet
+    })
+
+    processor.process("danes je lep dan")
+
+    assert_equal [[:gloss, "danes je lep dan"]], glosser_opus.calls
+    assert_equal [[:gloss, "danes je lep dan"]], glosser_sonnet.calls
+    # Reconciler is the first (opus) model
+    assert_equal 1, glosser_opus.reconcile_calls.size
+    reconcile_call = glosser_opus.reconcile_calls.first
+    assert_equal({ "claude-opus-4-6" => "opus_gloss", "claude-sonnet-4-6" => "sonnet_gloss" }, reconcile_call[:glosses])
+    assert_equal :gloss, reconcile_call[:mode]
+  end
+
+  def test_multi_model_single_survivor_skips_reconcile
+    @config.gloss = true
+    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    processor = Tell::Processor.new(@config, interactive: false)
+    @tts = MockTts.new
+    @translator = MockTranslator.new
+    glosser_opus = MockGlosser.new(gloss_result: "opus_gloss")
+    glosser_sonnet = MockGlosser.new(error: RuntimeError.new("API down"))
+    processor.instance_variable_set(:@tts, @tts)
+    processor.instance_variable_set(:@translator, @translator)
+    processor.instance_variable_set(:@glossers, {
+      "claude-opus-4-6" => glosser_opus,
+      "claude-sonnet-4-6" => glosser_sonnet
+    })
+
+    processor.process("danes je lep dan")
+
+    # Only one model succeeded → return its result without reconciliation
+    assert_empty glosser_opus.reconcile_calls
+  end
+
+  def test_multi_model_all_fail_reports_error
+    @config.gloss = true
+    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    processor = Tell::Processor.new(@config, interactive: false)
+    @tts = MockTts.new
+    @translator = MockTranslator.new
+    glosser_opus = MockGlosser.new(error: RuntimeError.new("Opus down"))
+    glosser_sonnet = MockGlosser.new(error: RuntimeError.new("Sonnet down"))
+    processor.instance_variable_set(:@tts, @tts)
+    processor.instance_variable_set(:@translator, @translator)
+    processor.instance_variable_set(:@glossers, {
+      "claude-opus-4-6" => glosser_opus,
+      "claude-sonnet-4-6" => glosser_sonnet
+    })
+
+    # Should not raise — error is caught and printed to stderr
+    processor.process("danes je lep dan")
+    assert_equal ["danes je lep dan"], @tts.calls
+  end
+
+  # --- Multi-model gloss_translate ---
+
+  def test_multi_model_gloss_translate_calls_reconcile
+    @config.gloss_reverse = true
+    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    processor = Tell::Processor.new(@config, interactive: false)
+    @tts = MockTts.new
+    @translator = MockTranslator.new
+    glosser_opus = MockGlosser.new(gloss_translate_result: "opus_gr")
+    glosser_sonnet = MockGlosser.new(gloss_translate_result: "sonnet_gr")
+    processor.instance_variable_set(:@tts, @tts)
+    processor.instance_variable_set(:@translator, @translator)
+    processor.instance_variable_set(:@glossers, {
+      "claude-opus-4-6" => glosser_opus,
+      "claude-sonnet-4-6" => glosser_sonnet
+    })
+
+    processor.process("danes je lep dan")
+
+    assert_equal [[:gloss_translate, "danes je lep dan"]], glosser_opus.calls
+    assert_equal [[:gloss_translate, "danes je lep dan"]], glosser_sonnet.calls
+    reconcile_call = glosser_opus.reconcile_calls.first
+    assert_equal :gloss_translate, reconcile_call[:mode]
+    assert_equal({ "claude-opus-4-6" => "opus_gr", "claude-sonnet-4-6" => "sonnet_gr" }, reconcile_call[:glosses])
+  end
+
+  # --- Translation boundary ---
+
+  def test_explanation_exactly_3x_is_not_explanation
+    # Translation exactly 3x length is NOT an explanation — it gets spoken
+    processor = build_processor
+    @translator.forward_result = "abc" # 3 chars = 3x "x" (1 char)
+    stub_detect("en") do
+      processor.process("x", translate_from: "auto")
+    end
+    assert_equal ["abc"], @tts.calls
+  end
+
+  def test_explanation_just_over_3x_is_explanation
+    # Translation >3x length IS an explanation — original gets spoken
+    processor = build_processor
+    @translator.forward_result = "abcd" # 4 chars > 3x "x" (1 char)
+    stub_detect("en") do
+      processor.process("x", translate_from: "auto")
+    end
+    assert_equal ["x"], @tts.calls
+  end
+
+  # --- Piped output (stdout not tty) ---
+
+  def test_piped_output_writes_to_stdout
+    processor = build_processor
+    fake_stdout = StringIO.new
+    fake_stdout.define_singleton_method(:tty?) { false }
+    original_stdout = $stdout
+    $stdout = fake_stdout
+    begin
+      processor.process("danes je lep dan")
+    ensure
+      $stdout = original_stdout
+    end
+    assert_equal "fake_audio", fake_stdout.string
+  end
+
+  # --- friendly_error ---
+
+  def test_friendly_error_overloaded_json
+    processor = build_processor
+    err = RuntimeError.new('{"type":"overloaded_error","message":"Overloaded"}')
+    assert_equal "API overloaded (try again)", processor.send(:friendly_error, err)
+  end
+
+  def test_friendly_error_overloaded_status
+    processor = build_processor
+    err = RuntimeError.new("status: 529 overloaded")
+    assert_equal "API overloaded (try again)", processor.send(:friendly_error, err)
+  end
+
+  def test_friendly_error_rate_limit_json
+    processor = build_processor
+    err = RuntimeError.new('{"type":"rate_limit_error","message":"Too many requests"}')
+    assert_equal "rate limited (try again)", processor.send(:friendly_error, err)
+  end
+
+  def test_friendly_error_rate_limit_status
+    processor = build_processor
+    err = RuntimeError.new("status: 429 too many requests")
+    assert_equal "rate limited (try again)", processor.send(:friendly_error, err)
+  end
+
+  def test_friendly_error_http_status_with_message
+    processor = build_processor
+    err = RuntimeError.new('status: 500, "message": "Internal server error"')
+    assert_equal "HTTP 500: Internal server error", processor.send(:friendly_error, err)
+  end
+
+  def test_friendly_error_truncates_long_message
+    processor = build_processor
+    long_msg = "A" * 100
+    err = RuntimeError.new(long_msg)
+    result = processor.send(:friendly_error, err)
+    assert_equal 80, result.length
+    assert result.end_with?("...")
+  end
+
+  def test_friendly_error_short_message_passthrough
+    processor = build_processor
+    err = RuntimeError.new("connection refused")
+    assert_equal "connection refused", processor.send(:friendly_error, err)
+  end
+
   # --- Add-on errors ---
 
   def test_glosser_error_does_not_block_tts
@@ -301,7 +482,9 @@ class TestTellProcessor < Minitest::Test
     @glosser = MockGlosser.new
     processor.instance_variable_set(:@tts, @tts)
     processor.instance_variable_set(:@translator, @translator)
-    processor.instance_variable_set(:@glosser, @glosser)
+    # Processor now caches glossers by model_id
+    glossers = @config.gloss_models.each_with_object({}) { |m, h| h[m] = @glosser }
+    processor.instance_variable_set(:@glossers, glossers)
     processor
   end
 
@@ -318,7 +501,7 @@ class TestTellProcessor < Minitest::Test
     :translation_engines, :tts_engine, :engine_api_keys,
     :api_key, :tts_api_key, :model_id, :output_format,
     :google_language_code, :reverse_translate, :gloss, :gloss_reverse,
-    :translation_timeout,
+    :gloss_models, :translation_timeout,
     keyword_init: true
   ) do
     def translation_engine
@@ -331,6 +514,14 @@ class TestTellProcessor < Minitest::Test
 
     def reverse_language
       original_language == "auto" ? "en" : original_language
+    end
+
+    def gloss_model
+      gloss_models&.first
+    end
+
+    def gloss_reconciler
+      gloss_models&.first
     end
   end
 
@@ -372,24 +563,32 @@ class TestTellProcessor < Minitest::Test
   end
 
   class MockGlosser
-    attr_reader :calls
+    attr_reader :calls, :reconcile_calls
     attr_accessor :error
 
-    def initialize
+    def initialize(gloss_result: nil, gloss_translate_result: nil, error: nil)
       @calls = []
-      @error = nil
+      @reconcile_calls = []
+      @gloss_result = gloss_result || "word(n.m.N.sg)"
+      @gloss_translate_result = gloss_translate_result || "word(n.m.N.sg)translation"
+      @error = error
     end
 
     def gloss(text, from:, to:)
       raise @error if @error
       @calls << [:gloss, text]
-      "word(n.m.N.sg)"
+      @gloss_result
     end
 
     def gloss_translate(text, from:, to:)
       raise @error if @error
       @calls << [:gloss_translate, text]
-      "word(n.m.N.sg)translation"
+      @gloss_translate_result
+    end
+
+    def reconcile(glosses, text, from:, to:, mode:)
+      @reconcile_calls << { glosses: glosses, text: text, from: from, to: to, mode: mode }
+      "reconciled(n.m.N.sg)"
     end
   end
 end

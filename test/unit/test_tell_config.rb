@@ -5,10 +5,11 @@ require "tell/config"
 
 class TestTellConfig < Minitest::Test
   def setup
-    @original_env = ENV.to_h.slice("ELEVENLABS_API_KEY", "DEEPL_AUTH_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "TELL_TRANSLATE_TIMEOUT")
+    @original_env = ENV.to_h.slice("ELEVENLABS_API_KEY", "DEEPL_AUTH_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "TELL_TRANSLATE_TIMEOUT", "TELL_GLOSS_MODEL")
     ENV["ELEVENLABS_API_KEY"] = "test_eleven_key"
     ENV["DEEPL_AUTH_KEY"] = "test_deepl_key"
     ENV.delete("TELL_TRANSLATE_TIMEOUT")
+    ENV.delete("TELL_GLOSS_MODEL")
 
     @tmpfile = File.join(Dir.tmpdir, "tell_test_#{Process.pid}.yml")
     stub_config_path(@tmpfile)
@@ -462,6 +463,163 @@ class TestTellConfig < Minitest::Test
 
     config = Tell::Config.new
     assert_equal "en", config.reverse_language
+  end
+
+  # --- gloss_models ---
+
+  def test_gloss_model_scalar_backward_compat
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_model" => "sonnet"
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-sonnet-4-6"], config.gloss_models
+    assert_equal "claude-sonnet-4-6", config.gloss_model
+    assert_equal "claude-sonnet-4-6", config.gloss_reconciler
+  end
+
+  def test_gloss_models_array
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_models" => ["opus", "sonnet"]
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_models
+    assert_equal "claude-opus-4-6", config.gloss_model
+    assert_equal "claude-opus-4-6", config.gloss_reconciler
+  end
+
+  def test_gloss_models_single_string
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_models" => "haiku"
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_models
+  end
+
+  def test_gloss_models_full_model_id
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_models" => ["claude-opus-4-6", "claude-sonnet-4-6"]
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_models
+  end
+
+  def test_gloss_models_default_to_opus
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123"
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-opus-4-6"], config.gloss_models
+  end
+
+  def test_gloss_models_env_override
+    ENV["TELL_GLOSS_MODEL"] = "haiku"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_models" => ["opus", "sonnet"]
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_models
+  end
+
+  def test_gloss_models_prefers_over_gloss_model
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_model" => "haiku",
+      "gloss_models" => ["opus", "sonnet"]
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_models
+  end
+
+  # --- Edge cases ---
+
+  def test_empty_string_required_keys_raises
+    write_config(
+      "original_language" => "en",
+      "target_language" => "",
+      "voice_id" => "abc123"
+    )
+
+    err = assert_raises(RuntimeError) { Tell::Config.new }
+    assert_match(/Missing required config keys/, err.message)
+    assert_match(/target_language/, err.message)
+  end
+
+  def test_google_voice_without_three_parts_unchanged
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "simple-voice",
+      "tts_engine" => "google"
+    )
+
+    config = Tell::Config.new(overrides: { to: "de" })
+    # Voice has only 2 parts, so adaptation is skipped
+    assert_equal "simple-voice", config.voice_id
+  end
+
+  def test_gloss_defaults_and_overrides
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss" => true,
+      "gloss_reverse" => true
+    )
+
+    config = Tell::Config.new
+    assert config.gloss
+    assert config.gloss_reverse
+  end
+
+  def test_gloss_cli_override
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123"
+    )
+
+    config = Tell::Config.new(overrides: { gloss: true })
+    assert config.gloss
+  end
+
+  def test_tts_engine_cli_override
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "sl-SI-Wavenet-A",
+      "tts_engine" => "elevenlabs"
+    )
+
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    config = Tell::Config.new(overrides: { tts_engine: "google" })
+    assert_equal "google", config.tts_engine
   end
 
   def test_invalid_engine_in_array_raises

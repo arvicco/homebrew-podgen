@@ -135,6 +135,54 @@ class TestTellColors < Minitest::Test
     end
   end
 
+  # --- Agrammatical form colorization ---
+
+  def test_colorize_gloss_agrammatical
+    stub_tty(true) do
+      input = "*restavraciju*restavracijo(n.f.A.sg)"
+      result = Tell::Colors.colorize_gloss(input)
+
+      # Wrong form in bright yellow bold
+      assert_includes result, "\e[93m\e[1m*restavraciju*\e[0m"
+      # Correct form in POS color (noun = red)
+      assert_includes result, "\e[31m\e[1mrestavracijo\e[0m"
+      assert_includes result, "(n.f.A.sg)"
+    end
+  end
+
+  def test_colorize_gloss_translate_agrammatical
+    stub_tty(true) do
+      input = "*restavraciju*restavracijo(n.f.A.sg)restaurant"
+      result = Tell::Colors.colorize_gloss_translate(input)
+
+      # Wrong form in bright yellow bold
+      assert_includes result, "\e[93m\e[1m*restavraciju*\e[0m"
+      # Correct form in POS color
+      assert_includes result, "\e[31m\e[1mrestavracijo\e[0m"
+      # Translation in italic
+      assert_includes result, "\e[3mrestaurant\e[0m"
+    end
+  end
+
+  def test_colorize_gloss_agrammatical_mixed_with_normal
+    stub_tty(true) do
+      input = "v(pr) *restavraciju*restavracijo(n.f.A.sg)"
+      result = Tell::Colors.colorize_gloss(input)
+
+      # Normal token colored normally
+      assert_includes result, "\e[1mv\e[0m"
+      # Agrammatical token in bright yellow
+      assert_includes result, "\e[93m\e[1m*restavraciju*\e[0m"
+    end
+  end
+
+  def test_colorize_gloss_agrammatical_passthrough_when_not_tty
+    stub_tty(false) do
+      input = "*restavraciju*restavracijo(n.f.A.sg)restaurant"
+      assert_equal input, Tell::Colors.colorize_gloss_translate(input)
+    end
+  end
+
   # --- Graceful degradation ---
 
   def test_colorize_gloss_leaves_unmatched_tokens
@@ -159,6 +207,86 @@ class TestTellColors < Minitest::Test
       # Should still apply bold to word (with empty color prefix)
       assert_includes result, "\e[1mfoo\e[0m"
       assert_includes result, "(m.sg.N)"
+    end
+  end
+
+  # --- Edge cases ---
+
+  def test_extract_pos_empty_string
+    assert_nil Tell::Colors.extract_pos("")
+  end
+
+  def test_extract_pos_single_pos_no_dots
+    assert_equal "n", Tell::Colors.extract_pos("n")
+  end
+
+  def test_colorize_gloss_empty_line
+    stub_tty(true) do
+      assert_equal "", Tell::Colors.colorize_gloss("")
+    end
+  end
+
+  def test_colorize_gloss_translate_empty_line
+    stub_tty(true) do
+      assert_equal "", Tell::Colors.colorize_gloss_translate("")
+    end
+  end
+
+  def test_colorize_gloss_only_punctuation
+    stub_tty(true) do
+      input = "svet(n.m.N.sg) , je(v.aux.3p.pres) ."
+      result = Tell::Colors.colorize_gloss(input)
+      # Punctuation passes through unchanged
+      assert_includes result, " , "
+      assert_includes result, " ."
+      # Words still colored
+      assert_includes result, "\e[1msvet\e[0m"
+    end
+  end
+
+  def test_colorize_gloss_only_agrammatical
+    stub_tty(true) do
+      input = "*restavraciju*restavracijo(n.f.A.sg)"
+      result = Tell::Colors.colorize_gloss(input)
+      # Should still render correctly with no normal tokens
+      assert_includes result, "\e[93m\e[1m*restavraciju*\e[0m"
+      assert_includes result, "\e[31m\e[1mrestavracijo\e[0m"
+    end
+  end
+
+  def test_colorize_gloss_translate_without_translation
+    stub_tty(true) do
+      # word(grammar) with no trailing translation — should still colorize
+      input = "Ljubljana(n.prop.f.N.sg)"
+      result = Tell::Colors.colorize_gloss_translate(input)
+      assert_includes result, "\e[1mLjubljana\e[0m"
+      assert_includes result, "(n.prop.f.N.sg)"
+      # No italic translation
+      refute_includes result, "\e[3m"
+    end
+  end
+
+  def test_colorize_gloss_translate_proper_name_omitted_translation
+    stub_tty(true) do
+      # Proper name — translation omitted per convention
+      input = "Pirina(n.prop.f.N.sg) svet(n.m.N.sg)world"
+      result = Tell::Colors.colorize_gloss_translate(input)
+      # Pirina has no translation (no italic after grammar)
+      assert_includes result, "\e[1mPirina\e[0m"
+      # svet has translation
+      assert_includes result, "\e[3mworld\e[0m"
+    end
+  end
+
+  def test_colorize_all_pos_categories
+    stub_tty(true) do
+      # Verify each POS maps to a color
+      %w[n v adj adv pron pr conj det part num interj aux].each do |pos|
+        input = "word(#{pos})"
+        result = Tell::Colors.colorize_gloss(input)
+        assert_includes result, "\e[1mword\e[0m", "POS #{pos} should produce bold word"
+        assert_includes result, "(#{pos})", "POS #{pos} should appear in output"
+      end
     end
   end
 
