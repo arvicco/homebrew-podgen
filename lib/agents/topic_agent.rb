@@ -3,6 +3,7 @@
 require "anthropic"
 require "date"
 require_relative "../loggable"
+require_relative "../retryable"
 
 class TopicQuery < Anthropic::BaseModel
   required :query, String
@@ -14,6 +15,7 @@ end
 
 class TopicAgent
   include Loggable
+  include Retryable
 
   MAX_RETRIES = 3
 
@@ -30,9 +32,7 @@ class TopicAgent
     log("Generating topics with #{@model}")
     today = Date.today.strftime("%Y-%m-%d")
 
-    retries = 0
-    begin
-      retries += 1
+    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
       start = Time.now
 
       message = @client.messages.create(
@@ -57,16 +57,6 @@ class TopicAgent
       queries = result.queries.map(&:query)
       queries.each { |q| log("  → #{q}") }
       queries
-
-    rescue Anthropic::Errors::APIError => e
-      if retries <= MAX_RETRIES
-        sleep_time = 2**retries
-        log("API error (attempt #{retries}/#{MAX_RETRIES}): #{e.message}. Retrying in #{sleep_time}s...")
-        sleep(sleep_time)
-        retry
-      else
-        raise "TopicAgent failed after #{MAX_RETRIES} retries: #{e.message}"
-      end
     end
   end
 

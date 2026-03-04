@@ -3,9 +3,12 @@
 require "exa-ai"
 require "set"
 require_relative "../loggable"
+require_relative "../retryable"
 
 class ResearchAgent
   include Loggable
+  include Retryable
+
   MAX_RETRIES = 3
   RESULTS_PER_TOPIC = 5
 
@@ -70,16 +73,8 @@ class ResearchAgent
   end
 
   def search_with_retry(query, **params)
-    attempts = 0
-    begin
-      attempts += 1
+    with_retries(max: MAX_RETRIES, on: [Exa::TooManyRequests, Exa::ServerError]) do
       @client.search(query, **params)
-    rescue Exa::TooManyRequests, Exa::ServerError => e
-      raise if attempts >= MAX_RETRIES
-      sleep_time = 2**attempts
-      log("#{e.class} on '#{query}', retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
-      sleep(sleep_time)
-      retry
     end
   end
 end

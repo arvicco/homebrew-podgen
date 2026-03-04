@@ -9,9 +9,12 @@ require "yaml"
 require "fileutils"
 require "tmpdir"
 require_relative "../loggable"
+require_relative "../retryable"
 
 class TTSAgent
   include Loggable
+  include Retryable
+
   BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech"
   DICT_API_URL = "https://api.elevenlabs.io/v1/pronunciation-dictionaries"
   TRIM_THRESHOLD = 0.5 # seconds of trailing audio before we trim
@@ -81,10 +84,7 @@ class TTSAgent
     body[:previous_request_ids] = previous_request_ids unless previous_request_ids.empty?
     body[:pronunciation_dictionary_locators] = @pronunciation_locators unless @pronunciation_locators.empty?
 
-    retries = 0
-    begin
-      retries += 1
-
+    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
       response = HTTParty.post(
         url,
         headers: {
@@ -109,16 +109,6 @@ class TTSAgent
         raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
       else
         raise "TTS failed: HTTP #{response.code}: #{parse_error(response)}"
-      end
-
-    rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
-      if retries <= MAX_RETRIES
-        sleep_time = 2**retries
-        log("  Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}")
-        sleep(sleep_time)
-        retry
-      else
-        raise "TTS failed after #{MAX_RETRIES} retries: #{e.message}"
       end
     end
   end
