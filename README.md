@@ -881,7 +881,19 @@ GR: dobro(adj.n.sg.A)good jutro(n.n.sg.A)morning
 [audio plays]
 ```
 
-Glossing requires `ANTHROPIC_API_KEY`. The model defaults to Claude Haiku (override with `TELL_GLOSS_MODEL`).
+Glossing requires `ANTHROPIC_API_KEY`. The model defaults to Claude Opus 4.6 (configure with `gloss_models` in `~/.tell.yml` or `TELL_GLOSS_MODEL` env).
+
+Agrammatical forms are detected and marked: `*restavraciju*restavracijo(n.f.A.sg)restaurant` — the asterisks show the error and correction.
+
+For more reliable error detection, use **multi-model consensus** — multiple models gloss in parallel, and a reconciler only keeps error markings where models agree:
+
+```yaml
+gloss_models:
+  - opus
+  - sonnet
+```
+
+This prevents over-correction (Opus) and missed errors (Sonnet) by requiring agreement from both models.
 
 ### Advanced configuration
 
@@ -898,6 +910,10 @@ output_format: mp3_44100_128        # ElevenLabs output format
 reverse_translate: false            # Always show reverse translation
 gloss: false                        # Always show grammatical gloss
 gloss_reverse: false                # Always show gloss with translations
+gloss_models: opus                   # opus | sonnet | haiku (or array for multi-model consensus)
+# gloss_models:                     # multi-model consensus example
+#   - opus
+#   - sonnet
 translation_timeout: 8.0            # Per-engine timeout (seconds)
 
 # API keys (can also be set via environment variables)

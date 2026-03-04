@@ -100,23 +100,57 @@ module Tell
     end
 
     def gloss(text)
-      result = glosser.gloss(text, from: @config.target_language, to: @config.reverse_language)
+      result = run_gloss(:gloss, text)
       $stderr.puts "#{Colors.tag("GL:")} #{Colors.colorize_gloss(result)}"
     rescue => e
       $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
     end
 
     def gloss_translate(text)
-      result = glosser.gloss_translate(text, from: @config.target_language, to: @config.reverse_language)
+      result = run_gloss(:gloss_translate, text)
       $stderr.puts "#{Colors.tag("GR:")} #{Colors.colorize_gloss_translate(result)}"
     rescue => e
       $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
     end
 
-    def glosser
+    def run_gloss(mode, text)
+      if @config.gloss_models.size == 1
+        build_glosser(@config.gloss_model).public_send(mode, text, from: @config.target_language, to: @config.reverse_language)
+      else
+        run_consensus(mode, text)
+      end
+    end
+
+    def run_consensus(mode, text)
+      mutex = Mutex.new
+      glosses = {}
+      errors = {}
+
+      threads = @config.gloss_models.map do |model_id|
+        Thread.new(model_id) do |mid|
+          result = build_glosser(mid).public_send(mode, text, from: @config.target_language, to: @config.reverse_language)
+          mutex.synchronize { glosses[mid] = result }
+        rescue => e
+          mutex.synchronize { errors[mid] = e }
+        end
+      end
+      threads.each(&:join)
+
+      raise errors.values.first if glosses.empty?
+
+      if glosses.size == 1
+        glosses.values.first
+      else
+        reconciler = build_glosser(@config.gloss_reconciler)
+        reconciler.reconcile(glosses, text, from: @config.target_language, to: @config.reverse_language, mode: mode)
+      end
+    end
+
+    def build_glosser(model_id)
       key = ENV["ANTHROPIC_API_KEY"]
       raise "Gloss requires ANTHROPIC_API_KEY" unless key
-      @glosser ||= Glosser.new(key)
+      @glossers ||= {}
+      @glossers[model_id] ||= Glosser.new(key, model: model_id)
     end
 
     def translator
@@ -183,8 +217,8 @@ module Tell
         "API overloaded (try again)"
       elsif msg.include?('"rate_limit_error"') || msg.include?("status: 429")
         "rate limited (try again)"
-      elsif msg =~ /status[":]\s*(\d{3})/ && msg =~ /"message":\s*"([^"]+)"/
-        "HTTP #{$1}: #{$2}"
+      elsif (status = msg[/status[":]\s*(\d{3})/, 1]) && (detail = msg[/"message":\s*"([^"]+)"/, 1])
+        "HTTP #{status}: #{detail}"
       else
         msg.length > 80 ? "#{msg[0, 77]}..." : msg
       end

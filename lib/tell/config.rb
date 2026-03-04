@@ -17,11 +17,20 @@ module Tell
       "openai" => { config: "openai_api_key",     env: "OPENAI_API_KEY" }
     }.freeze
 
+    VALID_GLOSS_MODELS = %w[opus sonnet haiku].freeze
+    GLOSS_MODEL_IDS = {
+      "opus"   => "claude-opus-4-6",
+      "sonnet" => "claude-sonnet-4-6",
+      "haiku"  => "claude-haiku-4-5-20251001"
+    }.freeze
+    DEFAULT_GLOSS_MODEL = "opus"
+
     attr_reader :original_language, :target_language, :voice_id,
                 :translation_engines, :tts_engine,
                 :model_id, :output_format,
                 :api_key, :tts_api_key, :google_language_code,
                 :reverse_translate, :gloss, :gloss_reverse,
+                :gloss_models,
                 :engine_api_keys, :translation_timeout
 
     def initialize(overrides: {})
@@ -39,6 +48,8 @@ module Tell
       @gloss_reverse      = overrides[:gloss_reverse] || data.fetch("gloss_reverse", false)
       @translation_timeout = (ENV["TELL_TRANSLATE_TIMEOUT"] || data.fetch("translation_timeout", DEFAULT_TRANSLATION_TIMEOUT)).to_f
 
+      resolve_gloss_models!(data)
+
       resolve_translation_engines!(data)
       validate_tts_engine!
       resolve_tts_api_key!(data)
@@ -53,6 +64,10 @@ module Tell
     def engine_api_key
       @engine_api_keys[translation_engine]
     end
+
+    # Convenience: first (strongest) model
+    def gloss_model      = gloss_models.first
+    def gloss_reconciler = gloss_models.first
 
     # Language to use as "to" for reverse translation and glossing.
     # When original_language is "auto" (config-driven translation mode),
@@ -75,6 +90,7 @@ module Tell
             voice_id: "your_voice_id"
             tts_engine: elevenlabs        # elevenlabs | google
             translation_engine: deepl     # deepl | claude | openai (or array for failover)
+            gloss_model: opus             # opus | sonnet | haiku (or full model ID)
 
           ElevenLabs example:
             voice_id: "elevenlabs_voice_id"
@@ -96,6 +112,11 @@ module Tell
       return if missing.empty?
 
       raise "Missing required config keys in #{CONFIG_PATH}: #{missing.join(', ')}"
+    end
+
+    def resolve_gloss_models!(data)
+      raw = ENV["TELL_GLOSS_MODEL"] || data["gloss_models"] || data.fetch("gloss_model", DEFAULT_GLOSS_MODEL)
+      @gloss_models = Array(raw).map { |m| GLOSS_MODEL_IDS.fetch(m.to_s, m.to_s) }
     end
 
     def resolve_translation_engines!(data)
