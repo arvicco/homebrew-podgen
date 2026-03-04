@@ -4,6 +4,7 @@ require "httparty"
 require "json"
 require "base64"
 require_relative "colors"
+require_relative "../http_retryable"
 
 module Tell
   def self.build_tts(engine, config)
@@ -15,9 +16,10 @@ module Tell
   end
 
   class ElevenlabsTts
+    include HttpRetryable
+
     BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech"
     MAX_RETRIES = 2
-    RETRIABLE_CODES = [429, 503].freeze
 
     def initialize(config)
       @api_key       = config.api_key
@@ -75,23 +77,13 @@ module Tell
       end
     end
 
-    private
-
-    def parse_error(response)
-      parsed = JSON.parse(response.body)
-      detail = parsed["detail"]
-      detail.is_a?(Hash) ? "#{detail['code']}: #{detail['message']}" : detail.to_s
-    rescue JSON::ParserError
-      response.body[0..200]
-    end
-
-    class RetriableError < StandardError; end
   end
 
   class GoogleTts
+    include HttpRetryable
+
     BASE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
     MAX_RETRIES = 2
-    RETRIABLE_CODES = [429, 503].freeze
 
     # Map ISO 639-1 codes to Google BCP-47 language codes
     LANGUAGE_CODES = {
@@ -154,16 +146,5 @@ module Tell
       end
     end
 
-    private
-
-    def parse_error(response)
-      parsed = JSON.parse(response.body)
-      err = parsed["error"]
-      err.is_a?(Hash) ? "#{err['code']}: #{err['message']}" : parsed.to_s
-    rescue JSON::ParserError
-      response.body[0..200]
-    end
-
-    class RetriableError < StandardError; end
   end
 end

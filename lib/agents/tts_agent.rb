@@ -10,19 +10,20 @@ require "fileutils"
 require "tmpdir"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../http_retryable"
 require_relative "../audio_assembler"
 require_relative "../text_splitter"
 
 class TTSAgent
   include Loggable
   include Retryable
+  include HttpRetryable
 
   BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech"
   DICT_API_URL = "https://api.elevenlabs.io/v1/pronunciation-dictionaries"
   TRIM_THRESHOLD = 0.5 # seconds of trailing audio before we trim
   MAX_CHARS = 9_500 # Safety margin below eleven_multilingual_v2's 10,000 limit
   MAX_RETRIES = 3
-  RETRIABLE_CODES = [429, 503].freeze
 
   def initialize(logger: nil, voice_id_override: nil, pronunciation_pls_path: nil)
     @logger = logger
@@ -210,13 +211,4 @@ class TTSAgent
     }))
   end
 
-  def parse_error(response)
-    parsed = JSON.parse(response.body)
-    detail = parsed["detail"]
-    detail.is_a?(Hash) ? "#{detail['code']}: #{detail['message']}" : detail.to_s
-  rescue JSON::ParserError
-    response.body[0..200]
-  end
-
-  class RetriableError < StandardError; end
 end
