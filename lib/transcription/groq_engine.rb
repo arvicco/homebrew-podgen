@@ -5,6 +5,7 @@ require "json"
 require "open3"
 require "tmpdir"
 require_relative "base_engine"
+require_relative "../audio_assembler"
 
 module Transcription
   class GroqEngine < BaseEngine
@@ -135,11 +136,7 @@ module Transcription
     end
 
     def probe_duration(audio_path)
-      cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", audio_path]
-      out, _err, status = Open3.capture3(*cmd)
-      raise "ffprobe failed for #{audio_path}" unless status.success?
-
-      out.strip.to_f
+      AudioAssembler.probe_duration(audio_path) || raise("ffprobe failed for #{audio_path}")
     end
 
     # Compute the highest bitrate (in kbps) that fits under TARGET_SIZE_MB.
