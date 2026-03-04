@@ -2,6 +2,7 @@
 
 require "open3"
 require "tmpdir"
+require_relative "colors"
 
 module Tell
   class Processor
@@ -14,84 +15,102 @@ module Tell
       @play_tmp = nil
     end
 
-    def process(text, output_path: nil, no_translate: false)
+    def process(text, output_path: nil, translate_from: nil)
       text = text.strip
       return if text.empty?
 
-      if no_translate
-        synthesize_and_output(text, output_path)
+      unless translate_from
+        # Default: assume target language, speak as-is
+        speak_target(text, output_path)
         return
       end
 
-      detected = Detector.detect(text)
+      # Translation mode (-f flag or config auto)
+      source = resolve_source(text, translate_from)
 
-      # Fallback: if stop-word detection is inconclusive, check for
-      # characteristic diacritics (e.g. č/š/ž → Slovenian, not English)
-      if detected.nil? && Detector.has_characteristic_chars?(text, @config.target_language)
-        detected = @config.target_language
-      end
-
-      if detected == @config.target_language
-        # Already in target language — speak directly, fire add-ons in background
-        fire_addons(text)
-        synthesize_and_output(text, output_path)
+      if source == @config.target_language
+        speak_target(text, output_path)
       else
-        # Translate to target language, then speak
-        translation = forward_translate(text)
-        synthesize_and_output(translation || text, output_path)
+        translation = forward_translate(text, from: source)
+        if translation
+          speak_target(translation, output_path)
+        else
+          synthesize_and_output(text, output_path)
+        end
       end
     end
 
     private
 
-    def fire_addons(text)
-      Thread.new { reverse_translate(text) } if @config.reverse_translate
-      Thread.new { gloss(text) } if @config.gloss
-      Thread.new { gloss_translate(text) } if @config.gloss_reverse
+    def resolve_source(text, translate_from)
+      return translate_from unless translate_from == "auto"
+
+      detected = Detector.detect(text)
+      if detected.nil? && Detector.has_characteristic_chars?(text, @config.target_language)
+        @config.target_language
+      else
+        detected
+      end
     end
 
-    def forward_translate(text)
-      translation = translator.translate(text, from: @config.original_language, to: @config.target_language)
+    def speak_target(text, output_path)
+      addon_threads = fire_addons(text)
+      synthesize_and_output(text, output_path)
+      addon_threads.each(&:join) unless @interactive
+    end
 
-      # If translation matches input, the text was already in the target language
-      return nil if translation.strip.downcase == text.strip.downcase
+    def fire_addons(text)
+      threads = []
+      threads << Thread.new { reverse_translate(text) } if @config.reverse_translate
+      threads << Thread.new { gloss(text) } if @config.gloss
+      threads << Thread.new { gloss_translate(text) } if @config.gloss_reverse
+      threads
+    end
+
+    def forward_translate(text, from: nil)
+      source = from || @config.reverse_language
+      translation = translator.translate(text, from: source, to: @config.target_language)
+
+      # If translation matches input, the text was already in the target language —
+      # return it so the caller can fire add-ons on it
+      return text if translation.strip.downcase == text.strip.downcase
 
       tag = @config.target_language.upcase
 
       # If translation is much longer than input, it's likely an explanation
       # rather than a clean translation — show it but speak the original
       if translation.length > text.length * 3
-        $stderr.puts "#{tag}: #{translation}"
+        $stderr.puts "#{Colors.tag("#{tag}:")} #{Colors.forward(translation)}"
         return nil
       end
 
-      $stderr.puts "#{tag}: #{translation}"
+      $stderr.puts "#{Colors.tag("#{tag}:")} #{Colors.forward(translation)}"
       translation
     rescue => e
-      $stderr.puts "Translation failed (speaking original): #{friendly_error(e)}"
+      $stderr.puts Colors.error("Translation failed (speaking original): #{friendly_error(e)}")
       nil
     end
 
     def reverse_translate(text)
-      tag = @config.original_language.upcase
-      translation = translator.translate(text, from: @config.target_language, to: @config.original_language)
-      $stderr.puts "#{tag}: #{translation}" unless translation.strip.downcase == text.strip.downcase
+      tag = @config.reverse_language.upcase
+      translation = translator.translate(text, from: @config.target_language, to: @config.reverse_language)
+      $stderr.puts "#{Colors.tag("#{tag}:")} #{Colors.reverse(translation)}" unless translation.strip.downcase == text.strip.downcase
     rescue => e
-      $stderr.puts "Reverse translation failed: #{friendly_error(e)}"
+      $stderr.puts Colors.error("Reverse translation failed: #{friendly_error(e)}")
     end
 
     def gloss(text)
-      result = glosser.gloss(text, from: @config.target_language, to: @config.original_language)
-      $stderr.puts "GL: #{result}"
+      result = glosser.gloss(text, from: @config.target_language, to: @config.reverse_language)
+      $stderr.puts "#{Colors.tag("GL:")} #{Colors.colorize_gloss(result)}"
     rescue => e
-      $stderr.puts "Gloss failed: #{friendly_error(e)}"
+      $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
     end
 
     def gloss_translate(text)
-      result = glosser.gloss_translate(text, from: @config.target_language, to: @config.original_language)
-      $stderr.puts "GR: #{result}"
+      result = glosser.gloss_translate(text, from: @config.target_language, to: @config.reverse_language)
+      $stderr.puts "#{Colors.tag("GR:")} #{Colors.colorize_gloss_translate(result)}"
     rescue => e
-      $stderr.puts "Gloss failed: #{friendly_error(e)}"
+      $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
     end
 
     def glosser
@@ -119,7 +138,7 @@ module Tell
     def output_audio(audio_data, output_path)
       if output_path
         File.open(output_path, "wb") { |f| f.write(audio_data) }
-        $stderr.puts "Saved: #{output_path}"
+        $stderr.puts Colors.status("Saved: #{output_path}")
       elsif !$stdout.tty?
         $stdout.binmode
         $stdout.write(audio_data)

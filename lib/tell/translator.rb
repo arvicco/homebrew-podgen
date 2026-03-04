@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "colors"
+
 module Tell
   LANGUAGE_NAMES = {
     "en" => "English",
@@ -158,10 +160,10 @@ module Tell
       @translators.each do |name, translator|
         return Timeout.timeout(@timeout) { translator.translate(text, from: from, to: to) }
       rescue Timeout::Error => e
-        $stderr.puts "#{name}: timed out (#{@timeout}s), trying next..."
+        $stderr.puts Colors.warning("#{name}: timed out (#{@timeout}s), trying next...")
         last_error = e
       rescue => e
-        $stderr.puts "#{name}: #{friendly_error(e)}, trying next..."
+        $stderr.puts Colors.warning("#{name}: #{friendly_error(e)}, trying next...")
         last_error = e
       end
       raise last_error || RuntimeError.new("All translation engines failed")

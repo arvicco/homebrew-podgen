@@ -3,6 +3,7 @@
 require "httparty"
 require "json"
 require "base64"
+require_relative "colors"
 
 module Tell
   def self.build_tts(engine, config)
@@ -65,7 +66,7 @@ module Tell
       rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
         if retries <= MAX_RETRIES
           sleep_time = 2**retries
-          $stderr.puts "Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}"
+          $stderr.puts Colors.status("Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}")
           sleep(sleep_time)
           retry
         else
@@ -144,7 +145,7 @@ module Tell
       rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
         if retries <= MAX_RETRIES
           sleep_time = 2**retries
-          $stderr.puts "Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}"
+          $stderr.puts Colors.status("Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}")
           sleep(sleep_time)
           retry
         else

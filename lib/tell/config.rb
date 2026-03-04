@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "yaml"
+require_relative "colors"
 
 module Tell
   class Config
@@ -51,6 +52,13 @@ module Tell
     # Backward compat: primary engine's API key
     def engine_api_key
       @engine_api_keys[translation_engine]
+    end
+
+    # Language to use as "to" for reverse translation and glossing.
+    # When original_language is "auto" (config-driven translation mode),
+    # we don't have a real language code, so default to English.
+    def reverse_language
+      @original_language == "auto" ? "en" : @original_language
     end
 
     private
@@ -110,7 +118,7 @@ module Tell
         elsif i == 0
           raise "#{eng} translation requires #{key_info[:env]} (set in env or as '#{key_info[:config]}' in #{CONFIG_PATH})"
         else
-          $stderr.puts "warn: #{eng} fallback skipped — #{key_info[:env]} not set"
+          $stderr.puts Colors.warning("warn: #{eng} fallback skipped — #{key_info[:env]} not set")
         end
       end
 

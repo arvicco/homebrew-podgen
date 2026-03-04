@@ -440,6 +440,30 @@ class TestTellConfig < Minitest::Test
     assert_equal 5.0, config.translation_timeout
   end
 
+  # --- reverse_language ---
+
+  def test_reverse_language_normal
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123"
+    )
+
+    config = Tell::Config.new
+    assert_equal "en", config.reverse_language
+  end
+
+  def test_reverse_language_auto
+    write_config(
+      "original_language" => "auto",
+      "target_language" => "sl",
+      "voice_id" => "abc123"
+    )
+
+    config = Tell::Config.new
+    assert_equal "en", config.reverse_language
+  end
+
   def test_invalid_engine_in_array_raises
     write_config(
       "original_language" => "en",
