@@ -8,8 +8,10 @@ require_relative "sources/hn_source"
 require_relative "sources/claude_web_source"
 require_relative "sources/bluesky_source"
 require_relative "sources/x_source"
+require_relative "loggable"
 
 class SourceManager
+  include Loggable
   REGISTRY = {
     "exa" => ->(opts) { ResearchAgent.new(**opts) },
     "rss" => ->(opts) { RSSSource.new(**opts) },
@@ -164,13 +166,5 @@ class SourceManager
     end
 
     merged
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[SourceManager] #{message}")
-    else
-      puts "[SourceManager] #{message}"
-    end
   end
 end

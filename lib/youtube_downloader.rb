@@ -3,8 +3,10 @@
 require "open3"
 require "json"
 require "tmpdir"
+require_relative "loggable"
 
 class YouTubeDownloader
+  include Loggable
   DEFAULT_BROWSER = "chrome"
 
   def initialize(logger: nil)
@@ -163,13 +165,5 @@ class YouTubeDownloader
     @verified = true
   rescue Errno::ENOENT
     raise "yt-dlp is not installed or not on $PATH. Install with: brew install yt-dlp"
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[YouTubeDownloader] #{message}")
-    else
-      puts "[YouTubeDownloader] #{message}"
-    end
   end
 end

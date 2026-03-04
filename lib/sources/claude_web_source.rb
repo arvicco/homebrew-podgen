@@ -2,8 +2,10 @@
 
 require "anthropic"
 require "set"
+require_relative "../loggable"
 
 class ClaudeWebSource
+  include Loggable
   MAX_RETRIES = 3
   DEFAULT_MODEL = "claude-haiku-4-5-20251001"
   MAX_SEARCH_USES = 3
@@ -123,13 +125,5 @@ class ClaudeWebSource
     end
 
     findings_by_url.values.first(@max_results)
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[ClaudeWebSource] #{message}")
-    else
-      puts "[ClaudeWebSource] #{message}"
-    end
   end
 end

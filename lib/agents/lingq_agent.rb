@@ -2,8 +2,10 @@
 
 require "httparty"
 require "json"
+require_relative "../loggable"
 
 class LingQAgent
+  include Loggable
   BASE_URL = "https://www.lingq.com/api"
   MAX_RETRIES = 3
   RETRIABLE_CODES = [429, 503].freeze
@@ -125,14 +127,6 @@ class LingQAgent
     end
   rescue JSON::ParserError
     response.body[0..200]
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[LingQAgent] #{message}")
-    else
-      puts "[LingQAgent] #{message}"
-    end
   end
 
   class RetriableError < StandardError; end

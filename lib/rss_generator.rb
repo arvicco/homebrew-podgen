@@ -6,8 +6,10 @@ require "time"
 require "fileutils"
 require "yaml"
 require "open3"
+require_relative "loggable"
 
 class RssGenerator
+  include Loggable
   # Converts markdown transcripts/scripts to HTML for podcast apps.
   # Skips files where the HTML is already up-to-date.
   def self.convert_transcripts(episodes_dir)
@@ -249,13 +251,5 @@ class RssGenerator
     duration > 0 ? duration : nil
   rescue Errno::ENOENT
     nil
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[RssGenerator] #{message}")
-    else
-      puts "[RssGenerator] #{message}"
-    end
   end
 end

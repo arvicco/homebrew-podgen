@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require_relative "../loggable"
 
 module Transcription
   class Reconciler
+    include Loggable
     MAX_RETRIES = 3
 
     def initialize(language: "Slovenian", logger: nil)
@@ -180,14 +182,6 @@ module Transcription
       cache_create = usage.cache_creation_input_tokens || 0
       cache_read = usage.cache_read_input_tokens || 0
       log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
-    end
-
-    def log(message)
-      if @logger
-        @logger.log("[Reconciler] #{message}")
-      else
-        puts "[Reconciler] #{message}"
-      end
     end
   end
 end

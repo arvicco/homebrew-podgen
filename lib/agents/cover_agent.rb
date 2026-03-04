@@ -3,8 +3,10 @@
 require "open3"
 require "fileutils"
 require "tmpdir"
+require_relative "../loggable"
 
 class CoverAgent
+  include Loggable
   DEFAULTS = {
     font: "Patrick Hand",
     font_color: "#2B3A67",
@@ -154,13 +156,5 @@ class CoverAgent
     raise "#{name} is not installed or not on $PATH. Install with: #{install_hint}"
   rescue Errno::ENOENT
     raise "#{name} is not installed or not on $PATH. Install with: #{install_hint}"
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[CoverAgent] #{message}")
-    else
-      puts "[CoverAgent] #{message}"
-    end
   end
 end

@@ -2,6 +2,7 @@
 
 require "anthropic"
 require "date"
+require_relative "../loggable"
 
 class TopicQuery < Anthropic::BaseModel
   required :query, String
@@ -12,6 +13,8 @@ class TopicList < Anthropic::BaseModel
 end
 
 class TopicAgent
+  include Loggable
+
   MAX_RETRIES = 3
 
   def initialize(guidelines:, recent_topics: nil, logger: nil)
@@ -111,13 +114,5 @@ class TopicAgent
     cache_create = usage.cache_creation_input_tokens || 0
     cache_read = usage.cache_read_input_tokens || 0
     log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[TopicAgent] #{message}")
-    else
-      puts "[TopicAgent] #{message}"
-    end
   end
 end

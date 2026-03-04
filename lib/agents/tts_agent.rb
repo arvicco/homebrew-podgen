@@ -8,8 +8,10 @@ require "digest"
 require "yaml"
 require "fileutils"
 require "tmpdir"
+require_relative "../loggable"
 
 class TTSAgent
+  include Loggable
   BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech"
   DICT_API_URL = "https://api.elevenlabs.io/v1/pronunciation-dictionaries"
   TRIM_THRESHOLD = 0.5 # seconds of trailing audio before we trim
@@ -261,14 +263,6 @@ class TTSAgent
     detail.is_a?(Hash) ? "#{detail['code']}: #{detail['message']}" : detail.to_s
   rescue JSON::ParserError
     response.body[0..200]
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[TTSAgent] #{message}")
-    else
-      puts "[TTSAgent] #{message}"
-    end
   end
 
   class RetriableError < StandardError; end

@@ -3,6 +3,7 @@
 require "anthropic"
 require "fileutils"
 require "date"
+require_relative "../loggable"
 
 class Segment < Anthropic::BaseModel
   required :name, String
@@ -15,6 +16,8 @@ class PodcastScript < Anthropic::BaseModel
 end
 
 class ScriptAgent
+  include Loggable
+
   MAX_RETRIES = 3
 
   def initialize(guidelines:, script_path:, logger: nil)
@@ -156,13 +159,5 @@ class ScriptAgent
     cache_create = usage.cache_creation_input_tokens || 0
     cache_read = usage.cache_read_input_tokens || 0
     log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[ScriptAgent] #{message}")
-    else
-      puts "[ScriptAgent] #{message}"
-    end
   end
 end

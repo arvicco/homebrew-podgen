@@ -4,9 +4,11 @@ require_relative "openai_engine"
 require_relative "elevenlabs_engine"
 require_relative "groq_engine"
 require_relative "reconciler"
+require_relative "../loggable"
 
 module Transcription
   class EngineManager
+    include Loggable
     REGISTRY = {
       "open" => OpenaiEngine,
       "elab" => ElevenlabsEngine,
@@ -108,14 +110,6 @@ module Transcription
       raise "Unknown transcription engine: #{code}" unless klass
 
       klass.new(language: @language, logger: @logger)
-    end
-
-    def log(message)
-      if @logger
-        @logger.log("[EngineManager] #{message}")
-      else
-        puts "[EngineManager] #{message}"
-      end
     end
   end
 end

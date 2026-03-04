@@ -4,8 +4,10 @@ require "open3"
 require "json"
 require "fileutils"
 require "tmpdir"
+require_relative "loggable"
 
 class AudioAssembler
+  include Loggable
   SAMPLE_RATE = 44_100
   BITRATE = "192k"
   TARGET_LUFS = -16
@@ -281,13 +283,5 @@ class AudioAssembler
     raise "ffmpeg is not installed or not on $PATH. Install with: brew install ffmpeg"
   rescue Errno::ENOENT
     raise "ffmpeg is not installed or not on $PATH. Install with: brew install ffmpeg"
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[AudioAssembler] #{message}")
-    else
-      puts "[AudioAssembler] #{message}"
-    end
   end
 end
