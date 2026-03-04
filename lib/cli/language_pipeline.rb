@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "net/http"
-require "uri"
 require "tmpdir"
 require "fileutils"
 
@@ -15,11 +13,10 @@ require_relative File.join(root, "lib", "agents", "lingq_agent")
 require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "agents", "description_agent")
 require_relative File.join(root, "lib", "youtube_downloader")
+require_relative File.join(root, "lib", "http_downloader")
 
 module PodgenCLI
   class LanguagePipeline
-    MAX_DOWNLOAD_RETRIES = 3
-    MAX_DOWNLOAD_SIZE = 200 * 1024 * 1024 # 200 MB
     MIN_OUTRO_SAVINGS = 5 # minimum seconds saved to bother trimming outro
 
     def initialize(config:, options:, logger:, history:, today:)
@@ -469,57 +466,10 @@ module PodgenCLI
     end
 
     def download_audio(url)
-      logger.log("Downloading audio: #{url}")
       path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}.mp3")
       @temp_files << path
-
-      retries = 0
-      begin
-        retries += 1
-        uri = URI.parse(url)
-        download_with_redirects(uri, path)
-      rescue => e
-        if retries <= MAX_DOWNLOAD_RETRIES
-          sleep_time = 2**retries
-          logger.log("Download error: #{e.message}, retry #{retries}/#{MAX_DOWNLOAD_RETRIES} in #{sleep_time}s")
-          sleep(sleep_time)
-          retry
-        end
-        raise "Failed to download audio after #{MAX_DOWNLOAD_RETRIES} retries: #{e.message}"
-      end
-
-      raise "Downloaded file is empty: #{url}" unless File.size(path) > 0
-
+      HttpDownloader.new(logger: logger).download(url, path)
       path
-    end
-
-    def download_with_redirects(uri, path, redirects_left = 3)
-      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 15, read_timeout: 120) do |http|
-        request = Net::HTTP::Get.new(uri.request_uri)
-        request["User-Agent"] = "PodcastAgent/1.0"
-
-        http.request(request) do |response|
-          case response
-          when Net::HTTPSuccess
-            bytes = 0
-            File.open(path, "wb") do |f|
-              response.read_body do |chunk|
-                bytes += chunk.bytesize
-                raise "Download exceeds #{MAX_DOWNLOAD_SIZE / (1024 * 1024)} MB limit" if bytes > MAX_DOWNLOAD_SIZE
-                f.write(chunk)
-              end
-            end
-          when Net::HTTPRedirection
-            raise "Too many redirects" if redirects_left <= 0
-            location = response["location"]
-            location = URI.join(uri.to_s, location).to_s unless location.start_with?("http")
-            logger.log("Following redirect → #{location}")
-            download_with_redirects(URI.parse(location), path, redirects_left - 1)
-          else
-            raise "HTTP #{response.code} downloading #{uri}"
-          end
-        end
-      end
     end
 
     def save_transcript(episode, transcript, base_name)
