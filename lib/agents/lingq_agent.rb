@@ -4,14 +4,15 @@ require "httparty"
 require "json"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../http_retryable"
 
 class LingQAgent
   include Loggable
   include Retryable
+  include HttpRetryable
 
   BASE_URL = "https://www.lingq.com/api"
   MAX_RETRIES = 3
-  RETRIABLE_CODES = [429, 503].freeze
 
   def initialize(logger: nil)
     @logger = logger
@@ -108,16 +109,4 @@ class LingQAgent
     log("Warning: timestamp generation failed: #{e.message} (non-fatal)")
   end
 
-  def parse_error(response)
-    parsed = JSON.parse(response.body)
-    if parsed.is_a?(Hash)
-      parsed["detail"] || parsed["message"] || parsed.to_s
-    else
-      parsed.to_s
-    end
-  rescue JSON::ParserError
-    response.body[0..200]
-  end
-
-  class RetriableError < StandardError; end
 end
