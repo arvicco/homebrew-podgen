@@ -16,6 +16,12 @@ class SnipInterval
 
   attr_reader :intervals
 
+  # Returns an empty SnipInterval with no removal intervals.
+  # Use this to programmatically build intervals via #add.
+  def self.empty
+    new(nil)
+  end
+
   # Parses a value into a SnipInterval.
   #   nil / empty string → nil
   #   SnipInterval        → returned as-is
@@ -29,8 +35,12 @@ class SnipInterval
   end
 
   def initialize(raw)
-    @intervals = raw.strip.split(",").map { |part| parse_one(part.strip) }
-    raise ArgumentError, "no intervals parsed from: #{raw}" if @intervals.empty?
+    if raw.nil?
+      @intervals = []
+    else
+      @intervals = raw.strip.split(",").map { |part| parse_one(part.strip) }
+      raise ArgumentError, "no intervals parsed from: #{raw}" if @intervals.empty?
+    end
   end
 
   # Appends a removal interval (used to fold in skip/cut).

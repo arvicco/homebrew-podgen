@@ -231,4 +231,29 @@ class TestSnipInterval < Minitest::Test
     si = SnipInterval.parse("5-30")
     assert_equal "5-30", si.to_s
   end
+
+  # --- empty ---
+
+  def test_empty_has_no_intervals
+    si = SnipInterval.empty
+    assert_empty si.intervals
+  end
+
+  def test_empty_keep_segments_returns_full_range
+    si = SnipInterval.empty
+    keeps = si.keep_segments(100)
+    assert_equal 1, keeps.length
+    assert_in_delta 0.0, keeps[0].from
+    assert_in_delta 100.0, keeps[0].to
+  end
+
+  def test_empty_supports_add
+    si = SnipInterval.empty
+    si.add(0, 10)
+    si.add(90, 100)
+    keeps = si.keep_segments(100)
+    assert_equal 1, keeps.length
+    assert_in_delta 10.0, keeps[0].from
+    assert_in_delta 90.0, keeps[0].to
+  end
 end

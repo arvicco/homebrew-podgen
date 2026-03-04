@@ -154,7 +154,7 @@ module PodgenCLI
       if has_trim
         assembler = AudioAssembler.new(logger: logger)
         total = assembler.probe_duration(source_audio_path)
-        removal = snip ? snip.dup : SnipInterval.allocate.tap { |si| si.instance_variable_set(:@intervals, []) }
+        removal = snip ? snip.dup : SnipInterval.empty
 
         # Fold in skip → remove [0, skip_time]
         if skip && skip > 0
