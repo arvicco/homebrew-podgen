@@ -7,6 +7,7 @@ require "fileutils"
 require "yaml"
 require "open3"
 require_relative "loggable"
+require_relative "audio_assembler"
 
 class RssGenerator
   include Loggable
@@ -230,26 +231,9 @@ class RssGenerator
 
   # Duration from history, falling back to ffprobe, then 192kbps estimate
   def format_duration(ep)
-    seconds = @duration_map[ep[:filename]] || probe_duration(ep[:path]) || ep[:size] / (192_000.0 / 8)
+    seconds = @duration_map[ep[:filename]] || AudioAssembler.probe_duration(ep[:path]) || ep[:size] / (192_000.0 / 8)
     minutes = (seconds / 60).to_i
     secs = (seconds % 60).to_i
     format("%d:%02d", minutes, secs)
-  end
-
-  def probe_duration(path)
-    return nil unless path
-
-    stdout, _stderr, status = Open3.capture3(
-      "ffprobe", "-v", "quiet",
-      "-show_entries", "format=duration",
-      "-of", "csv=p=0",
-      path
-    )
-    return nil unless status.success?
-
-    duration = stdout.strip.to_f
-    duration > 0 ? duration : nil
-  rescue Errno::ENOENT
-    nil
   end
 end

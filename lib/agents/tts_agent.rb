@@ -10,6 +10,7 @@ require "fileutils"
 require "tmpdir"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../audio_assembler"
 
 class TTSAgent
   include Loggable
@@ -140,11 +141,7 @@ class TTSAgent
   end
 
   def probe_duration(path)
-    cmd = ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", path]
-    out, _err, status = Open3.capture3(*cmd)
-    raise "ffprobe failed for #{path}" unless status.success?
-
-    out.strip.to_f
+    AudioAssembler.probe_duration(path) || raise("ffprobe failed for #{path}")
   end
 
   def resolve_pronunciation_dictionary(pls_path)
