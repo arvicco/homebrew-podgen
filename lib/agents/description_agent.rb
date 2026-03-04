@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require_relative "../loggable"
 
 class DescriptionAgent
+  include Loggable
   MAX_RETRIES = 3
   TRANSCRIPT_LIMIT = 2000
 
@@ -187,13 +189,5 @@ class DescriptionAgent
     usage = message.usage
     log("Description #{operation} in #{elapsed}s (#{message.stop_reason})")
     log("  Input: #{usage.input_tokens} tokens | Output: #{usage.output_tokens} tokens")
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[DescriptionAgent] #{message}")
-    else
-      puts "[DescriptionAgent] #{message}"
-    end
   end
 end

@@ -2,8 +2,10 @@
 
 require "httparty"
 require "set"
+require_relative "../loggable"
 
 class HNSource
+  include Loggable
   MAX_RETRIES = 2
   RESULTS_PER_TOPIC = 3
   LOOKBACK_HOURS = 48
@@ -81,14 +83,6 @@ class HNSource
         retry
       end
       raise
-    end
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[HNSource] #{message}")
-    else
-      puts "[HNSource] #{message}"
     end
   end
 end

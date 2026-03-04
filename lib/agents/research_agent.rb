@@ -2,8 +2,10 @@
 
 require "exa-ai"
 require "set"
+require_relative "../loggable"
 
 class ResearchAgent
+  include Loggable
   MAX_RETRIES = 3
   RESULTS_PER_TOPIC = 5
 
@@ -78,14 +80,6 @@ class ResearchAgent
       log("#{e.class} on '#{query}', retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
       sleep(sleep_time)
       retry
-    end
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[ResearchAgent] #{message}")
-    else
-      puts "[ResearchAgent] #{message}"
     end
   end
 end

@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "../loggable"
+
 module Transcription
   class BaseEngine
+    include Loggable
     MAX_RETRIES = 3
     TIMEOUT = 300 # 5 minutes
 
@@ -29,15 +32,6 @@ module Transcription
       message.include?("429") || message.include?("503") ||
         error.is_a?(Net::OpenTimeout) || error.is_a?(Net::ReadTimeout) ||
         error.is_a?(Errno::ETIMEDOUT)
-    end
-
-    def log(message)
-      tag = "[#{self.class.name}]"
-      if @logger
-        @logger.log("#{tag} #{message}")
-      else
-        puts "#{tag} #{message}"
-      end
     end
   end
 end

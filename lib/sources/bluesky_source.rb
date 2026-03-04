@@ -3,8 +3,10 @@
 require "httparty"
 require "set"
 require "json"
+require_relative "../loggable"
 
 class BlueskySource
+  include Loggable
   MAX_RETRIES = 2
   RESULTS_PER_TOPIC = 5
   PDS_HOST = "https://bsky.social"
@@ -133,14 +135,6 @@ class BlueskySource
         retry
       end
       raise
-    end
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[BlueskySource] #{message}")
-    else
-      puts "[BlueskySource] #{message}"
     end
   end
 end

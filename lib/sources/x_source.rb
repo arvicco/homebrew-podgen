@@ -2,8 +2,10 @@
 
 require "httparty"
 require "set"
+require_relative "../loggable"
 
 class XSource
+  include Loggable
   MAX_RETRIES = 2
   RESULTS_PER_TOPIC = 5
   API_BASE = "https://api.socialdata.tools/twitter/search"
@@ -131,14 +133,6 @@ class XSource
         retry
       end
       raise
-    end
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[XSource] #{message}")
-    else
-      puts "[XSource] #{message}"
     end
   end
 end

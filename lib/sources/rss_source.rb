@@ -5,8 +5,10 @@ require "rss"
 require "uri"
 require "set"
 require "time"
+require_relative "../loggable"
 
 class RSSSource
+  include Loggable
   MAX_RETRIES = 2
   MAX_REDIRECTS = 3
   LOOKBACK_HOURS = 48
@@ -237,13 +239,5 @@ class RSSSource
   rescue RSS::Error, RSS::NotWellFormedError => e
     log("RSS parse error: #{e.message}")
     []
-  end
-
-  def log(message)
-    if @logger
-      @logger.log("[RSSSource] #{message}")
-    else
-      puts "[RSSSource] #{message}"
-    end
   end
 end
