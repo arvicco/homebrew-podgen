@@ -49,7 +49,7 @@ module Tell
                 Provide an interlinear gloss with #{to_name} translations of the following #{from_name} text.
                 For each word output: word(grammar)translation — translation immediately after closing paren, no space.
 
-                Example: svet(n.m.N.sg)world je(v.aux.3p.pres)is velik(adj.m.sg.N)big
+                Example: svet(n.m.N.sg)world je(v.aux.3p.pres)is velik(adj.m.N.sg)big
 
                 #{GRAMMAR_ABBREVIATIONS}
 
@@ -65,13 +65,17 @@ module Tell
     end
 
     GRAMMAR_ABBREVIATIONS = <<~ABBR.freeze
-      Abbreviations (dot-separated inside parens):
-      n=noun v=verb adj=adjective adv=adverb pr=preposition conj=conjunction pron=pronoun det=determiner part=particle num=numeral interj=interjection
-      Cases: N=nominative G=genitive D=dative A=accusative L=locative I=instrumental V=vocative
-      Number: sg=singular pl=plural du=dual
-      Verb: inf=infinitive ind=indicative imp=imperative cond=conditional pres=present past=past fut=future 1p/2p/3p=person aux=auxiliary
-      Gender: m=masculine f=feminine n=neuter
-      Other: def=definite indef=indefinite refl=reflexive neg=negation comp=comparative sup=superlative dim=diminutive perf=perfective imperf=imperfective
+      Abbreviations (dot-separated inside parens, STRICT order — always use this slot order, skip inapplicable slots):
+      1. POS: n v adj adv pr conj pron det part num interj
+      2. Subtype: aux refl neg
+      3. Aspect: perf imperf
+      4. Person: 1p 2p 3p
+      5. Tense/mood: pres past fut inf ind imp cond
+      6. Gender: m f n
+      7. Case: N G D A L I V
+      8. Number: sg pl du
+      9. Degree: comp sup dim
+      10. Definiteness: def indef
     ABBR
   end
 end

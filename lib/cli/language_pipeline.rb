@@ -393,8 +393,8 @@ module PodgenCLI
       assembler.extract_segment(audio_path, tail_path, trim_point, total_duration)
       logger.log("Saved tail for review: #{tail_path}")
 
-      # Trim audio
-      trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}.mp3")
+      # Trim audio (use distinct suffix to avoid collision with snip output)
+      trimmed_path = File.join(Dir.tmpdir, "podgen_autotrimmed_#{Process.pid}.mp3")
       @temp_files << trimmed_path
       assembler.trim_to_duration(audio_path, trimmed_path, trim_point)
       trimmed_path

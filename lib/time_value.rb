@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "delegate"
+
 # Lightweight wrapper around Float that carries an `absolute?` flag.
 # DelegateClass(Float) means all numeric operations (>, +, -, round, to_f, etc.)
 # work transparently — existing code like `skip > 0` or `total - cut` is unchanged.
