@@ -16,7 +16,8 @@ module Tell
     DARK_GRAY = "\e[90m"
     BRIGHT_GREEN = "\e[92m"
     BRIGHT_BLUE  = "\e[94m"
-    BRIGHT_RED   = "\e[91m"
+    BRIGHT_RED    = "\e[91m"
+    BRIGHT_YELLOW = "\e[93m"
 
     # POS → color mapping for gloss tokens
     POS_COLORS = {
@@ -34,9 +35,12 @@ module Tell
       "interj" => BRIGHT_RED
     }.freeze
 
-    # Gloss token patterns
-    GLOSS_RE           = /(\S+?)\(([^)]+)\)/
-    GLOSS_TRANSLATE_RE = /(\S+?)\(([^)]+)\)(\S*)/
+    # Gloss token patterns — combined agram|plain in single regex to avoid
+    # second-pass gsub re-matching ANSI escape codes from the first pass.
+    # Agram branch (groups 1-4/5): *wrong*correct[ph](grammar)[translation]
+    # Plain branch (groups 5-7/6-9): word[ph](grammar)[translation]
+    GLOSS_TOKEN_RE           = /\*(\S+?)\*(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)|(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)/
+    GLOSS_TRANSLATE_TOKEN_RE = /\*(\S+?)\*(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)([^\s\[]*)|(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)([^\s\[]*)/
 
     class << self
       def enabled?
@@ -63,6 +67,10 @@ module Tell
         wrap(text, YELLOW)
       end
 
+      def phonetic(text)
+        wrap(text, BRIGHT_GREEN)
+      end
+
       def error(text)
         wrap(text, RED)
       end
@@ -76,28 +84,49 @@ module Tell
       end
 
       # --- Gloss colorizers ---
+      # Single-pass gsub: agram branch matched first (groups 1-4), plain branch
+      # as fallback (groups 5-7). Avoids chained gsub where ANSI codes from the
+      # first pass get re-matched by the second.
 
-      # Colorize plain gloss: word(grammar) word(grammar) ...
       def colorize_gloss(line)
         return line unless enabled?
 
-        line.gsub(GLOSS_RE) do
-          word, grammar = $1, $2
-          color = pos_color(grammar)
-          "#{color}#{BOLD}#{word}#{RESET}#{color}\e[2m(#{grammar})#{RESET}"
+        line.gsub(GLOSS_TOKEN_RE) do
+          if $1 # agram: wrong=$1, correct=$2, ph=$3, grammar=$4
+            color = pos_color($4)
+            result = "#{BRIGHT_YELLOW}#{BOLD}*#{$1}*#{RESET}#{color}#{BOLD}#{$2}#{RESET}"
+            result += "#{BRIGHT_GREEN}[#{$3}]#{RESET}" if $3
+            result += "#{color}#{DIM}(#{$4})#{RESET}"
+            result
+          else # plain: word=$5, ph=$6, grammar=$7
+            color = pos_color($7)
+            result = "#{color}#{BOLD}#{$5}#{RESET}"
+            result += "#{BRIGHT_GREEN}[#{$6}]#{RESET}" if $6
+            result += "#{color}#{DIM}(#{$7})#{RESET}"
+            result
+          end
         end
       end
 
-      # Colorize gloss+translate: word(grammar)translation ...
       def colorize_gloss_translate(line)
         return line unless enabled?
 
-        line.gsub(GLOSS_TRANSLATE_RE) do
-          word, grammar, translation = $1, $2, $3
-          color = pos_color(grammar)
-          result = "#{color}#{BOLD}#{word}#{RESET}#{color}\e[2m(#{grammar})#{RESET}"
-          result += "#{ITALIC}#{translation}#{RESET}" unless translation.empty?
-          result
+        line.gsub(GLOSS_TRANSLATE_TOKEN_RE) do
+          if $1 # agram: wrong=$1, correct=$2, ph=$3, grammar=$4, translation=$5
+            color = pos_color($4)
+            result = "#{BRIGHT_YELLOW}#{BOLD}*#{$1}*#{RESET}#{color}#{BOLD}#{$2}#{RESET}"
+            result += "#{BRIGHT_GREEN}[#{$3}]#{RESET}" if $3
+            result += "#{color}#{DIM}(#{$4})#{RESET}"
+            result += "#{ITALIC}#{$5}#{RESET}" unless $5.empty?
+            result
+          else # plain: word=$6, ph=$7, grammar=$8, translation=$9
+            color = pos_color($8)
+            result = "#{color}#{BOLD}#{$6}#{RESET}"
+            result += "#{BRIGHT_GREEN}[#{$7}]#{RESET}" if $7
+            result += "#{color}#{DIM}(#{$8})#{RESET}"
+            result += "#{ITALIC}#{$9}#{RESET}" unless $9.empty?
+            result
+          end
         end
       end
 

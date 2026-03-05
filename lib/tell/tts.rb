@@ -28,8 +28,9 @@ module Tell
       @output_format = config.output_format
     end
 
-    def synthesize(text)
-      url = "#{BASE_URL}/#{@voice_id}?output_format=#{@output_format}"
+    def synthesize(text, voice: nil)
+      vid = voice || @voice_id
+      url = "#{BASE_URL}/#{vid}?output_format=#{@output_format}"
 
       body = {
         text: text,
@@ -104,12 +105,13 @@ module Tell
       @language_code = config.google_language_code
     end
 
-    def synthesize(text)
+    def synthesize(text, voice: nil)
       url = "#{BASE_URL}?key=#{@api_key}"
+      vname = voice || @voice_name
 
       body = {
         input: { text: text },
-        voice: { languageCode: @language_code, name: @voice_name },
+        voice: { languageCode: @language_code, name: vname },
         audioConfig: { audioEncoding: "MP3" }
       }
 
