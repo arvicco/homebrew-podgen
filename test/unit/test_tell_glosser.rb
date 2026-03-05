@@ -128,6 +128,64 @@ class TestTellGlosser < Minitest::Test
     assert_includes client.calls.first[:content], "xx"
   end
 
+  # --- Phonetic omission for Latin vs non-Latin scripts ---
+
+  def test_gloss_phonetic_latin_source_omits_latin_script_rule
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("word[ˈwɜːrd](n.m.N.sg)")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_phonetic("dober dan", from: "sl", to: "en")
+
+    prompt = client.calls.first[:content]
+    refute_includes prompt, "Latin-script words"
+  end
+
+  def test_gloss_phonetic_non_latin_source_includes_latin_script_rule
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("слово[ˈsɫovə](n.n.N.sg)")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_phonetic("слово", from: "ru", to: "en")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "Latin-script words"
+  end
+
+  def test_gloss_translate_phonetic_latin_source_omits_latin_script_rule
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("word[ˈwɜːrd](n.m.N.sg)translation")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_translate_phonetic("dober dan", from: "sl", to: "ru")
+
+    prompt = client.calls.first[:content]
+    refute_includes prompt, "Latin-script words"
+  end
+
+  def test_gloss_translate_phonetic_non_latin_source_includes_latin_script_rule
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("слово[ˈsɫovə](n.n.N.sg)word")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_translate_phonetic("слово", from: "ru", to: "en")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "Latin-script words"
+  end
+
+  # --- Phonetic uses configured model ---
+
+  def test_phonetic_uses_configured_model
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("/ˈdɔbɛr ˈdan/")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.phonetic("dober dan", lang: "sl")
+
+    assert_equal "claude-opus-4-6", client.calls.first[:model]
+  end
+
   # --- Response stripping ---
 
   def test_gloss_strips_whitespace_from_response

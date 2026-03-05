@@ -5,11 +5,12 @@ require "tell/config"
 
 class TestTellConfig < Minitest::Test
   def setup
-    @original_env = ENV.to_h.slice("ELEVENLABS_API_KEY", "DEEPL_AUTH_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "TELL_TRANSLATE_TIMEOUT", "TELL_GLOSS_MODEL")
+    @original_env = ENV.to_h.slice("ELEVENLABS_API_KEY", "DEEPL_AUTH_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "TELL_TRANSLATE_TIMEOUT", "TELL_GLOSS_MODEL", "TELL_PHONETIC_MODEL")
     ENV["ELEVENLABS_API_KEY"] = "test_eleven_key"
     ENV["DEEPL_AUTH_KEY"] = "test_deepl_key"
     ENV.delete("TELL_TRANSLATE_TIMEOUT")
     ENV.delete("TELL_GLOSS_MODEL")
+    ENV.delete("TELL_PHONETIC_MODEL")
 
     @tmpfile = File.join(Dir.tmpdir, "tell_test_#{Process.pid}.yml")
     stub_config_path(@tmpfile)
@@ -264,6 +265,55 @@ class TestTellConfig < Minitest::Test
     assert_equal "sl-SI-Chirp3-HD-Kore", config.voice_id
   end
 
+  def test_google_tts_adapts_gendered_voices_on_language_override
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "voice_male" => "sl-SI-Chirp3-HD-Puck",
+      "voice_female" => "sl-SI-Chirp3-HD-Aoede",
+      "tts_engine" => "google"
+    )
+
+    config = Tell::Config.new(overrides: { to: "ru" })
+    assert_equal "ru-RU-Chirp3-HD-Kore", config.voice_id
+    assert_equal "ru-RU-Chirp3-HD-Puck", config.voice_male
+    assert_equal "ru-RU-Chirp3-HD-Aoede", config.voice_female
+  end
+
+  def test_google_tts_no_adapt_gendered_voices_when_language_matches
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "voice_male" => "sl-SI-Chirp3-HD-Puck",
+      "voice_female" => "sl-SI-Chirp3-HD-Aoede",
+      "tts_engine" => "google"
+    )
+
+    config = Tell::Config.new
+    assert_equal "sl-SI-Chirp3-HD-Kore", config.voice_id
+    assert_equal "sl-SI-Chirp3-HD-Puck", config.voice_male
+    assert_equal "sl-SI-Chirp3-HD-Aoede", config.voice_female
+  end
+
+  def test_google_tts_adapts_with_nil_gendered_voices
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "tts_engine" => "google"
+    )
+
+    config = Tell::Config.new(overrides: { to: "ja" })
+    assert_equal "ja-JP-Chirp3-HD-Kore", config.voice_id
+    assert_nil config.voice_male
+    assert_nil config.voice_female
+  end
+
   def test_invalid_tts_engine_raises
     write_config(
       "original_language" => "en",
@@ -465,9 +515,9 @@ class TestTellConfig < Minitest::Test
     assert_equal "en", config.reverse_language
   end
 
-  # --- gloss_models ---
+  # --- gloss_model ---
 
-  def test_gloss_model_scalar_backward_compat
+  def test_gloss_model_scalar
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
@@ -476,50 +526,48 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6"], config.gloss_models
-    assert_equal "claude-sonnet-4-6", config.gloss_model
+    assert_equal ["claude-sonnet-4-6"], config.gloss_model
     assert_equal "claude-sonnet-4-6", config.gloss_reconciler
   end
 
-  def test_gloss_models_array
+  def test_gloss_model_array
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
       "voice_id" => "abc123",
-      "gloss_models" => ["opus", "sonnet"]
+      "gloss_model" => ["opus", "sonnet"]
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_models
-    assert_equal "claude-opus-4-6", config.gloss_model
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
     assert_equal "claude-opus-4-6", config.gloss_reconciler
   end
 
-  def test_gloss_models_single_string
+  def test_gloss_model_single_string
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
       "voice_id" => "abc123",
-      "gloss_models" => "haiku"
+      "gloss_model" => "haiku"
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_models
+    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_model
   end
 
-  def test_gloss_models_full_model_id
+  def test_gloss_model_full_model_id
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
       "voice_id" => "abc123",
-      "gloss_models" => ["claude-opus-4-6", "claude-sonnet-4-6"]
+      "gloss_model" => ["claude-opus-4-6", "claude-sonnet-4-6"]
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_models
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
   end
 
-  def test_gloss_models_default_to_opus
+  def test_gloss_model_default_to_opus
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
@@ -527,11 +575,23 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6"], config.gloss_models
+    assert_equal ["claude-opus-4-6"], config.gloss_model
   end
 
-  def test_gloss_models_env_override
+  def test_gloss_model_env_override
     ENV["TELL_GLOSS_MODEL"] = "haiku"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_model" => ["opus", "sonnet"]
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_model
+  end
+
+  def test_gloss_model_plural_key_accepted
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
@@ -540,10 +600,10 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_models
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
   end
 
-  def test_gloss_models_prefers_over_gloss_model
+  def test_gloss_model_plural_key_preferred_over_singular
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
@@ -553,7 +613,75 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_models
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
+  end
+
+  # --- phonetic_model ---
+
+  def test_phonetic_model_defaults_to_first_gloss_model
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "gloss_model" => ["opus", "sonnet"]
+    )
+
+    config = Tell::Config.new
+    assert_equal "claude-opus-4-6", config.phonetic_model
+  end
+
+  def test_phonetic_model_explicit_config
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "phonetic_model" => "haiku"
+    )
+
+    config = Tell::Config.new
+    assert_equal "claude-haiku-4-5-20251001", config.phonetic_model
+  end
+
+  def test_phonetic_model_env_override
+    ENV["TELL_PHONETIC_MODEL"] = "sonnet"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "phonetic_model" => "haiku"
+    )
+
+    config = Tell::Config.new
+    assert_equal "claude-sonnet-4-6", config.phonetic_model
+  end
+
+  # --- Gendered voices ---
+
+  def test_voice_male_female_from_config
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "default_voice",
+      "voice_male" => "male_voice",
+      "voice_female" => "female_voice"
+    )
+
+    config = Tell::Config.new
+    assert_equal "default_voice", config.voice_id
+    assert_equal "male_voice", config.voice_male
+    assert_equal "female_voice", config.voice_female
+  end
+
+  def test_voice_male_female_default_nil
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "default_voice"
+    )
+
+    config = Tell::Config.new
+    assert_nil config.voice_male
+    assert_nil config.voice_female
   end
 
   # --- Edge cases ---

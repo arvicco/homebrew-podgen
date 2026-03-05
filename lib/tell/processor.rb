@@ -3,6 +3,7 @@
 require "open3"
 require "tmpdir"
 require_relative "colors"
+require_relative "hints"
 
 module Tell
   class Processor
@@ -19,9 +20,16 @@ module Tell
       text = text.strip
       return if text.empty?
 
+      # Parse style hints (e.g. /pm = polite + male) — always strip suffix
+      parsed = Hints.parse(text)
+      text = parsed.text
+      return if text.empty?
+
+      voice = voice_for_gender(parsed.gender)
+
       unless translate_from
         # Default: assume target language, speak as-is
-        speak_target(text, output_path)
+        speak_target(text, output_path, voice: voice)
         return
       end
 
@@ -29,13 +37,13 @@ module Tell
       source = resolve_source(text, translate_from)
 
       if source == @config.target_language
-        speak_target(text, output_path)
+        speak_target(text, output_path, voice: voice)
       else
-        translation = forward_translate(text, from: source)
+        translation = forward_translate(text, from: source, hints: parsed)
         if translation
-          speak_target(translation, output_path)
+          speak_target(translation, output_path, voice: voice)
         else
-          synthesize_and_output(text, output_path)
+          synthesize_and_output(text, output_path, voice: voice)
         end
       end
     end
@@ -53,23 +61,31 @@ module Tell
       end
     end
 
-    def speak_target(text, output_path)
+    def speak_target(text, output_path, voice: nil)
       addon_threads = fire_addons(text)
-      synthesize_and_output(text, output_path)
+      synthesize_and_output(text, output_path, voice: voice)
       addon_threads.each(&:join) unless @interactive
     end
 
     def fire_addons(text)
       threads = []
       threads << Thread.new { reverse_translate(text) } if @config.reverse_translate
-      threads << Thread.new { gloss(text) } if @config.gloss
-      threads << Thread.new { gloss_translate(text) } if @config.gloss_reverse
+
+      if @config.gloss
+        threads << Thread.new { @config.phonetic ? gloss_phonetic(text) : gloss(text) }
+      end
+      if @config.gloss_reverse
+        threads << Thread.new { @config.phonetic ? gloss_translate_phonetic(text) : gloss_translate(text) }
+      end
+
+      threads << Thread.new { phonetic(text) } if @config.phonetic
+
       threads
     end
 
-    def forward_translate(text, from: nil)
+    def forward_translate(text, from: nil, hints: nil)
       source = from || @config.reverse_language
-      translation = translator.translate(text, from: source, to: @config.target_language)
+      translation = translator.translate(text, from: source, to: @config.target_language, hints: hints)
 
       # If translation matches input, the text was already in the target language —
       # return it so the caller can fire add-ons on it
@@ -113,9 +129,30 @@ module Tell
       $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
     end
 
+    def gloss_phonetic(text)
+      result = run_gloss(:gloss_phonetic, text)
+      $stderr.puts "#{Colors.tag("GL:")} #{Colors.colorize_gloss(result)}"
+    rescue => e
+      $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
+    end
+
+    def gloss_translate_phonetic(text)
+      result = run_gloss(:gloss_translate_phonetic, text)
+      $stderr.puts "#{Colors.tag("GR:")} #{Colors.colorize_gloss_translate(result)}"
+    rescue => e
+      $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
+    end
+
+    def phonetic(text)
+      result = build_glosser(@config.phonetic_model).phonetic(text, lang: @config.target_language)
+      $stderr.puts "#{Colors.tag("PH:")} #{Colors.phonetic(result)}"
+    rescue => e
+      $stderr.puts Colors.error("Phonetic failed: #{friendly_error(e)}")
+    end
+
     def run_gloss(mode, text)
-      if @config.gloss_models.size == 1
-        build_glosser(@config.gloss_model).public_send(mode, text, from: @config.target_language, to: @config.reverse_language)
+      if @config.gloss_model.size == 1
+        build_glosser(@config.gloss_reconciler).public_send(mode, text, from: @config.target_language, to: @config.reverse_language)
       else
         run_consensus(mode, text)
       end
@@ -126,7 +163,7 @@ module Tell
       glosses = {}
       errors = {}
 
-      threads = @config.gloss_models.map do |model_id|
+      threads = @config.gloss_model.map do |model_id|
         Thread.new(model_id) do |mid|
           result = build_glosser(mid).public_send(mode, text, from: @config.target_language, to: @config.reverse_language)
           mutex.synchronize { glosses[mid] = result }
@@ -164,9 +201,16 @@ module Tell
       @tts ||= Tell.build_tts(@config.tts_engine, @config)
     end
 
-    def synthesize_and_output(text, output_path)
-      audio_data = tts.synthesize(text)
+    def synthesize_and_output(text, output_path, voice: nil)
+      audio_data = tts.synthesize(text, voice: voice)
       output_audio(audio_data, output_path)
+    end
+
+    def voice_for_gender(gender)
+      case gender
+      when :male   then @config.voice_male
+      when :female then @config.voice_female
+      end
     end
 
     def output_audio(audio_data, output_path)
