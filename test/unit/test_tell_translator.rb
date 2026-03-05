@@ -98,6 +98,46 @@ class TestTellTranslator < Minitest::Test
     assert_instance_of Tell::TranslatorChain, chain
   end
 
+  # --- TranslatorChain friendly_error ---
+
+  def test_chain_friendly_error_overloaded
+    chain = Tell::TranslatorChain.new([], timeout: 5)
+    err = RuntimeError.new('{"type":"overloaded_error","message":"Overloaded"}')
+    assert_equal "API overloaded (try again)", chain.send(:friendly_error, err)
+  end
+
+  def test_chain_friendly_error_status_529
+    chain = Tell::TranslatorChain.new([], timeout: 5)
+    err = RuntimeError.new("status: 529 overloaded")
+    assert_equal "API overloaded (try again)", chain.send(:friendly_error, err)
+  end
+
+  def test_chain_friendly_error_rate_limit
+    chain = Tell::TranslatorChain.new([], timeout: 5)
+    err = RuntimeError.new('{"type":"rate_limit_error","message":"Too many"}')
+    assert_equal "rate limited (try again)", chain.send(:friendly_error, err)
+  end
+
+  def test_chain_friendly_error_http_with_message
+    chain = Tell::TranslatorChain.new([], timeout: 5)
+    err = RuntimeError.new('status: 500, "message": "Internal error"')
+    assert_equal "HTTP 500: Internal error", chain.send(:friendly_error, err)
+  end
+
+  def test_chain_friendly_error_truncates_long
+    chain = Tell::TranslatorChain.new([], timeout: 5)
+    err = RuntimeError.new("A" * 100)
+    result = chain.send(:friendly_error, err)
+    assert_equal 80, result.length
+    assert result.end_with?("...")
+  end
+
+  def test_chain_friendly_error_short_passthrough
+    chain = Tell::TranslatorChain.new([], timeout: 5)
+    err = RuntimeError.new("connection refused")
+    assert_equal "connection refused", chain.send(:friendly_error, err)
+  end
+
   # --- Helpers ---
 
   class MockTranslator

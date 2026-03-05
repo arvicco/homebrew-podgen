@@ -112,4 +112,37 @@ class TestTellDetector < Minitest::Test
   def test_characteristic_chars_unknown_language
     refute Tell::Detector.has_characteristic_chars?("hello", "xx")
   end
+
+  # --- Additional edge cases ---
+
+  def test_exactly_five_chars_detected
+    # Exactly 5 chars — should attempt detection (boundary)
+    assert_equal "ja", Tell::Detector.detect("こんにちは")
+  end
+
+  def test_punctuation_only
+    assert_nil Tell::Detector.detect("!!! ... ???")
+  end
+
+  def test_latin_fewer_than_three_words
+    assert_nil Tell::Detector.detect("hello world")
+  end
+
+  def test_latin_exactly_three_words_no_stop_words
+    # 3 words but none are stop words → nil
+    assert_nil Tell::Detector.detect("banana mango kiwi")
+  end
+
+  def test_whitespace_only
+    assert_nil Tell::Detector.detect("     ")
+  end
+
+  def test_mixed_cyrillic_with_ukrainian_chars
+    # Ukrainian-specific chars present → "uk" even with mostly Russian chars
+    assert_equal "uk", Tell::Detector.detect("Привіт як ти живеш сьогодні")
+  end
+
+  def test_cjk_without_kana_is_chinese
+    assert_equal "zh", Tell::Detector.detect("今天是美好的一天我很开心")
+  end
 end

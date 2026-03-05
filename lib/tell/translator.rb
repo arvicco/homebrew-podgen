@@ -2,6 +2,7 @@
 
 require_relative "colors"
 require_relative "hints"
+require_relative "error_formatter"
 require_relative "../language_names"
 
 module Tell
@@ -119,6 +120,8 @@ module Tell
   end
 
   class TranslatorChain
+    include ErrorFormatter
+
     def initialize(engines_with_translators, timeout:)
       require "timeout"
       @translators = engines_with_translators
@@ -137,21 +140,6 @@ module Tell
         last_error = e
       end
       raise last_error || RuntimeError.new("All translation engines failed")
-    end
-
-    private
-
-    def friendly_error(err)
-      msg = err.message
-      if msg.include?('"overloaded_error"') || msg.include?("status: 529")
-        "API overloaded"
-      elsif msg.include?('"rate_limit_error"') || msg.include?("status: 429")
-        "rate limited"
-      elsif msg =~ /status[":]\s*(\d{3})/ && msg =~ /"message":\s*"([^"]+)"/
-        "HTTP #{$1}: #{$2}"
-      else
-        msg.length > 80 ? "#{msg[0, 77]}..." : msg
-      end
     end
   end
 end
