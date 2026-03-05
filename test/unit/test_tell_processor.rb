@@ -276,14 +276,11 @@ class TestTellProcessor < Minitest::Test
   def test_multi_model_gloss_calls_reconcile
     @config.gloss = true
     @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
-    processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
     glosser_opus = MockGlosser.new(gloss_result: "opus_gloss")
     glosser_sonnet = MockGlosser.new(gloss_result: "sonnet_gloss")
-    processor.instance_variable_set(:@tts, @tts)
-    processor.instance_variable_set(:@translator, @translator)
-    processor.instance_variable_set(:@glossers, {
+    processor = Tell::Processor.new(@config, interactive: false, tts: @tts, translator: @translator, glossers: {
       "claude-opus-4-6" => glosser_opus,
       "claude-sonnet-4-6" => glosser_sonnet
     })
@@ -302,14 +299,11 @@ class TestTellProcessor < Minitest::Test
   def test_multi_model_single_survivor_skips_reconcile
     @config.gloss = true
     @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
-    processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
     glosser_opus = MockGlosser.new(gloss_result: "opus_gloss")
     glosser_sonnet = MockGlosser.new(error: RuntimeError.new("API down"))
-    processor.instance_variable_set(:@tts, @tts)
-    processor.instance_variable_set(:@translator, @translator)
-    processor.instance_variable_set(:@glossers, {
+    processor = Tell::Processor.new(@config, interactive: false, tts: @tts, translator: @translator, glossers: {
       "claude-opus-4-6" => glosser_opus,
       "claude-sonnet-4-6" => glosser_sonnet
     })
@@ -323,14 +317,11 @@ class TestTellProcessor < Minitest::Test
   def test_multi_model_all_fail_reports_error
     @config.gloss = true
     @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
-    processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
     glosser_opus = MockGlosser.new(error: RuntimeError.new("Opus down"))
     glosser_sonnet = MockGlosser.new(error: RuntimeError.new("Sonnet down"))
-    processor.instance_variable_set(:@tts, @tts)
-    processor.instance_variable_set(:@translator, @translator)
-    processor.instance_variable_set(:@glossers, {
+    processor = Tell::Processor.new(@config, interactive: false, tts: @tts, translator: @translator, glossers: {
       "claude-opus-4-6" => glosser_opus,
       "claude-sonnet-4-6" => glosser_sonnet
     })
@@ -345,14 +336,11 @@ class TestTellProcessor < Minitest::Test
   def test_multi_model_gloss_translate_calls_reconcile
     @config.gloss_reverse = true
     @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
-    processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
     glosser_opus = MockGlosser.new(gloss_translate_result: "opus_gr")
     glosser_sonnet = MockGlosser.new(gloss_translate_result: "sonnet_gr")
-    processor.instance_variable_set(:@tts, @tts)
-    processor.instance_variable_set(:@translator, @translator)
-    processor.instance_variable_set(:@glossers, {
+    processor = Tell::Processor.new(@config, interactive: false, tts: @tts, translator: @translator, glossers: {
       "claude-opus-4-6" => glosser_opus,
       "claude-sonnet-4-6" => glosser_sonnet
     })
@@ -660,6 +648,39 @@ class TestTellProcessor < Minitest::Test
     assert_equal ["danes je lep dan"], @tts.calls
   end
 
+  # --- play_audio / stop_playback ---
+
+  def test_play_audio_non_interactive_cleans_up_temp
+    processor = build_processor(interactive: false)
+    tmp_files = []
+    # Stub system to avoid actually playing audio
+    processor.define_singleton_method(:system) { |*_args| true }
+    processor.send(:play_audio, "fake_audio_data")
+    # The temp file should be deleted after play
+    Dir.glob(File.join(Dir.tmpdir, "tell_#{Process.pid}_*")).each do |f|
+      tmp_files << f
+    end
+    assert_empty tmp_files, "Temp files should be cleaned up"
+  end
+
+  def test_play_audio_interactive_spawns_and_cleans_up
+    processor = build_processor(interactive: true)
+    spawned = false
+    # Stub spawn to avoid playing
+    processor.define_singleton_method(:spawn) { |*_args| spawned = true; $$.to_i }
+    # Stub Process.wait to avoid hanging
+    processor.send(:play_audio, "fake_audio_data")
+    assert spawned, "Should spawn afplay in interactive mode"
+    # Give cleanup thread a moment
+    sleep 0.05
+  end
+
+  def test_stop_playback_with_no_pid_is_noop
+    processor = build_processor(interactive: true)
+    # Should not raise
+    processor.send(:stop_playback)
+  end
+
   # --- Output to file ---
 
   def test_output_to_file
@@ -677,17 +698,12 @@ class TestTellProcessor < Minitest::Test
   # --- Helpers ---
 
   def build_processor(interactive: false)
-    processor = Tell::Processor.new(@config, interactive: interactive)
     @tts = MockTts.new
     @translator = MockTranslator.new
     @glosser = MockGlosser.new
-    processor.instance_variable_set(:@tts, @tts)
-    processor.instance_variable_set(:@translator, @translator)
-    # Processor now caches glossers by model_id
     glossers = @config.gloss_model.each_with_object({}) { |m, h| h[m] = @glosser }
     glossers[@config.phonetic_model] = @glosser
-    processor.instance_variable_set(:@glossers, glossers)
-    processor
+    Tell::Processor.new(@config, interactive: interactive, tts: @tts, translator: @translator, glossers: glossers)
   end
 
   def stub_detect(result, &block)

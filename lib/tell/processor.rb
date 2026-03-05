@@ -4,14 +4,18 @@ require "open3"
 require "tmpdir"
 require_relative "colors"
 require_relative "hints"
+require_relative "error_formatter"
 
 module Tell
   class Processor
-    def initialize(config, interactive: false)
+    include ErrorFormatter
+
+    def initialize(config, interactive: false, tts: nil, translator: nil, glossers: nil)
       @config = config
       @interactive = interactive
-      @translator = nil
-      @tts = nil
+      @translator = translator
+      @tts = tts
+      @glossers = glossers
       @play_pid = nil
       @play_tmp = nil
     end
@@ -72,10 +76,12 @@ module Tell
       threads << Thread.new { reverse_translate(text) } if @config.reverse_translate
 
       if @config.gloss
-        threads << Thread.new { @config.phonetic ? gloss_phonetic(text) : gloss(text) }
+        m = @config.phonetic ? :gloss_phonetic : :gloss
+        threads << Thread.new(m) { |mode| run_and_print_gloss(mode, text) }
       end
       if @config.gloss_reverse
-        threads << Thread.new { @config.phonetic ? gloss_translate_phonetic(text) : gloss_translate(text) }
+        m = @config.phonetic ? :gloss_translate_phonetic : :gloss_translate
+        threads << Thread.new(m) { |mode| run_and_print_gloss(mode, text) }
       end
 
       threads << Thread.new { phonetic(text) } if @config.phonetic
@@ -115,30 +121,17 @@ module Tell
       $stderr.puts Colors.error("Reverse translation failed: #{friendly_error(e)}")
     end
 
-    def gloss(text)
-      result = run_gloss(:gloss, text)
-      $stderr.puts "#{Colors.tag("GL:")} #{Colors.colorize_gloss(result)}"
-    rescue => e
-      $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
-    end
+    GLOSS_DISPLAY = {
+      gloss:                    { tag: "GL:", colorizer: :colorize_gloss },
+      gloss_phonetic:           { tag: "GL:", colorizer: :colorize_gloss },
+      gloss_translate:          { tag: "GR:", colorizer: :colorize_gloss_translate },
+      gloss_translate_phonetic: { tag: "GR:", colorizer: :colorize_gloss_translate }
+    }.freeze
 
-    def gloss_translate(text)
-      result = run_gloss(:gloss_translate, text)
-      $stderr.puts "#{Colors.tag("GR:")} #{Colors.colorize_gloss_translate(result)}"
-    rescue => e
-      $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
-    end
-
-    def gloss_phonetic(text)
-      result = run_gloss(:gloss_phonetic, text)
-      $stderr.puts "#{Colors.tag("GL:")} #{Colors.colorize_gloss(result)}"
-    rescue => e
-      $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
-    end
-
-    def gloss_translate_phonetic(text)
-      result = run_gloss(:gloss_translate_phonetic, text)
-      $stderr.puts "#{Colors.tag("GR:")} #{Colors.colorize_gloss_translate(result)}"
+    def run_and_print_gloss(mode, text)
+      result = run_gloss(mode, text)
+      display = GLOSS_DISPLAY[mode]
+      $stderr.puts "#{Colors.tag(display[:tag])} #{Colors.send(display[:colorizer], result)}"
     rescue => e
       $stderr.puts Colors.error("Gloss failed: #{friendly_error(e)}")
     end
@@ -253,19 +246,5 @@ module Tell
       end
     end
 
-    # Extract a short, human-readable message from API errors.
-    # Anthropic gem errors contain the full JSON body — pull out the nested message.
-    def friendly_error(err)
-      msg = err.message
-      if msg.include?('"overloaded_error"') || msg.include?("status: 529")
-        "API overloaded (try again)"
-      elsif msg.include?('"rate_limit_error"') || msg.include?("status: 429")
-        "rate limited (try again)"
-      elsif (status = msg[/status[":]\s*(\d{3})/, 1]) && (detail = msg[/"message":\s*"([^"]+)"/, 1])
-        "HTTP #{status}: #{detail}"
-      else
-        msg.length > 80 ? "#{msg[0, 77]}..." : msg
-      end
-    end
   end
 end
