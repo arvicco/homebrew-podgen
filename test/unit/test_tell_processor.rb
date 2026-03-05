@@ -24,7 +24,9 @@ class TestTellProcessor < Minitest::Test
       reverse_translate: false,
       gloss: false,
       gloss_reverse: false,
-      gloss_models: ["claude-opus-4-6"]
+      phonetic: false,
+      gloss_model: ["claude-opus-4-6"],
+      phonetic_model: "claude-opus-4-6"
     )
   end
 
@@ -273,7 +275,7 @@ class TestTellProcessor < Minitest::Test
 
   def test_multi_model_gloss_calls_reconcile
     @config.gloss = true
-    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
     processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
@@ -299,7 +301,7 @@ class TestTellProcessor < Minitest::Test
 
   def test_multi_model_single_survivor_skips_reconcile
     @config.gloss = true
-    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
     processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
@@ -320,7 +322,7 @@ class TestTellProcessor < Minitest::Test
 
   def test_multi_model_all_fail_reports_error
     @config.gloss = true
-    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
     processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
@@ -342,7 +344,7 @@ class TestTellProcessor < Minitest::Test
 
   def test_multi_model_gloss_translate_calls_reconcile
     @config.gloss_reverse = true
-    @config.gloss_models = ["claude-opus-4-6", "claude-sonnet-4-6"]
+    @config.gloss_model = ["claude-opus-4-6", "claude-sonnet-4-6"]
     processor = Tell::Processor.new(@config, interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
@@ -449,6 +451,205 @@ class TestTellProcessor < Minitest::Test
     assert_equal "connection refused", processor.send(:friendly_error, err)
   end
 
+  # --- Translation hints ---
+
+  def test_hints_stripped_before_synthesis_default_mode
+    processor = build_processor
+    processor.process("dober dan /pm")
+    assert_equal ["dober dan"], @tts.calls
+  end
+
+  def test_hints_stripped_and_passed_to_translator
+    processor = build_processor
+    @translator.forward_result = "dober dan"
+    stub_detect("en") do
+      processor.process("good morning /pm", translate_from: "auto")
+    end
+    assert_equal ["dober dan"], @tts.calls
+    assert_includes @translator.forward_calls, ["good morning", { from: "en", to: "sl" }]
+    hints = @translator.forward_hints.last
+    assert_equal :polite, hints.formality
+    assert_equal :male, hints.gender
+  end
+
+  def test_hints_casual_female
+    processor = build_processor
+    @translator.forward_result = "živijo"
+    stub_detect("en") do
+      processor.process("hi /cf", translate_from: "auto")
+    end
+    hints = @translator.forward_hints.last
+    assert_equal :casual, hints.formality
+    assert_equal :female, hints.gender
+  end
+
+  def test_no_hints_passes_nil_formality
+    processor = build_processor
+    @translator.forward_result = "dober dan"
+    stub_detect("en") do
+      processor.process("good morning", translate_from: "auto")
+    end
+    hints = @translator.forward_hints.last
+    assert_nil hints.formality
+    assert_nil hints.gender
+  end
+
+  def test_hint_only_input_skipped
+    processor = build_processor
+    processor.process("/pm")
+    assert_empty @tts.calls
+  end
+
+  # --- Voice switching by gender hint ---
+
+  def test_male_hint_switches_voice
+    @config.voice_male = "male_voice"
+    processor = build_processor
+    processor.process("dober dan /m")
+    assert_equal ["dober dan"], @tts.calls
+    assert_equal ["male_voice"], @tts.voices
+  end
+
+  def test_female_hint_switches_voice
+    @config.voice_female = "female_voice"
+    processor = build_processor
+    processor.process("dober dan /f")
+    assert_equal ["dober dan"], @tts.calls
+    assert_equal ["female_voice"], @tts.voices
+  end
+
+  def test_no_gender_hint_uses_default_voice
+    @config.voice_male = "male_voice"
+    @config.voice_female = "female_voice"
+    processor = build_processor
+    processor.process("dober dan")
+    assert_equal ["dober dan"], @tts.calls
+    assert_equal [nil], @tts.voices
+  end
+
+  def test_gender_hint_without_voice_config_uses_default
+    # voice_male/voice_female not set → nil passed → TTS uses its default
+    processor = build_processor
+    processor.process("dober dan /m")
+    assert_equal ["dober dan"], @tts.calls
+    assert_equal [nil], @tts.voices
+  end
+
+  def test_voice_switch_with_translation
+    @config.voice_female = "female_voice"
+    processor = build_processor
+    @translator.forward_result = "dober dan"
+    stub_detect("en") do
+      processor.process("good morning /f", translate_from: "auto")
+    end
+    assert_equal ["dober dan"], @tts.calls
+    assert_equal ["female_voice"], @tts.voices
+  end
+
+  # --- Phonetic add-on (standalone) ---
+
+  def test_standalone_phonetic_fires
+    @config.phonetic = true
+    processor = build_processor
+    processor.process("dober dan")
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
+    assert_empty @glosser.calls  # no gloss calls
+  end
+
+  def test_default_phonetic_false_no_addon
+    processor = build_processor
+    processor.process("dober dan")
+    assert_empty @glosser.phonetic_calls
+  end
+
+  def test_auto_detect_target_fires_standalone_phonetic
+    @config.phonetic = true
+    processor = build_processor
+    stub_detect("sl") do
+      processor.process("danes je lep dan", translate_from: "auto")
+    end
+    assert_equal [[:phonetic, "danes je lep dan"]], @glosser.phonetic_calls
+  end
+
+  def test_auto_detect_forward_fires_standalone_phonetic
+    @config.phonetic = true
+    processor = build_processor
+    @translator.forward_result = "dober dan"
+    stub_detect("en") do
+      processor.process("good morning", translate_from: "auto")
+    end
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
+  end
+
+  def test_phonetic_error_does_not_block_tts
+    @config.phonetic = true
+    processor = build_processor
+    @glosser.error = RuntimeError.new("Anthropic down")
+    processor.process("danes je lep dan")
+    assert_equal ["danes je lep dan"], @tts.calls
+  end
+
+  # --- Combined --gp (gloss + phonetic inline) ---
+
+  def test_gp_fires_gloss_phonetic_and_standalone
+    @config.gloss = true
+    @config.phonetic = true
+    processor = build_processor
+    processor.process("dober dan")
+    assert_equal [[:gloss_phonetic, "dober dan"]], @glosser.calls
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
+  end
+
+  def test_gp_forward_translation
+    @config.gloss = true
+    @config.phonetic = true
+    processor = build_processor
+    @translator.forward_result = "dober dan"
+    stub_detect("en") do
+      processor.process("good morning", translate_from: "auto")
+    end
+    assert_equal [[:gloss_phonetic, "dober dan"]], @glosser.calls
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
+  end
+
+  # --- Combined --grp (gloss_translate + phonetic inline + standalone) ---
+
+  def test_grp_fires_gloss_translate_phonetic_and_standalone
+    @config.gloss_reverse = true
+    @config.phonetic = true
+    processor = build_processor
+    processor.process("dober dan")
+    assert_equal [[:gloss_translate_phonetic, "dober dan"]], @glosser.calls
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
+  end
+
+  # --- Combined --rp (reverse + standalone phonetic) ---
+
+  def test_rp_fires_reverse_and_standalone_phonetic
+    @config.reverse_translate = true
+    @config.phonetic = true
+    processor = build_processor
+    processor.process("dober dan")
+    assert_includes @translator.reverse_calls, ["dober dan", { from: "sl", to: "en" }]
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
+    assert_empty @glosser.calls  # no gloss
+  end
+
+  # --- All flags including phonetic ---
+
+  def test_all_flags_with_phonetic_integrates_into_gloss
+    @config.reverse_translate = true
+    @config.gloss = true
+    @config.gloss_reverse = true
+    @config.phonetic = true
+    processor = build_processor
+    processor.process("dober dan")
+    assert_includes @glosser.calls, [:gloss_phonetic, "dober dan"]
+    assert_includes @glosser.calls, [:gloss_translate_phonetic, "dober dan"]
+    assert_includes @translator.reverse_calls, ["dober dan", { from: "sl", to: "en" }]
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
+  end
+
   # --- Add-on errors ---
 
   def test_glosser_error_does_not_block_tts
@@ -483,7 +684,8 @@ class TestTellProcessor < Minitest::Test
     processor.instance_variable_set(:@tts, @tts)
     processor.instance_variable_set(:@translator, @translator)
     # Processor now caches glossers by model_id
-    glossers = @config.gloss_models.each_with_object({}) { |m, h| h[m] = @glosser }
+    glossers = @config.gloss_model.each_with_object({}) { |m, h| h[m] = @glosser }
+    glossers[@config.phonetic_model] = @glosser
     processor.instance_variable_set(:@glossers, glossers)
     processor
   end
@@ -498,10 +700,11 @@ class TestTellProcessor < Minitest::Test
 
   MockConfig = Struct.new(
     :original_language, :target_language, :voice_id,
+    :voice_male, :voice_female,
     :translation_engines, :tts_engine, :engine_api_keys,
     :api_key, :tts_api_key, :model_id, :output_format,
     :google_language_code, :reverse_translate, :gloss, :gloss_reverse,
-    :gloss_models, :translation_timeout,
+    :phonetic, :gloss_model, :phonetic_model, :translation_timeout,
     keyword_init: true
   ) do
     def translation_engine
@@ -516,40 +719,39 @@ class TestTellProcessor < Minitest::Test
       original_language == "auto" ? "en" : original_language
     end
 
-    def gloss_model
-      gloss_models&.first
-    end
-
     def gloss_reconciler
-      gloss_models&.first
+      gloss_model&.first
     end
   end
 
   class MockTts
-    attr_reader :calls
+    attr_reader :calls, :voices
 
     def initialize
       @calls = []
+      @voices = []
     end
 
-    def synthesize(text)
+    def synthesize(text, voice: nil)
       @calls << text
+      @voices << voice
       "fake_audio"
     end
   end
 
   class MockTranslator
-    attr_reader :reverse_calls, :forward_calls
+    attr_reader :reverse_calls, :forward_calls, :forward_hints
     attr_accessor :forward_result, :forward_error
 
     def initialize
       @reverse_calls = []
       @forward_calls = []
+      @forward_hints = []
       @forward_result = nil
       @forward_error = nil
     end
 
-    def translate(text, from:, to:)
+    def translate(text, from:, to:, hints: nil)
       raise @forward_error if @forward_error
 
       if to == "en" # reverse translation
@@ -557,20 +759,25 @@ class TestTellProcessor < Minitest::Test
         "back_translation"
       else
         @forward_calls << [text, { from: from, to: to }]
+        @forward_hints << hints
         @forward_result || text
       end
     end
   end
 
   class MockGlosser
-    attr_reader :calls, :reconcile_calls
+    attr_reader :calls, :reconcile_calls, :phonetic_calls
     attr_accessor :error
 
-    def initialize(gloss_result: nil, gloss_translate_result: nil, error: nil)
+    def initialize(gloss_result: nil, gloss_translate_result: nil, phonetic_result: nil, error: nil)
       @calls = []
       @reconcile_calls = []
+      @phonetic_calls = []
       @gloss_result = gloss_result || "word(n.m.N.sg)"
       @gloss_translate_result = gloss_translate_result || "word(n.m.N.sg)translation"
+      @gloss_phonetic_result = "word[reading](n.m.N.sg)"
+      @gloss_translate_phonetic_result = "word[reading](n.m.N.sg)translation"
+      @phonetic_result = phonetic_result || "reading"
       @error = error
     end
 
@@ -584,6 +791,24 @@ class TestTellProcessor < Minitest::Test
       raise @error if @error
       @calls << [:gloss_translate, text]
       @gloss_translate_result
+    end
+
+    def gloss_phonetic(text, from:, to:)
+      raise @error if @error
+      @calls << [:gloss_phonetic, text]
+      @gloss_phonetic_result
+    end
+
+    def gloss_translate_phonetic(text, from:, to:)
+      raise @error if @error
+      @calls << [:gloss_translate_phonetic, text]
+      @gloss_translate_phonetic_result
+    end
+
+    def phonetic(text, lang:)
+      raise @error if @error
+      @phonetic_calls << [:phonetic, text]
+      @phonetic_result
     end
 
     def reconcile(glosses, text, from:, to:, mode:)
