@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "colors"
+require_relative "hints"
 require_relative "../language_names"
 
 module Tell
@@ -31,8 +32,11 @@ module Tell
       end
     end
 
-    def translate(text, from:, to:)
-      result = DeepL.translate(text, from.upcase, to.upcase)
+    def translate(text, from:, to:, hints: nil)
+      options = {}
+      formality = Hints.deepl_formality(hints)
+      options[:formality] = formality if formality
+      result = DeepL.translate(text, from.upcase, to.upcase, **options)
       result.text
     end
   end
@@ -44,18 +48,20 @@ module Tell
       @model = ENV.fetch("CLAUDE_MODEL", "claude-sonnet-4-6")
     end
 
-    def translate(text, from:, to:)
+    def translate(text, from:, to:, hints: nil)
       to_name = LANGUAGE_NAMES.fetch(to, to)
+      style = Hints.to_instruction(hints)
+
+      prompt = if style
+        "Translate the following text to #{to_name}.\n\nIMPORTANT — apply this style: #{style}.\n\nIf it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
+      else
+        "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
+      end
 
       message = @client.messages.create(
         model: @model,
         max_tokens: 4096,
-        messages: [
-          {
-            role: "user",
-            content: "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-          }
-        ]
+        messages: [{ role: "user", content: prompt }]
       )
 
       message.content.first.text.strip
@@ -72,8 +78,15 @@ module Tell
       @model = ENV.fetch("OPENAI_TRANSLATE_MODEL", "gpt-4o-mini")
     end
 
-    def translate(text, from:, to:)
+    def translate(text, from:, to:, hints: nil)
       to_name = LANGUAGE_NAMES.fetch(to, to)
+      style = Hints.to_instruction(hints)
+
+      prompt = if style
+        "Translate the following text to #{to_name}.\n\nIMPORTANT — apply this style: #{style}.\n\nIf it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
+      else
+        "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
+      end
 
       (MAX_RETRIES + 1).times do |attempt|
         response = HTTParty.post(
@@ -84,12 +97,7 @@ module Tell
           },
           body: {
             model: @model,
-            messages: [
-              {
-                role: "user",
-                content: "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-              }
-            ],
+            messages: [{ role: "user", content: prompt }],
             temperature: 0.3
           }.to_json,
           timeout: 30
@@ -117,10 +125,10 @@ module Tell
       @timeout = timeout
     end
 
-    def translate(text, from:, to:)
+    def translate(text, from:, to:, hints: nil)
       last_error = nil
       @translators.each do |name, translator|
-        return Timeout.timeout(@timeout) { translator.translate(text, from: from, to: to) }
+        return Timeout.timeout(@timeout) { translator.translate(text, from: from, to: to, hints: hints) }
       rescue Timeout::Error => e
         $stderr.puts Colors.warning("#{name}: timed out (#{@timeout}s), trying next...")
         last_error = e

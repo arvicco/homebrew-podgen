@@ -20,24 +20,11 @@ Dotenv.load(File.join(code_root, ".env"))
 home_env = File.expand_path("~/.env")
 Dotenv.load(home_env) if File.exist?(home_env)
 
-history_file = File.expand_path("~/.tell_history")
-
-save_history = -> {
-  return unless defined?(Reline::HISTORY)
-  entries = Reline::HISTORY.to_a.last(1000)
-  if entries.any?
-    File.write(history_file, entries.join("\n") + "\n")
-  elsif File.exist?(history_file)
-    File.delete(history_file)
-  end
-}
-
-Signal.trap("INT")  { save_history.call; $stderr.puts; exit 130 }
-Signal.trap("TERM") { save_history.call; exit 143 }
-
 require "optparse"
+require_relative File.join(code_root, "lib", "tell", "history")
 require_relative File.join(code_root, "lib", "tell", "config")
 require_relative File.join(code_root, "lib", "tell", "detector")
+require_relative File.join(code_root, "lib", "tell", "hints")
 require_relative File.join(code_root, "lib", "tell", "translator")
 require_relative File.join(code_root, "lib", "tell", "tts")
 require_relative File.join(code_root, "lib", "tell", "glosser")
@@ -61,36 +48,23 @@ parser = OptionParser.new do |opts|
   opts.on("-o", "--output FILE", "Save audio to FILE instead of playing") { |f| output_path = f }
   opts.on("-r", "--reverse", "Show reverse translation for target-language input") { overrides[:reverse] = true }
   opts.on("-g", "--gloss", "Show word-by-word grammatical analysis") { overrides[:gloss] = true }
-  opts.on("--gr", "Gloss with word translations: word(grammar)translation") { overrides[:gloss_reverse] = true }
+  opts.on("--gr", "--rg", "Gloss with translations: word(grammar)translation") { overrides[:gloss_reverse] = true }
+  opts.on("-p", "--phonetic", "Show phonetic reading (kana/pinyin/romanization)") { overrides[:phonetic] = true }
+  opts.on("--gp", "--pg", "Gloss with phonetic: word(grammar)[reading]") { overrides[:gloss] = true; overrides[:phonetic] = true }
+  opts.on("--rp", "--pr", "Reverse translate + phonetic reading") { overrides[:reverse] = true; overrides[:phonetic] = true }
+  opts.on("--grp", "--gpr", "--rgp", "--rpg", "--prg", "--pgr", "Gloss with translations + phonetic") { overrides[:gloss_reverse] = true; overrides[:phonetic] = true }
   opts.on("-n", "--no-translate", "Override config auto back to default (no translation)") { no_translate = true }
   opts.on("-h", "--help", "Show this help") { puts opts; exit }
 end
 parser.parse!
 
-def delete_from_history(target)
-  before = Reline::HISTORY.size
-  Reline::HISTORY.delete(target)
-  before - Reline::HISTORY.size
-end
+history = Tell::History.new(File.expand_path("~/.tell_history"))
 
 if !ARGV.empty? && ARGV.last.end_with?("/d")
-  text = ARGV.join(" ")
-  target = text.delete_suffix("/d").strip
+  target = ARGV.join(" ").delete_suffix("/d").strip
   unless target.empty?
-    if File.exist?(history_file)
-      lines = File.readlines(history_file, chomp: true)
-      before = lines.size
-      lines.reject! { |h| h == target }
-      if lines.empty?
-        File.delete(history_file)
-      else
-        File.write(history_file, lines.join("\n") + "\n")
-      end
-      count = before - lines.size
-      $stderr.puts "Deleted #{count} history entry#{"s" if count != 1}: #{target}"
-    else
-      $stderr.puts "No history file"
-    end
+    count = history.delete(target)
+    $stderr.puts "Deleted #{count} history entry#{"s" if count != 1}: #{target}"
   end
   exit
 end
@@ -106,7 +80,7 @@ begin
   translate_from = if no_translate
                      nil
                    elsif overrides[:translate_from]
-                     overrides[:translate_from]
+                     Tell::Config::LANGUAGE_ALIASES.fetch(overrides[:translate_from], overrides[:translate_from])
                    elsif config.original_language == "auto"
                      "auto"
                    end
@@ -116,13 +90,7 @@ begin
 
   if !ARGV.empty?
     text = ARGV.join(" ")
-
-    # Append to persistent history (deduplicating)
-    lines = File.exist?(history_file) ? File.readlines(history_file, chomp: true) : []
-    lines.reject! { |h| h == text }
-    lines << text
-    File.write(history_file, lines.last(1000).join("\n") + "\n")
-
+    history.add(text)
     processor.process(text, output_path: output_path, translate_from: translate_from)
 
   elsif !$stdin.tty?
@@ -133,11 +101,7 @@ begin
   else
     # Interactive mode: readline for history (up/down) and line editing
     require "reline"
-
-    # Load persistent history
-    if File.exist?(history_file)
-      File.readlines(history_file, chomp: true).each { |h| Reline::HISTORY << h }
-    end
+    history.load_into_reline!
 
     # Reline overrides this during readline; outside readline (during API
     # calls) Ctrl-C raises Interrupt → caught by rescue → ensure saves.
@@ -146,45 +110,33 @@ begin
     last_entry = nil
 
     begin
-      while (line = Reline.readline("", true))
+      while (line = Reline.readline("", false))
         line = line.strip
-        Reline::HISTORY.pop if line.empty?
         next if line.empty?
 
         # /d suffix or standalone: delete entry from history
         if line == "/d"
-          Reline::HISTORY.pop  # remove "/d" itself
           if last_entry
-            n = delete_from_history(last_entry)
+            n = history.delete(last_entry)
             $stderr.puts Tell::Colors.status("Deleted #{n}: #{last_entry}")
             last_entry = nil
           end
-          save_history.call
           next
         elsif line.end_with?("/d")
-          Reline::HISTORY.pop  # remove "foo/d" itself
           target = line.delete_suffix("/d").strip
           unless target.empty?
-            n = delete_from_history(target)
+            n = history.delete(target)
             $stderr.puts Tell::Colors.status("Deleted #{n}: #{target}")
           end
-          save_history.call
           next
         end
 
-        # Deduplicate: remove all older occurrences, keeping only the latest
-        while (idx = Reline::HISTORY.to_a[0...-1].rindex(line))
-          Reline::HISTORY.delete_at(idx)
-        end
-
+        history.add(line)
         last_entry = line
-        save_history.call
         processor.process(line, output_path: output_path, translate_from: translate_from)
       end
     rescue Interrupt
       $stderr.puts
-    ensure
-      save_history.call
     end
   end
 

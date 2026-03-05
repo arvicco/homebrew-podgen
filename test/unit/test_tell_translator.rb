@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "tell/hints"
 require "tell/translator"
 
 class TestTellTranslator < Minitest::Test
@@ -70,6 +71,23 @@ class TestTellTranslator < Minitest::Test
     assert_equal "second error", err.message
   end
 
+  def test_chain_passes_hints_through
+    mock = MockTranslator.new("hola")
+    chain = Tell::TranslatorChain.new([["claude", mock]], timeout: 5)
+    hints = Tell::Hints::Result.new(text: "", formality: :polite, gender: :male)
+
+    chain.translate("hello", from: "en", to: "es", hints: hints)
+    assert_equal hints, mock.last_hints
+  end
+
+  def test_chain_passes_nil_hints_by_default
+    mock = MockTranslator.new("hola")
+    chain = Tell::TranslatorChain.new([["claude", mock]], timeout: 5)
+
+    chain.translate("hello", from: "en", to: "es")
+    assert_nil mock.last_hints
+  end
+
   def test_build_translator_chain_filters_nil_keys
     chain = Tell.build_translator_chain(
       ["deepl", "claude"],
@@ -83,13 +101,17 @@ class TestTellTranslator < Minitest::Test
   # --- Helpers ---
 
   class MockTranslator
+    attr_reader :last_hints
+
     def initialize(result = nil, error: nil, sleep: nil)
       @result = result
       @error = error
       @sleep = sleep
+      @last_hints = nil
     end
 
-    def translate(text, from:, to:)
+    def translate(text, from:, to:, hints: nil)
+      @last_hints = hints
       Kernel.sleep(@sleep) if @sleep
       raise RuntimeError, @error if @error
       @result
