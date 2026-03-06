@@ -131,6 +131,29 @@ class PodcastConfig
     File.exist?(path) ? path : nil
   end
 
+  # Parses ## Site section from guidelines.md for site generator customization
+  # Returns hash with symbol keys: accent, accent_dark, bg, bg_dark, radius, max_width,
+  #   footer, show_duration, show_transcript
+  def site_config
+    @site_config ||= parse_site_section(guidelines)
+  end
+
+  # Returns path to site.css if it exists in the podcast directory, nil otherwise
+  def site_css_path
+    path = File.join(@podcast_dir, "site.css")
+    File.exist?(path) ? path : nil
+  end
+
+  # Returns path to favicon file if it exists in the podcast directory, nil otherwise
+  # Looks for favicon.ico, favicon.png, favicon.svg (in that order)
+  def favicon_path
+    %w[favicon.ico favicon.png favicon.svg].each do |name|
+      path = File.join(@podcast_dir, name)
+      return path if File.exist?(path)
+    end
+    nil
+  end
+
   # Extracts target_language from ## Audio (new) or ## Target Language (legacy)
   def target_language
     @target_language ||= audio_section[:target_language] || extract_heading("Target Language")
@@ -390,6 +413,40 @@ class PodcastConfig
       end
     end
     config
+  end
+
+  # Parses ## Site key-value list for site generator customization
+  def parse_site_section(text)
+    match = text.match(/^## Site\s*\n(.*?)(?=^## |\z)/m)
+    return {} unless match
+
+    config = {}
+    match[1].each_line do |line|
+      if line.match?(/^- \S/)
+        item = line.strip.sub(/^- /, "")
+        if item.include?(":")
+          key, value = item.split(":", 2)
+          key = key.strip
+          value = value.strip
+          case key
+          when "accent", "accent_dark", "bg", "bg_dark"
+            config[key.to_sym] = sanitize_css(value)
+          when "radius", "max_width"
+            config[key.to_sym] = sanitize_css(value)
+          when "footer"
+            config[:footer] = value
+          when "show_duration", "show_transcript"
+            config[key.to_sym] = value != "false"
+          end
+        end
+      end
+    end
+    config
+  end
+
+  # Strip characters that could break out of CSS values
+  def sanitize_css(value)
+    value.gsub(/[;{}]/, "")
   end
 
   # Extracts the first line of content under a ## heading

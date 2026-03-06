@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="<%= lang %>">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= page_title %></title>
+<% if favicon_path %>
+  <link rel="icon" href="<%= favicon_path %>">
+<% end %>
+  <link rel="stylesheet" href="<%= css_path %>">
+<% unless site_config.empty? %>
+  <style>
+    :root {
+<% if site_config[:accent] %>
+      --accent: <%= site_config[:accent] %>;
+      --accent-hover: <%= site_config[:accent] %>;
+<% end %>
+<% if site_config[:bg] %>
+      --bg: <%= site_config[:bg] %>;
+<% end %>
+<% if site_config[:radius] %>
+      --radius: <%= site_config[:radius] %>;
+<% end %>
+<% if site_config[:max_width] %>
+      --max-w: <%= site_config[:max_width] %>;
+<% end %>
+    }
+<% if site_config[:accent_dark] || site_config[:bg_dark] %>
+    @media (prefers-color-scheme: dark) {
+      :root {
+<% if site_config[:accent_dark] %>
+        --accent: <%= site_config[:accent_dark] %>;
+        --accent-hover: <%= site_config[:accent_dark] %>;
+<% end %>
+<% if site_config[:bg_dark] %>
+        --bg: <%= site_config[:bg_dark] %>;
+<% end %>
+      }
+    }
+<% end %>
+  </style>
+<% end %>
+<% if custom_css_path %>
+  <link rel="stylesheet" href="<%= custom_css_path %>">
+<% end %>
+</head>
+<body>
+  <div class="container">
+<% if languages.length > 1 %>
+    <nav class="lang-switcher">
+<% languages.each do |l| %>
+<% if l[:code] == lang %>
+      <span class="current"><%= l[:name] %></span>
+<% else %>
+      <a href="<%= l[:index_path] %>"><%= l[:name] %></a>
+<% end %>
+<% end %>
+    </nav>
+<% end %>
+    <%= content %>
+    <footer class="site-footer">
+      <%= footer_text %>
+    </footer>
+  </div>
+  <script>
+  document.addEventListener('play', function(e) {
+    document.querySelectorAll('audio').forEach(function(a) {
+      if (a !== e.target) a.pause();
+    });
+  }, true);
+  </script>
+</body>
+</html>
