@@ -837,6 +837,121 @@ class TestPodcastConfig < Minitest::Test
     assert_equal "none", feeds[1][:image]
   end
 
+  # --- ## Site section ---
+
+  def test_parses_site_section
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Site
+      - accent: #e11d48
+      - accent_dark: #fb7185
+      - bg: #fefce8
+      - bg_dark: #1c1917
+      - radius: 10px
+      - max_width: 800px
+      - footer: Built with love
+      - show_duration: false
+      - show_transcript: false
+    MD
+
+    config = PodcastConfig.new("myshow")
+    sc = config.site_config
+    assert_equal "#e11d48", sc[:accent]
+    assert_equal "#fb7185", sc[:accent_dark]
+    assert_equal "#fefce8", sc[:bg]
+    assert_equal "#1c1917", sc[:bg_dark]
+    assert_equal "10px", sc[:radius]
+    assert_equal "800px", sc[:max_width]
+    assert_equal "Built with love", sc[:footer]
+    assert_equal false, sc[:show_duration]
+    assert_equal false, sc[:show_transcript]
+  end
+
+  def test_site_config_defaults_when_section_missing
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal({}, config.site_config)
+  end
+
+  def test_site_config_sanitizes_css_values
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Site
+      - accent: #e11d48; background: red}
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal "#e11d48 background: red", config.site_config[:accent]
+  end
+
+  def test_site_css_path_returns_path_when_exists
+    File.write(File.join(@podcasts_dir, "site.css"), "body { color: red; }")
+
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal File.join(@podcasts_dir, "site.css"), config.site_css_path
+  end
+
+  def test_favicon_path_returns_ico
+    File.write(File.join(@podcasts_dir, "favicon.ico"), "x")
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n")
+
+    config = PodcastConfig.new("myshow")
+    assert_equal File.join(@podcasts_dir, "favicon.ico"), config.favicon_path
+  end
+
+  def test_favicon_path_returns_png_when_no_ico
+    File.write(File.join(@podcasts_dir, "favicon.png"), "x")
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n")
+
+    config = PodcastConfig.new("myshow")
+    assert_equal File.join(@podcasts_dir, "favicon.png"), config.favicon_path
+  end
+
+  def test_favicon_path_returns_nil_when_missing
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n")
+
+    config = PodcastConfig.new("myshow")
+    assert_nil config.favicon_path
+  end
+
+  def test_site_css_path_returns_nil_when_missing
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_nil config.site_css_path
+  end
+
   # --- LingQ section ---
 
   def test_parses_lingq_section

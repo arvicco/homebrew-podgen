@@ -9,6 +9,7 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "cli", "rss_command")
+require_relative File.join(root, "lib", "site_generator")
 
 module PodgenCLI
   class PublishCommand
@@ -38,8 +39,9 @@ module PodgenCLI
       @config = PodcastConfig.new(@podcast_name)
       @config.load_env!
 
-      # Regenerate RSS feed before publishing
+      # Regenerate RSS feed and static site before publishing
       regenerate_rss
+      regenerate_site
 
       if @options[:lingq]
         publish_to_lingq
@@ -54,6 +56,13 @@ module PodgenCLI
       rss_opts = { verbosity: @options[:verbosity] }
       rss = RssCommand.new([@podcast_name], rss_opts)
       rss.run
+    end
+
+    def regenerate_site
+      generator = SiteGenerator.new(config: @config, clean: true)
+      generator.generate
+    rescue => e
+      $stderr.puts "Warning: site generation failed: #{e.message}" if @options[:verbosity] == :verbose
     end
 
     def publish_to_r2
@@ -73,12 +82,17 @@ module PodgenCLI
       bucket = ENV["R2_BUCKET"]
       dest = "r2:#{bucket}/#{@config.name}/"
 
-      # Only sync public-facing files (mp3, html transcripts, feed xml, cover)
+      # Only sync public-facing files (mp3, html transcripts, feed xml, cover, site)
       includes = [
         "episodes/*.mp3",
         "episodes/*.html",
         "feed.xml",
-        "feed-*.xml"
+        "feed-*.xml",
+        "site/*.html",
+        "site/**/*.html",
+        "site/style.css",
+        "site/custom.css",
+        "site/favicon.*"
       ]
       includes << @config.image if @config.image
 
@@ -110,6 +124,7 @@ module PodgenCLI
       unless @options[:verbosity] == :quiet
         if @config.base_url
           puts "Feed URL: #{@config.base_url}/feed.xml"
+          puts "Site URL: #{@config.base_url}/site/index.html"
         else
           puts "Done. Set base_url in guidelines.md to see feed URL."
         end

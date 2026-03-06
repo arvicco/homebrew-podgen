@@ -9,6 +9,7 @@ module PodgenCLI
     "translate" => ["Translate episodes to new languages",  "cli/translate_command",   "TranslateCommand"],
     "scrap"     => ["Remove last episode and history",     "cli/scrap_command",       "ScrapCommand"],
     "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",         "RssCommand"],
+    "site"      => ["Generate static HTML website",        "cli/site_command",        "SiteCommand"],
     "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",    "PublishCommand"],
     "stats"     => ["Show podcast statistics",             "cli/stats_command",       "StatsCommand"],
     "validate"  => ["Validate podcast config and output",  "cli/validate_command",    "ValidateCommand"],
@@ -30,6 +31,7 @@ module PodgenCLI
       opts.separator "  translate <podcast>            Translate episodes to new languages"
       opts.separator "  scrap <podcast>                Remove last episode files + history entry"
       opts.separator "  rss <podcast>                  Generate RSS feed"
+      opts.separator "  site <podcast>                 Generate static HTML website"
       opts.separator "  publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)"
       opts.separator "  stats <podcast> | --all        Show podcast statistics"
       opts.separator "  validate <podcast> | --all     Validate config and output"

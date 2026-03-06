@@ -1,0 +1,11 @@
+<a class="back-link" href="<%= index_path %>">&larr; All episodes</a>
+<div class="episode-header">
+  <h1><%= episode_title %></h1>
+  <div class="meta"><%= episode_date %><% if episode_duration && site_config.fetch(:show_duration, true) %> &middot; <%= episode_duration %><% end %></div>
+  <audio controls preload="metadata" src="<%= audio_url %>"></audio>
+</div>
+<% if transcript_html && site_config.fetch(:show_transcript, true) %>
+<div class="transcript">
+  <%= transcript_html %>
+</div>
+<% end %>

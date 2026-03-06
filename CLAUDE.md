@@ -16,7 +16,7 @@ Autonomous podcast pipeline. Ruby 3.2+, macOS, ffmpeg, yt-dlp, ImageMagick+librs
 ```
 bin/podgen                       # CLI entry point
 bin/tell                         # TTS pronunciation CLI (standalone)
-podcasts/<name>/                 # Per-podcast: guidelines.md, queue.yml, pronunciation.pls, .env
+podcasts/<name>/                 # Per-podcast: guidelines.md, queue.yml, pronunciation.pls, site.css, favicon.*, .env
 lib/
   cli.rb                         # CLI dispatcher
   cli/
@@ -25,6 +25,7 @@ lib/
     translate_command.rb          # Backfill translations
     scrap_command.rb              # Remove last episode
     rss_command.rb                # RSS feed generation
+    site_command.rb               # Static HTML website generation
     publish_command.rb            # Publish to R2 or LingQ
     list_command.rb | test_command.rb | schedule_command.rb
   time_value.rb                  # TimeValue: seconds or min:sec with absolute? flag
@@ -43,6 +44,8 @@ lib/
   sources/
     rss_source.rb | hn_source.rb | claude_web_source.rb | bluesky_source.rb | x_source.rb
   youtube_downloader.rb | episode_history.rb | audio_assembler.rb | rss_generator.rb | logger.rb
+  site_generator.rb                # Static HTML website generator (ERB templates)
+  templates/                       # ERB templates + CSS for site generator
   http_retryable.rb               # Mixin: RetriableError, RETRIABLE_CODES, parse_error, with_http_retries
   tell/
     config.rb                     # Config loader (~/.tell.yml)
@@ -54,7 +57,7 @@ lib/
     colors.rb                     # ANSI colorization for gloss/phonetic output
     error_formatter.rb            # Friendly error messages for API errors
     processor.rb                  # Main processing: detect → translate → synthesize → play
-output/<name>/                   # episodes/, tails/, research_cache/, history.yml, feed.xml
+output/<name>/                   # episodes/, tails/, site/, research_cache/, history.yml, feed.xml
 test/                            # unit/, integration/, api/ (minitest)
 scripts/serve.rb                 # WEBrick server for RSS
 ```
@@ -91,7 +94,8 @@ scripts/serve.rb                 # WEBrick server for RSS
 - **Cover generation:** Title overlay on base_image via ImageMagick/SVG/rsvg-convert. Priority: `--image` → per-feed → `--base-image` → per-feed base_image → `## Image` → YouTube thumb → nil
 - **TTS:** ElevenLabs with chunking (10k char limit), pronunciation dictionaries (`.pls`), trailing hallucination trimming via `/with-timestamps`
 - **Transcript post-processing:** Claude Opus. Multi-engine: reconcile + remove hallucinations. Single: clean up. YouTube captions as tiebreaker reference
-- **Publish:** `podgen publish <name>` → regenerate RSS → sync to R2 via rclone. `--lingq` for LingQ instead
+- **Site:** `podgen site <name>` generates static HTML website in `output/<name>/site/`. Episode list + per-episode pages with transcripts. Multi-language support (subdirectories per language). `--clean` removes existing site first. `--base-url` overrides config. Auto-generated during `publish`
+- **Publish:** `podgen publish <name>` → regenerate RSS + site → sync to R2 via rclone. `--lingq` for LingQ instead
 - **Scrap:** `podgen scrap <name>` removes last episode files + history + LingQ tracking
 - **Translate:** `podgen translate <name>` backfills translations (`--last N`, `--lang xx`)
 - **RSS:** iTunes + Podcasting 2.0 namespaces, transcript tags, `base_url` for absolute URLs. pubDate from history timestamp (fallback: date + 06:00). Duration from history (fallback: ffprobe → size estimate)
@@ -108,6 +112,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 | `## Topics` | Default topic rotation (required for news) |
 | `## Sources` | `exa` (or `exa: category`), `hackernews`, `rss:` (with URLs + per-feed options), `claude_web`, `bluesky`, `x:` |
 | `## Audio` | `engine` list (`open`/`elab`/`groq`), `language`, `target_language`, `skip`, `cut`, `autotrim` |
+| `## Site` | `accent`, `accent_dark`, `bg`, `bg_dark`, `radius`, `max_width`, `footer`, `show_duration`, `show_transcript`. Custom `site.css` → `custom.css`. Auto-detect `favicon.*` → copied to site. RSS feed icon after title when `base_url` set |
 | `## Image` | `cover`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset` |
 | `## LingQ` | `collection`, `level`, `tags`, `accent`, `status`. Image keys are legacy → prefer `## Image` |
 | `## Do not include` | Content restrictions |
@@ -211,6 +216,7 @@ podgen [flags] <command> <args>
   translate <podcast>  # Backfill translations (--last N, --lang xx)
   scrap <podcast>      # Remove last episode
   rss <podcast>        # Generate RSS (--base-url URL)
+  site <podcast>       # Generate static HTML website (--clean, --base-url URL)
   publish <podcast>    # Publish to R2 (--lingq for LingQ)
   stats <podcast>      # Stats (--all for summary)
   validate <podcast>   # Validate (--all)
