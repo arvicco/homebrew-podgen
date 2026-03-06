@@ -77,6 +77,13 @@ class TestTellHints < Minitest::Test
     assert_equal :male, r.gender
   end
 
+  def test_punctuation_before_slash_matches
+    r = Tell::Hints.parse("dal gol./f")
+    assert_equal "dal gol.", r.text
+    assert_nil r.formality
+    assert_equal :female, r.gender
+  end
+
   def test_hint_only_returns_empty_text
     r = Tell::Hints.parse("/pm")
     assert_equal "", r.text
@@ -131,7 +138,9 @@ class TestTellHints < Minitest::Test
     inst = Tell::Hints.to_instruction(hints)
     assert_includes inst, "polite/formal register"
     assert_includes inst, "vikanje"
+    assert_includes inst, "speaker is male"
     assert_includes inst, "masculine grammatical gender"
+    assert_includes inst, "do NOT invent gendered forms"
   end
 
   def test_instruction_casual_female
@@ -139,7 +148,9 @@ class TestTellHints < Minitest::Test
     inst = Tell::Hints.to_instruction(hints)
     assert_includes inst, "casual/informal register"
     assert_includes inst, "tikanje"
+    assert_includes inst, "speaker is female"
     assert_includes inst, "feminine grammatical gender"
+    assert_includes inst, "do NOT invent gendered forms"
   end
 
   def test_instruction_very_formal
