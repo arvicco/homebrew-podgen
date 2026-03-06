@@ -23,9 +23,9 @@ module Tell
       end
     end
 
-    # Match /flags at end of string, preceded by a word char, whitespace, or
-    # start-of-string. All chars after / must be valid flag letters.
-    HINT_RE = %r{(?:\A|(?<=[\w\s]))/([pcvhmfn]+)\z}
+    # Match /flags at end of string, preceded by a word char, whitespace,
+    # punctuation, or start-of-string. All chars after / must be valid flag letters.
+    HINT_RE = %r{(?:\A|(?<=[\w\s\p{P}]))/([pcvhmfn]+)\z}
 
     # Parse hint suffix from text. Returns Result with cleaned text + hints.
     def self.parse(text)
@@ -68,8 +68,8 @@ module Tell
       end
 
       case hints.gender
-      when :male   then parts << "use masculine grammatical gender where applicable"
-      when :female then parts << "use feminine grammatical gender where applicable"
+      when :male   then parts << "the speaker is male — use masculine grammatical gender where applicable (participles, adjectives, pronouns) — do NOT invent gendered forms that don't exist in the language"
+      when :female then parts << "the speaker is female — use feminine grammatical gender where applicable (participles, adjectives, pronouns) — do NOT invent gendered forms that don't exist in the language"
       when :neuter then parts << "use neuter grammatical gender for all gendered forms (verb participles, adjectives, pronouns — e.g. Slovenian -lo/-o endings, NOT masculine/feminine slashes)"
       end
 
