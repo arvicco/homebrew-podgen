@@ -47,13 +47,15 @@ module Tell
       text.each_char do |ch|
         next if ch.match?(/[\s\p{P}\d]/)
 
+        matched = false
         SCRIPT_RANGES.each do |script, pattern|
           if ch.match?(pattern)
             counts[script] += 1
+            matched = true
             break
           end
         end
-        counts[:latin] += 1 if ch.match?(/[a-zA-ZÀ-ÖØ-öø-ÿĀ-žƀ-ȳ]/)
+        counts[:latin] += 1 if !matched && ch.match?(/[a-zA-ZÀ-ÖØ-öø-ÿĀ-žƀ-ȳ]/)
       end
 
       return nil if counts.empty?

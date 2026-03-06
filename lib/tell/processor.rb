@@ -233,8 +233,11 @@ module Tell
           File.delete(file) if File.exist?(file)
         end
       else
-        system("afplay", tmp)
-        File.delete(tmp) if File.exist?(tmp)
+        begin
+          system("afplay", tmp)
+        ensure
+          File.delete(tmp) if File.exist?(tmp)
+        end
       end
     end
 

@@ -142,6 +142,23 @@ class TestTellTts < Minitest::Test
     end
   end
 
+  def test_google_sends_api_key_in_header_not_url
+    tts = build_google
+    called_url = nil
+    called_headers = nil
+    stub = ->(*args, **kwargs) {
+      called_url = args[0]
+      called_headers = kwargs[:headers]
+      audio_b64 = Base64.encode64("audio")
+      MockHTTPResponse.new(200, { "audioContent" => audio_b64 }.to_json)
+    }
+    HTTParty.stub(:post, stub) do
+      tts.synthesize("hello")
+    end
+    refute_includes called_url, "key=", "API key should not be in URL"
+    assert_equal "test_key", called_headers["x-goog-api-key"]
+  end
+
   def test_google_uses_voice_override
     tts = build_google
     called_body = nil

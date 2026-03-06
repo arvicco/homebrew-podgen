@@ -36,6 +36,24 @@ module HttpRetryable
     response.body[0..200]
   end
 
+  def with_http_retries(label, max: 2)
+    retries = 0
+    begin
+      retries += 1
+      yield
+    rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
+      if retries <= max
+        sleep_time = 2**retries
+        msg = "Retry #{retries}/#{max} in #{sleep_time}s: #{e.message}"
+        $stderr.puts defined?(Tell::Colors) ? Tell::Colors.status(msg) : msg
+        sleep(sleep_time)
+        retry
+      else
+        raise "#{label} failed after #{max} retries: #{e.message}"
+      end
+    end
+  end
+
   def self.included(base)
     base.const_set(:RetriableError, RetriableError) unless base.const_defined?(:RetriableError)
   end

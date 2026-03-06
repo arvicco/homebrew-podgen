@@ -850,6 +850,10 @@ $ tell "dobro jutro"
 | `-r, --reverse` | Show reverse translation for target-language input |
 | `-g, --gloss` | Show word-by-word grammatical analysis |
 | `--gr` | Gloss with translations: `word(grammar)translation` |
+| `-p, --phonetic` | Show phonetic reading (kana/pinyin/romanization) |
+| `--gp` | Gloss with inline phonetic: `word[reading](grammar)` |
+| `--grp` | Gloss with translations + phonetic |
+| `--rp` | Reverse translate + phonetic reading |
 | `-n, --no-translate` | Speak text as-is without translation |
 | `-h, --help` | Show help |
 
@@ -881,19 +885,64 @@ GR: dobro(adj.n.sg.A)good jutro(n.n.sg.A)morning
 [audio plays]
 ```
 
-Glossing requires `ANTHROPIC_API_KEY`. The model defaults to Claude Opus 4.6 (configure with `gloss_models` in `~/.tell.yml` or `TELL_GLOSS_MODEL` env).
+Glossing requires `ANTHROPIC_API_KEY`. The model defaults to Claude Opus 4.6 (configure with `gloss_model` in `~/.tell.yml` or `TELL_GLOSS_MODEL` env).
 
 Agrammatical forms are detected and marked: `*restavraciju*restavracijo(n.f.A.sg)restaurant` — the asterisks show the error and correction.
 
 For more reliable error detection, use **multi-model consensus** — multiple models gloss in parallel, and a reconciler only keeps error markings where models agree:
 
 ```yaml
-gloss_models:
+gloss_model:
   - opus
   - sonnet
 ```
 
 This prevents over-correction (Opus) and missed errors (Sonnet) by requiring agreement from both models.
+
+### Phonetic reading
+
+Use `-p` to show phonetic readings alongside TTS playback:
+
+```
+$ tell -p "今日はいい天気です"
+PH: きょうはいいてんきです
+[audio plays]
+
+$ tell -p "dober dan"
+PH: /ˈdɔːbəɾ ˈdaːn/
+[audio plays]
+```
+
+Combine with gloss (`--gp`) for inline phonetic in grammatical analysis:
+
+```
+$ tell --gp "dober dan"
+GL: dober[ˈdɔːbəɾ](adj.m.N.sg) dan[ˈdaːn](n.m.N.sg)
+[audio plays]
+```
+
+The phonetic model defaults to the first `gloss_model` (override with `phonetic_model` in config or `TELL_PHONETIC_MODEL` env).
+
+### Style hints
+
+Append style suffixes to input text for formality and voice control:
+
+| Suffix | Effect |
+|--------|--------|
+| `/p` | Polite/formal register |
+| `/c` | Casual/informal register |
+| `/m` | Use male voice (`voice_male` in config) |
+| `/f` | Use female voice (`voice_female` in config) |
+
+Combine freely: `/pm` = polite + male, `/cf` = casual + female.
+
+```
+$ tell "good morning /pm"
+SL: dobro jutro
+[audio plays with male voice, polite translation]
+```
+
+Voice switching requires `voice_male` and/or `voice_female` in `~/.tell.yml`.
 
 ### Advanced configuration
 
@@ -903,6 +952,8 @@ Full `~/.tell.yml` options:
 original_language: en               # Your native language (ISO 639-1)
 target_language: sl                  # Language you're learning
 voice_id: "elevenlabs_voice_id"     # TTS voice
+voice_male: "elevenlabs_male_id"    # Optional: voice for /m hint
+voice_female: "elevenlabs_female_id" # Optional: voice for /f hint
 tts_engine: elevenlabs              # elevenlabs | google
 translation_engine: deepl           # deepl | claude | openai (or array)
 model_id: eleven_multilingual_v2    # ElevenLabs model
@@ -910,10 +961,12 @@ output_format: mp3_44100_128        # ElevenLabs output format
 reverse_translate: false            # Always show reverse translation
 gloss: false                        # Always show grammatical gloss
 gloss_reverse: false                # Always show gloss with translations
-gloss_models: opus                   # opus | sonnet | haiku (or array for multi-model consensus)
-# gloss_models:                     # multi-model consensus example
+phonetic: false                     # Always show phonetic reading
+gloss_model: opus                    # opus | sonnet | haiku (or array for multi-model consensus)
+# gloss_model:                      # multi-model consensus example
 #   - opus
 #   - sonnet
+phonetic_model: opus                 # opus | sonnet | haiku (default: first gloss_model)
 translation_timeout: 8.0            # Per-engine timeout (seconds)
 
 # API keys (can also be set via environment variables)

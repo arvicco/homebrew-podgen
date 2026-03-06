@@ -43,12 +43,16 @@ lib/
   sources/
     rss_source.rb | hn_source.rb | claude_web_source.rb | bluesky_source.rb | x_source.rb
   youtube_downloader.rb | episode_history.rb | audio_assembler.rb | rss_generator.rb | logger.rb
+  http_retryable.rb               # Mixin: RetriableError, RETRIABLE_CODES, parse_error, with_http_retries
   tell/
     config.rb                     # Config loader (~/.tell.yml)
     detector.rb                   # Language detection (Unicode scripts + stop words)
     translator.rb                 # Translation engines (DeepL, Claude, OpenAI) + failover chain
     tts.rb                        # TTS engines (ElevenLabs, Google)
     glosser.rb                    # Grammatical glossing via Claude
+    hints.rb                      # Style hint parser (/p, /c, /m, /f suffixes)
+    colors.rb                     # ANSI colorization for gloss/phonetic output
+    error_formatter.rb            # Friendly error messages for API errors
     processor.rb                  # Main processing: detect → translate → synthesize → play
 output/<name>/                   # episodes/, tails/, research_cache/, history.yml, feed.xml
 test/                            # unit/, integration/, api/ (minitest)
@@ -141,8 +145,10 @@ Standalone CLI (`bin/tell`) for pronouncing text via TTS with auto-translation. 
 - **Translation failover:** `TranslatorChain` tries engines in order with per-engine timeout (default 8s, `TELL_TRANSLATE_TIMEOUT`). Engines: DeepL, Claude, OpenAI
 - **Explanation detection:** If translation is 3x+ longer than input, it's displayed but not spoken (original is spoken instead)
 - **Interactive mode:** Reline-based REPL with persistent history (`~/.tell_history`, 1000 entries), dedup, non-blocking playback (new input interrupts current audio)
-- **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), gloss+translate (`--gr`) — run in background threads
+- **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), gloss+translate (`--gr`), phonetic (`-p`) — run in background threads. Combinable: `--gp`, `--grp`, `--rp`
 - **Gloss:** Claude produces `word(grammar)` interlinear analysis with agrammatical marking (`*wrong*correction(grammar)`). `--gr` adds translations: `word(grammar)translation`. Multi-model consensus: `gloss_model: [opus, sonnet]` runs models in parallel, reconciler (first model) keeps error markings only when models agree. Single model still works: `gloss_model: opus`
+- **Phonetic:** `-p` shows reading (kana for Japanese, pinyin for Chinese, IPA/romanization for others). `--gp` inlines phonetic into gloss: `word[reading](grammar)`. Standalone `-p` always fires alongside combined modes
+- **Style hints:** Append `/p`, `/c`, `/m`, `/f` (or combos like `/pm`, `/cf`) to input text. `/p` = polite, `/c` = casual, `/m` = male voice, `/f` = female voice. Stripped before synthesis, passed to translator. Voice switching requires `voice_male`/`voice_female` in config
 - **Output:** `afplay` (terminal), file (`-o`), stdout (pipe)
 
 ### Configuration: `~/.tell.yml`
@@ -150,6 +156,8 @@ Standalone CLI (`bin/tell`) for pronouncing text via TTS with auto-translation. 
 original_language: en
 target_language: sl
 voice_id: "elevenlabs_voice_id"
+voice_male: "elevenlabs_male_voice_id"    # Optional: voice for /m hint
+voice_female: "elevenlabs_female_voice_id"  # Optional: voice for /f hint
 tts_engine: elevenlabs              # elevenlabs | google
 translation_engine: deepl           # deepl | claude | openai (or array for failover)
 # translation_engine:              # failover chain example
@@ -160,6 +168,7 @@ output_format: mp3_44100_128        # ElevenLabs output format
 reverse_translate: false            # Show reverse translation by default
 gloss: false                        # Show grammatical gloss by default
 gloss_reverse: false                # Show gloss with translations by default
+phonetic: false                      # Show phonetic reading by default
 gloss_model: opus                    # opus | sonnet | haiku (or array for multi-model consensus)
 # gloss_model:                      # multi-model consensus example
 #   - opus
@@ -184,8 +193,13 @@ tell [options] [text...]
   -r, --reverse         Show reverse translation for target-language input
   -g, --gloss           Show word-by-word grammatical analysis
   --gr                  Gloss with word translations: word(grammar)translation
+  -p, --phonetic        Show phonetic reading (kana/pinyin/romanization)
+  --gp                  Gloss with inline phonetic: word[reading](grammar)
+  --grp                 Gloss with translations + phonetic
+  --rp                  Reverse translate + phonetic reading
   -n, --no-translate    Speak text as-is without translation
   -h, --help            Show help
+Style hints: append /p (polite), /c (casual), /m (male voice), /f (female voice) to input
 ```
 
 ## CLI Reference
