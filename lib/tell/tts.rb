@@ -43,10 +43,7 @@ module Tell
         }
       }
 
-      retries = 0
-      begin
-        retries += 1
-
+      with_http_retries("ElevenLabs TTS", max: MAX_RETRIES) do
         response = HTTParty.post(
           url,
           headers: {
@@ -64,16 +61,6 @@ module Tell
           raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
         else
           raise "ElevenLabs TTS failed: HTTP #{response.code}: #{parse_error(response)}"
-        end
-
-      rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
-        if retries <= MAX_RETRIES
-          sleep_time = 2**retries
-          $stderr.puts Colors.status("Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}")
-          sleep(sleep_time)
-          retry
-        else
-          raise "ElevenLabs TTS failed after #{MAX_RETRIES} retries: #{e.message}"
         end
       end
     end
@@ -106,7 +93,6 @@ module Tell
     end
 
     def synthesize(text, voice: nil)
-      url = "#{BASE_URL}?key=#{@api_key}"
       vname = voice || @voice_name
 
       body = {
@@ -115,13 +101,13 @@ module Tell
         audioConfig: { audioEncoding: "MP3" }
       }
 
-      retries = 0
-      begin
-        retries += 1
-
+      with_http_retries("Google TTS", max: MAX_RETRIES) do
         response = HTTParty.post(
-          url,
-          headers: { "Content-Type" => "application/json" },
+          BASE_URL,
+          headers: {
+            "Content-Type" => "application/json",
+            "x-goog-api-key" => @api_key
+          },
           body: body.to_json,
           timeout: 60
         )
@@ -134,16 +120,6 @@ module Tell
           raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
         else
           raise "Google TTS failed: HTTP #{response.code}: #{parse_error(response)}"
-        end
-
-      rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
-        if retries <= MAX_RETRIES
-          sleep_time = 2**retries
-          $stderr.puts Colors.status("Retry #{retries}/#{MAX_RETRIES} in #{sleep_time}s: #{e.message}")
-          sleep(sleep_time)
-          retry
-        else
-          raise "Google TTS failed after #{MAX_RETRIES} retries: #{e.message}"
         end
       end
     end

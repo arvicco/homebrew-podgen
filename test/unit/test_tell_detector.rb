@@ -145,4 +145,17 @@ class TestTellDetector < Minitest::Test
   def test_cjk_without_kana_is_chinese
     assert_equal "zh", Tell::Detector.detect("今天是美好的一天我很开心")
   end
+
+  # --- Latin double-counting guard ---
+
+  def test_non_latin_script_chars_not_double_counted
+    # Pure Cyrillic text — :latin count should be 0
+    counts = Tell::Detector.dominant_script("Привет мир")
+    assert_equal :cyrillic, counts
+  end
+
+  def test_mixed_cyrillic_latin_counts_correctly
+    # Mostly Cyrillic with one Latin word — Cyrillic should dominate
+    assert_equal "ru", Tell::Detector.detect("Привет мир сегодня hello тест")
+  end
 end

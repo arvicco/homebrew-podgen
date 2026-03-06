@@ -5,6 +5,24 @@ require "tell/hints"
 require "tell/translator"
 
 class TestTellTranslator < Minitest::Test
+  # --- Tell.translation_prompt ---
+
+  def test_translation_prompt_without_hints
+    prompt = Tell.translation_prompt("hello", to: "sl", hints: nil)
+    assert_includes prompt, "Slovenian"
+    assert_includes prompt, "hello"
+    refute_includes prompt, "style"
+  end
+
+  def test_translation_prompt_with_hints
+    hints = Tell::Hints::Result.new(text: "", formality: :polite, gender: nil)
+    prompt = Tell.translation_prompt("hello", to: "sl", hints: hints)
+    assert_includes prompt, "style"
+    assert_includes prompt, "polite"
+  end
+
+  # --- build_translator ---
+
   def test_build_deepl_translator
     translator = Tell.build_translator("deepl", "fake_key")
     assert_instance_of Tell::DeeplTranslator, translator
@@ -60,6 +78,12 @@ class TestTellTranslator < Minitest::Test
 
     result = capture_stderr { chain.translate("hello", from: "en", to: "es") }
     assert_equal "hola", result
+  end
+
+  def test_chain_empty_raises_clear_error
+    chain = Tell::TranslatorChain.new([], timeout: 5)
+    err = assert_raises(RuntimeError) { chain.translate("hello", from: "en", to: "es") }
+    assert_equal "No translation engines configured", err.message
   end
 
   def test_chain_all_fail_raises_last_error

@@ -7,6 +7,17 @@ require_relative "../language_names"
 
 module Tell
 
+  def self.translation_prompt(text, to:, hints:)
+    to_name = LANGUAGE_NAMES.fetch(to, to)
+    style = Hints.to_instruction(hints)
+
+    if style
+      "Translate the following text to #{to_name}.\n\nIMPORTANT — apply this style: #{style}.\n\nIf it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
+    else
+      "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
+    end
+  end
+
   def self.build_translator(engine, api_key)
     case engine
     when "deepl"  then DeeplTranslator.new(api_key)
@@ -50,14 +61,7 @@ module Tell
     end
 
     def translate(text, from:, to:, hints: nil)
-      to_name = LANGUAGE_NAMES.fetch(to, to)
-      style = Hints.to_instruction(hints)
-
-      prompt = if style
-        "Translate the following text to #{to_name}.\n\nIMPORTANT — apply this style: #{style}.\n\nIf it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-      else
-        "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-      end
+      prompt = Tell.translation_prompt(text, to: to, hints: hints)
 
       message = @client.messages.create(
         model: @model,
@@ -80,14 +84,7 @@ module Tell
     end
 
     def translate(text, from:, to:, hints: nil)
-      to_name = LANGUAGE_NAMES.fetch(to, to)
-      style = Hints.to_instruction(hints)
-
-      prompt = if style
-        "Translate the following text to #{to_name}.\n\nIMPORTANT — apply this style: #{style}.\n\nIf it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-      else
-        "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-      end
+      prompt = Tell.translation_prompt(text, to: to, hints: hints)
 
       (MAX_RETRIES + 1).times do |attempt|
         response = HTTParty.post(
@@ -129,6 +126,8 @@ module Tell
     end
 
     def translate(text, from:, to:, hints: nil)
+      raise "No translation engines configured" if @translators.empty?
+
       last_error = nil
       @translators.each do |name, translator|
         return Timeout.timeout(@timeout) { translator.translate(text, from: from, to: to, hints: hints) }
