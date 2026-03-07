@@ -78,24 +78,50 @@ module PodgenCLI
         return
       end
 
+      total_dl = totals.sum { |r| r[:downloads] }
+
       puts "Downloads (last #{@days} days)"
       puts
-      fmt = "  %-20s %8s"
-      puts format(fmt, "Podcast", "Downloads")
+      fmt = "  %-20s %8s %8s"
+      puts format(fmt, "Podcast", "Total", "Avg/day")
       totals.each do |row|
-        puts format(fmt, row[:podcast], row[:downloads])
+        avg = row[:days] > 0 ? (row[:downloads].to_f / row[:days]).round(1) : 0
+        puts format(fmt, row[:podcast], row[:downloads], avg)
       end
-      puts format(fmt, "", "────────")
-      puts format(fmt, "Total", totals.sum { |r| r[:downloads] })
+      puts format(fmt, "", "────────", "────────")
+      total_days = totals.map { |r| r[:days] }.max || 1
+      puts format(fmt, "Total", total_dl, (total_dl.to_f / total_days).round(1))
+
+      countries = client.country_breakdown(days: @days, limit: 10)
+      apps = client.app_breakdown(days: @days, limit: 10)
+
+      if countries.any?
+        puts
+        puts "  Countries:"
+        countries.each do |row|
+          puts "    %-6s %6d" % [row[:country], row[:downloads]]
+        end
+      end
+
+      if apps.any?
+        puts
+        puts "  Apps:"
+        apps.each do |row|
+          puts "    %-24s %6d" % [row[:app], row[:downloads]]
+        end
+      end
     end
 
     def show_podcast_downloads(client, podcast)
       episodes = client.episode_downloads(podcast: podcast, days: @days)
       countries = client.country_breakdown(podcast: podcast, days: @days)
+      apps = client.app_breakdown(podcast: podcast, days: @days)
+      daily = client.daily_breakdown(podcast: podcast, days: @days)
 
       total = episodes.sum { |r| r[:downloads] }
+      avg = daily.any? ? (total.to_f / daily.length).round(1) : 0
 
-      puts "Downloads for #{podcast} (last #{@days} days): #{total} total"
+      puts "Downloads for #{podcast} (last #{@days} days): #{total} total, #{avg}/day avg"
 
       if episodes.any?
         puts
@@ -110,6 +136,22 @@ module PodgenCLI
         puts "  Countries:"
         countries.each do |row|
           puts "    %-6s %6d" % [row[:country], row[:downloads]]
+        end
+      end
+
+      if apps.any?
+        puts
+        puts "  Apps:"
+        apps.each do |row|
+          puts "    %-24s %6d" % [row[:app], row[:downloads]]
+        end
+      end
+
+      if daily.any?
+        puts
+        puts "  Daily:"
+        daily.each do |row|
+          puts "    %-12s %6d" % [row[:date], row[:downloads]]
         end
       end
     end
