@@ -14,14 +14,20 @@ module PodgenCLI
     def initialize(args, options)
       @options = options
       @all = false
+      @downloads = false
+      @days = 30
       OptionParser.new do |opts|
         opts.on("--all", "Show stats for all podcasts") { @all = true }
+        opts.on("--downloads", "Show download analytics from Cloudflare") { @downloads = true }
+        opts.on("--days N", Integer, "Lookback period for downloads (default 30)") { |n| @days = n }
       end.parse!(args)
       @podcast_name = args.shift
     end
 
     def run
-      if @all
+      if @downloads
+        run_downloads
+      elsif @all
         run_all
       elsif @podcast_name
         run_single(@podcast_name)
@@ -29,6 +35,7 @@ module PodgenCLI
         available = PodcastConfig.available
         $stderr.puts "Usage: podgen stats <podcast_name>"
         $stderr.puts "       podgen stats --all"
+        $stderr.puts "       podgen stats --downloads [podcast] [--days N]"
         $stderr.puts
         if available.any?
           $stderr.puts "Available podcasts:"
@@ -39,6 +46,73 @@ module PodgenCLI
     end
 
     private
+
+    def run_downloads
+      require_relative "../analytics_client"
+      client = AnalyticsClient.new
+
+      unless client.configured?
+        $stderr.puts "Download analytics not configured."
+        $stderr.puts "Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in .env"
+        $stderr.puts "See docs/cloudflare.md for setup."
+        return 2
+      end
+
+      if @podcast_name
+        show_podcast_downloads(client, @podcast_name)
+      else
+        show_all_downloads(client)
+      end
+
+      0
+    rescue => e
+      $stderr.puts "Analytics query failed: #{e.message}"
+      1
+    end
+
+    def show_all_downloads(client)
+      totals = client.podcast_totals(days: @days)
+
+      if totals.empty?
+        puts "No download data for the last #{@days} days."
+        return
+      end
+
+      puts "Downloads (last #{@days} days)"
+      puts
+      fmt = "  %-20s %8s"
+      puts format(fmt, "Podcast", "Downloads")
+      totals.each do |row|
+        puts format(fmt, row[:podcast], row[:downloads])
+      end
+      puts format(fmt, "", "────────")
+      puts format(fmt, "Total", totals.sum { |r| r[:downloads] })
+    end
+
+    def show_podcast_downloads(client, podcast)
+      episodes = client.episode_downloads(podcast: podcast, days: @days)
+      countries = client.country_breakdown(podcast: podcast, days: @days)
+
+      total = episodes.sum { |r| r[:downloads] }
+
+      puts "Downloads for #{podcast} (last #{@days} days): #{total} total"
+
+      if episodes.any?
+        puts
+        puts "  Episodes:"
+        episodes.each do |row|
+          puts "    %-45s %6d" % [row[:episode], row[:downloads]]
+        end
+      end
+
+      if countries.any?
+        puts
+        puts "  Countries:"
+        countries.each do |row|
+          puts "    %-6s %6d" % [row[:country], row[:downloads]]
+        end
+      end
+    end
 
     def run_all
       podcasts = PodcastConfig.available

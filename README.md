@@ -88,7 +88,8 @@ ruby bin/podgen <command> [options]
 | `podgen rss <podcast>` | Generate RSS feed from existing episodes |
 | `podgen site <podcast>` | Generate static HTML website (`--clean`, `--base-url URL`) |
 | `podgen publish <podcast>` | Publish to Cloudflare R2 via rclone (`--lingq` for LingQ) |
-| `podgen stats <podcast>` | Show podcast statistics (`--all` for summary table of all podcasts) |
+| `podgen stats <podcast>` | Show podcast statistics (`--all` for summary, `--downloads` for analytics) |
+| `podgen analytics <sub>` | Manage download analytics Worker (`setup`, `deploy`, `tail`, `status`) |
 | `podgen validate <podcast>` | Validate config and output (`--all` for all podcasts) |
 | `podgen list` | List available podcasts with titles |
 | `podgen test <name>` | Run a standalone test (research, hn, rss, tts, etc.) |
@@ -640,38 +641,50 @@ Then add `http://localhost:8080/feed.xml` to your podcast app. For remote access
 
 ## Publishing to Cloudflare R2
 
-Publish your podcast to [Cloudflare R2](https://developers.cloudflare.com/r2/) for always-available hosting at $0/month (free tier covers typical podcast usage).
+Publish your podcast to [Cloudflare R2](https://developers.cloudflare.com/r2/) for always-available hosting at $0/month (free tier covers typical podcast usage). A Cloudflare Worker serves files and tracks per-episode download analytics.
 
-### Setup
+See [docs/cloudflare.md](docs/cloudflare.md) for complete Cloudflare setup (R2 bucket, custom domain, analytics Worker).
+
+### Quick setup
 
 1. **Install rclone**: `brew install rclone`
-2. **Create an R2 bucket** in the Cloudflare dashboard
-3. **Create an R2 API token** (R2 → Manage R2 API Tokens → Create API Token, "Object Read & Write" permission)
-4. **Add to `.env`**:
+2. Create R2 bucket + API token, add to `.env`:
 
 ```
-R2_ACCESS_KEY_ID=...          # API token access key
-R2_SECRET_ACCESS_KEY=...      # API token secret key
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
 R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
-R2_BUCKET=podgen              # Your bucket name
+R2_BUCKET=podgen
 ```
 
-5. **Set `base_url`** in `podcasts/<name>/guidelines.md` to your public R2 URL (via custom domain or r2.dev subdomain)
-6. **Connect a custom domain** (recommended): R2 → bucket → Settings → Public access → Custom Domains
+3. Set `base_url` in `podcasts/<name>/guidelines.md`
+4. Set up the analytics Worker: `podgen analytics setup`
 
-### Usage
+### Publishing
 
 ```bash
-# Publish (automatically regenerates RSS feed first)
+# Publish (regenerates RSS + site, syncs to R2)
 podgen publish ruby_world
 
 # Preview what would be synced
 podgen --dry-run publish ruby_world
 ```
 
-The publish command automatically regenerates RSS feeds and the static HTML site before syncing, so you don't need to run `podgen rss` or `podgen site` separately. It syncs only public-facing files: MP3 episodes, HTML transcripts, feed XML, site pages, and cover image. Internal files (history, research cache, markdown sources) are excluded. Use `podgen rss` or `podgen site` separately if you only need to update locally (e.g. for local serving).
+Syncs only public-facing files: MP3 episodes, HTML transcripts, feed XML, site pages, and cover image. Internal files (history, research cache, markdown sources) are excluded.
 
-No `rclone config` is needed — credentials are passed via environment variables.
+### Download analytics
+
+The analytics Worker logs every MP3 download to Cloudflare Analytics Engine (country, user-agent, episode). Query via:
+
+```bash
+# All podcasts
+podgen stats --downloads
+
+# Single podcast, last 7 days
+podgen stats --downloads ruby_world --days 7
+```
+
+Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env`. See [docs/cloudflare.md](docs/cloudflare.md) for token setup.
 
 ## Project Structure
 
@@ -698,7 +711,8 @@ podgen/
 │   │   ├── rss_command.rb    # RSS feed generation
 │   │   ├── site_command.rb   # Static HTML website generation
 │   │   ├── publish_command.rb # Publish to Cloudflare R2 or LingQ
-│   │   ├── stats_command.rb  # Show podcast statistics
+│   │   ├── stats_command.rb  # Show podcast statistics + download analytics
+│   │   ├── analytics_command.rb # Manage Cloudflare analytics Worker
 │   │   ├── validate_command.rb # Validate config and output
 │   │   ├── list_command.rb   # List available podcasts
 │   │   ├── test_command.rb   # Run test scripts
@@ -740,6 +754,7 @@ podgen/
 │   ├── site_generator.rb     # Static HTML website generator (ERB templates)
 │   ├── templates/            # ERB templates + CSS for site generator
 │   ├── logger.rb             # Structured logging with phase timings
+│   ├── analytics_client.rb   # Cloudflare Analytics Engine GraphQL client
 │   └── tell/                 # TTS pronunciation tool modules
 │       ├── config.rb         # Config loader (~/.tell.yml)
 │       ├── detector.rb       # Language detection (Unicode + stop words)
@@ -748,6 +763,7 @@ podgen/
 │       ├── glosser.rb        # Grammatical glossing via Claude
 │       └── processor.rb      # Main processing pipeline
 ├── docs/
+│   ├── cloudflare.md          # Cloudflare R2 + Worker + analytics setup guide
 │   └── pronunciation.md      # PLS format guide & IPA reference
 ├── scripts/
 │   ├── serve.rb              # WEBrick static file server
