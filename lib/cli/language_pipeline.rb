@@ -5,20 +5,17 @@ require "fileutils"
 
 root = File.expand_path("../..", __dir__)
 
-require_relative File.join(root, "lib", "snip_interval")
-require_relative File.join(root, "lib", "sources", "rss_source")
+require_relative File.join(root, "lib", "audio_trimmer")
+require_relative File.join(root, "lib", "episode_source")
 require_relative File.join(root, "lib", "transcription", "engine_manager")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "agents", "lingq_agent")
 require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "agents", "description_agent")
 require_relative File.join(root, "lib", "youtube_downloader")
-require_relative File.join(root, "lib", "http_downloader")
 
 module PodgenCLI
   class LanguagePipeline
-    MIN_OUTRO_SAVINGS = 5 # minimum seconds saved to bother trimming outro
-
     def initialize(config:, options:, logger:, history:, today:)
       @config = config
       @options = options
@@ -31,6 +28,7 @@ module PodgenCLI
       @today = today
       @temp_files = []
       @youtube_captions = nil
+      @episode_source = EpisodeSource.new(config: config, history: history, logger: logger)
     end
 
     def run
@@ -55,19 +53,14 @@ module PodgenCLI
       # --- Phase 1 + 2: Get episode and source audio ---
       if @local_file
         logger.phase_start("Local File")
-        episode = build_local_episode(@local_file, @file_title)
+        episode = @episode_source.build_local(@local_file, @file_title)
         logger.log("Local file: \"#{episode[:title]}\" (#{@local_file})")
         logger.phase_end("Local File")
 
-        return 1 if already_processed?(episode)
+        return 1 if @episode_source.already_processed?(episode, force: @options[:force], dry_run: @dry_run)
 
         if @dry_run
-          logger.log("[dry-run] Skipping transcription, assembly, and history")
-          total_time = (Time.now - pipeline_start).round(2)
-          summary = "[dry-run] Config validated, local file \"#{episode[:title]}\" — no API calls"
-          logger.log("Total pipeline time: #{total_time}s")
-          logger.log(summary)
-          puts summary unless @options[:verbosity] == :quiet
+          log_dry_run(pipeline_start, "Config validated, local file \"#{episode[:title]}\" — no API calls")
           return 0
         end
 
@@ -75,23 +68,18 @@ module PodgenCLI
       elsif @youtube_url
         if @dry_run
           logger.log("[dry-run] YouTube URL: #{@youtube_url}")
-          logger.log("[dry-run] Skipping download, transcription, assembly, and history")
-          total_time = (Time.now - pipeline_start).round(2)
-          summary = "[dry-run] Config validated, YouTube URL provided — no API calls"
-          logger.log("Total pipeline time: #{total_time}s")
-          logger.log(summary)
-          puts summary unless @options[:verbosity] == :quiet
+          log_dry_run(pipeline_start, "Config validated, YouTube URL provided — no API calls")
           return 0
         end
 
         logger.phase_start("YouTube")
         downloader = YouTubeDownloader.new(logger: logger)
         metadata = downloader.fetch_metadata(@youtube_url)
-        episode = build_youtube_episode(metadata)
+        episode = @episode_source.build_youtube(metadata, title_override: @file_title)
         logger.log("YouTube video: \"#{episode[:title]}\" (#{metadata[:duration]}s)")
         logger.phase_end("YouTube")
 
-        return 1 if already_processed?(episode)
+        return 1 if @episode_source.already_processed?(episode, force: @options[:force], dry_run: @dry_run)
 
         logger.phase_start("Download Audio")
         source_audio_path = downloader.download_audio(@youtube_url)
@@ -113,7 +101,7 @@ module PodgenCLI
         end
       else
         logger.phase_start("Fetch Episode")
-        episode = fetch_next_episode(force: @options[:force])
+        episode = @episode_source.fetch_next(force: @options[:force])
         unless episode
           logger.error("No new episodes found in RSS feeds")
           return 1
@@ -127,70 +115,28 @@ module PodgenCLI
         logger.phase_end("Fetch Episode")
 
         if @dry_run
-          logger.log("[dry-run] Skipping download, transcription, assembly, and history")
-          total_time = (Time.now - pipeline_start).round(2)
-          summary = "[dry-run] Config validated, episode \"#{episode[:title]}\" — no API calls"
-          logger.log("Total pipeline time: #{total_time}s")
-          logger.log(summary)
-          puts summary unless @options[:verbosity] == :quiet
+          log_dry_run(pipeline_start, "Config validated, episode \"#{episode[:title]}\" — no API calls")
           return 0
         end
 
         logger.phase_start("Download Audio")
-        source_audio_path = download_audio(episode[:audio_url])
+        source_audio_path = @episode_source.download_audio(episode[:audio_url])
+        @temp_files << source_audio_path
         logger.log("Downloaded source audio: #{(File.size(source_audio_path) / (1024.0 * 1024)).round(2)} MB")
         logger.phase_end("Download Audio")
       end
 
       # --- Phase 2b: Unified trim (skip + cut + snip → single aselect pass) ---
+      assembler = AudioAssembler.new(logger: logger)
+      @trimmer = AudioTrimmer.new(assembler: assembler, logger: logger)
+
       skip = @options[:skip] || episode[:skip] || @config.skip
       cut = @options[:cut] || episode[:cut] || @config.cut
       snip = @options[:snip]
-
-      has_trim = (skip && skip > 0) || (cut && cut > 0) || snip
-      if has_trim
-        assembler = AudioAssembler.new(logger: logger)
-        total = assembler.probe_duration(source_audio_path)
-        removal = snip ? snip.dup : SnipInterval.empty
-
-        # Fold in skip → remove [0, skip_time]
-        if skip && skip > 0
-          skip_to = skip.respond_to?(:absolute?) && skip.absolute? ? skip.to_f : skip.to_f
-          removal.add(0, skip_to)
-          logger.log("Skip: removing 0-#{format_timestamp(skip_to)}")
-        end
-
-        # Fold in cut → remove [cut_point, total]
-        if cut && cut > 0
-          cut_point = cut.respond_to?(:absolute?) && cut.absolute? ? cut.to_f : total - cut.to_f
-          if cut_point > 0 && cut_point < total
-            removal.add(cut_point, total)
-            logger.log("Cut: removing #{format_timestamp(cut_point)}-#{format_timestamp(total)}")
-          else
-            logger.log("Warning: cut value results in invalid cut point (#{cut_point.round(1)}s of #{total.round(1)}s) — skipping cut")
-          end
-        end
-
-        if snip
-          logger.log("Snip: removing #{snip}")
-        end
-
-        keeps = removal.keep_segments(total)
-        if keeps.any? && keeps != [SnipInterval::Interval.new(0.0, total)]
-          trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}.mp3")
-          @temp_files << trimmed_path
-          assembler.snip_segments(source_audio_path, trimmed_path, keeps)
-          kept_duration = keeps.sum { |s| s.to - s.from }
-          logger.log("Trimmed: #{total.round(1)}s → #{kept_duration.round(1)}s (removed #{(total - kept_duration).round(1)}s)")
-          source_audio_path = trimmed_path
-        else
-          logger.log("No effective trimming needed after resolving skip/cut/snip")
-        end
-      end
+      source_audio_path = @trimmer.apply_trim(source_audio_path, skip: skip, cut: cut, snip: snip)
 
       # --- Phase 3: Transcribe full audio ---
       logger.phase_start("Transcription")
-      assembler ||= AudioAssembler.new(logger: logger)
       base_name = @config.episode_basename(@today)
       result = transcribe_audio(source_audio_path, captions: @youtube_captions)
       logger.phase_end("Transcription")
@@ -202,7 +148,14 @@ module PodgenCLI
       autotrim = @options[:autotrim] || episode[:autotrim] || @config.autotrim
       if autotrim && @reconciled_text && @groq_words&.any?
         logger.phase_start("Trim Outro")
-        source_audio_path = trim_outro(assembler, source_audio_path, base_name)
+        tails_dir = File.join(File.dirname(@config.episodes_dir), "tails")
+        source_audio_path = @trimmer.trim_outro(
+          source_audio_path,
+          reconciled_text: @reconciled_text,
+          groq_words: @groq_words,
+          base_name: base_name,
+          tails_dir: tails_dir
+        )
         logger.phase_end("Trim Outro")
       elsif autotrim
         logger.log("Skipping outro trim (requires 2+ engines with groq)")
@@ -271,69 +224,6 @@ module PodgenCLI
 
     attr_reader :logger
 
-    def build_local_episode(path, title)
-      expanded = File.expand_path(path)
-      raise "File not found: #{expanded}" unless File.exist?(expanded)
-      raise "File is empty: #{expanded}" unless File.size(expanded) > 0
-
-      title ||= File.basename(path, File.extname(path))
-        .gsub(/[_-]/, " ")
-        .gsub(/\b\w/) { |m| m.upcase }
-
-      # Use filename:size as the dedup key so moving the file doesn't break history
-      file_id = "file://#{File.basename(path)}:#{File.size(expanded)}"
-
-      {
-        title: title,
-        description: "",
-        audio_url: file_id,
-        source_path: expanded,
-        pub_date: Time.now,
-        link: nil
-      }
-    end
-
-    def build_youtube_episode(metadata)
-      title = @file_title || metadata[:title]
-
-      {
-        title: title,
-        description: metadata[:description].to_s,
-        audio_url: metadata[:url],
-        source_path: nil,
-        pub_date: Time.now,
-        link: metadata[:url]
-      }
-    end
-
-    def already_processed?(episode)
-      return false if @options[:force] || @dry_run
-      return false unless @history.all_urls.include?(episode[:audio_url])
-
-      logger.log("Warning: Already processed: #{episode[:audio_url]}")
-      $stderr.puts "Already processed: \"#{episode[:title]}\" — use --force to re-process"
-      true
-    end
-
-    def fetch_next_episode(force: false)
-      rss_feeds = @config.sources["rss"]
-      unless rss_feeds.is_a?(Array) && rss_feeds.any?
-        raise "Language pipeline requires RSS sources in guidelines.md (## Sources → - rss:)"
-      end
-
-      source = RSSSource.new(feeds: rss_feeds, logger: logger)
-      exclude = force ? Set.new : @history.all_urls
-      episodes = source.fetch_episodes(exclude_urls: exclude)
-
-      if episodes.empty?
-        logger.log("No episodes with audio enclosures found")
-        return nil
-      end
-
-      logger.log("Found #{episodes.length} episodes with audio enclosures")
-      episodes.first
-    end
-
     def transcribe_audio(audio_path, captions: nil)
       language = @config.transcription_language
       raise "Language pipeline requires ## Transcription Language in guidelines.md" unless language
@@ -361,94 +251,6 @@ module PodgenCLI
       end
     end
 
-    # Trims outro music by mapping the end of reconciled text back to Groq word timestamps.
-    # Returns trimmed audio path, or original path if no trim needed.
-    def trim_outro(assembler, audio_path, base_name)
-      speech_end = find_speech_end_timestamp(@reconciled_text, @groq_words)
-
-      unless speech_end
-        logger.log("Could not match reconciled text ending to Groq timestamps — skipping trim")
-        return audio_path
-      end
-
-      total_duration = assembler.probe_duration(audio_path)
-      savings = total_duration - speech_end
-      trim_point = speech_end + 2 # 2s padding after last word
-
-      if savings < MIN_OUTRO_SAVINGS
-        logger.log("Outro trim would only save #{savings.round(1)}s (< #{MIN_OUTRO_SAVINGS}s) — skipping")
-        return audio_path
-      end
-
-      logger.log("Speech ends at #{speech_end.round(1)}s, trimming at #{trim_point.round(1)}s " \
-        "(saving #{savings.round(1)}s of #{total_duration.round(1)}s)")
-
-      # Save tail for review
-      tails_dir = File.join(File.dirname(@config.episodes_dir), "tails")
-      FileUtils.mkdir_p(tails_dir)
-      tail_path = File.join(tails_dir, "#{base_name}_tail.mp3")
-      assembler.extract_segment(audio_path, tail_path, trim_point, total_duration)
-      logger.log("Saved tail for review: #{tail_path}")
-
-      # Trim audio (use distinct suffix to avoid collision with snip output)
-      trimmed_path = File.join(Dir.tmpdir, "podgen_autotrimmed_#{Process.pid}.mp3")
-      @temp_files << trimmed_path
-      assembler.trim_to_duration(audio_path, trimmed_path, trim_point)
-      trimmed_path
-    end
-
-    # Maps the last words of reconciled text back to Groq's word-level timestamps.
-    # Tries matching last 5 words, then 4, 3, 2, 1.
-    # Returns the end timestamp of the matched word, or nil if no match.
-    def find_speech_end_timestamp(reconciled_text, groq_words)
-      reconciled_words = reconciled_text.split(/\s+/).reject(&:empty?)
-      return nil if reconciled_words.empty?
-
-      # Try matching last N words (5 down to 1), using fuzzy prefix matching
-      # to handle inflection differences (e.g. "sanjam" vs "sanja", "noč" vs "noči")
-      [5, 4, 3, 2, 1].each do |n|
-        next if reconciled_words.length < n
-
-        target = reconciled_words.last(n).map { |w| normalize_word(w) }
-        next if target.any?(&:empty?)
-
-        # Search backwards through Groq words for matching sequence
-        (groq_words.length - n).downto(0) do |i|
-          candidate = groq_words[i, n].map { |w| normalize_word(w[:word]) }
-          if words_match?(target, candidate)
-            matched_end = groq_words[i + n - 1][:end]
-            logger.log("Matched last #{n} words at Groq timestamp #{matched_end.round(1)}s: #{candidate.join(' ')} ~ #{target.join(' ')}")
-            return matched_end
-          end
-        end
-      end
-
-      logger.log("No word sequence match found between reconciled text and Groq timestamps")
-      nil
-    end
-
-    def normalize_word(word)
-      word.downcase.gsub(/[^\p{L}\p{N}]/, "")
-    end
-
-    # Fuzzy sequence match: all word pairs must match.
-    def words_match?(target, candidate)
-      target.zip(candidate).all? { |a, b| word_match?(a, b) }
-    end
-
-    # Two normalized words match if they share a common prefix of 3+ chars.
-    # Handles inflection differences (e.g. "sanjam"/"sanja", "noč"/"noči").
-    MIN_PREFIX = 3
-
-    def word_match?(a, b)
-      return true if a == b
-
-      shorter, longer = [a, b].sort_by(&:length)
-      return false if shorter.length < MIN_PREFIX
-
-      longer.start_with?(shorter)
-    end
-
     def clean_or_generate_description(episode, transcript)
       agent = DescriptionAgent.new(logger: logger)
 
@@ -463,13 +265,6 @@ module PodgenCLI
       end
     rescue => e
       logger.log("Warning: Description processing failed: #{e.message} (non-fatal, keeping original)")
-    end
-
-    def download_audio(url)
-      path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}.mp3")
-      @temp_files << path
-      HttpDownloader.new(logger: logger).download(url, path)
-      path
     end
 
     def save_transcript(episode, transcript, base_name)
@@ -633,14 +428,16 @@ module PodgenCLI
       nil
     end
 
-    def format_timestamp(seconds)
-      mins = (seconds / 60).to_i
-      secs = (seconds % 60).round(1)
-      format("%d:%04.1f", mins, secs)
+    def log_dry_run(pipeline_start, summary)
+      logger.log("[dry-run] Skipping download, transcription, assembly, and history")
+      total_time = (Time.now - pipeline_start).round(2)
+      logger.log("Total pipeline time: #{total_time}s")
+      logger.log("[dry-run] #{summary}")
+      puts "[dry-run] #{summary}" unless @options[:verbosity] == :quiet
     end
 
     def cleanup_temp_files
-      @temp_files.each do |path|
+      (@temp_files + (@trimmer&.temp_files || [])).each do |path|
         File.delete(path) if File.exist?(path)
       rescue => e
         logger.log("Warning: failed to cleanup #{path}: #{e.message}")
