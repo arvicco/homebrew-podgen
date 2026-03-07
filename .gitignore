@@ -1,3 +1,4 @@
+.DS_Store
 .env
 !.env.example
 output/
@@ -5,5 +6,6 @@ logs/
 *.mp3
 .bundle/
 vendor/bundle/
+*.code-workspace
 podcasts/*/
 !podcasts/ruby_world/
