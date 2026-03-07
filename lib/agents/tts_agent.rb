@@ -173,23 +173,28 @@ class TTSAgent
   def upload_pronunciation_dictionary(pls_path)
     name = "podgen_#{File.basename(pls_path, '.pls')}_#{Time.now.strftime('%Y%m%d%H%M%S')}"
 
-    response = HTTParty.post(
-      "#{DICT_API_URL}/add-from-file",
-      headers: { "xi-api-key" => @api_key },
-      multipart: true,
-      body: {
-        name: name,
-        file: File.open(pls_path, "rb")
-      },
-      timeout: 30
-    )
+    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
+      response = HTTParty.post(
+        "#{DICT_API_URL}/add-from-file",
+        headers: { "xi-api-key" => @api_key },
+        multipart: true,
+        body: {
+          name: name,
+          file: File.open(pls_path, "rb")
+        },
+        timeout: 30
+      )
 
-    unless response.code == 200
-      raise "Upload failed: HTTP #{response.code}: #{parse_error(response)}"
+      case response.code
+      when 200
+        data = JSON.parse(response.body)
+        { dictionary_id: data["id"], version_id: data["version_id"] }
+      when *RETRIABLE_CODES
+        raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
+      else
+        raise "Upload failed: HTTP #{response.code}: #{parse_error(response)}"
+      end
     end
-
-    data = JSON.parse(response.body)
-    { dictionary_id: data["id"], version_id: data["version_id"] }
   end
 
   def load_dict_cache(path)

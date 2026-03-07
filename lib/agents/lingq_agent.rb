@@ -91,19 +91,24 @@ class LingQAgent
     url = "#{BASE_URL}/v3/#{language}/lessons/#{lesson_id}/timestamps/"
     log("Requesting timestamp generation for lesson #{lesson_id}")
 
-    response = HTTParty.post(
-      url,
-      headers: {
-        "Authorization" => "Token #{@api_key}",
-        "Content-Type" => "application/json"
-      },
-      timeout: 30
-    )
+    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
+      response = HTTParty.post(
+        url,
+        headers: {
+          "Authorization" => "Token #{@api_key}",
+          "Content-Type" => "application/json"
+        },
+        timeout: 30
+      )
 
-    if response.code >= 200 && response.code < 300
-      log("Timestamp generation triggered")
-    else
-      log("Warning: timestamp generation returned HTTP #{response.code} (non-fatal)")
+      case response.code
+      when 200..299
+        log("Timestamp generation triggered")
+      when *RETRIABLE_CODES
+        raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
+      else
+        log("Warning: timestamp generation returned HTTP #{response.code} (non-fatal)")
+      end
     end
   rescue => e
     log("Warning: timestamp generation failed: #{e.message} (non-fatal)")
