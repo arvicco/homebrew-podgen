@@ -43,6 +43,8 @@ lib/
     lingq_agent.rb | cover_agent.rb
   sources/
     rss_source.rb | hn_source.rb | claude_web_source.rb | bluesky_source.rb | x_source.rb
+  audio_trimmer.rb                 # Audio trimming: skip/cut/snip, autotrim outro, word matching
+  episode_source.rb                # Episode acquisition: local/YouTube/RSS, dedup, download
   youtube_downloader.rb | episode_history.rb | audio_assembler.rb | rss_generator.rb | logger.rb
   site_generator.rb                # Static HTML website generator (ERB templates)
   templates/                       # ERB templates + CSS for site generator
