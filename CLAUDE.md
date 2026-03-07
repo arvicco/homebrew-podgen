@@ -10,7 +10,7 @@ Autonomous podcast pipeline. Ruby 3.2+, macOS, ffmpeg, yt-dlp, ImageMagick+librs
 **Standalone tool:**
 - **tell**: Interactive TTS pronunciation with auto-translation and grammatical glossing
 
-**APIs:** Claude (topics, scripting, translation, reconciliation, description cleanup, glossing), Exa.ai (research), ElevenLabs (TTS + Scribe), OpenAI/Groq (transcription), DeepL (translation), Google TTS, yt-dlp (YouTube)
+**APIs:** Claude (topics, scripting, translation, reconciliation, description cleanup, glossing), Exa.ai (research), ElevenLabs (TTS + Scribe), OpenAI/Groq (transcription), DeepL (translation), Google TTS, yt-dlp (YouTube), Cloudflare Analytics Engine (download stats)
 
 ## Project Structure
 ```
@@ -27,6 +27,7 @@ lib/
     rss_command.rb                # RSS feed generation
     site_command.rb               # Static HTML website generation
     publish_command.rb            # Publish to R2 or LingQ
+    analytics_command.rb          # Manage Cloudflare analytics Worker
     list_command.rb | test_command.rb | schedule_command.rb
   time_value.rb                  # TimeValue: seconds or min:sec with absolute? flag
   snip_interval.rb               # SnipInterval: unified skip/cut/snip interval math
@@ -48,6 +49,7 @@ lib/
   youtube_downloader.rb | episode_history.rb | audio_assembler.rb | rss_generator.rb | logger.rb
   site_generator.rb                # Static HTML website generator (ERB templates)
   templates/                       # ERB templates + CSS for site generator
+  analytics_client.rb              # Cloudflare Analytics Engine GraphQL client
   http_retryable.rb               # Mixin: RetriableError, RETRIABLE_CODES, parse_error, with_http_retries
   tell/
     config.rb                     # Config loader (~/.tell.yml)
@@ -60,6 +62,7 @@ lib/
     error_formatter.rb            # Friendly error messages for API errors
     processor.rb                  # Main processing: detect → translate → synthesize → play
 output/<name>/                   # episodes/, tails/, site/, research_cache/, history.yml, feed.xml
+docs/cloudflare.md               # Cloudflare R2 + Worker + analytics setup guide
 test/                            # unit/, integration/, api/ (minitest)
 scripts/serve.rb                 # WEBrick server for RSS
 ```
@@ -98,6 +101,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 - **Transcript post-processing:** Claude Opus. Multi-engine: reconcile + remove hallucinations. Single: clean up. YouTube captions as tiebreaker reference
 - **Site:** `podgen site <name>` generates static HTML website in `output/<name>/site/`. Episode list + per-episode pages with transcripts. Multi-language support (subdirectories per language). `--clean` removes existing site first. `--base-url` overrides config. Auto-generated during `publish`
 - **Publish:** `podgen publish <name>` → regenerate RSS + site → sync to R2 via rclone. `--lingq` for LingQ instead
+- **Analytics:** `podgen analytics setup` deploys a Cloudflare Worker that logs MP3 downloads to Analytics Engine. `deploy`/`tail`/`status` subcommands. Worker project at `~/.podgen/analytics-worker/`. `podgen stats --downloads` queries Analytics Engine via GraphQL. See `docs/cloudflare.md`
 - **Scrap:** `podgen scrap <name>` removes last episode files + history + LingQ tracking
 - **Translate:** `podgen translate <name>` backfills translations (`--last N`, `--lang xx`)
 - **RSS:** iTunes + Podcasting 2.0 namespaces, transcript tags, `base_url` for absolute URLs. pubDate from history timestamp (fallback: date + 06:00). Duration from history (fallback: ffprobe → size estimate)
@@ -122,7 +126,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 HTML comments (`<!-- -->`) are stripped before parsing.
 
 ### Environment variables
-**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (mp3_44100_128), `ELEVENLABS_SCRIBE_MODEL` (scribe_v2), `EXA_API_KEY`, `CLAUDE_MODEL` (claude-opus-4-6), `CLAUDE_WEB_MODEL` (claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY`, `WHISPER_MODEL` (gpt-4o-mini-transcribe), `GROQ_API_KEY`, `GROQ_WHISPER_MODEL` (whisper-large-v3), `YOUTUBE_BROWSER` (chrome), `LINGQ_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`
+**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (mp3_44100_128), `ELEVENLABS_SCRIBE_MODEL` (scribe_v2), `EXA_API_KEY`, `CLAUDE_MODEL` (claude-opus-4-6), `CLAUDE_WEB_MODEL` (claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY`, `WHISPER_MODEL` (gpt-4o-mini-transcribe), `GROQ_API_KEY`, `GROQ_WHISPER_MODEL` (whisper-large-v3), `YOUTUBE_BROWSER` (chrome), `LINGQ_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
 
 Per-podcast `.env` overrides root via `Dotenv.overload`.
 
@@ -220,7 +224,8 @@ podgen [flags] <command> <args>
   rss <podcast>        # Generate RSS (--base-url URL)
   site <podcast>       # Generate static HTML website (--clean, --base-url URL)
   publish <podcast>    # Publish to R2 (--lingq for LingQ)
-  stats <podcast>      # Stats (--all for summary)
+  stats <podcast>      # Stats (--all for summary, --downloads for analytics, --days N)
+  analytics <sub>      # Manage analytics Worker (setup, deploy, tail, status)
   validate <podcast>   # Validate (--all)
   list                 # List podcasts
   test <name>          # Run diagnostic test

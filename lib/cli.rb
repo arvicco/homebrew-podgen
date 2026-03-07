@@ -15,7 +15,8 @@ module PodgenCLI
     "validate"  => ["Validate podcast config and output",  "cli/validate_command",    "ValidateCommand"],
     "list"      => ["List available podcasts",             "cli/list_command",        "ListCommand"],
     "test"      => ["Run a standalone test script",        "cli/test_command",        "TestCommand"],
-    "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",    "ScheduleCommand"]
+    "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",    "ScheduleCommand"],
+    "analytics" => ["Manage download analytics Worker",    "cli/analytics_command",   "AnalyticsCommand"]
   }.freeze
 
   def self.run(argv)
@@ -38,6 +39,7 @@ module PodgenCLI
       opts.separator "  list                           List available podcasts"
       opts.separator "  test <name> [args]             Run a standalone test"
       opts.separator "  schedule <podcast>             Install launchd scheduler"
+      opts.separator "  analytics <setup|deploy|tail|status>  Manage download analytics Worker"
       opts.separator ""
       opts.separator "Pipelines (configured via ## Type in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"
