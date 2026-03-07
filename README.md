@@ -731,6 +731,8 @@ podgen/
 │   │   ├── claude_web_source.rb # Claude + web_search tool
 │   │   ├── bluesky_source.rb # Bluesky AT Protocol post search
 │   │   └── x_source.rb       # X (Twitter) via SocialData.tools API
+│   ├── audio_trimmer.rb      # Audio trimming: skip/cut/snip, autotrim outro
+│   ├── episode_source.rb     # Episode acquisition: local/YouTube/RSS, dedup
 │   ├── youtube_downloader.rb # yt-dlp wrapper (metadata, audio download, captions)
 │   ├── episode_history.rb    # Episode dedup (atomic YAML writes)
 │   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, trim)
