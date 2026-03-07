@@ -37,11 +37,12 @@ class AnalyticsClient
     end
   end
 
-  # Total downloads per podcast.
-  # Returns: [{ podcast:, downloads: }] sorted by downloads desc
+  # Total downloads per podcast with active days for daily average.
+  # Returns: [{ podcast:, downloads:, days: }] sorted by downloads desc
   def podcast_totals(days: 30, limit: 50)
     sql = <<~SQL
-      SELECT index1 AS podcast, SUM(double1) AS downloads
+      SELECT index1 AS podcast, SUM(double1) AS downloads,
+             COUNT(DISTINCT toDate(timestamp)) AS active_days
       FROM #{DATASET}
       WHERE timestamp >= NOW() - INTERVAL '#{days}' DAY
       GROUP BY podcast
@@ -50,18 +51,62 @@ class AnalyticsClient
     SQL
 
     query(sql).map do |row|
-      { podcast: row["podcast"], downloads: row["downloads"].to_i }
+      { podcast: row["podcast"], downloads: row["downloads"].to_i, days: row["active_days"].to_i }
+    end
+  end
+
+  # Downloads grouped by user-agent (app) for a podcast.
+  # Returns: [{ app:, downloads: }] sorted by downloads desc
+  def app_breakdown(podcast: nil, days: 30, limit: 20)
+    where = "timestamp >= NOW() - INTERVAL '#{days}' DAY"
+    where += " AND index1 = '#{escape(podcast)}'" if podcast
+
+    sql = <<~SQL
+      SELECT blob2 AS user_agent, SUM(double1) AS downloads
+      FROM #{DATASET}
+      WHERE #{where}
+      GROUP BY user_agent
+      ORDER BY downloads DESC
+      LIMIT #{limit}
+    SQL
+
+    query(sql).map do |row|
+      { app: parse_user_agent(row["user_agent"]), downloads: row["downloads"].to_i }
+    end.group_by { |r| r[:app] }
+      .map { |app, rows| { app: app, downloads: rows.sum { |r| r[:downloads] } } }
+      .sort_by { |r| -r[:downloads] }
+  end
+
+  # Downloads grouped by day for a podcast.
+  # Returns: [{ date:, downloads: }] sorted by date desc
+  def daily_breakdown(podcast: nil, days: 30, limit: 90)
+    where = "timestamp >= NOW() - INTERVAL '#{days}' DAY"
+    where += " AND index1 = '#{escape(podcast)}'" if podcast
+
+    sql = <<~SQL
+      SELECT toDate(timestamp) AS day, SUM(double1) AS downloads
+      FROM #{DATASET}
+      WHERE #{where}
+      GROUP BY day
+      ORDER BY day DESC
+      LIMIT #{limit}
+    SQL
+
+    query(sql).map do |row|
+      { date: row["day"], downloads: row["downloads"].to_i }
     end
   end
 
   # Downloads grouped by country for a podcast.
   # Returns: [{ country:, downloads: }] sorted by downloads desc
-  def country_breakdown(podcast:, days: 30, limit: 50)
+  def country_breakdown(podcast: nil, days: 30, limit: 50)
+    where = "timestamp >= NOW() - INTERVAL '#{days}' DAY"
+    where += " AND index1 = '#{escape(podcast)}'" if podcast
+
     sql = <<~SQL
       SELECT blob3 AS country, SUM(double1) AS downloads
       FROM #{DATASET}
-      WHERE index1 = '#{escape(podcast)}'
-        AND timestamp >= NOW() - INTERVAL '#{days}' DAY
+      WHERE #{where}
       GROUP BY country
       ORDER BY downloads DESC
       LIMIT #{limit}
@@ -108,5 +153,42 @@ class AnalyticsClient
 
   def escape(str)
     str.gsub("'", "\\\\'")
+  end
+
+  UA_PATTERNS = [
+    [/AppleCoreMedia/i, "Apple Podcasts"],
+    [/Podcasts\//i, "Apple Podcasts"],
+    [/Overcast\//i, "Overcast"],
+    [/PocketCasts/i, "Pocket Casts"],
+    [/Spotify\//i, "Spotify"],
+    [/CastBox/i, "CastBox"],
+    [/Castro/i, "Castro"],
+    [/Podcast ?Addict/i, "Podcast Addict"],
+    [/AntennaPod/i, "AntennaPod"],
+    [/Downcast/i, "Downcast"],
+    [/Google-Podcasts/i, "Google Podcasts"],
+    [/Podkicker/i, "Podkicker"],
+    [/Player FM/i, "Player FM"],
+    [/Fountain/i, "Fountain"],
+    [/Breez/i, "Breez"],
+    [/curl\//i, "curl"],
+    [/wget\//i, "wget"],
+    [/facebookexternalhit/i, "Facebook"],
+    [/Twitterbot/i, "Twitter"],
+    [/bot|crawl|spider|slurp/i, "Bot"],
+    [/Mozilla.*Chrome/i, "Browser (Chrome)"],
+    [/Mozilla.*Firefox/i, "Browser (Firefox)"],
+    [/Mozilla.*Safari/i, "Browser (Safari)"],
+    [/Mozilla/i, "Browser"],
+  ].freeze
+
+  def parse_user_agent(ua)
+    return "Unknown" if ua.nil? || ua.empty?
+
+    UA_PATTERNS.each do |pattern, name|
+      return name if ua.match?(pattern)
+    end
+
+    ua[0..30]
   end
 end
