@@ -144,31 +144,35 @@ Changes are live in seconds globally.
 
 ### Cloudflare Dashboard
 
-**Compute > Workers & Pages > podgen-analytics** shows Worker metrics (requests, errors, latency). For Analytics Engine data, use the GraphQL API below.
+**Compute > Workers & Pages > podgen-analytics** shows Worker metrics (requests, errors, latency).
 
-### GraphQL API
+### podgen stats --downloads
 
-For programmatic access (used by `podgen stats --downloads`):
+```bash
+# All podcasts
+podgen stats --downloads
 
-```graphql
-query {
-  viewer {
-    accounts(filter: { accountTag: "<account_id>" }) {
-      podgen_downloads(
-        filter: { datetime_geq: "2025-01-01T00:00:00Z" }
-        limit: 100
-        orderBy: [count_DESC]
-      ) {
-        count
-        dimensions {
-          index1     # podcast name
-          blob1      # episode filename
-          blob3      # country
-        }
-      }
-    }
-  }
-}
+# Single podcast with country breakdown
+podgen stats --downloads fulgur_news
+
+# Custom lookback period
+podgen stats --downloads fulgur_news --days 7
+```
+
+### SQL API
+
+Under the hood, podgen queries the [Analytics Engine SQL API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/). You can also query directly:
+
+```bash
+curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/analytics_engine/sql" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  -d "SELECT blob1 AS episode, SUM(double1) AS downloads
+      FROM podgen_downloads
+      WHERE index1 = 'my_podcast'
+        AND timestamp >= NOW() - INTERVAL '30' DAY
+      GROUP BY episode
+      ORDER BY downloads DESC
+      LIMIT 20"
 ```
 
 ### Create a CF API token for querying

@@ -5,9 +5,9 @@ require "json"
 require "uri"
 
 # Queries Cloudflare Analytics Engine for podcast download stats.
+# Uses the SQL API (simpler and more capable than GraphQL for Analytics Engine).
 # Requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in ENV.
 class AnalyticsClient
-  ENDPOINT = "https://api.cloudflare.com/client/v4/graphql"
   DATASET = "podgen_downloads"
 
   def initialize
@@ -19,116 +19,63 @@ class AnalyticsClient
     @token && !@token.empty? && @account_id && !@account_id.empty?
   end
 
-  # Returns per-episode download counts for a podcast.
-  # Options:
-  #   podcast: podcast name (matches URL path segment)
-  #   days: lookback period (default 30)
-  #   limit: max results (default 100)
-  # Returns: [{ episode:, downloads:, countries: [] }] sorted by downloads desc
+  # Per-episode download counts for a podcast.
+  # Returns: [{ episode:, downloads: }] sorted by downloads desc
   def episode_downloads(podcast:, days: 30, limit: 100)
-    since = (Date.today - days).strftime("%Y-%m-%dT00:00:00Z")
+    sql = <<~SQL
+      SELECT blob1 AS episode, SUM(double1) AS downloads
+      FROM #{DATASET}
+      WHERE index1 = '#{escape(podcast)}'
+        AND timestamp >= NOW() - INTERVAL '#{days}' DAY
+      GROUP BY episode
+      ORDER BY downloads DESC
+      LIMIT #{limit}
+    SQL
 
-    query = <<~GQL
-      query {
-        viewer {
-          accounts(filter: { accountTag: "#{@account_id}" }) {
-            #{DATASET}(
-              filter: {
-                datetime_geq: "#{since}"
-                AND: [{ index1: "#{podcast}" }]
-              }
-              limit: #{limit}
-              orderBy: [sum_double1_DESC]
-            ) {
-              sum { double1 }
-              dimensions { blob1 }
-            }
-          }
-        }
-      }
-    GQL
-
-    data = request(query)
-    rows = dig_rows(data)
-    rows.map do |row|
-      {
-        episode: row.dig("dimensions", "blob1") || "unknown",
-        downloads: (row.dig("sum", "double1") || 0).to_i
-      }
+    query(sql).map do |row|
+      { episode: row["episode"], downloads: row["downloads"].to_i }
     end
   end
 
-  # Returns total downloads per podcast.
+  # Total downloads per podcast.
   # Returns: [{ podcast:, downloads: }] sorted by downloads desc
   def podcast_totals(days: 30, limit: 50)
-    since = (Date.today - days).strftime("%Y-%m-%dT00:00:00Z")
+    sql = <<~SQL
+      SELECT index1 AS podcast, SUM(double1) AS downloads
+      FROM #{DATASET}
+      WHERE timestamp >= NOW() - INTERVAL '#{days}' DAY
+      GROUP BY podcast
+      ORDER BY downloads DESC
+      LIMIT #{limit}
+    SQL
 
-    query = <<~GQL
-      query {
-        viewer {
-          accounts(filter: { accountTag: "#{@account_id}" }) {
-            #{DATASET}(
-              filter: { datetime_geq: "#{since}" }
-              limit: #{limit}
-              orderBy: [sum_double1_DESC]
-            ) {
-              sum { double1 }
-              dimensions { index1 }
-            }
-          }
-        }
-      }
-    GQL
-
-    data = request(query)
-    rows = dig_rows(data)
-    rows.map do |row|
-      {
-        podcast: row.dig("dimensions", "index1") || "unknown",
-        downloads: (row.dig("sum", "double1") || 0).to_i
-      }
+    query(sql).map do |row|
+      { podcast: row["podcast"], downloads: row["downloads"].to_i }
     end
   end
 
-  # Returns downloads grouped by country for a podcast.
+  # Downloads grouped by country for a podcast.
   # Returns: [{ country:, downloads: }] sorted by downloads desc
   def country_breakdown(podcast:, days: 30, limit: 50)
-    since = (Date.today - days).strftime("%Y-%m-%dT00:00:00Z")
+    sql = <<~SQL
+      SELECT blob3 AS country, SUM(double1) AS downloads
+      FROM #{DATASET}
+      WHERE index1 = '#{escape(podcast)}'
+        AND timestamp >= NOW() - INTERVAL '#{days}' DAY
+      GROUP BY country
+      ORDER BY downloads DESC
+      LIMIT #{limit}
+    SQL
 
-    query = <<~GQL
-      query {
-        viewer {
-          accounts(filter: { accountTag: "#{@account_id}" }) {
-            #{DATASET}(
-              filter: {
-                datetime_geq: "#{since}"
-                AND: [{ index1: "#{podcast}" }]
-              }
-              limit: #{limit}
-              orderBy: [sum_double1_DESC]
-            ) {
-              sum { double1 }
-              dimensions { blob3 }
-            }
-          }
-        }
-      }
-    GQL
-
-    data = request(query)
-    rows = dig_rows(data)
-    rows.map do |row|
-      {
-        country: row.dig("dimensions", "blob3") || "??",
-        downloads: (row.dig("sum", "double1") || 0).to_i
-      }
+    query(sql).map do |row|
+      { country: row["country"].to_s.empty? ? "??" : row["country"], downloads: row["downloads"].to_i }
     end
   end
 
   private
 
-  def request(query)
-    uri = URI(ENDPOINT)
+  def query(sql)
+    uri = URI("https://api.cloudflare.com/client/v4/accounts/#{@account_id}/analytics_engine/sql")
     http = Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = true
     http.open_timeout = 10
@@ -136,32 +83,30 @@ class AnalyticsClient
 
     req = Net::HTTP::Post.new(uri)
     req["Authorization"] = "Bearer #{@token}"
-    req["Content-Type"] = "application/json"
-    req.body = { query: query }.to_json
+    req.body = sql
 
     response = http.request(req)
 
     unless response.is_a?(Net::HTTPSuccess)
-      raise "Analytics API error #{response.code}: #{response.body[0..200]}"
+      body = begin
+        parsed = JSON.parse(response.body)
+        errors = parsed["errors"]
+        if errors.is_a?(Array) && errors.any?
+          errors.map { |e| e["message"] }.join(", ")
+        else
+          response.body[0..200]
+        end
+      rescue JSON::ParserError
+        response.body[0..200]
+      end
+      raise "Analytics API error #{response.code}: #{body}"
     end
 
     parsed = JSON.parse(response.body)
-
-    if parsed["errors"]&.any?
-      messages = parsed["errors"].map { |e| e["message"] }
-      if messages.any? { |m| m.include?("unknown field") }
-        raise "No analytics data yet. The dataset appears in GraphQL after the first download is recorded (may take a few minutes)."
-      end
-      raise "Analytics API error: #{messages.join(', ')}"
-    end
-
-    parsed
+    parsed["data"] || []
   end
 
-  def dig_rows(data)
-    accounts = data.dig("data", "viewer", "accounts")
-    return [] unless accounts&.first
-
-    accounts.first[DATASET] || []
+  def escape(str)
+    str.gsub("'", "\\\\'")
   end
 end

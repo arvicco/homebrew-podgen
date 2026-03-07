@@ -101,7 +101,7 @@ scripts/serve.rb                 # WEBrick server for RSS
 - **Transcript post-processing:** Claude Opus. Multi-engine: reconcile + remove hallucinations. Single: clean up. YouTube captions as tiebreaker reference
 - **Site:** `podgen site <name>` generates static HTML website in `output/<name>/site/`. Episode list + per-episode pages with transcripts. Multi-language support (subdirectories per language). `--clean` removes existing site first. `--base-url` overrides config. Auto-generated during `publish`
 - **Publish:** `podgen publish <name>` → regenerate RSS + site → sync to R2 via rclone. `--lingq` for LingQ instead
-- **Analytics:** `podgen analytics setup` deploys a Cloudflare Worker that logs MP3 downloads to Analytics Engine. `deploy`/`tail`/`status` subcommands. Worker project at `~/.podgen/analytics-worker/`. `podgen stats --downloads` queries Analytics Engine via GraphQL. See `docs/cloudflare.md`
+- **Analytics:** `podgen analytics setup` deploys a Cloudflare Worker that logs MP3 downloads to Analytics Engine. `deploy`/`tail`/`status` subcommands. Worker project at `~/.podgen/analytics-worker/`. `podgen stats --downloads [podcast] [--days N]` queries Analytics Engine via SQL API. See `docs/cloudflare.md`
 - **Scrap:** `podgen scrap <name>` removes last episode files + history + LingQ tracking
 - **Translate:** `podgen translate <name>` backfills translations (`--last N`, `--lang xx`)
 - **RSS:** iTunes + Podcasting 2.0 namespaces, transcript tags, `base_url` for absolute URLs. pubDate from history timestamp (fallback: date + 06:00). Duration from history (fallback: ffprobe → size estimate)
