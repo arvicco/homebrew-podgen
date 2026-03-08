@@ -131,6 +131,71 @@ class TestTellHints < Minitest::Test
     assert_equal :male, r.gender
   end
 
+  # --- parse: Unicode scripts ---
+
+  def test_cyrillic_male
+    r = Tell::Hints.parse("позорище ты эдакое/m")
+    assert_equal "позорище ты эдакое", r.text
+    assert_equal :male, r.gender
+  end
+
+  def test_cyrillic_polite_female
+    r = Tell::Hints.parse("Да что ты понимаешь/pf")
+    assert_equal "Да что ты понимаешь", r.text
+    assert_equal :polite, r.formality
+    assert_equal :female, r.gender
+  end
+
+  def test_japanese_polite_female
+    r = Tell::Hints.parse("こんにちは/pf")
+    assert_equal "こんにちは", r.text
+    assert_equal :polite, r.formality
+    assert_equal :female, r.gender
+  end
+
+  def test_korean_casual
+    r = Tell::Hints.parse("안녕하세요/c")
+    assert_equal "안녕하세요", r.text
+    assert_equal :casual, r.formality
+  end
+
+  def test_chinese_male
+    r = Tell::Hints.parse("你好世界/m")
+    assert_equal "你好世界", r.text
+    assert_equal :male, r.gender
+  end
+
+  def test_arabic_female
+    r = Tell::Hints.parse("مرحبا/f")
+    assert_equal "مرحبا", r.text
+    assert_equal :female, r.gender
+  end
+
+  def test_hebrew_male
+    r = Tell::Hints.parse("שלום/m")
+    assert_equal "שלום", r.text
+    assert_equal :male, r.gender
+  end
+
+  def test_devanagari_polite
+    r = Tell::Hints.parse("नमस्ते/p")
+    assert_equal "नमस्ते", r.text
+    assert_equal :polite, r.formality
+  end
+
+  def test_thai_casual
+    r = Tell::Hints.parse("สวัสดี/c")
+    assert_equal "สวัสดี", r.text
+    assert_equal :casual, r.formality
+  end
+
+  def test_cyrillic_with_space_before_hint
+    r = Tell::Hints.parse("привет мир /pm")
+    assert_equal "привет мир", r.text
+    assert_equal :polite, r.formality
+    assert_equal :male, r.gender
+  end
+
   # --- to_instruction ---
 
   def test_instruction_polite_male

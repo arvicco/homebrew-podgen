@@ -25,7 +25,7 @@ module Tell
 
     # Match /flags at end of string, preceded by a word char, whitespace,
     # punctuation, or start-of-string. All chars after / must be valid flag letters.
-    HINT_RE = %r{(?:\A|(?<=[\w\s\p{P}]))/([pcvhmfn]+)\z}
+    HINT_RE = %r{(?:\A|(?<=[\w\p{L}\p{M}\s\p{P}]))/([pcvhmfn]+)\z}
 
     # Parse hint suffix from text. Returns Result with cleaned text + hints.
     def self.parse(text)
