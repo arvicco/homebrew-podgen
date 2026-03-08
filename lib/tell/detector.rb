@@ -84,7 +84,7 @@ module Tell
     # --- Latin-script language detection via stop words ---
 
     STOP_WORDS = {
-      "en" => %w[the is are was were have has been would could should this that with from they their what which],
+      "en" => %w[the a an and or of to in on at it is are was were am do does did have has had been not but for by if so all will can would could should this that with from they their them what which],
       "sl" => %w[je sem bil bila bilo smo ste kot tudi ali ker pri tem kako zelo],
       "de" => %w[der die das ist ein eine und ich nicht mit auf den dem des sich von aber haben wird],
       "fr" => %w[les des une est dans que pour par sur pas avec sont mais comme],

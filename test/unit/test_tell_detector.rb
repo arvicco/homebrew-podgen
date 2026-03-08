@@ -146,6 +146,28 @@ class TestTellDetector < Minitest::Test
     assert_equal "zh", Tell::Detector.detect("今天是美好的一天我很开心")
   end
 
+  # --- English stop-word coverage ---
+
+  def test_english_short_common_words
+    # Relies on newly-added stop words: a, and, in, for, of, to, not, but, it
+    assert_equal "en", Tell::Detector.detect("a cat and a dog in a park for all of them")
+  end
+
+  def test_english_conjunctions_and_prepositions
+    # Uses: but, not, if, so, or, by, on, at — all added in the expanded list
+    assert_equal "en", Tell::Detector.detect("not by chance but if so then on or at noon")
+  end
+
+  def test_english_verb_forms
+    # Uses: do, does, did, am, had, will, can — mix of old and new stop words
+    assert_equal "en", Tell::Detector.detect("do you think it will work if we can try and did")
+  end
+
+  def test_english_vs_slovenian_disambiguation
+    # Short English text should not be confused with Slovenian
+    assert_equal "en", Tell::Detector.detect("it is not a problem but an opportunity for all of us")
+  end
+
   # --- Latin double-counting guard ---
 
   def test_non_latin_script_chars_not_double_counted
