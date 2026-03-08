@@ -674,13 +674,16 @@ Syncs only public-facing files: MP3 episodes, HTML transcripts, feed XML, site p
 
 ### Download analytics
 
-The analytics Worker logs every MP3 download to Cloudflare Analytics Engine (country, user-agent, episode). Query via:
+The analytics Worker logs every MP3 download to Cloudflare Analytics Engine. Query via:
 
 ```bash
-# All podcasts
+# All podcasts — totals, avg/day, top countries, top apps
 podgen stats --downloads
 
-# Single podcast, last 7 days
+# Single podcast — per-episode counts, countries, apps, daily breakdown
+podgen stats --downloads ruby_world
+
+# Custom lookback period
 podgen stats --downloads ruby_world --days 7
 ```
 

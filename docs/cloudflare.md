@@ -149,14 +149,34 @@ Changes are live in seconds globally.
 ### podgen stats --downloads
 
 ```bash
-# All podcasts
+# All podcasts — totals, avg/day, top countries, top apps
 podgen stats --downloads
 
-# Single podcast with country breakdown
+# Single podcast — episodes, countries, apps, daily breakdown
 podgen stats --downloads fulgur_news
 
 # Custom lookback period
 podgen stats --downloads fulgur_news --days 7
+```
+
+Example output:
+
+```
+Downloads (last 30 days)
+
+  Podcast                 Total  Avg/day
+  fulgur_news                15     15.0
+  lahko_noc                   2      2.0
+                       ──────── ────────
+  Total                      17     17.0
+
+  Countries:
+    CH         13
+    US          4
+
+  Apps:
+    Pocket Casts                 12
+    Browser (Chrome)              3
 ```
 
 ### SQL API
@@ -199,10 +219,10 @@ Each MP3 download logs one data point:
 |-------|----------------------|---------|
 | Podcast | `index1` | Podcast name (from URL path) |
 | Episode | `blob1` | Episode filename (without `.mp3`) |
-| User-Agent | `blob2` | Podcast app / browser identifier |
+| User-Agent | `blob2` | Podcast app / browser (parsed into app names by podgen) |
 | Country | `blob3` | Two-letter country code (from CF edge) |
 | Referer | `blob4` | Referring URL (if any) |
-| Count | `double1` | Always `1` (sum for totals) |
+| Count | `double1` | Always `1` (sum for totals, count for avg/day) |
 
 Analytics Engine retains data for **90 days** on the free plan.
 
