@@ -52,6 +52,40 @@ class TestTellTranslator < Minitest::Test
     assert LANGUAGE_NAMES.frozen?
   end
 
+  # --- extract_translation ---
+
+  def test_extract_translation_with_tags
+    assert_equal "Bonjour", Tell.extract_translation("<t>Bonjour</t>")
+  end
+
+  def test_extract_translation_strips_whitespace
+    assert_equal "Bonjour", Tell.extract_translation("<t> Bonjour </t>")
+  end
+
+  def test_extract_translation_with_reasoning
+    text = "Let me think about this.\n\n<t>Bonjour le monde</t>\n\nNote: this is formal."
+    assert_equal "Bonjour le monde", Tell.extract_translation(text)
+  end
+
+  def test_extract_translation_multiline
+    text = "<t>Line one\nLine two</t>"
+    assert_equal "Line one\nLine two", Tell.extract_translation(text)
+  end
+
+  def test_extract_translation_no_tags_fallback
+    assert_equal "Bonjour", Tell.extract_translation("Bonjour")
+  end
+
+  def test_extract_translation_no_tags_strips
+    assert_equal "Bonjour", Tell.extract_translation("  Bonjour  ")
+  end
+
+  def test_prompt_includes_tag_instruction
+    prompt = Tell.translation_prompt("hello", to: "sl", hints: nil)
+    assert_includes prompt, "<t>"
+    assert_includes prompt, "</t>"
+  end
+
   # --- TranslatorChain ---
 
   def test_chain_single_engine_success

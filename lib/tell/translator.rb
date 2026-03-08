@@ -11,11 +11,14 @@ module Tell
     to_name = LANGUAGE_NAMES.fetch(to, to)
     style = Hints.to_instruction(hints)
 
-    if style
-      "Translate the following text to #{to_name}.\n\nIMPORTANT — apply this style: #{style}.\n\nIf it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-    else
-      "Translate the following text to #{to_name}. If it is already in #{to_name}, return it unchanged. Output ONLY the translated text — no explanations, no commentary.\n\n#{text}"
-    end
+    style_line = style ? "\n\nIMPORTANT — apply this style: #{style}." : ""
+
+    "Translate the following text to #{to_name}.#{style_line}\n\nIf it is already in #{to_name}, return it unchanged. Wrap your translation in <t> tags. Example: <t>translated text here</t>\n\n#{text}"
+  end
+
+  def self.extract_translation(text)
+    match = text.match(%r{<t>(.*?)</t>}m)
+    match ? match[1].strip : text.strip
   end
 
   def self.build_translator(engine, api_key)
@@ -69,7 +72,7 @@ module Tell
         messages: [{ role: "user", content: prompt }]
       )
 
-      message.content.first.text.strip
+      Tell.extract_translation(message.content.first.text)
     end
   end
 
@@ -111,7 +114,8 @@ module Tell
         end
 
         data = JSON.parse(response.body)
-        return data.dig("choices", 0, "message", "content").strip
+        raw = data.dig("choices", 0, "message", "content")
+        return Tell.extract_translation(raw)
       end
     end
   end
