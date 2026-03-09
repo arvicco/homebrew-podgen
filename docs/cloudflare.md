@@ -311,3 +311,146 @@ All within free tiers for typical podcast usage:
 - **R2**: 10 GB storage, 10M reads/month, 1M writes/month
 - **Workers**: 100k requests/day
 - **Analytics Engine**: 100k data points/day, 90-day retention
+
+## 7. Tell Web
+
+Web UI for the `tell` pronunciation tool — Sinatra + Puma with SSE streaming.
+
+### Local testing
+
+Start the server:
+
+```bash
+ruby scripts/tell_web.rb
+# => tell web → http://localhost:9090
+```
+
+Open http://localhost:9090 in a browser. Type a word or phrase, click Speak.
+
+Options:
+- **Port:** `ruby scripts/tell_web.rb 4567` or `TELL_WEB_PORT=4567`
+- **Bind:** `TELL_WEB_BIND=0.0.0.0` to listen on all interfaces (default: `localhost`)
+
+The UI uses SSE to stream results (translation, audio, gloss, phonetic) as they arrive. Audio auto-plays in the browser.
+
+**What to verify:**
+1. Page loads with input field, mode pills, style hint pills
+2. Type a word in your original language → translation appears, audio plays
+3. Type a word in your target language → audio plays directly, add-ons fire based on mode
+4. Switch modes (gloss, phonetic, reverse, etc.) and confirm results appear
+5. Style hints (polite/casual/male/female) toggle correctly
+6. History chips appear and re-submit on click
+
+### Expose via Cloudflare Tunnel
+
+Once local testing works, expose it publicly via [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/). The tunnel connects your local server to Cloudflare's edge — no open ports, no public IP needed.
+
+```
+[Browser] → tell.example.com → [CF Edge] → [cloudflared tunnel] → localhost:9090 → [Sinatra/Puma]
+```
+
+#### Install + authenticate
+
+```bash
+brew install cloudflared
+cloudflared tunnel login        # Opens browser — select your domain
+```
+
+#### Create tunnel + DNS
+
+```bash
+cloudflared tunnel create tell
+# Note the UUID printed (e.g. a1b2c3d4-...)
+
+cloudflared tunnel route dns tell tell.example.com
+# Creates CNAME: tell.example.com → <uuid>.cfargotunnel.com
+```
+
+#### Configure
+
+Create `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: <uuid>
+credentials-file: /Users/<you>/.cloudflared/<uuid>.json
+
+ingress:
+  - hostname: tell.example.com
+    service: http://localhost:9090
+  - service: http_status:404
+```
+
+#### Run
+
+```bash
+# Terminal 1
+ruby scripts/tell_web.rb
+
+# Terminal 2
+cloudflared tunnel run tell
+```
+
+Verify: open `https://tell.example.com`.
+
+#### Persistent services (launchd)
+
+Install the tunnel as a launch agent:
+
+```bash
+cloudflared service install
+```
+
+For the web server, create a plist:
+
+```bash
+cat > ~/Library/LaunchAgents/com.tell.web.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.tell.web</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>ruby</string>
+    <string>/path/to/podgen/scripts/tell_web.rb</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/path/to/podgen</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/tell-web.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/tell-web.log</string>
+</dict>
+</plist>
+EOF
+
+launchctl load ~/Library/LaunchAgents/com.tell.web.plist
+```
+
+Update the paths to match your installation.
+
+### Security
+
+**Bearer token auth** — set `TELL_WEB_TOKEN` in `.env`:
+
+```
+TELL_WEB_TOKEN=your_secret_token
+```
+
+Pass the token on first visit: `https://tell.example.com?token=your_secret_token` — it's saved to localStorage and stripped from the URL. All subsequent requests use the stored token.
+
+**Rate limiting** — 30 requests/minute per IP by default. Override with `TELL_WEB_RATE_LIMIT` in `.env`.
+
+### Troubleshooting
+
+**Tunnel connects but page doesn't load:** Check the web server is running on the port in `config.yml` (default 9090).
+
+**SSE events buffered/delayed:** `X-Accel-Buffering: no` is set automatically. If using additional reverse proxies, ensure they don't buffer SSE.
+
+**Rate limited (429):** Increase `TELL_WEB_RATE_LIMIT` or wait a minute.

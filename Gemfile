@@ -11,6 +11,10 @@ gem "rexml",     "~> 3.4"   # XML generation for RSS feed (removed from Ruby 4.0
 gem "rss",       "~> 0.3"   # RSS/Atom feed parsing for RSSSource (removed from Ruby 4.0 defaults)
 gem "reline",    "~> 0.6"   # Line editing + history for interactive mode (removed from Ruby 4.0 defaults)
 gem "deepl-rb",  "~> 3.0"   # DeepL translation API (for tell tool)
+gem "logger",    "~> 1.6"   # Logging (removed from Ruby 4.0 defaults, required by Sinatra)
+gem "sinatra",   "~> 4.1"   # Web framework (for tell web UI)
+gem "rackup",    "~> 2.2"   # Rack server launcher (required by Sinatra 4+)
+gem "puma",      "~> 6.5"   # Threaded web server (SSE streaming for tell web)
 
 group :test do
   gem "minitest", "~> 5.25"
