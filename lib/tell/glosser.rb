@@ -18,12 +18,41 @@ module Tell
       ask(build_gloss_prompt(text, from: from, to: to, translate: true, phonetic: false))
     end
 
-    def gloss_phonetic(text, from:, to:)
-      ask(build_gloss_prompt(text, from: from, to: to, translate: false, phonetic: true))
+    def gloss_phonetic(text, from:, to:, phonetic_ref: nil)
+      ask(build_gloss_prompt(text, from: from, to: to, translate: false, phonetic: true, phonetic_ref: phonetic_ref))
     end
 
-    def gloss_translate_phonetic(text, from:, to:)
-      ask(build_gloss_prompt(text, from: from, to: to, translate: true, phonetic: true))
+    def gloss_translate_phonetic(text, from:, to:, phonetic_ref: nil)
+      ask(build_gloss_prompt(text, from: from, to: to, translate: true, phonetic: true, phonetic_ref: phonetic_ref))
+    end
+
+    # Split standalone phonetic output into per-word readings.
+    def self.split_phonetic(phonetic_text, lang:)
+      text = phonetic_text.strip
+      if lang == "ja"
+        text.split(/\s*・\s*/)
+      else
+        text.delete_prefix("/").delete_suffix("/").strip.split(/\s+/)
+      end
+    end
+
+    # Mechanically merge per-word phonetic readings into a gloss string.
+    # Returns merged string if word counts align 1:1, nil otherwise.
+    GLOSS_WORD_RE = /(?:\*\S+?\*)?\S+?\([^)]+\)\S*/
+
+    def self.merge_phonetic(gloss, phonetic_text, lang:)
+      readings = split_phonetic(phonetic_text, lang: lang)
+      return nil if readings.empty?
+
+      word_count = gloss.scan(GLOSS_WORD_RE).size
+      return nil unless word_count == readings.size
+
+      idx = 0
+      gloss.gsub(GLOSS_WORD_RE) do |match|
+        reading = readings[idx]
+        idx += 1
+        match.sub("(", "[#{reading}](")
+      end
     end
 
     def phonetic(text, lang:)
@@ -88,7 +117,7 @@ module Tell
       message.content.first.text.strip
     end
 
-    def build_gloss_prompt(text, from:, to:, translate:, phonetic:)
+    def build_gloss_prompt(text, from:, to:, translate:, phonetic:, phonetic_ref: nil)
       from_name = LANGUAGE_NAMES.fetch(from, from)
       to_name = LANGUAGE_NAMES.fetch(to, to)
 
@@ -108,6 +137,12 @@ module Tell
 
       # Phonetic bracket instruction
       parts << phonetic_bracket_instruction(from) if phonetic
+
+      # Pre-computed phonetic reference — use these readings for [brackets]
+      if phonetic && phonetic_ref
+        parts << "IMPORTANT: Use this pre-computed phonetic transcription as reference for [bracket] readings. " \
+                 "Split it per word and use the same readings: #{phonetic_ref}"
+      end
 
       # Common rules
       parts << "Keep punctuation in place but do not gloss it — leave commas, periods, question marks, etc. as-is without parentheses."
