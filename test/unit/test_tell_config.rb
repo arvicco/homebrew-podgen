@@ -5,12 +5,13 @@ require "tell/config"
 
 class TestTellConfig < Minitest::Test
   def setup
-    @original_env = ENV.to_h.slice("ELEVENLABS_API_KEY", "DEEPL_AUTH_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "TELL_TRANSLATE_TIMEOUT", "TELL_GLOSS_MODEL", "TELL_PHONETIC_MODEL")
+    @original_env = ENV.to_h.slice("ELEVENLABS_API_KEY", "DEEPL_AUTH_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "TELL_TRANSLATE_TIMEOUT", "TELL_GLOSS_MODEL", "TELL_PHONETIC_MODEL", "TELL_PHONETIC_SYSTEM")
     ENV["ELEVENLABS_API_KEY"] = "test_eleven_key"
     ENV["DEEPL_AUTH_KEY"] = "test_deepl_key"
     ENV.delete("TELL_TRANSLATE_TIMEOUT")
     ENV.delete("TELL_GLOSS_MODEL")
     ENV.delete("TELL_PHONETIC_MODEL")
+    ENV.delete("TELL_PHONETIC_SYSTEM")
 
     @tmpfile = File.join(Dir.tmpdir, "tell_test_#{Process.pid}.yml")
     stub_config_path(@tmpfile)
@@ -760,6 +761,73 @@ class TestTellConfig < Minitest::Test
 
     err = assert_raises(RuntimeError) { Tell::Config.new }
     assert_match(/Invalid translation_engine 'google'/, err.message)
+  end
+
+  # --- phonetic_system ---
+
+  def test_phonetic_system_default_nil
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123"
+    )
+
+    config = Tell::Config.new
+    assert_nil config.phonetic_system
+    assert_nil config.phonetic_system_for("ja")
+  end
+
+  def test_phonetic_system_string_from_config
+    write_config(
+      "original_language" => "en",
+      "target_language" => "ja",
+      "voice_id" => "abc123",
+      "phonetic_system" => "hepburn"
+    )
+
+    config = Tell::Config.new
+    assert_equal "hepburn", config.phonetic_system
+    assert_equal "hepburn", config.phonetic_system_for("ja")
+    assert_equal "hepburn", config.phonetic_system_for("zh")
+  end
+
+  def test_phonetic_system_hash_from_config
+    write_config(
+      "original_language" => "en",
+      "target_language" => "ja",
+      "voice_id" => "abc123",
+      "phonetic_system" => { "ja" => "hepburn", "zh" => "zhuyin" }
+    )
+
+    config = Tell::Config.new
+    assert_equal "hepburn", config.phonetic_system_for("ja")
+    assert_equal "zhuyin", config.phonetic_system_for("zh")
+    assert_nil config.phonetic_system_for("ko")
+  end
+
+  def test_phonetic_system_env_override
+    ENV["TELL_PHONETIC_SYSTEM"] = "ipa"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "ja",
+      "voice_id" => "abc123",
+      "phonetic_system" => "hepburn"
+    )
+
+    config = Tell::Config.new
+    assert_equal "ipa", config.phonetic_system
+  end
+
+  def test_phonetic_system_cli_override
+    write_config(
+      "original_language" => "en",
+      "target_language" => "ja",
+      "voice_id" => "abc123",
+      "phonetic_system" => "hepburn"
+    )
+
+    config = Tell::Config.new(overrides: { phonetic_system: "ipa" })
+    assert_equal "ipa", config.phonetic_system
   end
 
   private

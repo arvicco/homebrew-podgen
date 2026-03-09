@@ -50,6 +50,7 @@ parser = OptionParser.new do |opts|
   opts.on("-g", "--gloss", "Show word-by-word grammatical analysis") { overrides[:gloss] = true }
   opts.on("--gr", "--rg", "Gloss with translations: word(grammar)translation") { overrides[:gloss_reverse] = true }
   opts.on("-p", "--phonetic", "Show phonetic reading (kana/pinyin/romanization)") { overrides[:phonetic] = true }
+  opts.on("--ps SYSTEM", "--phonetic-system SYSTEM", "Set phonetic system (e.g. hepburn, pinyin, ipa)") { |s| overrides[:phonetic] = true; overrides[:phonetic_system] = s }
   opts.on("--gp", "--pg", "Gloss with phonetic: word(grammar)[reading]") { overrides[:gloss] = true; overrides[:phonetic] = true }
   opts.on("--rp", "--pr", "Reverse translate + phonetic reading") { overrides[:reverse] = true; overrides[:phonetic] = true }
   opts.on("--grp", "--gpr", "--rgp", "--rpg", "--prg", "--pgr", "Gloss with translations + phonetic") { overrides[:gloss_reverse] = true; overrides[:phonetic] = true }

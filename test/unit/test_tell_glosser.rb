@@ -336,6 +336,164 @@ class TestTellGlosser < Minitest::Test
     assert_equal "result(n.m.N.sg)", result
   end
 
+  # --- Phonetic systems lookup ---
+
+  def test_systems_for_known_language
+    systems = Tell::Glosser.systems_for("ja")
+    assert_equal %w[hiragana hepburn ipa], systems.keys
+  end
+
+  def test_systems_for_unknown_language_returns_default
+    systems = Tell::Glosser.systems_for("xx")
+    assert_equal %w[ipa simple], systems.keys
+  end
+
+  def test_systems_for_shared_cyrillic
+    %w[ru uk bg sr mk be].each do |lang|
+      systems = Tell::Glosser.systems_for(lang)
+      assert_equal %w[scholarly simple ipa], systems.keys, "Failed for #{lang}"
+    end
+  end
+
+  def test_systems_for_shared_indic
+    %w[hi sa ne mr].each do |lang|
+      systems = Tell::Glosser.systems_for(lang)
+      assert_equal %w[iast ipa], systems.keys, "Failed for #{lang}"
+    end
+  end
+
+  def test_default_system_japanese
+    assert_equal "hiragana", Tell::Glosser.default_system("ja")
+  end
+
+  def test_default_system_chinese
+    assert_equal "pinyin", Tell::Glosser.default_system("zh")
+  end
+
+  def test_default_system_latin_language
+    assert_equal "ipa", Tell::Glosser.default_system("sl")
+  end
+
+  def test_system_config_default_returns_first
+    config = Tell::Glosser.system_config("ja")
+    assert_equal "Hiragana", config[:label]
+    assert_includes config[:standalone], "hiragana"
+    assert_equal "・", config[:separator]
+  end
+
+  def test_system_config_specific_system
+    config = Tell::Glosser.system_config("ja", system: "hepburn")
+    assert_equal "Hepburn", config[:label]
+    assert_includes config[:standalone], "Hepburn"
+    assert_equal " ", config[:separator]
+  end
+
+  def test_system_config_invalid_falls_back_to_default
+    config = Tell::Glosser.system_config("ja", system: "nonexistent")
+    assert_equal "Hiragana", config[:label]
+  end
+
+  # --- Split/merge with explicit system ---
+
+  def test_split_phonetic_japanese_hepburn_splits_by_space
+    readings = Tell::Glosser.split_phonetic("konnichiwa sekai", lang: "ja", system: "hepburn")
+    assert_equal %w[konnichiwa sekai], readings
+  end
+
+  def test_split_phonetic_japanese_ipa_strips_slashes
+    readings = Tell::Glosser.split_phonetic("/koɴɲitɕiwa sekai/", lang: "ja", system: "ipa")
+    assert_equal %w[koɴɲitɕiwa sekai], readings
+  end
+
+  def test_split_phonetic_japanese_default_uses_middle_dots
+    readings = Tell::Glosser.split_phonetic("こんにちは・せかい", lang: "ja")
+    assert_equal %w[こんにちは せかい], readings
+  end
+
+  def test_merge_phonetic_japanese_hepburn
+    gloss = "今日は(n.sg) 世界(n.sg)"
+    phonetic = "konnichiwa sekai"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "ja", system: "hepburn")
+    assert_equal "今日は[konnichiwa](n.sg) 世界[sekai](n.sg)", result
+  end
+
+  def test_merge_phonetic_chinese_zhuyin
+    gloss = "你(pron.2p.sg) 好(adj)"
+    phonetic = "ㄋㄧˇ ㄏㄠˇ"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "zh", system: "zhuyin")
+    assert_equal "你[ㄋㄧˇ](pron.2p.sg) 好[ㄏㄠˇ](adj)", result
+  end
+
+  # --- Phonetic system in prompts ---
+
+  def test_phonetic_standalone_uses_system
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("konnichiwa sekai")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.phonetic("こんにちは世界", lang: "ja", system: "hepburn")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "Hepburn"
+  end
+
+  def test_phonetic_standalone_default_matches_original
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("こんにちは・せかい")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.phonetic("こんにちは世界", lang: "ja")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "hiragana"
+    assert_includes prompt, "middle dots"
+  end
+
+  def test_gloss_phonetic_with_system_uses_bracket_instruction
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("今日は[konnichiwa](n.sg)")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_phonetic("今日は", from: "ja", to: "en", system: "hepburn")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "Hepburn romanization in brackets"
+  end
+
+  def test_gloss_phonetic_default_uses_default_bracket
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("今日は[きょうは](n.sg)")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_phonetic("今日は", from: "ja", to: "en")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "hiragana reading in brackets"
+  end
+
+  def test_gloss_translate_phonetic_with_system
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("слово[slovo](n.n.N.sg)word")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_translate_phonetic("слово", from: "ru", to: "en", system: "simple")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "simplified romanization"
+  end
+
+  def test_reconcile_with_system_uses_bracket_instruction
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("word[reading](n)")
+    glosser.instance_variable_set(:@client, client)
+
+    glosses = { "m1" => "a[x](n)", "m2" => "a[y](n)" }
+    glosser.reconcile(glosses, "a", from: "ja", to: "en", mode: :gloss_phonetic, system: "hepburn")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "Hepburn romanization in brackets"
+  end
+
   # --- Reconcile includes original text ---
 
   def test_reconcile_includes_original_text_in_prompt
