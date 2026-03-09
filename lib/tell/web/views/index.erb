@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tell</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --max-w: 480px;
+  --fg: #1a1a1a;
+  --fg-muted: #666;
+  --bg: #fff;
+  --bg-alt: #f7f7f7;
+  --border: #e0e0e0;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e4e4e4;
+    --fg-muted: #999;
+    --bg: #1a1a1a;
+    --bg-alt: #242424;
+    --border: #333;
+    --accent: #60a5fa;
+    --accent-hover: #93bbfd;
+  }
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container { max-width: var(--max-w); margin: 0 auto; padding: 1rem 1.5rem; }
+
+/* Input */
+.input-row { margin-bottom: 0.375rem; }
+.input-row textarea {
+  width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 1rem; background: var(--bg); color: var(--fg); outline: none;
+  font-family: inherit; resize: none; line-height: 1.4;
+  field-sizing: content; min-height: 2lh; max-height: 6lh;
+}
+.input-row textarea:focus { border-color: var(--accent); }
+
+/* Hint + Tell row */
+.hint-row { display: flex; gap: 0.375rem; align-items: center; margin-bottom: 0.5rem; }
+.hint-row button#speak-btn {
+  padding: 0.375rem 0.625rem; border: none; border-radius: var(--radius);
+  background: var(--accent); color: #fff; font-size: 0.8125rem; cursor: pointer;
+  white-space: nowrap; margin-left: auto;
+}
+.hint-row button#speak-btn:hover { background: var(--accent-hover); }
+.hint-row button#speak-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Style pills */
+.pills { display: flex; gap: 0.25rem; align-items: center; }
+.pills-sep { width: 1px; height: 0.875rem; background: var(--border); margin: 0 0.125rem; }
+.pill {
+  padding: 0.1875rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--fg-muted); cursor: pointer; font-size: 0.75rem;
+}
+.pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pill:hover:not(.active) { border-color: var(--fg-muted); }
+
+/* Language selectors */
+.lang-wrap {
+  position: relative; display: inline-block;
+}
+.lang-wrap select {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0;
+  font-size: 0.8125rem; cursor: pointer;
+}
+.lang-label {
+  display: inline-block; padding: 0.2rem 0.375rem; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--fg); font-size: 0.8125rem; pointer-events: none; white-space: nowrap;
+}
+.lang-arrow { color: var(--fg-muted); cursor: pointer; user-select: none; }
+.lang-arrow:hover { color: var(--accent); }
+
+/* Controls row: addon pills left, lang right */
+.controls { margin-bottom: 0.5rem; display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; }
+.lang-group { display: flex; gap: 0.375rem; align-items: center; margin-left: auto; }
+.addon-pill {
+  padding: 0.1875rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg); color: var(--fg-muted); cursor: pointer; font-size: 0.75rem; user-select: none;
+}
+.addon-pill.active { background: #0891b2; color: #fff; border-color: #0891b2; }
+.addon-pill:hover:not(.active) { border-color: var(--fg-muted); }
+.addon-pill.sub { display: none; font-size: 0.6875rem; }
+.addon-pill.sub.visible { display: inline-block; }
+
+@media (prefers-color-scheme: dark) {
+  .addon-pill.active { background: #22d3ee; color: #1a1a1a; border-color: #22d3ee; }
+}
+
+/* Results */
+.results { margin-top: 0.75rem; min-height: 2rem; }
+.result-slot { min-height: 0; }
+.result-slot:empty { display: none; }
+.result-row { margin-bottom: 0.625rem; font-size: 0.9375rem; }
+.result-row .tag { font-weight: 600; margin-right: 0.375rem; }
+.result-translation { color: #0891b2; }
+.result-reverse { color: #d97706; }
+.result-phonetic { color: #16a34a; }
+.result-error { color: #dc2626; font-size: 0.875rem; margin-bottom: 0.375rem; }
+.result-audio { width: 100%; height: 36px; margin: 0.25rem 0; }
+
+@media (prefers-color-scheme: dark) {
+  .result-translation { color: #22d3ee; }
+  .result-reverse { color: #fbbf24; }
+  .result-phonetic { color: #4ade80; }
+  .result-error { color: #f87171; }
+}
+
+/* Loading placeholder */
+.loading-dots::after {
+  content: '\00b7\00b7\00b7';
+  letter-spacing: 0.2em;
+  animation: pulse 1s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+/* Gloss */
+.gloss { font-size: 0.9375rem; line-height: 1.8; }
+.gloss .word { font-weight: 600; }
+.gloss .phonetic { color: #16a34a; }
+.gloss .grammar { opacity: 0.6; font-size: 0.8125rem; }
+.gloss .translation { font-style: italic; opacity: 0.8; }
+.gloss .agram { color: #eab308; font-weight: 700; }
+
+@media (prefers-color-scheme: dark) {
+  .gloss .phonetic { color: #4ade80; }
+}
+
+.pos-n { color: #dc2626; }
+.pos-v { color: #0891b2; }
+.pos-adj { color: #16a34a; }
+.pos-adv { color: #2563eb; }
+.pos-pron { color: #9333ea; }
+.pos-minor { color: #9ca3af; }
+.pos-num { color: #d97706; }
+.pos-interj { color: #ef4444; }
+
+@media (prefers-color-scheme: dark) {
+  .pos-n { color: #f87171; }
+  .pos-v { color: #22d3ee; }
+  .pos-adj { color: #4ade80; }
+  .pos-adv { color: #60a5fa; }
+  .pos-pron { color: #c084fc; }
+  .pos-minor { color: #6b7280; }
+  .pos-num { color: #fbbf24; }
+  .pos-interj { color: #f87171; }
+}
+
+/* History */
+.history { margin-top: 1.5rem; }
+.history-label { font-size: 0.75rem; color: var(--fg-muted); margin-bottom: 0.375rem; }
+.history-chips { display: flex; gap: 0.375rem; flex-wrap: wrap; }
+.history-chips .chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.1875rem 0.375rem 0.1875rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-alt); color: var(--fg-muted); font-size: 0.8125rem;
+}
+.history-chips .chip:hover { border-color: var(--fg-muted); color: var(--fg); }
+.history-chips .chip-text { cursor: pointer; }
+.history-chips .chip-x {
+  cursor: pointer; opacity: 0.4; font-size: 0.6875rem; padding: 0 0.125rem;
+  line-height: 1; border: none; background: none; color: inherit;
+}
+.history-chips .chip-x:hover { opacity: 1; }
+
+/* Spinner */
+.spinner { display: none; }
+.spinner.active { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-left: 0.5rem; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="input-row">
+    <textarea id="text-input" rows="2" placeholder="Type a word or phrase..." autofocus autocomplete="off"></textarea>
+  </div>
+
+  <div class="hint-row">
+    <div class="pills" id="hint-pills">
+      <button class="pill" data-hint="p">polite</button>
+      <button class="pill" data-hint="c">casual</button>
+      <span class="pills-sep"></span>
+      <button class="pill" data-hint="m">male</button>
+      <button class="pill" data-hint="f">female</button>
+    </div>
+    <button id="speak-btn" onclick="speak()">Tell</button>
+    <span class="spinner" id="spinner"></span>
+  </div>
+
+  <div class="controls">
+    <button class="addon-pill" id="opt-reverse">reverse</button>
+    <button class="addon-pill" id="opt-phonetic">phonetic</button>
+    <button class="addon-pill" id="opt-gloss">gloss</button>
+    <button class="addon-pill sub" id="opt-gloss-phonetic">+words</button>
+    <button class="addon-pill sub" id="opt-gloss-translate">+trans</button>
+    <span class="lang-group">
+      <span class="lang-wrap"><span class="lang-label" id="lang-from-label"></span><select id="lang-from"></select></span>
+      <span class="lang-arrow" id="lang-swap" title="Swap languages">&harr;</span>
+      <span class="lang-wrap"><span class="lang-label" id="lang-to-label"></span><select id="lang-to"></select></span>
+    </span>
+  </div>
+
+  <div class="results" id="results">
+    <div id="slot-translation" class="result-slot"></div>
+    <div id="slot-audio" class="result-slot"></div>
+    <div id="slot-reverse" class="result-slot"></div>
+    <div id="slot-phonetic" class="result-slot"></div>
+    <div id="slot-gloss" class="result-slot"></div>
+    <div id="slot-errors" class="result-slot"></div>
+  </div>
+
+  <div class="history" id="history-section" style="display:none">
+    <div class="history-label">History</div>
+    <div class="history-chips" id="history-chips"></div>
+  </div>
+</div>
+
+<script>
+const input = document.getElementById('text-input');
+const spinner = document.getElementById('spinner');
+const speakBtn = document.getElementById('speak-btn');
+
+const optReverse = document.getElementById('opt-reverse');
+const optPhonetic = document.getElementById('opt-phonetic');
+const optGloss = document.getElementById('opt-gloss');
+const optGlossPhonetic = document.getElementById('opt-gloss-phonetic');
+const optGlossTranslate = document.getElementById('opt-gloss-translate');
+const langFrom = document.getElementById('lang-from');
+const langTo = document.getElementById('lang-to');
+
+const LANGUAGES = [
+  ['en', 'English'], ['de', 'German'], ['fr', 'French'], ['es', 'Spanish'],
+  ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'],
+  ['pl', 'Polish'], ['cs', 'Czech'], ['sk', 'Slovak'], ['sl', 'Slovenian'],
+  ['hr', 'Croatian'], ['sr', 'Serbian'], ['bg', 'Bulgarian'], ['ro', 'Romanian'],
+  ['hu', 'Hungarian'], ['el', 'Greek'], ['tr', 'Turkish'],
+  ['ru', 'Russian'], ['uk', 'Ukrainian'],
+  ['sv', 'Swedish'], ['da', 'Danish'], ['no', 'Norwegian'], ['fi', 'Finnish'],
+  ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese'],
+  ['ar', 'Arabic'], ['he', 'Hebrew'], ['hi', 'Hindi'],
+  ['th', 'Thai'], ['vi', 'Vietnamese'], ['id', 'Indonesian']
+];
+
+// Populate language selects
+langFrom.innerHTML = '<option value="auto">Auto</option>' +
+  LANGUAGES.map(([c, n]) => '<option value="' + c + '">' + n + '</option>').join('');
+langTo.innerHTML = LANGUAGES.map(([c, n]) => '<option value="' + c + '">' + n + '</option>').join('');
+langFrom.value = '<%= default_from %>';
+langTo.value = '<%= default_to %>';
+
+// Update visible label to show 2-letter code (select always has full names)
+const langFromLabel = document.getElementById('lang-from-label');
+const langToLabel = document.getElementById('lang-to-label');
+
+function updateLabel(sel, label) {
+  label.textContent = sel.value === 'auto' ? 'Auto' : sel.value.toUpperCase();
+}
+[langFrom, langTo].forEach((sel, i) => {
+  const label = i === 0 ? langFromLabel : langToLabel;
+  updateLabel(sel, label);
+  sel.addEventListener('change', () => updateLabel(sel, label));
+});
+
+langFrom.addEventListener('change', () => {
+  if (!(speakText || mainSource)) return;
+  const text = input.value.trim();
+  if (!text) return;
+  const p = new URLSearchParams({ text: text, no_tts: 'true' });
+  addLangs(p);
+  const hint = Array.from(currentHints).join('');
+  if (hint) p.set('hint', hint);
+  addToken(p);
+  const es = new EventSource('/speak?' + p.toString());
+  es.addEventListener('translation', e => {
+    const d = JSON.parse(e.data);
+    if (d.text !== translatedText) speak();
+  });
+  es.addEventListener('done', () => es.close());
+  es.onerror = () => es.close();
+});
+langTo.addEventListener('change', () => { if (speakText || mainSource) speak(); });
+
+document.getElementById('lang-swap').addEventListener('click', () => {
+  const from = langFrom.value;
+  const to = langTo.value;
+  langTo.value = from === 'auto' ? 'en' : from;
+  langFrom.value = to;
+  updateLabel(langFrom, langFromLabel);
+  updateLabel(langTo, langToLabel);
+  if (translatedText) input.value = translatedText;
+  if (input.value.trim()) speak();
+});
+
+let currentHints = new Set();
+let speakText = null;       // text that was spoken (post-translation)
+let translatedText = null;  // displayed translation (for swap)
+let mainSource = null;
+let addonSources = {};
+let cache = {};             // addon results cache: key → { className, html }
+
+// --- Gloss cache: store richest raw text, derive simpler variants locally ---
+let glossRaw = null;          // richest raw gloss text from server
+let glossHasPhonetic = false; // does glossRaw contain [readings]?
+let glossHasTranslate = false;// does glossRaw contain translations?
+let phCached = null;          // standalone phonetic result text
+
+function stripTranslations(text) {
+  return text.replace(/(\([^)]+\))\S*/g, '$1');
+}
+
+function stripPhonetic(text) {
+  return text.replace(/\[[^\]]+\]/g, '');
+}
+
+// Port of Glosser.merge_phonetic — insert readings into gloss words
+function mergePhonetic(gloss, phoneticText) {
+  const lang = langTo.value;
+  let readings;
+  if (lang === 'ja') {
+    readings = phoneticText.trim().split(/\s*・\s*/);
+  } else {
+    readings = phoneticText.trim().replace(/^\/|\/$/g, '').trim().split(/\s+/);
+  }
+  if (!readings.length || (readings.length === 1 && !readings[0])) return null;
+
+  const wordRe = /(?:\*\S+?\*)?\S+?\([^)]+\)\S*/g;
+  const words = gloss.match(wordRe);
+  if (!words || words.length !== readings.length) return null;
+
+  let idx = 0;
+  return gloss.replace(wordRe, m => m.replace('(', '[' + readings[idx++] + ']('));
+}
+
+// Derive the right gloss variant from glossRaw based on current toggles
+function deriveGloss() {
+  if (!glossRaw) return null;
+  let text = glossRaw;
+  let isTranslate = glossHasTranslate;
+
+  if (glossHasTranslate && !optGlossTranslate.checked) {
+    text = stripTranslations(text);
+    isTranslate = false;
+  }
+  if (!optGlossPhonetic.checked) {
+    text = stripPhonetic(text);
+  }
+  return { text, isTranslate };
+}
+
+function displayGloss(text, isTranslate) {
+  const slot = document.getElementById('slot-gloss');
+  slot.className = 'result-slot result-row gloss';
+  slot.innerHTML = colorizeGloss(text, isTranslate);
+}
+
+// Can we fulfill the current gloss toggle state from cache + local ops?
+function canDeriveGloss() {
+  if (!glossRaw) return false;
+  // Removing is always possible
+  // Adding translate needs server if we don't have it
+  if (optGlossTranslate.checked && !glossHasTranslate) return false;
+  // Adding phonetic: need it in cache, or merge with phCached
+  if (optGlossPhonetic.checked && !glossHasPhonetic) {
+    if (phCached) return true; // can merge
+    return false;
+  }
+  return true;
+}
+
+// Enrich glossRaw with phonetic via merge, upgrade cache
+function enrichWithPhonetic() {
+  if (!glossRaw || !phCached) return false;
+  const merged = mergePhonetic(glossRaw, phCached);
+  if (!merged) return false;
+  glossRaw = merged;
+  glossHasPhonetic = true;
+  return true;
+}
+
+// --- Addon pill toggle ---
+// Add .checked property so existing param-building code works unchanged
+[optReverse, optPhonetic, optGloss, optGlossPhonetic, optGlossTranslate].forEach(btn => {
+  Object.defineProperty(btn, 'checked', {
+    get() { return btn.classList.contains('active'); },
+    set(v) { btn.classList.toggle('active', v); }
+  });
+});
+
+optReverse.addEventListener('click', () => {
+  optReverse.checked = !optReverse.checked;
+  if (optReverse.checked) triggerAddon('reverse');
+  else removeAddon('reverse');
+});
+
+optPhonetic.addEventListener('click', () => {
+  optPhonetic.checked = !optPhonetic.checked;
+  if (optPhonetic.checked) triggerAddon('phonetic');
+  else removeAddon('phonetic');
+});
+
+optGloss.addEventListener('click', () => {
+  optGloss.checked = !optGloss.checked;
+  if (optGloss.checked) {
+    optGlossPhonetic.classList.add('visible');
+    optGlossTranslate.classList.add('visible');
+    updateGloss();
+  } else {
+    optGlossPhonetic.classList.remove('visible');
+    optGlossTranslate.classList.remove('visible');
+    optGlossPhonetic.checked = false;
+    optGlossTranslate.checked = false;
+    removeAddon('gloss');
+  }
+});
+
+optGlossPhonetic.addEventListener('click', () => {
+  optGlossPhonetic.checked = !optGlossPhonetic.checked;
+  if (optGloss.checked) updateGloss();
+});
+
+optGlossTranslate.addEventListener('click', () => {
+  optGlossTranslate.checked = !optGlossTranslate.checked;
+  if (optGloss.checked) updateGloss();
+});
+
+function updateGloss() {
+  if (!speakText) return;
+
+  // Try phonetic merge if needed and possible
+  if (optGlossPhonetic.checked && !glossHasPhonetic && phCached) {
+    enrichWithPhonetic();
+  }
+
+  if (canDeriveGloss()) {
+    const d = deriveGloss();
+    if (d) { displayGloss(d.text, d.isTranslate); return; }
+  }
+
+  // Need server call — request the richest variant needed
+  triggerGlossAddon();
+}
+
+function triggerGlossAddon() {
+  if (!speakText) return;
+  if (addonSources['gloss']) { addonSources['gloss'].close(); delete addonSources['gloss']; }
+
+  setSlotLoading('gloss');
+
+  const p = new URLSearchParams({ text: speakText, no_tts: 'true', no_translate: 'true' });
+  addLangs(p);
+  p.set('gloss', 'true');
+  if (optGlossPhonetic.checked) p.set('gloss_phonetic', 'true');
+  if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
+  addToken(p);
+
+  const es = new EventSource('/speak?' + p.toString());
+  addonSources['gloss'] = es;
+  attachHandlers(es);
+
+  es.addEventListener('done', () => { es.close(); delete addonSources['gloss']; });
+  es.onerror = () => {
+    es.close(); delete addonSources['gloss'];
+    document.getElementById('slot-gloss').className = 'result-slot';
+    document.getElementById('slot-gloss').innerHTML = '';
+  };
+}
+
+// --- Style hint pills (toggle, mutually exclusive within group) ---
+
+const FORMALITY = ['p', 'c'];
+const GENDER = ['m', 'f'];
+
+document.querySelectorAll('#hint-pills .pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const h = btn.dataset.hint;
+    if (btn.classList.contains('active')) {
+      btn.classList.remove('active');
+      currentHints.delete(h);
+    } else {
+      const group = FORMALITY.includes(h) ? FORMALITY : GENDER;
+      group.forEach(g => {
+        if (g !== h) {
+          currentHints.delete(g);
+          document.querySelector('#hint-pills .pill[data-hint="' + g + '"]').classList.remove('active');
+        }
+      });
+      btn.classList.add('active');
+      currentHints.add(h);
+    }
+    // Re-generate with new hints if already spoken (or in-flight)
+    if (speakText || mainSource) speak();
+  });
+});
+
+// --- Enter to submit ---
+
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); speak(); }
+});
+
+// --- Main speak ---
+
+function speak() {
+  const text = input.value.trim();
+  if (!text) return;
+
+  closeAll();
+  clearAllSlots();
+  setLoading(true);
+  addHistory(text);
+  speakText = null;
+  translatedText = null;
+  cache = {};
+  glossRaw = null;
+  glossHasPhonetic = false;
+  glossHasTranslate = false;
+  phCached = null;
+
+  // Show labeled placeholders for checked addons
+  if (optReverse.checked) setSlotLoading('reverse');
+  if (optPhonetic.checked) setSlotLoading('phonetic');
+  if (optGloss.checked) setSlotLoading('gloss');
+
+  const params = buildFullParams(text);
+  mainSource = new EventSource('/speak?' + params.toString());
+  attachHandlers(mainSource);
+
+  mainSource.addEventListener('speak_text', e => {
+    speakText = JSON.parse(e.data).text;
+  });
+
+  mainSource.addEventListener('done', () => {
+    mainSource.close();
+    mainSource = null;
+    setLoading(false);
+    // Fallback: if no speak_text event (shouldn't happen), use input
+    if (!speakText) speakText = text;
+  });
+
+  mainSource.onerror = () => {
+    if (mainSource) { mainSource.close(); mainSource = null; }
+    setLoading(false);
+    if (!document.querySelector('.result-error')) appendError('Connection failed');
+  };
+}
+
+// --- Addon trigger (checkbox toggle after initial speak) ---
+
+const SLOT_LABELS = { reverse: 'REV', phonetic: 'PH', gloss: 'GL' };
+const SLOT_LOADING_CLS = {
+  reverse: 'result-slot result-row result-reverse',
+  phonetic: 'result-slot result-row result-phonetic',
+  gloss: 'result-slot result-row gloss'
+};
+
+function setSlotLoading(type) {
+  const slot = document.getElementById('slot-' + type);
+  slot.className = SLOT_LOADING_CLS[type] || 'result-slot result-row';
+  slot.innerHTML = '<span class="tag">' + (SLOT_LABELS[type] || type.toUpperCase()) + ':</span><span class="loading-dots"></span>';
+}
+
+function triggerAddon(type) {
+  if (!speakText) return;
+
+  // Gloss uses its own smart update path
+  if (type === 'gloss') { updateGloss(); return; }
+
+  // Serve from cache if available
+  if (cache[type]) {
+    const slot = document.getElementById('slot-' + type);
+    slot.className = cache[type].className;
+    slot.innerHTML = cache[type].html;
+    return;
+  }
+
+  // Abort existing request for this addon
+  if (addonSources[type]) { addonSources[type].close(); delete addonSources[type]; }
+
+  setSlotLoading(type);
+
+  const params = buildAddonParams(type);
+  const es = new EventSource('/speak?' + params.toString());
+  const slot = document.getElementById('slot-' + type);
+  addonSources[type] = es;
+  attachHandlers(es);
+
+  es.addEventListener('done', () => {
+    es.close();
+    delete addonSources[type];
+  });
+
+  es.onerror = () => {
+    es.close();
+    delete addonSources[type];
+    slot.className = 'result-slot';
+    slot.innerHTML = '';
+  };
+}
+
+function removeAddon(type) {
+  if (addonSources[type]) { addonSources[type].close(); delete addonSources[type]; }
+  const slot = document.getElementById('slot-' + type);
+  slot.className = 'result-slot';
+  slot.innerHTML = '';
+}
+
+// --- SSE event handlers (shared between main speak and addon triggers) ---
+
+function attachHandlers(es) {
+  es.addEventListener('translation', e => {
+    const d = JSON.parse(e.data);
+    translatedText = d.text;
+    const slot = document.getElementById('slot-translation');
+    slot.className = 'result-slot result-row result-translation';
+    slot.innerHTML = '<span class="tag">' + esc(d.lang) + ':</span>' + esc(d.text);
+    if (d.explanation) slot.style.opacity = '0.7'; else slot.style.opacity = '';
+  });
+
+  es.addEventListener('audio', e => {
+    const d = JSON.parse(e.data);
+    const slot = document.getElementById('slot-audio');
+    slot.className = 'result-slot';
+    slot.innerHTML = '';
+    const audio = document.createElement('audio');
+    audio.className = 'result-audio';
+    audio.controls = true;
+    audio.autoplay = true;
+    audio.src = 'data:audio/mpeg;base64,' + d.base64;
+    slot.appendChild(audio);
+  });
+
+  es.addEventListener('reverse', e => {
+    const d = JSON.parse(e.data);
+    const slot = document.getElementById('slot-reverse');
+    const cls = 'result-slot result-row result-reverse';
+    const html = '<span class="tag">' + esc(d.lang) + ':</span>' + esc(d.text);
+    slot.className = cls;
+    slot.innerHTML = html;
+    cache['reverse'] = { className: cls, html: html };
+  });
+
+  es.addEventListener('phonetic', e => {
+    const d = JSON.parse(e.data);
+    phCached = d.text;
+    const slot = document.getElementById('slot-phonetic');
+    const cls = 'result-slot result-row result-phonetic';
+    const html = '<span class="tag">PH:</span>' + esc(d.text);
+    slot.className = cls;
+    slot.innerHTML = html;
+    cache['phonetic'] = { className: cls, html: html };
+  });
+
+  ['gloss', 'gloss_translate'].forEach(evt => {
+    es.addEventListener(evt, e => {
+      const d = JSON.parse(e.data);
+      const hasT = evt === 'gloss_translate';
+      const hasP = /\[[^\]]+\]/.test(d.text);
+
+      // Cache raw — keep the richest variant
+      if (!glossRaw
+        || (hasT && !glossHasTranslate)
+        || (hasP && !glossHasPhonetic)
+        || (hasT && hasP && !(glossHasTranslate && glossHasPhonetic))) {
+        glossRaw = d.text;
+        glossHasTranslate = hasT;
+        glossHasPhonetic = hasP;
+      }
+
+      displayGloss(d.text, hasT);
+    });
+  });
+
+  es.addEventListener('error', e => {
+    if (e.data) appendError(JSON.parse(e.data).message);
+  });
+}
+
+// --- Params builders ---
+
+function addLangs(p) {
+  p.set('from', langFrom.value);
+  p.set('to', langTo.value);
+}
+
+function buildFullParams(text) {
+  const p = new URLSearchParams({ text: text });
+  addLangs(p);
+  if (optReverse.checked) p.set('reverse', 'true');
+  if (optPhonetic.checked) p.set('phonetic', 'true');
+  if (optGloss.checked) {
+    p.set('gloss', 'true');
+    if (optGlossPhonetic.checked) p.set('gloss_phonetic', 'true');
+    if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
+  }
+  const hint = Array.from(currentHints).join('');
+  if (hint) p.set('hint', hint);
+  addToken(p);
+  return p;
+}
+
+function buildAddonParams(type) {
+  const p = new URLSearchParams({ text: speakText, no_tts: 'true', no_translate: 'true' });
+  addLangs(p);
+  if (type === 'reverse') p.set('reverse', 'true');
+  if (type === 'phonetic') p.set('phonetic', 'true');
+  if (type === 'gloss') {
+    p.set('gloss', 'true');
+    if (optGlossPhonetic.checked) p.set('gloss_phonetic', 'true');
+    if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
+  }
+  addToken(p);
+  return p;
+}
+
+function addToken(params) {
+  const token = localStorage.getItem('tell_token');
+  if (token) params.set('token', token);
+}
+
+// --- Helpers ---
+
+function closeAll() {
+  if (mainSource) { mainSource.close(); mainSource = null; }
+  Object.keys(addonSources).forEach(k => { addonSources[k].close(); });
+  addonSources = {};
+}
+
+function clearAllSlots() {
+  ['translation', 'audio', 'reverse', 'phonetic', 'gloss', 'errors'].forEach(id => {
+    const el = document.getElementById('slot-' + id);
+    el.className = 'result-slot';
+    el.innerHTML = '';
+    el.style.opacity = '';
+  });
+}
+
+function setLoading(on) {
+  spinner.classList.toggle('active', on);
+  speakBtn.disabled = on;
+}
+
+function appendError(message) {
+  const slot = document.getElementById('slot-errors');
+  slot.className = 'result-slot';
+  const row = document.createElement('div');
+  row.className = 'result-error';
+  row.textContent = message;
+  slot.appendChild(row);
+}
+
+// --- Gloss colorization ---
+
+const POS_MAP = {
+  n: 'pos-n', v: 'pos-v', aux: 'pos-v', adj: 'pos-adj', adv: 'pos-adv',
+  pron: 'pos-pron', pr: 'pos-minor', conj: 'pos-minor', det: 'pos-minor',
+  part: 'pos-minor', num: 'pos-num', interj: 'pos-interj'
+};
+
+const GLOSS_RE = /\*(\S+?)\*(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)|(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)/g;
+const GLOSS_TR_RE = /\*(\S+?)\*(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)([^\s\[]*)|(\S+?)(?:\s?\[([^\]]+)\])?\(([^)]+)\)([^\s\[]*)/g;
+
+function posClass(grammar) {
+  for (const part of grammar.split('.')) {
+    if (POS_MAP[part]) return POS_MAP[part];
+  }
+  return '';
+}
+
+function colorizeGloss(text, translate) {
+  const re = translate ? GLOSS_TR_RE : GLOSS_RE;
+  re.lastIndex = 0;
+
+  return text.replace(re, function() {
+    const a = arguments;
+    if (translate) {
+      if (a[1]) {
+        const pc = posClass(a[4]);
+        let s = '<span class="agram">*' + esc(a[1]) + '*</span><span class="word ' + pc + '">' + esc(a[2]) + '</span>';
+        if (a[3]) s += '<span class="phonetic">[' + esc(a[3]) + ']</span>';
+        s += '<span class="grammar ' + pc + '">(' + esc(a[4]) + ')</span>';
+        if (a[5]) s += '<span class="translation">' + esc(a[5]) + '</span>';
+        return s;
+      } else {
+        const pc = posClass(a[8]);
+        let s = '<span class="word ' + pc + '">' + esc(a[6]) + '</span>';
+        if (a[7]) s += '<span class="phonetic">[' + esc(a[7]) + ']</span>';
+        s += '<span class="grammar ' + pc + '">(' + esc(a[8]) + ')</span>';
+        if (a[9]) s += '<span class="translation">' + esc(a[9]) + '</span>';
+        return s;
+      }
+    } else {
+      if (a[1]) {
+        const pc = posClass(a[4]);
+        let s = '<span class="agram">*' + esc(a[1]) + '*</span><span class="word ' + pc + '">' + esc(a[2]) + '</span>';
+        if (a[3]) s += '<span class="phonetic">[' + esc(a[3]) + ']</span>';
+        s += '<span class="grammar ' + pc + '">(' + esc(a[4]) + ')</span>';
+        return s;
+      } else {
+        const pc = posClass(a[7]);
+        let s = '<span class="word ' + pc + '">' + esc(a[5]) + '</span>';
+        if (a[6]) s += '<span class="phonetic">[' + esc(a[6]) + ']</span>';
+        s += '<span class="grammar ' + pc + '">(' + esc(a[7]) + ')</span>';
+        return s;
+      }
+    }
+  });
+}
+
+// --- History ---
+
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem('tell_history') || '[]'); } catch { return []; }
+}
+
+function addHistory(text) {
+  let h = getHistory().filter(t => t !== text);
+  h.unshift(text);
+  if (h.length > 50) h = h.slice(0, 50);
+  localStorage.setItem('tell_history', JSON.stringify(h));
+  renderHistory();
+}
+
+function renderHistory() {
+  const h = getHistory();
+  const section = document.getElementById('history-section');
+  const chips = document.getElementById('history-chips');
+  if (h.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  chips.innerHTML = h.map(t => {
+    const escaped = esc(t).replace(/"/g, '&quot;');
+    return '<span class="chip"><span class="chip-text" onclick="historyClick(this)" data-text="' + escaped + '">' + esc(t) + '</span><button class="chip-x" onclick="historyRemove(this)" data-text="' + escaped + '">&times;</button></span>';
+  }).join('');
+}
+
+function historyClick(el) {
+  input.value = el.dataset.text;
+  input.focus();
+  speak();
+}
+
+function historyRemove(el) {
+  let h = getHistory().filter(t => t !== el.dataset.text);
+  localStorage.setItem('tell_history', JSON.stringify(h));
+  renderHistory();
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// --- Init ---
+
+// Capture token from URL and persist
+const urlToken = new URLSearchParams(window.location.search).get('token');
+if (urlToken) {
+  localStorage.setItem('tell_token', urlToken);
+  history.replaceState(null, '', window.location.pathname);
+}
+
+renderHistory();
+input.focus();
+</script>
+</body>
+</html>
