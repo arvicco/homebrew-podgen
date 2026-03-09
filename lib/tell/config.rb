@@ -42,7 +42,7 @@ module Tell
                 :model_id, :output_format,
                 :api_key, :tts_api_key, :google_language_code,
                 :reverse_translate, :gloss, :gloss_reverse, :phonetic,
-                :gloss_model, :phonetic_model,
+                :gloss_model, :phonetic_model, :phonetic_system,
                 :engine_api_keys, :translation_timeout
 
     def initialize(overrides: {})
@@ -65,6 +65,7 @@ module Tell
 
       resolve_gloss_model!(data)
       resolve_phonetic_model!(data)
+      resolve_phonetic_system!(data, overrides)
 
       resolve_translation_engines!(data)
       validate_tts_engine!
@@ -89,6 +90,15 @@ module Tell
     # we don't have a real language code, so default to English.
     def reverse_language
       @original_language == "auto" ? "en" : @original_language
+    end
+
+    # Resolve phonetic system for a specific language.
+    # Returns system key string or nil (= use default for that language).
+    def phonetic_system_for(lang)
+      case @phonetic_system
+      when Hash then @phonetic_system[lang]
+      when String then @phonetic_system
+      end
     end
 
     private
@@ -145,6 +155,10 @@ module Tell
       else
         @phonetic_model = @gloss_model.first
       end
+    end
+
+    def resolve_phonetic_system!(data, overrides)
+      @phonetic_system = overrides[:phonetic_system] || ENV["TELL_PHONETIC_SYSTEM"] || data["phonetic_system"]
     end
 
     def resolve_translation_engines!(data)

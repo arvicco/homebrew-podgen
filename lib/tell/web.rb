@@ -67,6 +67,14 @@ module Tell
       }
     end
 
+    get "/systems" do
+      lang = params["lang"]
+      halt 400, { "Content-Type" => "application/json" }, { error: "lang required" }.to_json unless lang
+      systems = Glosser.systems_for(lang)
+      content_type :json
+      systems.map { |key, cfg| { key: key, label: cfg[:label], separator: cfg[:separator] } }.to_json
+    end
+
     get "/speak" do
       check_rate_limit!
 
@@ -157,6 +165,7 @@ module Tell
       do_gloss           = params["gloss"] == "true"
       do_gloss_phonetic  = params["gloss_phonetic"] == "true" && do_gloss
       do_gloss_translate = params["gloss_translate"] == "true" && do_gloss
+      ph_system          = params["phonetic_system"]&.then { |s| s.empty? ? nil : s }
 
       if do_reverse
         threads << Thread.new do
@@ -179,14 +188,14 @@ module Tell
 
         ph_thread = Thread.new do
           Glosser.new(ENV["ANTHROPIC_API_KEY"], model: config.phonetic_model)
-            .phonetic(speak_text, lang: target_lang)
+            .phonetic(speak_text, lang: target_lang, system: ph_system)
         rescue => e
           mutex.synchronize { sse(out, "error", { message: "Phonetic: #{e.message}" }) }
           nil
         end
 
         gloss_thread = Thread.new do
-          run_gloss(config, base_mode, speak_text, target_lang, reverse_lang)
+          run_gloss(config, base_mode, speak_text, target_lang, reverse_lang, system: ph_system)
         rescue => e
           mutex.synchronize { sse(out, "error", { message: "Gloss: #{e.message}" }) }
           nil
@@ -199,12 +208,12 @@ module Tell
           mutex.synchronize { sse(out, "phonetic", { text: ph_result }) } if ph_result
 
           if ph_result && base_result
-            merged = Glosser.merge_phonetic(base_result, ph_result, lang: target_lang)
+            merged = Glosser.merge_phonetic(base_result, ph_result, lang: target_lang, system: ph_system)
             if merged
               mutex.synchronize { sse(out, gloss_event, { text: merged }) }
             else
               # Counts didn't align — re-run gloss with phonetic as reference
-              result = run_gloss(config, full_mode, speak_text, target_lang, reverse_lang, phonetic_ref: ph_result)
+              result = run_gloss(config, full_mode, speak_text, target_lang, reverse_lang, phonetic_ref: ph_result, system: ph_system)
               mutex.synchronize { sse(out, gloss_event, { text: result }) }
             end
           elsif base_result
@@ -222,7 +231,7 @@ module Tell
                        end
 
           threads << Thread.new do
-            result = run_gloss(config, gloss_mode, speak_text, target_lang, reverse_lang)
+            result = run_gloss(config, gloss_mode, speak_text, target_lang, reverse_lang, system: ph_system)
             event = do_gloss_translate ? "gloss_translate" : "gloss"
             mutex.synchronize { sse(out, event, { text: result }) }
           rescue => e
@@ -233,7 +242,7 @@ module Tell
         if do_phonetic
           threads << Thread.new do
             g = Glosser.new(ENV["ANTHROPIC_API_KEY"], model: config.phonetic_model)
-            result = g.phonetic(speak_text, lang: target_lang)
+            result = g.phonetic(speak_text, lang: target_lang, system: ph_system)
             mutex.synchronize { sse(out, "phonetic", { text: result }) }
           rescue => e
             mutex.synchronize { sse(out, "error", { message: "Phonetic: #{e.message}" }) }
@@ -265,27 +274,27 @@ module Tell
       )
     end
 
-    def run_gloss(config, mode, text, target, reverse, phonetic_ref: nil)
+    def run_gloss(config, mode, text, target, reverse, phonetic_ref: nil, system: nil)
       api_key = ENV["ANTHROPIC_API_KEY"]
       raise "Gloss requires ANTHROPIC_API_KEY" unless api_key
 
-      kwargs = { from: target, to: reverse }
+      kwargs = { from: target, to: reverse, system: system }
       kwargs[:phonetic_ref] = phonetic_ref if phonetic_ref && %i[gloss_phonetic gloss_translate_phonetic].include?(mode)
 
       if config.gloss_model.size == 1
         Glosser.new(api_key, model: config.gloss_reconciler)
           .public_send(mode, text, **kwargs)
       else
-        run_consensus(config, mode, text, api_key, target, reverse, phonetic_ref: phonetic_ref)
+        run_consensus(config, mode, text, api_key, target, reverse, phonetic_ref: phonetic_ref, system: system)
       end
     end
 
-    def run_consensus(config, mode, text, api_key, target, reverse, phonetic_ref: nil)
+    def run_consensus(config, mode, text, api_key, target, reverse, phonetic_ref: nil, system: nil)
       glosses = {}
       errors = {}
       gmutex = Mutex.new
 
-      kwargs = { from: target, to: reverse }
+      kwargs = { from: target, to: reverse, system: system }
       kwargs[:phonetic_ref] = phonetic_ref if phonetic_ref && %i[gloss_phonetic gloss_translate_phonetic].include?(mode)
 
       gthreads = config.gloss_model.map do |model_id|
@@ -303,7 +312,7 @@ module Tell
       return glosses.values.first if glosses.size == 1
 
       Glosser.new(api_key, model: config.gloss_reconciler)
-        .reconcile(glosses, text, from: target, to: reverse, mode: mode)
+        .reconcile(glosses, text, from: target, to: reverse, mode: mode, system: system)
     end
   end
 end

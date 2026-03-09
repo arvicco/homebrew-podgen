@@ -137,28 +137,30 @@ module Tell
     end
 
     def phonetic(text)
-      result = build_glosser(@config.phonetic_model).phonetic(text, lang: @config.target_language)
+      sys = @config.phonetic_system_for(@config.target_language)
+      result = build_glosser(@config.phonetic_model).phonetic(text, lang: @config.target_language, system: sys)
       $stderr.puts "#{Colors.tag("PH:")} #{Colors.phonetic(result)}"
     rescue => e
       $stderr.puts Colors.error("Phonetic failed: #{friendly_error(e)}")
     end
 
     def run_gloss(mode, text)
+      sys = @config.phonetic_system_for(@config.target_language)
       if @config.gloss_model.size == 1
-        build_glosser(@config.gloss_reconciler).public_send(mode, text, from: @config.target_language, to: @config.reverse_language)
+        build_glosser(@config.gloss_reconciler).public_send(mode, text, from: @config.target_language, to: @config.reverse_language, system: sys)
       else
-        run_consensus(mode, text)
+        run_consensus(mode, text, system: sys)
       end
     end
 
-    def run_consensus(mode, text)
+    def run_consensus(mode, text, system: nil)
       mutex = Mutex.new
       glosses = {}
       errors = {}
 
       threads = @config.gloss_model.map do |model_id|
         Thread.new(model_id) do |mid|
-          result = build_glosser(mid).public_send(mode, text, from: @config.target_language, to: @config.reverse_language)
+          result = build_glosser(mid).public_send(mode, text, from: @config.target_language, to: @config.reverse_language, system: system)
           mutex.synchronize { glosses[mid] = result }
         rescue => e
           mutex.synchronize { errors[mid] = e }
@@ -172,7 +174,7 @@ module Tell
         glosses.values.first
       else
         reconciler = build_glosser(@config.gloss_reconciler)
-        reconciler.reconcile(glosses, text, from: @config.target_language, to: @config.reverse_language, mode: mode)
+        reconciler.reconcile(glosses, text, from: @config.target_language, to: @config.reverse_language, mode: mode, system: system)
       end
     end
 

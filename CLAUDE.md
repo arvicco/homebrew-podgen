@@ -158,7 +158,7 @@ Standalone CLI (`bin/tell`) for pronouncing text via TTS with auto-translation. 
 - **Interactive mode:** Reline-based REPL with persistent history (`~/.tell_history`, 1000 entries), dedup, non-blocking playback (new input interrupts current audio)
 - **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), gloss+translate (`--gr`), phonetic (`-p`) — run in background threads. Combinable: `--gp`, `--grp`, `--rp`
 - **Gloss:** Claude produces `word(grammar)` interlinear analysis with agrammatical marking (`*wrong*correction(grammar)`). `--gr` adds translations: `word(grammar)translation`. Multi-model consensus: `gloss_model: [opus, sonnet]` runs models in parallel, reconciler (first model) keeps error markings only when models agree. Single model still works: `gloss_model: opus`
-- **Phonetic:** `-p` shows reading (kana for Japanese, pinyin for Chinese, IPA/romanization for others). `--gp` inlines phonetic into gloss: `word[reading](grammar)`. Standalone `-p` always fires alongside combined modes
+- **Phonetic:** `-p` shows reading (kana for Japanese, pinyin for Chinese, IPA/romanization for others). `--ps SYSTEM` selects a specific system (e.g. `hepburn`, `pinyin`, `ipa`). `--gp` inlines phonetic into gloss: `word[reading](grammar)`. Standalone `-p` always fires alongside combined modes. Per-language systems defined in `Glosser::PHONETIC_SYSTEMS` with data-driven prompt generation
 - **Style hints:** Append `/p`, `/c`, `/m`, `/f` (or combos like `/pm`, `/cf`) to input text. `/p` = polite, `/c` = casual, `/m` = male voice, `/f` = female voice. Stripped before synthesis, passed to translator. Voice switching requires `voice_male`/`voice_female` in config
 - **Output:** `afplay` (terminal), file (`-o`), stdout (pipe)
 
@@ -185,11 +185,12 @@ gloss_model: opus                    # opus | sonnet | haiku (or array for multi
 #   - opus
 #   - sonnet
 phonetic_model: opus                 # opus | sonnet | haiku (default: first gloss_model)
+phonetic_system: ipa                 # Phonetic system: string (global) or hash (per-language)
 translation_timeout: 8.0            # Per-engine timeout in seconds
 ```
 
 ### Environment variables
-`ELEVENLABS_API_KEY`, `GOOGLE_API_KEY`, `DEEPL_AUTH_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TELL_TRANSLATE_TIMEOUT`, `CLAUDE_MODEL` (for Claude translator), `OPENAI_TRANSLATE_MODEL` (gpt-4o-mini), `TELL_GLOSS_MODEL` (overrides config gloss_model), `TELL_PHONETIC_MODEL` (overrides config phonetic_model)
+`ELEVENLABS_API_KEY`, `GOOGLE_API_KEY`, `DEEPL_AUTH_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TELL_TRANSLATE_TIMEOUT`, `CLAUDE_MODEL` (for Claude translator), `OPENAI_TRANSLATE_MODEL` (gpt-4o-mini), `TELL_GLOSS_MODEL` (overrides config gloss_model), `TELL_PHONETIC_MODEL` (overrides config phonetic_model), `TELL_PHONETIC_SYSTEM` (overrides config phonetic_system)
 
 Loads `.env` from code root + `~/.env`.
 
@@ -205,6 +206,7 @@ tell [options] [text...]
   -g, --gloss           Show word-by-word grammatical analysis
   --gr                  Gloss with word translations: word(grammar)translation
   -p, --phonetic        Show phonetic reading (kana/pinyin/romanization)
+  --ps SYSTEM           Set phonetic system (e.g. hepburn, pinyin, ipa)
   --gp                  Gloss with inline phonetic: word[reading](grammar)
   --grp                 Gloss with translations + phonetic
   --rp                  Reverse translate + phonetic reading

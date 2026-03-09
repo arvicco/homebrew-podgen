@@ -920,6 +920,7 @@ $ tell "dobro jutro"
 | `-g, --gloss` | Show word-by-word grammatical analysis |
 | `--gr` | Gloss with translations: `word(grammar)translation` |
 | `-p, --phonetic` | Show phonetic reading (kana/pinyin/romanization) |
+| `--ps SYSTEM` | Set phonetic system (e.g. `hepburn`, `pinyin`, `ipa`) |
 | `--gp` | Gloss with inline phonetic: `word[reading](grammar)` |
 | `--grp` | Gloss with translations + phonetic |
 | `--rp` | Reverse translate + phonetic reading |
@@ -974,7 +975,7 @@ Use `-p` to show phonetic readings alongside TTS playback:
 
 ```
 $ tell -p "今日はいい天気です"
-PH: きょうはいいてんきです
+PH: きょう・は・いい・てんき・です
 [audio plays]
 
 $ tell -p "dober dan"
@@ -991,6 +992,48 @@ GL: dober[ˈdɔːbəɾ](adj.m.N.sg) dan[ˈdaːn](n.m.N.sg)
 ```
 
 The phonetic model defaults to the first `gloss_model` (override with `phonetic_model` in config or `TELL_PHONETIC_MODEL` env).
+
+#### Phonetic systems
+
+Each language has multiple phonetic systems available. Use `--ps` to select one:
+
+```
+$ tell --ps hepburn -p "今日はいい天気です"
+PH: kyō wa ii tenki desu
+[audio plays]
+
+$ tell --ps ipa -p "今日はいい天気です"
+PH: /kʲoː wa iː teŋki desɯ/
+[audio plays]
+```
+
+Available systems per language (first is the default):
+
+| Language | Systems |
+|----------|---------|
+| Japanese | `hiragana`, `hepburn`, `ipa` |
+| Chinese | `pinyin`, `zhuyin`, `ipa` |
+| Korean | `rr` (Revised Romanization), `mr` (McCune-Reischauer), `ipa` |
+| Arabic | `romanization`, `ipa` |
+| Thai | `rtgs`, `ipa` |
+| Georgian | `national`, `ipa` |
+| Greek | `elot`, `ipa` |
+| Cyrillic (ru, uk, bg, sr, mk, be) | `scholarly`, `simple`, `ipa` |
+| Indic (hi, sa, ne, mr) | `iast`, `ipa` |
+| Hebrew (he, yi) | `standard`, `ipa` |
+| Other languages | `ipa`, `simple` |
+
+Set a default in `~/.tell.yml`:
+
+```yaml
+phonetic_system: ipa          # global default
+# or per-language:
+phonetic_system:
+  ja: hepburn
+  zh: pinyin
+```
+
+Override via environment: `TELL_PHONETIC_SYSTEM=ipa`.
 
 ### Style hints
 
@@ -1036,6 +1079,7 @@ gloss_model: opus                    # opus | sonnet | haiku (or array for multi
 #   - opus
 #   - sonnet
 phonetic_model: opus                 # opus | sonnet | haiku (default: first gloss_model)
+phonetic_system: ipa                 # Default phonetic system (or hash of lang→system)
 translation_timeout: 8.0            # Per-engine timeout (seconds)
 
 # API keys (can also be set via environment variables)

@@ -720,7 +720,8 @@ class TestTellProcessor < Minitest::Test
     :translation_engines, :tts_engine, :engine_api_keys,
     :api_key, :tts_api_key, :model_id, :output_format,
     :google_language_code, :reverse_translate, :gloss, :gloss_reverse,
-    :phonetic, :gloss_model, :phonetic_model, :translation_timeout,
+    :phonetic, :gloss_model, :phonetic_model, :phonetic_system,
+    :translation_timeout,
     keyword_init: true
   ) do
     def translation_engine
@@ -737,6 +738,10 @@ class TestTellProcessor < Minitest::Test
 
     def gloss_reconciler
       gloss_model&.first
+    end
+
+    def phonetic_system_for(_lang)
+      phonetic_system
     end
   end
 
@@ -797,37 +802,37 @@ class TestTellProcessor < Minitest::Test
       @error = error
     end
 
-    def gloss(text, from:, to:)
+    def gloss(text, from:, to:, system: nil)
       raise @error if @error
       @calls << [:gloss, text]
       @gloss_result
     end
 
-    def gloss_translate(text, from:, to:)
+    def gloss_translate(text, from:, to:, system: nil)
       raise @error if @error
       @calls << [:gloss_translate, text]
       @gloss_translate_result
     end
 
-    def gloss_phonetic(text, from:, to:)
+    def gloss_phonetic(text, from:, to:, system: nil)
       raise @error if @error
       @calls << [:gloss_phonetic, text]
       @gloss_phonetic_result
     end
 
-    def gloss_translate_phonetic(text, from:, to:)
+    def gloss_translate_phonetic(text, from:, to:, system: nil)
       raise @error if @error
       @calls << [:gloss_translate_phonetic, text]
       @gloss_translate_phonetic_result
     end
 
-    def phonetic(text, lang:)
+    def phonetic(text, lang:, system: nil)
       raise @error if @error
       @phonetic_calls << [:phonetic, text]
       @phonetic_result
     end
 
-    def reconcile(glosses, text, from:, to:, mode:)
+    def reconcile(glosses, text, from:, to:, mode:, system: nil)
       @reconcile_calls << { glosses: glosses, text: text, from: from, to: to, mode: mode }
       "reconciled(n.m.N.sg)"
     end

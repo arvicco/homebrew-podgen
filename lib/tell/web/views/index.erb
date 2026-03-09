@@ -51,15 +51,15 @@ body {
 }
 .input-row textarea:focus { border-color: var(--accent); }
 
-/* Hint + Tell row */
-.hint-row { display: flex; gap: 0.375rem; align-items: center; margin-bottom: 0.5rem; }
-.hint-row button#speak-btn {
+/* Addon + Tell row */
+.addon-row { display: flex; gap: 0.25rem; align-items: center; margin-bottom: 0.375rem; }
+.addon-row button#speak-btn {
   padding: 0.375rem 0.625rem; border: none; border-radius: var(--radius);
   background: var(--accent); color: #fff; font-size: 0.8125rem; cursor: pointer;
   white-space: nowrap; margin-left: auto;
 }
-.hint-row button#speak-btn:hover { background: var(--accent-hover); }
-.hint-row button#speak-btn:disabled { opacity: 0.5; cursor: default; }
+.addon-row button#speak-btn:hover { background: var(--accent-hover); }
+.addon-row button#speak-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* Style pills */
 .pills { display: flex; gap: 0.25rem; align-items: center; }
@@ -86,8 +86,8 @@ body {
 .lang-arrow { color: var(--fg-muted); cursor: pointer; user-select: none; }
 .lang-arrow:hover { color: var(--accent); }
 
-/* Controls row: addon pills left, lang right */
-.controls { margin-bottom: 0.5rem; display: flex; gap: 0.25rem; flex-wrap: wrap; align-items: center; }
+/* Style + language row */
+.controls { margin-bottom: 0.5rem; display: flex; gap: 0.25rem; align-items: center; }
 .lang-group { display: flex; gap: 0.375rem; align-items: center; margin-left: auto; }
 .addon-pill {
   padding: 0.1875rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius);
@@ -97,6 +97,8 @@ body {
 .addon-pill:hover:not(.active) { border-color: var(--fg-muted); }
 .addon-pill.sub { display: none; font-size: 0.6875rem; }
 .addon-pill.sub.visible { display: inline-block; }
+.ph-system-wrap { display: none; }
+.ph-system-wrap.visible { display: inline-block; }
 
 @media (prefers-color-scheme: dark) {
   .addon-pill.active { background: #22d3ee; color: #1a1a1a; border-color: #22d3ee; }
@@ -190,7 +192,18 @@ body {
     <textarea id="text-input" rows="2" placeholder="Type a word or phrase..." autofocus autocomplete="off"></textarea>
   </div>
 
-  <div class="hint-row">
+  <div class="addon-row">
+    <button class="addon-pill" id="opt-reverse">reverse</button>
+    <button class="addon-pill" id="opt-phonetic">phonetic</button>
+    <span class="ph-system-wrap lang-wrap" id="ph-system-wrap"><span class="lang-label" id="ph-system-label"></span><select id="ph-system-select"></select></span>
+    <button class="addon-pill" id="opt-gloss">gloss</button>
+    <button class="addon-pill sub" id="opt-gloss-phonetic">+words</button>
+    <button class="addon-pill sub" id="opt-gloss-translate">+trans</button>
+    <button id="speak-btn" onclick="speak()">Tell</button>
+    <span class="spinner" id="spinner"></span>
+  </div>
+
+  <div class="controls">
     <div class="pills" id="hint-pills">
       <button class="pill" data-hint="p">polite</button>
       <button class="pill" data-hint="c">casual</button>
@@ -198,16 +211,6 @@ body {
       <button class="pill" data-hint="m">male</button>
       <button class="pill" data-hint="f">female</button>
     </div>
-    <button id="speak-btn" onclick="speak()">Tell</button>
-    <span class="spinner" id="spinner"></span>
-  </div>
-
-  <div class="controls">
-    <button class="addon-pill" id="opt-reverse">reverse</button>
-    <button class="addon-pill" id="opt-phonetic">phonetic</button>
-    <button class="addon-pill" id="opt-gloss">gloss</button>
-    <button class="addon-pill sub" id="opt-gloss-phonetic">+words</button>
-    <button class="addon-pill sub" id="opt-gloss-translate">+trans</button>
     <span class="lang-group">
       <span class="lang-wrap"><span class="lang-label" id="lang-from-label"></span><select id="lang-from"></select></span>
       <span class="lang-arrow" id="lang-swap" title="Swap languages">&harr;</span>
@@ -276,32 +279,19 @@ function updateLabel(sel, label) {
   sel.addEventListener('change', () => updateLabel(sel, label));
 });
 
-langFrom.addEventListener('change', () => {
-  if (!(speakText || mainSource)) return;
-  const text = input.value.trim();
-  if (!text) return;
-  const p = new URLSearchParams({ text: text, no_tts: 'true' });
-  addLangs(p);
-  const hint = Array.from(currentHints).join('');
-  if (hint) p.set('hint', hint);
-  addToken(p);
-  const es = new EventSource('/speak?' + p.toString());
-  es.addEventListener('translation', e => {
-    const d = JSON.parse(e.data);
-    if (d.text !== translatedText) speak();
-  });
-  es.addEventListener('done', () => es.close());
-  es.onerror = () => es.close();
+langTo.addEventListener('change', async () => {
+  await loadPhSystems(langTo.value);
+  if (speakText || mainSource) speak();
 });
-langTo.addEventListener('change', () => { if (speakText || mainSource) speak(); });
 
-document.getElementById('lang-swap').addEventListener('click', () => {
+document.getElementById('lang-swap').addEventListener('click', async () => {
   const from = langFrom.value;
   const to = langTo.value;
   langTo.value = from === 'auto' ? 'en' : from;
   langFrom.value = to;
   updateLabel(langFrom, langFromLabel);
   updateLabel(langTo, langToLabel);
+  await loadPhSystems(langTo.value);
   if (translatedText) input.value = translatedText;
   if (input.value.trim()) speak();
 });
@@ -312,6 +302,100 @@ let translatedText = null;  // displayed translation (for swap)
 let mainSource = null;
 let addonSources = {};
 let cache = {};             // addon results cache: key → { className, html }
+
+// --- Phonetic system selector ---
+const phSystemWrap = document.getElementById('ph-system-wrap');
+const phSystemSelect = document.getElementById('ph-system-select');
+const phSystemLabel = document.getElementById('ph-system-label');
+let phSystems = [];       // [{key, label, separator}, ...] for current langTo
+let phSeparator = ' ';    // separator for current system
+let phCacheBySystem = {}; // system_key → phonetic text (cache across system switches)
+
+function loadPhSystems(lang) {
+  const p = new URLSearchParams({ lang: lang });
+  const token = localStorage.getItem('tell_token');
+  if (token) p.set('token', token);
+  return fetch('/systems?' + p.toString())
+    .then(r => r.json())
+    .then(systems => {
+      phSystems = systems;
+      phSystemSelect.innerHTML = systems.map(s =>
+        '<option value="' + s.key + '">' + s.label + '</option>'
+      ).join('');
+      // Restore saved selection for this language
+      const saved = localStorage.getItem('tell_ph_system_' + lang);
+      if (saved && systems.some(s => s.key === saved)) {
+        phSystemSelect.value = saved;
+      } else {
+        phSystemSelect.value = systems[0]?.key || '';
+      }
+      updatePhLabel();
+    })
+    .catch(() => {});
+}
+
+function updatePhLabel() {
+  const sel = phSystemSelect;
+  const opt = sel.options[sel.selectedIndex];
+  phSystemLabel.textContent = opt ? opt.textContent : '';
+  const sys = phSystems.find(s => s.key === sel.value);
+  phSeparator = sys ? sys.separator : ' ';
+}
+
+function updatePhSystemVisibility() {
+  phSystemWrap.classList.toggle('visible',
+    optPhonetic.checked || (optGloss.checked && optGlossPhonetic.checked));
+}
+
+function saveAddonState() {
+  localStorage.setItem('tell_addons', JSON.stringify({
+    reverse: optReverse.checked,
+    phonetic: optPhonetic.checked,
+    gloss: optGloss.checked,
+    glossPhonetic: optGlossPhonetic.checked,
+    glossTranslate: optGlossTranslate.checked
+  }));
+}
+
+phSystemSelect.addEventListener('change', () => {
+  updatePhLabel();
+  const lang = langTo.value;
+  const sys = phSystemSelect.value;
+  localStorage.setItem('tell_ph_system_' + lang, sys);
+
+  // Switch to cached phonetic for this system (or null if not yet fetched)
+  const cached = phCacheBySystem[sys];
+  phCached = cached || null;
+
+  // If gloss has phonetic from a different system, strip and re-merge
+  if (glossHasPhonetic) {
+    glossRaw = stripPhonetic(glossRaw);
+    glossHasPhonetic = false;
+    if (phCached) enrichWithPhonetic();
+  }
+
+  if (optPhonetic.checked && speakText) {
+    if (cached) {
+      const slot = document.getElementById('slot-phonetic');
+      const cls = 'result-slot result-row result-phonetic';
+      const html = '<span class="tag">PH:</span>' + esc(cached);
+      slot.className = cls;
+      slot.innerHTML = html;
+      cache['phonetic'] = { className: cls, html: html };
+    } else {
+      delete cache['phonetic'];
+      triggerAddon('phonetic');
+    }
+    if (optGloss.checked && optGlossPhonetic.checked) updateGloss();
+  }
+});
+
+function currentPhSystem() {
+  return phSystemSelect.value || null;
+}
+
+// Load systems for initial target language
+loadPhSystems(langTo.value);
 
 // --- Gloss cache: store richest raw text, derive simpler variants locally ---
 let glossRaw = null;          // richest raw gloss text from server
@@ -329,9 +413,8 @@ function stripPhonetic(text) {
 
 // Port of Glosser.merge_phonetic — insert readings into gloss words
 function mergePhonetic(gloss, phoneticText) {
-  const lang = langTo.value;
   let readings;
-  if (lang === 'ja') {
+  if (phSeparator === '・') {
     readings = phoneticText.trim().split(/\s*・\s*/);
   } else {
     readings = phoneticText.trim().replace(/^\/|\/$/g, '').trim().split(/\s+/);
@@ -371,14 +454,8 @@ function displayGloss(text, isTranslate) {
 // Can we fulfill the current gloss toggle state from cache + local ops?
 function canDeriveGloss() {
   if (!glossRaw) return false;
-  // Removing is always possible
-  // Adding translate needs server if we don't have it
   if (optGlossTranslate.checked && !glossHasTranslate) return false;
-  // Adding phonetic: need it in cache, or merge with phCached
-  if (optGlossPhonetic.checked && !glossHasPhonetic) {
-    if (phCached) return true; // can merge
-    return false;
-  }
+  if (optGlossPhonetic.checked && !glossHasPhonetic) return false;
   return true;
 }
 
@@ -403,12 +480,15 @@ function enrichWithPhonetic() {
 
 optReverse.addEventListener('click', () => {
   optReverse.checked = !optReverse.checked;
+  saveAddonState();
   if (optReverse.checked) triggerAddon('reverse');
   else removeAddon('reverse');
 });
 
 optPhonetic.addEventListener('click', () => {
   optPhonetic.checked = !optPhonetic.checked;
+  updatePhSystemVisibility();
+  saveAddonState();
   if (optPhonetic.checked) triggerAddon('phonetic');
   else removeAddon('phonetic');
 });
@@ -418,23 +498,29 @@ optGloss.addEventListener('click', () => {
   if (optGloss.checked) {
     optGlossPhonetic.classList.add('visible');
     optGlossTranslate.classList.add('visible');
+    updatePhSystemVisibility();
     updateGloss();
   } else {
     optGlossPhonetic.classList.remove('visible');
     optGlossTranslate.classList.remove('visible');
     optGlossPhonetic.checked = false;
     optGlossTranslate.checked = false;
+    updatePhSystemVisibility();
     removeAddon('gloss');
   }
+  saveAddonState();
 });
 
 optGlossPhonetic.addEventListener('click', () => {
   optGlossPhonetic.checked = !optGlossPhonetic.checked;
+  updatePhSystemVisibility();
+  saveAddonState();
   if (optGloss.checked) updateGloss();
 });
 
 optGlossTranslate.addEventListener('click', () => {
   optGlossTranslate.checked = !optGlossTranslate.checked;
+  saveAddonState();
   if (optGloss.checked) updateGloss();
 });
 
@@ -464,7 +550,7 @@ function triggerGlossAddon() {
   const p = new URLSearchParams({ text: speakText, no_tts: 'true', no_translate: 'true' });
   addLangs(p);
   p.set('gloss', 'true');
-  if (optGlossPhonetic.checked) p.set('gloss_phonetic', 'true');
+  if (optGlossPhonetic.checked) { p.set('gloss_phonetic', 'true'); addPhSystem(p); }
   if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
   addToken(p);
 
@@ -530,6 +616,7 @@ function speak() {
   glossHasPhonetic = false;
   glossHasTranslate = false;
   phCached = null;
+  phCacheBySystem = {};
 
   // Show labeled placeholders for checked addons
   if (optReverse.checked) setSlotLoading('reverse');
@@ -656,7 +743,9 @@ function attachHandlers(es) {
 
   es.addEventListener('phonetic', e => {
     const d = JSON.parse(e.data);
+    const sys = currentPhSystem() || '_default';
     phCached = d.text;
+    phCacheBySystem[sys] = d.text;
     const slot = document.getElementById('slot-phonetic');
     const cls = 'result-slot result-row result-phonetic';
     const html = '<span class="tag">PH:</span>' + esc(d.text);
@@ -697,6 +786,11 @@ function addLangs(p) {
   p.set('to', langTo.value);
 }
 
+function addPhSystem(p) {
+  const sys = currentPhSystem();
+  if (sys) p.set('phonetic_system', sys);
+}
+
 function buildFullParams(text) {
   const p = new URLSearchParams({ text: text });
   addLangs(p);
@@ -707,6 +801,7 @@ function buildFullParams(text) {
     if (optGlossPhonetic.checked) p.set('gloss_phonetic', 'true');
     if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
   }
+  if (optPhonetic.checked || (optGloss.checked && optGlossPhonetic.checked)) addPhSystem(p);
   const hint = Array.from(currentHints).join('');
   if (hint) p.set('hint', hint);
   addToken(p);
@@ -717,10 +812,10 @@ function buildAddonParams(type) {
   const p = new URLSearchParams({ text: speakText, no_tts: 'true', no_translate: 'true' });
   addLangs(p);
   if (type === 'reverse') p.set('reverse', 'true');
-  if (type === 'phonetic') p.set('phonetic', 'true');
+  if (type === 'phonetic') { p.set('phonetic', 'true'); addPhSystem(p); }
   if (type === 'gloss') {
     p.set('gloss', 'true');
-    if (optGlossPhonetic.checked) p.set('gloss_phonetic', 'true');
+    if (optGlossPhonetic.checked) { p.set('gloss_phonetic', 'true'); addPhSystem(p); }
     if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
   }
   addToken(p);
@@ -873,6 +968,23 @@ if (urlToken) {
   localStorage.setItem('tell_token', urlToken);
   history.replaceState(null, '', window.location.pathname);
 }
+
+// Restore persisted addon toggles
+try {
+  const saved = JSON.parse(localStorage.getItem('tell_addons'));
+  if (saved) {
+    optReverse.checked = !!saved.reverse;
+    optPhonetic.checked = !!saved.phonetic;
+    optGloss.checked = !!saved.gloss;
+    if (optGloss.checked) {
+      optGlossPhonetic.classList.add('visible');
+      optGlossTranslate.classList.add('visible');
+      optGlossPhonetic.checked = !!saved.glossPhonetic;
+      optGlossTranslate.checked = !!saved.glossTranslate;
+    }
+    updatePhSystemVisibility();
+  }
+} catch {}
 
 renderHistory();
 input.focus();

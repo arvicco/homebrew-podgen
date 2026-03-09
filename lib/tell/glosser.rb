@@ -4,32 +4,205 @@ require_relative "../language_names"
 
 module Tell
   class Glosser
+    # --- Phonetic systems per language ---
+    # Ordered hash: first key = default system for that language.
+    # Config: label (UI), standalone (prompt), bracket (gloss prompt), separator (word delimiter).
+    PHONETIC_SYSTEMS = begin
+      ipa = ->(standalone: nil, bracket: nil) {
+        {
+          label: "IPA",
+          standalone: standalone || "Provide IPA transcription enclosed in slashes. Output ONLY the IPA on a single line, no headers or formatting.",
+          bracket: bracket || "Phonetic: IPA transcription in brackets",
+          separator: " "
+        }.freeze
+      }
+
+      cyrillic = {
+        "scholarly" => {
+          label: "Scholarly",
+          standalone: "Romanize using scholarly transliteration. Output ONLY the romanization.",
+          bracket: "Phonetic: scholarly romanization",
+          separator: " "
+        }.freeze,
+        "simple" => {
+          label: "Simple",
+          standalone: "Romanize using simplified romanization (no diacritics). Output ONLY the romanized text on a single line, no headers or formatting.",
+          bracket: "Phonetic: simplified romanization (no diacritics)",
+          separator: " "
+        }.freeze,
+        "ipa" => ipa.call
+      }.freeze
+
+      indic = {
+        "iast" => {
+          label: "IAST",
+          standalone: "Convert to IAST romanization. Output ONLY the romanization.",
+          bracket: "Phonetic: IAST romanization",
+          separator: " "
+        }.freeze,
+        "ipa" => ipa.call
+      }.freeze
+
+      hebrew = {
+        "standard" => {
+          label: "Standard",
+          standalone: "Romanize using standard transliteration. Output ONLY the romanization.",
+          bracket: "Phonetic: standard transliteration",
+          separator: " "
+        }.freeze,
+        "ipa" => ipa.call
+      }.freeze
+
+      {
+        "ja" => {
+          "hiragana" => {
+            label: "Hiragana",
+            standalone: "Convert to hiragana reading. Separate words with middle dots (・). Output ONLY the hiragana.",
+            bracket: "Phonetic: hiragana reading in brackets, e.g. [おげんき]",
+            separator: "・"
+          }.freeze,
+          "hepburn" => {
+            label: "Hepburn",
+            standalone: "Romanize using modified Hepburn romanization. Separate words with spaces. Output ONLY the romanization.",
+            bracket: "Phonetic: Hepburn romanization in brackets, e.g. [ogenki]",
+            separator: " "
+          }.freeze,
+          "ipa" => ipa.call
+        }.freeze,
+        "zh" => {
+          "pinyin" => {
+            label: "Pinyin",
+            standalone: "Convert to pinyin with tone marks (e.g. nǐ hǎo). Output ONLY the pinyin.",
+            bracket: "Phonetic: pinyin with tone marks, e.g. [nǐ hǎo]",
+            separator: " "
+          }.freeze,
+          "zhuyin" => {
+            label: "Zhuyin",
+            standalone: "Convert to Zhuyin/Bopomofo (e.g. ㄋㄧˇ ㄏㄠˇ). Output ONLY the Zhuyin.",
+            bracket: "Phonetic: Zhuyin/Bopomofo in brackets, e.g. [ㄋㄧˇ ㄏㄠˇ]",
+            separator: " "
+          }.freeze,
+          "ipa" => ipa.call
+        }.freeze,
+        "ko" => {
+          "rr" => {
+            label: "Revised",
+            standalone: "Convert to Revised Romanization (e.g. annyeonghaseyo). Output ONLY the romanization.",
+            bracket: "Phonetic: Revised Romanization, e.g. [annyeong]",
+            separator: " "
+          }.freeze,
+          "mr" => {
+            label: "McCune",
+            standalone: "Convert to McCune-Reischauer romanization (e.g. annyŏnghaseyo). Output ONLY the romanization.",
+            bracket: "Phonetic: McCune-Reischauer romanization in brackets, e.g. [annyŏng]",
+            separator: " "
+          }.freeze,
+          "ipa" => ipa.call
+        }.freeze,
+        "ar" => {
+          "romanization" => {
+            label: "Roman.",
+            standalone: "Romanize with standard diacritics. Output ONLY the romanization.",
+            bracket: "Phonetic: romanization with diacritics",
+            separator: " "
+          }.freeze,
+          "ipa" => ipa.call
+        }.freeze,
+        "th" => {
+          "rtgs" => {
+            label: "RTGS",
+            standalone: "Convert to RTGS romanization. Output ONLY the romanization.",
+            bracket: "Phonetic: RTGS romanization",
+            separator: " "
+          }.freeze,
+          "ipa" => ipa.call
+        }.freeze,
+        "ka" => {
+          "national" => {
+            label: "National",
+            standalone: "Romanize using national romanization. Output ONLY the romanization.",
+            bracket: "Phonetic: national romanization",
+            separator: " "
+          }.freeze,
+          "ipa" => ipa.call
+        }.freeze,
+        "el" => {
+          "elot" => {
+            label: "ELOT",
+            standalone: "Romanize using UN/ELOT romanization. Output ONLY the romanization.",
+            bracket: "Phonetic: UN/ELOT romanization",
+            separator: " "
+          }.freeze,
+          "ipa" => ipa.call
+        }.freeze,
+        "ru" => cyrillic, "uk" => cyrillic, "bg" => cyrillic,
+        "sr" => cyrillic, "mk" => cyrillic, "be" => cyrillic,
+        "hi" => indic, "sa" => indic, "ne" => indic, "mr" => indic,
+        "he" => hebrew, "yi" => hebrew,
+        "_default" => {
+          "ipa" => {
+            label: "IPA",
+            standalone: "Provide IPA transcription enclosed in slashes (e.g. /example/). Output ONLY the IPA on a single line, no headers or formatting.",
+            bracket: "Phonetic: IPA transcription, e.g. [ˈhɛloʊ]",
+            separator: " "
+          }.freeze,
+          "simple" => {
+            label: "Simple",
+            standalone: "Provide simplified phonetic spelling using common English letter combinations (e.g. nyeh for nje). Output ONLY the phonetic text on a single line, no headers or formatting.",
+            bracket: "Phonetic: simplified phonetic spelling in brackets",
+            separator: " "
+          }.freeze
+        }.freeze
+      }.freeze
+    end
+
+    # Available phonetic systems for a language.
+    def self.systems_for(lang)
+      PHONETIC_SYSTEMS[lang] || PHONETIC_SYSTEMS["_default"]
+    end
+
+    # Default phonetic system key for a language.
+    def self.default_system(lang)
+      systems_for(lang).keys.first
+    end
+
+    # Look up config for a specific system (or default).
+    def self.system_config(lang, system: nil)
+      systems = systems_for(lang)
+      if system
+        systems[system] || systems.values.first
+      else
+        systems.values.first
+      end
+    end
+
     def initialize(api_key, model: "claude-opus-4-6")
       require "anthropic"
       @client = Anthropic::Client.new(api_key: api_key, timeout: 15, max_retries: 1)
       @model = model
     end
 
-    def gloss(text, from:, to:)
+    def gloss(text, from:, to:, system: nil)
       ask(build_gloss_prompt(text, from: from, to: to, translate: false, phonetic: false))
     end
 
-    def gloss_translate(text, from:, to:)
+    def gloss_translate(text, from:, to:, system: nil)
       ask(build_gloss_prompt(text, from: from, to: to, translate: true, phonetic: false))
     end
 
-    def gloss_phonetic(text, from:, to:, phonetic_ref: nil)
-      ask(build_gloss_prompt(text, from: from, to: to, translate: false, phonetic: true, phonetic_ref: phonetic_ref))
+    def gloss_phonetic(text, from:, to:, phonetic_ref: nil, system: nil)
+      ask(build_gloss_prompt(text, from: from, to: to, translate: false, phonetic: true, phonetic_ref: phonetic_ref, system: system))
     end
 
-    def gloss_translate_phonetic(text, from:, to:, phonetic_ref: nil)
-      ask(build_gloss_prompt(text, from: from, to: to, translate: true, phonetic: true, phonetic_ref: phonetic_ref))
+    def gloss_translate_phonetic(text, from:, to:, phonetic_ref: nil, system: nil)
+      ask(build_gloss_prompt(text, from: from, to: to, translate: true, phonetic: true, phonetic_ref: phonetic_ref, system: system))
     end
 
     # Split standalone phonetic output into per-word readings.
-    def self.split_phonetic(phonetic_text, lang:)
+    def self.split_phonetic(phonetic_text, lang:, system: nil)
+      separator = system_config(lang, system: system)[:separator]
       text = phonetic_text.strip
-      if lang == "ja"
+      if separator == "・"
         text.split(/\s*・\s*/)
       else
         text.delete_prefix("/").delete_suffix("/").strip.split(/\s+/)
@@ -40,8 +213,8 @@ module Tell
     # Returns merged string if word counts align 1:1, nil otherwise.
     GLOSS_WORD_RE = /(?:\*\S+?\*)?\S+?\([^)]+\)\S*/
 
-    def self.merge_phonetic(gloss, phonetic_text, lang:)
-      readings = split_phonetic(phonetic_text, lang: lang)
+    def self.merge_phonetic(gloss, phonetic_text, lang:, system: nil)
+      readings = split_phonetic(phonetic_text, lang: lang, system: system)
       return nil if readings.empty?
 
       word_count = gloss.scan(GLOSS_WORD_RE).size
@@ -55,9 +228,9 @@ module Tell
       end
     end
 
-    def phonetic(text, lang:)
+    def phonetic(text, lang:, system: nil)
       lang_name = LANGUAGE_NAMES.fetch(lang, lang)
-      instruction = phonetic_standalone_instruction(lang)
+      instruction = phonetic_standalone_instruction(lang, system: system)
 
       ask(<<~PROMPT, max_tokens: 1024)
         #{instruction}
@@ -66,7 +239,7 @@ module Tell
       PROMPT
     end
 
-    def reconcile(glosses, text, from:, to:, mode:)
+    def reconcile(glosses, text, from:, to:, mode:, system: nil)
       from_name = LANGUAGE_NAMES.fetch(from, from)
       to_name = LANGUAGE_NAMES.fetch(to, to)
 
@@ -84,7 +257,7 @@ module Tell
 
       ph_instruction = if has_phonetic
         " Include phonetic reading in square brackets between word and grammar: word[reading](grammar). " \
-        "Omit [reading] when the word is already readable (identical reading, Latin-script words, proper names). #{phonetic_bracket_instruction(from)}"
+        "Omit [reading] when the word is already readable (identical reading, Latin-script words, proper names). #{phonetic_bracket_instruction(from, system: system)}"
       else
         ""
       end
@@ -117,7 +290,7 @@ module Tell
       message.content.first.text.strip
     end
 
-    def build_gloss_prompt(text, from:, to:, translate:, phonetic:, phonetic_ref: nil)
+    def build_gloss_prompt(text, from:, to:, translate:, phonetic:, phonetic_ref: nil, system: nil)
       from_name = LANGUAGE_NAMES.fetch(from, from)
       to_name = LANGUAGE_NAMES.fetch(to, to)
 
@@ -136,7 +309,7 @@ module Tell
       parts << translation_rules(from_name, to_name) if translate
 
       # Phonetic bracket instruction
-      parts << phonetic_bracket_instruction(from) if phonetic
+      parts << phonetic_bracket_instruction(from, system: system) if phonetic
 
       # Pre-computed phonetic reference — use these readings for [brackets]
       if phonetic && phonetic_ref
@@ -201,20 +374,8 @@ module Tell
 
     NON_LATIN_LANGS = %w[ja zh ko ar th hi sa ne mr ru uk bg sr mk be ka el he yi].freeze
 
-    def phonetic_bracket_instruction(lang)
-      case lang
-      when "ja" then "Phonetic: hiragana reading in brackets, e.g. [おげんき]"
-      when "zh" then "Phonetic: pinyin with tone marks, e.g. [nǐ hǎo]"
-      when "ko" then "Phonetic: Revised Romanization, e.g. [annyeong]"
-      when "ar" then "Phonetic: romanization with diacritics"
-      when "th" then "Phonetic: RTGS romanization"
-      when "hi", "sa", "ne", "mr" then "Phonetic: IAST romanization"
-      when "ru", "uk", "bg", "sr", "mk", "be" then "Phonetic: scholarly romanization"
-      when "ka" then "Phonetic: national romanization"
-      when "el" then "Phonetic: UN/ELOT romanization"
-      when "he", "yi" then "Phonetic: standard transliteration"
-      else "Phonetic: IPA transcription, e.g. [ˈhɛloʊ]"
-      end
+    def phonetic_bracket_instruction(lang, system: nil)
+      self.class.system_config(lang, system: system)[:bracket]
     end
 
     def phonetic_omission_instruction(lang)
@@ -223,31 +384,8 @@ module Tell
       end
     end
 
-    def phonetic_standalone_instruction(lang)
-      case lang
-      when "ja"
-        "Convert to hiragana reading. Separate words with middle dots (・). Output ONLY the hiragana."
-      when "zh"
-        "Convert to pinyin with tone marks (e.g. nǐ hǎo). Output ONLY the pinyin."
-      when "ko"
-        "Convert to Revised Romanization (e.g. annyeonghaseyo). Output ONLY the romanization."
-      when "ar"
-        "Romanize with standard diacritics. Output ONLY the romanization."
-      when "th"
-        "Convert to RTGS romanization. Output ONLY the romanization."
-      when "hi", "sa", "ne", "mr"
-        "Convert to IAST romanization. Output ONLY the romanization."
-      when "ru", "uk", "bg", "sr", "mk", "be"
-        "Romanize using scholarly transliteration. Output ONLY the romanization."
-      when "ka"
-        "Romanize using national romanization. Output ONLY the romanization."
-      when "el"
-        "Romanize using UN/ELOT romanization. Output ONLY the romanization."
-      when "he", "yi"
-        "Romanize using standard transliteration. Output ONLY the romanization."
-      else
-        "Provide IPA transcription enclosed in slashes (e.g. /example/). Output ONLY the IPA."
-      end
+    def phonetic_standalone_instruction(lang, system: nil)
+      self.class.system_config(lang, system: system)[:standalone]
     end
 
     GRAMMAR_ABBREVIATIONS = <<~ABBR.freeze
