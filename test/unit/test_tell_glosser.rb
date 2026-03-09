@@ -174,6 +174,144 @@ class TestTellGlosser < Minitest::Test
     assert_includes prompt, "Latin-script words"
   end
 
+  # --- Phonetic reference in gloss prompt ---
+
+  def test_gloss_phonetic_with_ref_includes_reference_in_prompt
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("dober[ˈdɔːbər](adj.m.N.sg) dan[dan](n.m.N.sg)")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_phonetic("dober dan", from: "sl", to: "en", phonetic_ref: "/ˈdɔːbər dan/")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "pre-computed phonetic transcription"
+    assert_includes prompt, "/ˈdɔːbər dan/"
+  end
+
+  def test_gloss_translate_phonetic_with_ref_includes_reference_in_prompt
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("dober[ˈdɔːbər](adj.m.N.sg)good dan[dan](n.m.N.sg)day")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_translate_phonetic("dober dan", from: "sl", to: "en", phonetic_ref: "/ˈdɔːbər dan/")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "pre-computed phonetic transcription"
+  end
+
+  def test_gloss_phonetic_without_ref_omits_reference
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("dober[ˈdɔːbər](adj.m.N.sg)")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss_phonetic("dober", from: "sl", to: "en")
+
+    prompt = client.calls.first[:content]
+    refute_includes prompt, "pre-computed phonetic transcription"
+  end
+
+  # --- Phonetic splitting ---
+
+  def test_split_phonetic_ipa_with_slashes
+    readings = Tell::Glosser.split_phonetic("/ˈdɔːbər dan/", lang: "sl")
+    assert_equal %w[ˈdɔːbər dan], readings
+  end
+
+  def test_split_phonetic_ipa_without_slashes
+    readings = Tell::Glosser.split_phonetic("ˈdɔːbər dan", lang: "sl")
+    assert_equal %w[ˈdɔːbər dan], readings
+  end
+
+  def test_split_phonetic_japanese_middle_dots
+    readings = Tell::Glosser.split_phonetic("こんにちは・せかい・げんき", lang: "ja")
+    assert_equal %w[こんにちは せかい げんき], readings
+  end
+
+  def test_split_phonetic_japanese_with_spaces_around_dots
+    readings = Tell::Glosser.split_phonetic("こんにちは ・ せかい", lang: "ja")
+    assert_equal %w[こんにちは せかい], readings
+  end
+
+  def test_split_phonetic_chinese_pinyin
+    readings = Tell::Glosser.split_phonetic("nǐ hǎo shì jiè", lang: "zh")
+    assert_equal %w[nǐ hǎo shì jiè], readings
+  end
+
+  def test_split_phonetic_korean_romanization
+    readings = Tell::Glosser.split_phonetic("annyeong sesang", lang: "ko")
+    assert_equal %w[annyeong sesang], readings
+  end
+
+  def test_split_phonetic_russian_romanization
+    readings = Tell::Glosser.split_phonetic("privet mir", lang: "ru")
+    assert_equal %w[privet mir], readings
+  end
+
+  # --- Mechanical merge ---
+
+  def test_merge_phonetic_basic_gloss
+    gloss = "Po(pr) odmoru(n.m.L.sg)"
+    phonetic = "/pɔ ɔdˈmɔːru/"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "sl")
+    assert_equal "Po[pɔ](pr) odmoru[ɔdˈmɔːru](n.m.L.sg)", result
+  end
+
+  def test_merge_phonetic_gloss_translate
+    gloss = "Po(pr)after odmoru(n.m.L.sg)break"
+    phonetic = "/pɔ ɔdˈmɔːru/"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "sl")
+    assert_equal "Po[pɔ](pr)after odmoru[ɔdˈmɔːru](n.m.L.sg)break", result
+  end
+
+  def test_merge_phonetic_with_punctuation
+    gloss = 'Po(pr)after , odmoru(n.m.L.sg)break .'
+    phonetic = "/pɔ ɔdˈmɔːru/"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "sl")
+    assert_equal 'Po[pɔ](pr)after , odmoru[ɔdˈmɔːru](n.m.L.sg)break .', result
+  end
+
+  def test_merge_phonetic_with_agrammatical
+    gloss = "*napačno*pravilno(adj.m.N.sg)correct besedo(n.f.A.sg)word"
+    phonetic = "/praˈviːlnɔ bɛˈsɛːdɔ/"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "sl")
+    assert_equal "*napačno*pravilno[praˈviːlnɔ](adj.m.N.sg)correct besedo[bɛˈsɛːdɔ](n.f.A.sg)word", result
+  end
+
+  def test_merge_phonetic_japanese
+    gloss = "今日は(n.sg)today 世界(n.sg)world"
+    phonetic = "きょうは・せかい"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "ja")
+    assert_equal "今日は[きょうは](n.sg)today 世界[せかい](n.sg)world", result
+  end
+
+  def test_merge_phonetic_chinese
+    gloss = "你(pron.2p.sg) 好(adj)"
+    phonetic = "nǐ hǎo"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "zh")
+    assert_equal "你[nǐ](pron.2p.sg) 好[hǎo](adj)", result
+  end
+
+  def test_merge_phonetic_count_mismatch_returns_nil
+    gloss = "Po(pr) odmoru(n.m.L.sg) med(pr)"
+    phonetic = "/pɔ ɔdˈmɔːru/"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "sl")
+    assert_nil result
+  end
+
+  def test_merge_phonetic_empty_phonetic_returns_nil
+    gloss = "Po(pr)"
+    phonetic = "  "
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "sl")
+    assert_nil result
+  end
+
+  def test_merge_phonetic_no_gloss_words_returns_nil
+    gloss = ", . !"
+    phonetic = "/pɔ/"
+    result = Tell::Glosser.merge_phonetic(gloss, phonetic, lang: "sl")
+    assert_nil result
+  end
+
   # --- Phonetic uses configured model ---
 
   def test_phonetic_uses_configured_model
