@@ -917,13 +917,9 @@ $ tell "dobro jutro"
 | `-v, --voice ID` | Override voice ID |
 | `-o, --output FILE` | Save audio to file instead of playing |
 | `-r, --reverse` | Show reverse translation for target-language input |
-| `-g, --gloss` | Show word-by-word grammatical analysis |
-| `--gr` | Gloss with translations: `word(grammar)translation` |
+| `-g, --gloss [OPTS]` | Grammatical gloss (`p`=phonetic, `r`=reverse, e.g. `-g pr`) |
 | `-p, --phonetic` | Show phonetic reading (kana/pinyin/romanization) |
 | `--ps SYSTEM` | Set phonetic system (e.g. `hepburn`, `pinyin`, `ipa`) |
-| `--gp` | Gloss with inline phonetic: `word[reading](grammar)` |
-| `--grp` | Gloss with translations + phonetic |
-| `--rp` | Reverse translate + phonetic reading |
 | `-n, --no-translate` | Speak text as-is without translation |
 | `-h, --help` | Show help |
 
@@ -947,10 +943,10 @@ GL: dobro(adj.n.sg.A) jutro(n.n.sg.A)
 [audio plays]
 ```
 
-Use `--gr` for glossing with translations:
+Use `-g r` for glossing with translations:
 
 ```
-$ tell --gr "dobro jutro"
+$ tell -g r "dobro jutro"
 GR: dobro(adj.n.sg.A)good jutro(n.n.sg.A)morning
 [audio plays]
 ```
@@ -983,10 +979,10 @@ PH: /ˈdɔːbəɾ ˈdaːn/
 [audio plays]
 ```
 
-Combine with gloss (`--gp`) for inline phonetic in grammatical analysis:
+Combine with gloss (`-g p`) for inline phonetic in grammatical analysis:
 
 ```
-$ tell --gp "dober dan"
+$ tell -g p "dober dan"
 GL: dober[ˈdɔːbəɾ](adj.m.N.sg) dan[ˈdaːn](n.m.N.sg)
 [audio plays]
 ```
@@ -1072,7 +1068,6 @@ model_id: eleven_multilingual_v2    # ElevenLabs model
 output_format: mp3_44100_128        # ElevenLabs output format
 reverse_translate: false            # Always show reverse translation
 gloss: false                        # Always show grammatical gloss
-gloss_reverse: false                # Always show gloss with translations
 phonetic: false                     # Always show phonetic reading
 gloss_model: opus                    # opus | sonnet | haiku (or array for multi-model consensus)
 # gloss_model:                      # multi-model consensus example
@@ -1113,7 +1108,7 @@ echo "I love programming" | tell
 tell -n "dobro jutro"
 
 # Interactive mode with reverse translation and glossing
-tell -r --gr
+tell -r -g r
 ```
 
 ### Web UI
