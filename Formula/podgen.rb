@@ -10,8 +10,8 @@
 class Podgen < Formula
   desc "Autonomous podcast generation pipeline"
   homepage "https://github.com/arvicco/homebrew-podgen"
-  url "https://github.com/arvicco/homebrew-podgen/archive/refs/tags/v1.20.1.tar.gz"
-  sha256 "8cb71e5c8fe544111fac165569f69ba1680b5234745c77fd7fcb8c330d1e283f"
+  url "https://github.com/arvicco/homebrew-podgen/archive/refs/tags/v1.21.0.tar.gz"
+  sha256 "0a931965cd1471e22c4271271229a80d30412e55e51693ae5e52c1876fbb6fbd"
   license "MIT"
 
   depends_on "ffmpeg"
