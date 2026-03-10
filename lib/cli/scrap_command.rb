@@ -6,6 +6,7 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   class ScrapCommand
@@ -31,8 +32,8 @@ module PodgenCLI
       episodes_dir = config.episodes_dir
 
       # Find all episode MP3s (excluding ffmpeg intermediaries)
-      all_mp3s = Dir.glob(File.join(episodes_dir, "#{@podcast_name}-*.mp3"))
-        .reject { |f| File.basename(f).include?("_concat") }
+      all_mp3s = EpisodeFiltering.all_episodes(episodes_dir)
+        .select { |f| File.basename(f).start_with?("#{@podcast_name}-") }
         .sort
 
       if all_mp3s.empty?

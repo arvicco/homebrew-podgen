@@ -8,6 +8,7 @@ require "yaml"
 require "open3"
 require_relative "loggable"
 require_relative "audio_assembler"
+require_relative "episode_filtering"
 
 class RssGenerator
   include Loggable
@@ -66,10 +67,7 @@ class RssGenerator
   private
 
   def scan_episodes
-    pattern = File.join(@episodes_dir, "*.mp3")
-    Dir.glob(pattern)
-      .reject { |f| f.include?("_concat") }
-      .select { |f| matches_language?(File.basename(f, ".mp3")) }
+    EpisodeFiltering.episodes_for_language(@episodes_dir, @language)
       .sort
       .reverse
       .map do |path|
@@ -88,15 +86,6 @@ class RssGenerator
         }
       end
       .compact
-  end
-
-  # English episodes have no language suffix; non-English end with -xx (e.g. -es, -fr)
-  def matches_language?(basename)
-    if @language == "en"
-      !basename.match?(/-[a-z]{2}$/)
-    else
-      basename.end_with?("-#{@language}")
-    end
   end
 
   def build_feed(episodes)

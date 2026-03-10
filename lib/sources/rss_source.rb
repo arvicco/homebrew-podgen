@@ -6,9 +6,11 @@ require "uri"
 require "set"
 require "time"
 require_relative "../loggable"
+require_relative "../retryable"
 
 class RSSSource
   include Loggable
+  include Retryable
   MAX_RETRIES = 2
   MAX_REDIRECTS = 3
   LOOKBACK_HOURS = 48
@@ -115,21 +117,13 @@ class RSSSource
 
   def fetch_feed(feed_url)
     log("Fetching RSS: #{feed_url}")
-    attempts = 0
-    begin
-      attempts += 1
+    with_retries(max: MAX_RETRIES, label: "RSS") do
       body = http_get_with_redirects(feed_url)
       parse_feed(body)
-    rescue => e
-      if attempts <= MAX_RETRIES
-        sleep_time = 2**attempts
-        log("Error fetching #{feed_url}: #{e.message}, retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
-        sleep(sleep_time)
-        retry
-      end
-      log("Failed to fetch #{feed_url} after #{MAX_RETRIES} retries: #{e.message}")
-      []
     end
+  rescue => e
+    log("Failed to fetch #{feed_url}: #{e.message}")
+    []
   end
 
   def http_get_with_redirects(url, redirects_left = MAX_REDIRECTS)
@@ -188,21 +182,13 @@ class RSSSource
 
   def fetch_feed_episodes(feed_url)
     log("Fetching RSS episodes: #{feed_url}")
-    attempts = 0
-    begin
-      attempts += 1
+    with_retries(max: MAX_RETRIES, label: "RSS") do
       body = http_get_with_redirects(feed_url)
       parse_feed_episodes(body)
-    rescue => e
-      if attempts <= MAX_RETRIES
-        sleep_time = 2**attempts
-        log("Error fetching #{feed_url}: #{e.message}, retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
-        sleep(sleep_time)
-        retry
-      end
-      log("Failed to fetch #{feed_url} after #{MAX_RETRIES} retries: #{e.message}")
-      []
     end
+  rescue => e
+    log("Failed to fetch #{feed_url}: #{e.message}")
+    []
   end
 
   def parse_feed_episodes(xml)

@@ -8,6 +8,7 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "audio_assembler")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   class StatsCommand
@@ -262,13 +263,7 @@ module PodgenCLI
       config.load_env!
 
       episodes_dir = config.episodes_dir
-      mp3s = if Dir.exist?(episodes_dir)
-        Dir.glob(File.join(episodes_dir, "*.mp3"))
-          .reject { |f| File.basename(f).include?("_concat") }
-          .sort
-      else
-        []
-      end
+      mp3s = EpisodeFiltering.all_episodes(episodes_dir).sort
 
       # Build duration map from history to avoid ffprobe calls where possible
       duration_map = build_duration_map(config)

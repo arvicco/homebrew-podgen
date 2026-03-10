@@ -94,11 +94,33 @@ class TestRetryable < Minitest::Test
   end
 
   def test_works_without_log_method
-    # Object without log method should still work
+    # Object without log method should still work (falls back to stderr)
     host = Object.new
     host.extend(Retryable)
 
     result = host.send(:with_retries, max: 1, on: [RuntimeError]) { "ok" }
     assert_equal "ok", result
+  end
+
+  def test_retry_log_falls_back_to_stderr
+    host = Object.new
+    host.extend(Retryable)
+    host.define_singleton_method(:sleep) { |_| }
+
+    stderr_output = StringIO.new
+    original_stderr = $stderr
+    $stderr = stderr_output
+
+    begin
+      host.send(:with_retries, max: 1, on: [RuntimeError]) do
+        raise RuntimeError, "oops" if stderr_output.string.empty?
+        "ok"
+      end
+    ensure
+      $stderr = original_stderr
+    end
+
+    assert_includes stderr_output.string, "oops"
+    assert_includes stderr_output.string, "Retrying"
   end
 end

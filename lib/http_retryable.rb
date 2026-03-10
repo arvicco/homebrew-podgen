@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require_relative "retryable"
+
 # Mixin for HTTP API clients that need retry logic with exponential backoff.
-# Provides RetriableError, RETRIABLE_CODES, and parse_error.
+# Provides RetriableError, RETRIABLE_CODES, parse_error, and with_http_retries.
+# Includes Retryable, so with_retries is also available.
 #
 # Usage:
 #   class MyApiClient
@@ -11,6 +14,8 @@ module HttpRetryable
   RETRIABLE_CODES = [429, 503].freeze
 
   class RetriableError < StandardError; end
+
+  HTTP_EXCEPTIONS = [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET].freeze
 
   # Parses an HTTP error response body, extracting a human-readable message.
   # Handles ElevenLabs (detail), Google (error), and LingQ (detail/message) formats.
@@ -37,24 +42,11 @@ module HttpRetryable
   end
 
   def with_http_retries(label, max: 2)
-    retries = 0
-    begin
-      retries += 1
-      yield
-    rescue RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET => e
-      if retries <= max
-        sleep_time = 2**retries
-        msg = "Retry #{retries}/#{max} in #{sleep_time}s: #{e.message}"
-        $stderr.puts defined?(Tell::Colors) ? Tell::Colors.status(msg) : msg
-        sleep(sleep_time)
-        retry
-      else
-        raise "#{label} failed after #{max} retries: #{e.message}"
-      end
-    end
+    with_retries(max: max, on: HTTP_EXCEPTIONS, label: label) { yield }
   end
 
   def self.included(base)
+    base.include(Retryable) unless base.ancestors.include?(Retryable)
     base.const_set(:RetriableError, RetriableError) unless base.const_defined?(:RetriableError)
   end
 end
