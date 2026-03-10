@@ -61,10 +61,13 @@ lib/
     colors.rb                     # ANSI colorization for gloss/phonetic output
     error_formatter.rb            # Friendly error messages for API errors
     processor.rb                  # Main processing: detect → translate → synthesize → play
+    web.rb                        # Sinatra web UI: SSE streaming, /speak, /systems endpoints
+    web/views/index.erb           # Single-page web UI (HTML + CSS + JS)
 output/<name>/                   # episodes/, tails/, site/, research_cache/, history.yml, feed.xml
 docs/cloudflare.md               # Cloudflare R2 + Worker + analytics setup guide
 test/                            # unit/, integration/, api/ (minitest)
 scripts/serve.rb                 # WEBrick server for RSS
+scripts/tell_web.rb              # Tell Web UI launcher
 ```
 
 ## Pipeline Details
@@ -214,6 +217,31 @@ tell [options] [text...]
   -h, --help            Show help
 Style hints: append /p (polite), /c (casual), /m (male voice), /f (female voice) to input
 ```
+
+### Web UI
+Sinatra-based single-page app with SSE streaming. Launch: `ruby scripts/tell_web.rb [port]` (default 9090).
+
+**Endpoints:**
+- `GET /` — HTML page with textarea, addon/style pills, language selectors, audio playback
+- `GET /speak?text=...` — SSE stream: `translation`, `audio` (base64), `speak_text`, `reverse`, `phonetic`, `gloss`/`gloss_translate`, `error`, `done` events
+- `GET /systems?lang=xx` — JSON array of `{key, label, separator}` for phonetic system dropdown
+
+**SSE params:** `text`, `from`, `to`, `hint`, `reverse`, `phonetic`, `gloss`, `gloss_phonetic`, `gloss_translate`, `phonetic_system`, `no_tts`, `no_translate`, `token`
+
+**Client-side features:**
+- **Addon pills** (reverse, phonetic, gloss, +words, +trans): toggled independently, state persisted in localStorage (`tell_addons`)
+- **Smart gloss caching:** `glossRaw` stores richest server result; `deriveGloss()` strips unneeded parts locally. `canDeriveGloss()` gates whether server call is needed. `enrichWithPhonetic()` attempts client-side `mergePhonetic()` (port of `Glosser.merge_phonetic`); falls back to server `gloss_phonetic` on word-count mismatch
+- **Per-system phonetic cache:** `phCacheBySystem[systemKey]` survives system switches without re-calling AI. Cleared on new `speak()`
+- **Phonetic system selector:** visible when phonetic OR (gloss AND +words) is active. Selection persisted per language in localStorage
+- **Language swap:** `await loadPhSystems()` before `speak()` to prevent stale system in request
+- **Style hint pills:** polite/casual (mutually exclusive), male/female (mutually exclusive). Re-triggers speak on change
+- **History:** Last 50 phrases in localStorage, click to replay, x to remove
+
+**Server-side optimization:** When both `phonetic` and `gloss_phonetic` requested, runs phonetic + base gloss in parallel threads, attempts mechanical merge (`Glosser.merge_phonetic`). Falls back to AI `gloss_phonetic` (with phonetic result as reference) if word counts don't align.
+
+**Auth/security:** Optional `TELL_WEB_TOKEN` (query param or Bearer header). Token-bucket rate limiter per IP (`TELL_WEB_RATE_LIMIT`, default 30 rpm). Text capped at 500 chars.
+
+**Environment:** `TELL_WEB_PORT` (default 9090), `TELL_WEB_BIND` (default localhost), `TELL_WEB_TOKEN`, `TELL_WEB_RATE_LIMIT`
 
 ## CLI Reference
 ```

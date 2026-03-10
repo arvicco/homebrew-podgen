@@ -1116,6 +1116,27 @@ tell -n "dobro jutro"
 tell -r --gr
 ```
 
+### Web UI
+
+Tell also ships a browser-based interface with the same features as the CLI:
+
+```bash
+ruby scripts/tell_web.rb        # http://localhost:9090
+ruby scripts/tell_web.rb 8080   # custom port
+```
+
+Features:
+- **Real-time streaming** — translation, audio, reverse, phonetic, and gloss results stream in via SSE as they become available
+- **Addon pills** — toggle reverse, phonetic, gloss, +words (inline phonetic), +trans independently. State persists across page reloads
+- **Phonetic system selector** — dropdown per target language (e.g. Hiragana/Hepburn/IPA for Japanese). Results cached per system to avoid re-calling AI on switch
+- **Style hint pills** — polite/casual, male/female voice
+- **Language selector** — swap languages, auto-detect source language
+- **History** — last 50 phrases, click to replay
+
+Optional security: set `TELL_WEB_TOKEN` to require authentication (pass as `?token=...` URL param or `Authorization: Bearer ...` header). Rate limited to 30 requests/minute per IP by default (`TELL_WEB_RATE_LIMIT`).
+
+Environment variables: `TELL_WEB_PORT` (default 9090), `TELL_WEB_BIND` (default localhost), `TELL_WEB_TOKEN`, `TELL_WEB_RATE_LIMIT`.
+
 ### Cost
 
 - **DeepL translation**: Free tier available (500k chars/month)
