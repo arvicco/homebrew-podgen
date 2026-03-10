@@ -9,7 +9,7 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "time_value")
 require_relative File.join(root, "lib", "snip_interval")
-require_relative File.join(root, "lib", "podcast_config")
+require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "topic_agent")
 require_relative File.join(root, "lib", "source_manager")
@@ -22,6 +22,8 @@ require_relative File.join(root, "lib", "cli", "language_pipeline")
 
 module PodgenCLI
   class GenerateCommand
+    include PodcastCommand
+
     def initialize(args, options)
       @options = options
 
@@ -46,21 +48,10 @@ module PodgenCLI
     end
 
     def run
-      unless @podcast_name
-        available = PodcastConfig.available
-        $stderr.puts "Usage: podgen generate <podcast_name>"
-        $stderr.puts
-        if available.any?
-          $stderr.puts "Available podcasts:"
-          available.each { |name| $stderr.puts "  - #{name}" }
-        else
-          $stderr.puts "No podcasts found. Create a directory under podcasts/ with guidelines.md and queue.yml."
-        end
-        return 2
-      end
+      code = require_podcast!("generate")
+      return code if code
 
-      config = PodcastConfig.new(@podcast_name)
-      config.load_env!
+      config = load_config!
       config.ensure_directories!
 
       # --- Lockfile: prevent concurrent runs of the same podcast ---

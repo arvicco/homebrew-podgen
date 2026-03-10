@@ -4,11 +4,13 @@ require "optparse"
 
 root = File.expand_path("../..", __dir__)
 
-require_relative File.join(root, "lib", "podcast_config")
+require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "site_generator")
 
 module PodgenCLI
   class SiteCommand
+    include PodcastCommand
+
     def initialize(args, options)
       @options = options
       @clean = false
@@ -23,19 +25,10 @@ module PodgenCLI
     end
 
     def run
-      unless @podcast_name
-        available = PodcastConfig.available
-        $stderr.puts "Usage: podgen site <podcast_name>"
-        $stderr.puts
-        if available.any?
-          $stderr.puts "Available podcasts:"
-          available.each { |name| $stderr.puts "  - #{name}" }
-        end
-        return 2
-      end
+      code = require_podcast!("site")
+      return code if code
 
-      @config = PodcastConfig.new(@podcast_name)
-      @config.load_env!
+      load_config!
 
       generator = SiteGenerator.new(
         config: @config,

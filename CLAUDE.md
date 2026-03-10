@@ -20,8 +20,9 @@ podcasts/<name>/                 # Per-podcast: guidelines.md, queue.yml, pronun
 lib/
   cli.rb                         # CLI dispatcher
   cli/
+    podcast_command.rb            # Shared mixin: podcast name validation + config loading
     generate_command.rb           # Pipeline dispatcher (news or language)
-    language_pipeline.rb          # Language pipeline orchestrator
+    language_pipeline.rb          # Language pipeline orchestrator (phased: acquire → trim → transcribe → assemble)
     translate_command.rb          # Backfill translations
     scrap_command.rb              # Remove last episode
     rss_command.rb                # RSS feed generation
@@ -31,7 +32,11 @@ lib/
     list_command.rb | test_command.rb | schedule_command.rb
   time_value.rb                  # TimeValue: seconds or min:sec with absolute? flag
   snip_interval.rb               # SnipInterval: unified skip/cut/snip interval math
-  podcast_config.rb              # Config resolver (paths, sources, languages from guidelines)
+  podcast_config.rb              # Config resolver (paths, delegates parsing to GuidelinesParser)
+  guidelines_parser.rb           # Parses guidelines.md sections into structured config hashes
+  episode_filtering.rb           # Shared MP3 glob/filter: all_episodes, english_episodes, matches_language?
+  loggable.rb                    # Mixin: logger accessor with $stderr fallback
+  retryable.rb                   # Mixin: with_retries (exponential backoff, configurable exceptions)
   source_manager.rb              # Parallel multi-source research
   research_cache.rb              # File cache (SHA256, 24h TTL, atomic writes)
   transcription/
@@ -43,6 +48,7 @@ lib/
     tts_agent.rb | translation_agent.rb | transcription_agent.rb
     lingq_agent.rb | cover_agent.rb
   sources/
+    base_source.rb                # Template base class: research loop, logging, retries
     rss_source.rb | hn_source.rb | claude_web_source.rb | bluesky_source.rb | x_source.rb
   audio_trimmer.rb                 # Audio trimming: skip/cut/snip, autotrim outro, word matching
   episode_source.rb                # Episode acquisition: local/YouTube/RSS, dedup, download
@@ -50,7 +56,7 @@ lib/
   site_generator.rb                # Static HTML website generator (ERB templates)
   templates/                       # ERB templates + CSS for site generator
   analytics_client.rb              # Cloudflare Analytics Engine GraphQL client
-  http_retryable.rb               # Mixin: RetriableError, RETRIABLE_CODES, parse_error, with_http_retries
+  http_retryable.rb               # Mixin: HTTP-specific retries (includes Retryable), RetriableError, RETRIABLE_CODES
   tell/
     config.rb                     # Config loader (~/.tell.yml)
     detector.rb                   # Language detection (Unicode scripts + stop words)
@@ -135,7 +141,11 @@ Per-podcast `.env` overrides root via `Dotenv.overload`.
 
 ## Coding Standards
 - Single responsibility per class/method
-- API calls: retry with exponential backoff, keys from ENV only
+- API calls: retry with exponential backoff via `Retryable` mixin (`with_retries`), HTTP calls via `HttpRetryable` (`with_http_retries`), keys from ENV only
+- Sources extend `BaseSource` (template method: subclasses implement `search_topic`); `RSSSource` is standalone (different research pattern)
+- CLI commands include `PodcastCommand` mixin for podcast name validation (`require_podcast!`) and config loading (`load_config!`)
+- Episode MP3 filtering via `EpisodeFiltering` module (shared across rss_generator, site_generator, validate, stats, scrap)
+- Guidelines parsing via `GuidelinesParser` (extracted from `PodcastConfig`, which delegates all section parsing)
 - Paths: `File.join` + `__dir__`-relative, `require_relative` throughout
 - Atomic writes (temp + rename) for history/cache
 - Shell commands: `Open3.capture3` (capture stdout, stderr, status)

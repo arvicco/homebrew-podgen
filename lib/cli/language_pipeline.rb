@@ -32,9 +32,41 @@ module PodgenCLI
     end
 
     def run
-      pipeline_start = Time.now
+      @pipeline_start = Time.now
       logger.log("Language pipeline started#{@dry_run ? ' (DRY RUN)' : ''}")
 
+      code = validate_image_options
+      return code if code
+
+      code = acquire_episode
+      return code if code
+
+      trim_source_audio
+      transcribe
+      clean_or_generate_description(@episode, @reconciled_text || @transcription_result[:text])
+      trim_outro
+      assemble_episode
+      save_transcript_and_cover
+      upload_to_lingq(@episode, @reconciled_text || @transcript, @output_path, @base_name) if @options[:lingq]
+      record_history
+
+      log_completion
+      0
+    rescue => e
+      logger.error("#{e.class}: #{e.message}")
+      logger.error(e.backtrace.first(5).join("\n"))
+      $stderr.puts "\n\u2717 Language pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
+      1
+    ensure
+      cleanup_temp_files
+    end
+
+    private
+
+    attr_reader :logger
+
+    # Validates --image option early. Returns exit code on error, nil on success.
+    def validate_image_options
       if @options[:image] == "thumb" && !@youtube_url
         $stderr.puts "Error: --image thumb is only valid with --url (YouTube)"
         return 1
@@ -50,110 +82,133 @@ module PodgenCLI
         logger.log("Resolved --image last → #{screenshot}")
       end
 
-      # --- Phase 1 + 2: Get episode and source audio ---
+      nil
+    end
+
+    # Acquires episode metadata + source audio from local file, YouTube, or RSS.
+    # Sets @episode and @source_audio_path on success.
+    # Returns exit code on early exit (dry-run, error, dedup), nil on success.
+    def acquire_episode
       if @local_file
-        logger.phase_start("Local File")
-        episode = @episode_source.build_local(@local_file, @file_title)
-        logger.log("Local file: \"#{episode[:title]}\" (#{@local_file})")
-        logger.phase_end("Local File")
-
-        return 1 if @episode_source.already_processed?(episode, force: @options[:force], dry_run: @dry_run)
-
-        if @dry_run
-          log_dry_run(pipeline_start, "Config validated, local file \"#{episode[:title]}\" — no API calls")
-          return 0
-        end
-
-        source_audio_path = File.expand_path(@local_file)
+        acquire_local_file
       elsif @youtube_url
-        if @dry_run
-          logger.log("[dry-run] YouTube URL: #{@youtube_url}")
-          log_dry_run(pipeline_start, "Config validated, YouTube URL provided — no API calls")
-          return 0
-        end
-
-        logger.phase_start("YouTube")
-        downloader = YouTubeDownloader.new(logger: logger)
-        metadata = downloader.fetch_metadata(@youtube_url)
-        episode = @episode_source.build_youtube(metadata, title_override: @file_title)
-        logger.log("YouTube video: \"#{episode[:title]}\" (#{metadata[:duration]}s)")
-        logger.phase_end("YouTube")
-
-        return 1 if @episode_source.already_processed?(episode, force: @options[:force], dry_run: @dry_run)
-
-        logger.phase_start("Download Audio")
-        source_audio_path = downloader.download_audio(@youtube_url)
-        @temp_files << source_audio_path
-        logger.log("Downloaded YouTube audio: #{(File.size(source_audio_path) / (1024.0 * 1024)).round(2)} MB")
-        logger.phase_end("Download Audio")
-
-        # Download thumbnail (always — used as fallback or via --image thumb)
-        thumb_path = downloader.download_thumbnail(@youtube_url)
-        if thumb_path
-          @temp_files << thumb_path
-          @youtube_thumbnail = thumb_path
-        end
-
-        # Fetch captions in target language (non-fatal)
-        caption_lang = @config.transcription_language
-        if caption_lang
-          @youtube_captions = downloader.fetch_captions(@youtube_url, language: caption_lang)
-        end
+        acquire_youtube
       else
-        logger.phase_start("Fetch Episode")
-        episode = @episode_source.fetch_next(force: @options[:force])
-        unless episode
-          logger.error("No new episodes found in RSS feeds")
-          return 1
-        end
-        episode[:title] = @file_title if @file_title
-        logger.log("Selected episode: \"#{episode[:title]}\" (#{episode[:audio_url]})")
-        # Stash per-feed image config for resolve_episode_cover
-        @current_episode_feed_base_image = episode.delete(:base_image)
-        feed_image = episode.delete(:image)
-        @current_episode_image_none = (feed_image == "none")
-        logger.phase_end("Fetch Episode")
+        acquire_rss
+      end
+    end
 
-        if @dry_run
-          log_dry_run(pipeline_start, "Config validated, episode \"#{episode[:title]}\" — no API calls")
-          return 0
-        end
+    def acquire_local_file
+      logger.phase_start("Local File")
+      @episode = @episode_source.build_local(@local_file, @file_title)
+      logger.log("Local file: \"#{@episode[:title]}\" (#{@local_file})")
+      logger.phase_end("Local File")
 
-        logger.phase_start("Download Audio")
-        source_audio_path = @episode_source.download_audio(episode[:audio_url])
-        @temp_files << source_audio_path
-        logger.log("Downloaded source audio: #{(File.size(source_audio_path) / (1024.0 * 1024)).round(2)} MB")
-        logger.phase_end("Download Audio")
+      return 1 if @episode_source.already_processed?(@episode, force: @options[:force], dry_run: @dry_run)
+
+      if @dry_run
+        log_dry_run("Config validated, local file \"#{@episode[:title]}\" — no API calls")
+        return 0
       end
 
-      # --- Phase 2b: Unified trim (skip + cut + snip → single aselect pass) ---
+      @source_audio_path = File.expand_path(@local_file)
+      nil
+    end
+
+    def acquire_youtube
+      if @dry_run
+        logger.log("[dry-run] YouTube URL: #{@youtube_url}")
+        log_dry_run("Config validated, YouTube URL provided — no API calls")
+        return 0
+      end
+
+      logger.phase_start("YouTube")
+      downloader = YouTubeDownloader.new(logger: logger)
+      metadata = downloader.fetch_metadata(@youtube_url)
+      @episode = @episode_source.build_youtube(metadata, title_override: @file_title)
+      logger.log("YouTube video: \"#{@episode[:title]}\" (#{metadata[:duration]}s)")
+      logger.phase_end("YouTube")
+
+      return 1 if @episode_source.already_processed?(@episode, force: @options[:force], dry_run: @dry_run)
+
+      logger.phase_start("Download Audio")
+      @source_audio_path = downloader.download_audio(@youtube_url)
+      @temp_files << @source_audio_path
+      logger.log("Downloaded YouTube audio: #{(File.size(@source_audio_path) / (1024.0 * 1024)).round(2)} MB")
+      logger.phase_end("Download Audio")
+
+      # Download thumbnail (always — used as fallback or via --image thumb)
+      thumb_path = downloader.download_thumbnail(@youtube_url)
+      if thumb_path
+        @temp_files << thumb_path
+        @youtube_thumbnail = thumb_path
+      end
+
+      # Fetch captions in target language (non-fatal)
+      caption_lang = @config.transcription_language
+      if caption_lang
+        @youtube_captions = downloader.fetch_captions(@youtube_url, language: caption_lang)
+      end
+
+      nil
+    end
+
+    def acquire_rss
+      logger.phase_start("Fetch Episode")
+      @episode = @episode_source.fetch_next(force: @options[:force])
+      unless @episode
+        logger.error("No new episodes found in RSS feeds")
+        return 1
+      end
+      @episode[:title] = @file_title if @file_title
+      logger.log("Selected episode: \"#{@episode[:title]}\" (#{@episode[:audio_url]})")
+      # Stash per-feed image config for resolve_episode_cover
+      @current_episode_feed_base_image = @episode.delete(:base_image)
+      feed_image = @episode.delete(:image)
+      @current_episode_image_none = (feed_image == "none")
+      logger.phase_end("Fetch Episode")
+
+      if @dry_run
+        log_dry_run("Config validated, episode \"#{@episode[:title]}\" — no API calls")
+        return 0
+      end
+
+      logger.phase_start("Download Audio")
+      @source_audio_path = @episode_source.download_audio(@episode[:audio_url])
+      @temp_files << @source_audio_path
+      logger.log("Downloaded source audio: #{(File.size(@source_audio_path) / (1024.0 * 1024)).round(2)} MB")
+      logger.phase_end("Download Audio")
+
+      nil
+    end
+
+    def trim_source_audio
       assembler = AudioAssembler.new(logger: logger)
       @trimmer = AudioTrimmer.new(assembler: assembler, logger: logger)
 
-      skip = @options[:skip] || episode[:skip] || @config.skip
-      cut = @options[:cut] || episode[:cut] || @config.cut
+      skip = @options[:skip] || @episode[:skip] || @config.skip
+      cut = @options[:cut] || @episode[:cut] || @config.cut
       snip = @options[:snip]
-      source_audio_path = @trimmer.apply_trim(source_audio_path, skip: skip, cut: cut, snip: snip)
+      @source_audio_path = @trimmer.apply_trim(@source_audio_path, skip: skip, cut: cut, snip: snip)
+    end
 
-      # --- Phase 3: Transcribe full audio ---
+    def transcribe
       logger.phase_start("Transcription")
-      base_name = @config.episode_basename(@today)
-      result = transcribe_audio(source_audio_path, captions: @youtube_captions)
+      @base_name = @config.episode_basename(@today)
+      @transcription_result = transcribe_audio(@source_audio_path, captions: @youtube_captions)
       logger.phase_end("Transcription")
+    end
 
-      # --- Phase 3b: Clean or generate episode description ---
-      clean_or_generate_description(episode, @reconciled_text || result[:text])
-
-      # --- Phase 4: Trim outro via reconciled text + Groq word timestamps ---
-      autotrim = @options[:autotrim] || episode[:autotrim] || @config.autotrim
+    def trim_outro
+      autotrim = @options[:autotrim] || @episode[:autotrim] || @config.autotrim
       if autotrim && @reconciled_text && @groq_words&.any?
         logger.phase_start("Trim Outro")
         tails_dir = File.join(File.dirname(@config.episodes_dir), "tails")
-        source_audio_path = @trimmer.trim_outro(
-          source_audio_path,
+        @source_audio_path = @trimmer.trim_outro(
+          @source_audio_path,
           reconciled_text: @reconciled_text,
           groq_words: @groq_words,
-          base_name: base_name,
+          base_name: @base_name,
           tails_dir: tails_dir
         )
         logger.phase_end("Trim Outro")
@@ -162,67 +217,56 @@ module PodgenCLI
       else
         logger.log("Skipping outro trim (autotrim not enabled)")
       end
+    end
 
-      # --- Phase 5: Build transcript ---
-      transcript = @reconciled_text || result[:text]
+    def assemble_episode
+      @transcript = @reconciled_text || @transcription_result[:text]
 
-      # --- Phase 6: Assemble (trimmed audio as single piece) ---
       logger.phase_start("Assembly")
-      output_path = File.join(@config.episodes_dir, "#{base_name}.mp3")
+      @output_path = File.join(@config.episodes_dir, "#{@base_name}.mp3")
 
       intro_music_path = File.join(@config.podcast_dir, "intro.mp3")
       outro_music_path = File.join(@config.podcast_dir, "outro.mp3")
 
-      assembler.assemble([source_audio_path], output_path, intro_path: intro_music_path, outro_path: outro_music_path,
-        metadata: { title: episode[:title], artist: @config.author })
+      assembler = AudioAssembler.new(logger: logger)
+      assembler.assemble([@source_audio_path], @output_path, intro_path: intro_music_path, outro_path: outro_music_path,
+        metadata: { title: @episode[:title], artist: @config.author })
       logger.phase_end("Assembly")
+    end
 
-      # --- Save transcript ---
-      save_transcript(episode, transcript, base_name)
+    def save_transcript_and_cover
+      save_transcript(@episode, @transcript, @base_name)
 
-      # --- Save episode cover ---
-      @current_episode_description = episode[:description]
-      cover_source = resolve_episode_cover(episode[:title])
+      @current_episode_description = @episode[:description]
+      cover_source = resolve_episode_cover(@episode[:title])
       if cover_source
         ext = File.extname(cover_source)
-        cover_dest = File.join(@config.episodes_dir, "#{base_name}_cover#{ext}")
+        cover_dest = File.join(@config.episodes_dir, "#{@base_name}_cover#{ext}")
         FileUtils.cp(cover_source, cover_dest)
         logger.log("Episode cover saved: #{cover_dest}")
       end
+    end
 
-      # --- Phase 7: LingQ Upload (if enabled via --lingq flag) ---
-      upload_to_lingq(episode, @reconciled_text || transcript, output_path, base_name) if @options[:lingq]
-
-      # --- Phase 8: Record history ---
+    def record_history
       @history.record!(
         date: @today,
-        title: episode[:title],
-        topics: [episode[:title]],
-        urls: [episode[:audio_url]],
-        duration: AudioAssembler.probe_duration(output_path),
+        title: @episode[:title],
+        topics: [@episode[:title]],
+        urls: [@episode[:audio_url]],
+        duration: AudioAssembler.probe_duration(@output_path),
         timestamp: Time.now.iso8601
       )
       logger.log("Episode recorded in history: #{@config.history_path}")
-
-      # --- Done ---
-      total_time = (Time.now - pipeline_start).round(2)
-      logger.log("Total pipeline time: #{total_time}s")
-      logger.log("\u2713 Episode ready: #{output_path}")
-      puts "\u2713 Episode ready: #{output_path}" unless @options[:verbosity] == :quiet
-
-      0
-    rescue => e
-      logger.error("#{e.class}: #{e.message}")
-      logger.error(e.backtrace.first(5).join("\n"))
-      $stderr.puts "\n\u2717 Language pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
-      1
-    ensure
-      cleanup_temp_files
     end
 
-    private
+    def log_completion
+      total_time = (Time.now - @pipeline_start).round(2)
+      logger.log("Total pipeline time: #{total_time}s")
+      logger.log("\u2713 Episode ready: #{@output_path}")
+      puts "\u2713 Episode ready: #{@output_path}" unless @options[:verbosity] == :quiet
+    end
 
-    attr_reader :logger
+    # --- Helpers ---
 
     def transcribe_audio(audio_path, captions: nil)
       language = @config.transcription_language
@@ -428,9 +472,9 @@ module PodgenCLI
       nil
     end
 
-    def log_dry_run(pipeline_start, summary)
+    def log_dry_run(summary)
       logger.log("[dry-run] Skipping download, transcription, assembly, and history")
-      total_time = (Time.now - pipeline_start).round(2)
+      total_time = (Time.now - @pipeline_start).round(2)
       logger.log("Total pipeline time: #{total_time}s")
       logger.log("[dry-run] #{summary}")
       puts "[dry-run] #{summary}" unless @options[:verbosity] == :quiet
