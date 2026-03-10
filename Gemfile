@@ -17,6 +17,7 @@ gem "rackup",    "~> 2.2"   # Rack server launcher (required by Sinatra 4+)
 gem "puma",      "~> 6.5"   # Threaded web server (SSE streaming for tell web)
 
 group :test do
-  gem "minitest", "~> 5.25"
-  gem "rake",     "~> 13.2"
+  gem "minitest",  "~> 5.25"
+  gem "rake",      "~> 13.2"
+  gem "rack-test", "~> 2.2"   # HTTP testing for Sinatra endpoints
 end

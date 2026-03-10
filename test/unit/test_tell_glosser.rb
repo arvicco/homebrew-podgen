@@ -494,6 +494,42 @@ class TestTellGlosser < Minitest::Test
     assert_includes prompt, "Hepburn romanization in brackets"
   end
 
+  # --- Phonetic standalone prompts enforce single-line output ---
+
+  def test_default_ipa_prompt_forbids_formatting
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("/ˈdɔːbər ˈdan/")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.phonetic("dober dan", lang: "sl")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "Output ONLY the IPA on a single line"
+    assert_includes prompt, "no headers or formatting"
+  end
+
+  def test_default_simple_prompt_forbids_formatting
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("DOH-ber dahn")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.phonetic("dober dan", lang: "sl", system: "simple")
+
+    prompt = client.calls.first[:content]
+    assert_includes prompt, "Output ONLY the phonetic text on a single line"
+    assert_includes prompt, "no headers or formatting"
+  end
+
+  def test_all_standalone_prompts_contain_output_only
+    Tell::Glosser::PHONETIC_SYSTEMS.each do |lang, systems|
+      systems.each do |key, config|
+        prompt = config[:standalone]
+        assert_includes prompt, "Output ONLY",
+          "System #{lang}/#{key} standalone prompt missing 'Output ONLY' constraint"
+      end
+    end
+  end
+
   # --- Reconcile includes original text ---
 
   def test_reconcile_includes_original_text_in_prompt
