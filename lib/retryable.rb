@@ -28,11 +28,19 @@ module Retryable
     rescue *on => e
       if retries <= max
         sleep_time = 2**retries
-        log("#{label} error (attempt #{retries}/#{max}): #{e.message}. Retrying in #{sleep_time}s...") if respond_to?(:log, true)
+        retry_log("#{label} error (attempt #{retries}/#{max}): #{e.message}. Retrying in #{sleep_time}s...")
         sleep(sleep_time)
         retry
       end
       raise "#{label} failed after #{retries} attempts: #{e.message}"
+    end
+  end
+
+  def retry_log(message)
+    if respond_to?(:log, true)
+      log(message)
+    else
+      $stderr.puts message
     end
   end
 end

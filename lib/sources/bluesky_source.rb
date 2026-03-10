@@ -1,45 +1,34 @@
 # frozen_string_literal: true
 
 require "httparty"
-require "set"
 require "json"
-require_relative "../loggable"
+require_relative "base_source"
 
-class BlueskySource
-  include Loggable
-  MAX_RETRIES = 2
+class BlueskySource < BaseSource
   RESULTS_PER_TOPIC = 5
   PDS_HOST = "https://bsky.social"
   SEARCH_ENDPOINT = "/xrpc/app.bsky.feed.searchPosts"
   SESSION_ENDPOINT = "/xrpc/com.atproto.server.createSession"
 
   def initialize(logger: nil, **_options)
-    @logger = logger
+    super
     @handle = ENV["BLUESKY_HANDLE"]
     @app_password = ENV["BLUESKY_APP_PASSWORD"]
     @access_token = nil
   end
 
-  # Returns: [{ topic: String, findings: [{ title:, url:, summary: }] }]
   def research(topics, exclude_urls: Set.new)
-    unless @handle && @app_password
-      log("BLUESKY_HANDLE or BLUESKY_APP_PASSWORD not set, skipping Bluesky source")
-      return topics.map { |t| { topic: t, findings: [] } }
-    end
+    return empty_results(topics) unless available?
 
     authenticate!
-
-    topics.map do |topic|
-      log("Searching Bluesky: #{topic}")
-      start = Time.now
-      findings = search_topic(topic, exclude_urls)
-      elapsed = (Time.now - start).round(2)
-      log("Bluesky found #{findings.length} results for '#{topic}' (#{elapsed}s)")
-      { topic: topic, findings: findings }
-    end
+    super
   end
 
   private
+
+  def available?
+    @handle && @app_password
+  end
 
   def authenticate!
     response = HTTParty.post(
@@ -112,29 +101,15 @@ class BlueskySource
   end
 
   def request_with_retry(**params)
-    attempts = 0
-    begin
-      attempts += 1
+    with_retries(max: MAX_RETRIES, label: source_name) do
       response = HTTParty.get(
         "#{PDS_HOST}#{SEARCH_ENDPOINT}",
         query: params,
         headers: { "Authorization" => "Bearer #{@access_token}" },
         timeout: 15
       )
-
-      unless response.success?
-        raise "HTTP #{response.code} from Bluesky API"
-      end
-
+      raise "HTTP #{response.code} from Bluesky API" unless response.success?
       response.parsed_response
-    rescue => e
-      if attempts <= MAX_RETRIES
-        sleep_time = 2**attempts
-        log("Bluesky API error: #{e.message}, retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
-        sleep(sleep_time)
-        retry
-      end
-      raise
     end
   end
 end

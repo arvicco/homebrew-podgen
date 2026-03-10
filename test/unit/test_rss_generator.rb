@@ -106,19 +106,17 @@ class TestRssGenerator < Minitest::Test
     assert_empty gen.send(:scan_episodes)
   end
 
-  # --- matches_language? ---
+  # --- matches_language? (now in EpisodeFiltering module) ---
 
   def test_matches_language_english_no_suffix
-    gen = build_generator(language: "en")
-    assert gen.send(:matches_language?, "test-2026-01-15")
-    refute gen.send(:matches_language?, "test-2026-01-15-es")
+    assert EpisodeFiltering.matches_language?("test-2026-01-15", "en")
+    refute EpisodeFiltering.matches_language?("test-2026-01-15-es", "en")
   end
 
   def test_matches_language_non_english
-    gen = build_generator(language: "es")
-    assert gen.send(:matches_language?, "test-2026-01-15-es")
-    refute gen.send(:matches_language?, "test-2026-01-15")
-    refute gen.send(:matches_language?, "test-2026-01-15-fr")
+    assert EpisodeFiltering.matches_language?("test-2026-01-15-es", "es")
+    refute EpisodeFiltering.matches_language?("test-2026-01-15", "es")
+    refute EpisodeFiltering.matches_language?("test-2026-01-15-fr", "es")
   end
 
   # --- format_duration ---

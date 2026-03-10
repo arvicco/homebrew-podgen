@@ -1,31 +1,12 @@
 # frozen_string_literal: true
 
 require "httparty"
-require "set"
-require_relative "../loggable"
+require_relative "base_source"
 
-class HNSource
-  include Loggable
-  MAX_RETRIES = 2
+class HNSource < BaseSource
   RESULTS_PER_TOPIC = 3
   LOOKBACK_HOURS = 48
   API_BASE = "https://hn.algolia.com/api/v1/search_by_date"
-
-  def initialize(logger: nil, **_options)
-    @logger = logger
-  end
-
-  # Returns: [{ topic: String, findings: [{ title:, url:, summary: }] }]
-  def research(topics, exclude_urls: Set.new)
-    topics.map do |topic|
-      log("Searching HN: #{topic}")
-      start = Time.now
-      findings = search_topic(topic, exclude_urls)
-      elapsed = (Time.now - start).round(2)
-      log("HN found #{findings.length} results for '#{topic}' (#{elapsed}s)")
-      { topic: topic, findings: findings }
-    end
-  end
 
   private
 
@@ -65,24 +46,10 @@ class HNSource
   end
 
   def request_with_retry(**params)
-    attempts = 0
-    begin
-      attempts += 1
+    with_retries(max: MAX_RETRIES, label: source_name) do
       response = HTTParty.get(API_BASE, query: params, timeout: 15)
-
-      unless response.success?
-        raise "HTTP #{response.code} from HN Algolia API"
-      end
-
+      raise "HTTP #{response.code} from HN Algolia API" unless response.success?
       response.parsed_response
-    rescue => e
-      if attempts <= MAX_RETRIES
-        sleep_time = 2**attempts
-        log("HN API error: #{e.message}, retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
-        sleep(sleep_time)
-        retry
-      end
-      raise
     end
   end
 end

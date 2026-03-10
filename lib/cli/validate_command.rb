@@ -7,6 +7,7 @@ require "date"
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "podcast_config")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   class ValidateCommand
@@ -173,8 +174,7 @@ module PodgenCLI
         return
       end
 
-      mp3s = Dir.glob(File.join(episodes_dir, "*.mp3"))
-        .reject { |f| File.basename(f).include?("_concat") }
+      mp3s = EpisodeFiltering.all_episodes(episodes_dir)
 
       if mp3s.empty?
         warnings << "Episodes: no MP3 files found"
@@ -202,8 +202,7 @@ module PodgenCLI
       episodes_dir = config.episodes_dir
       return unless Dir.exist?(episodes_dir)
 
-      mp3s = Dir.glob(File.join(episodes_dir, "*.mp3"))
-        .reject { |f| File.basename(f).include?("_concat") }
+      mp3s = EpisodeFiltering.all_episodes(episodes_dir)
       return if mp3s.empty?
 
       missing_md = 0
@@ -242,15 +241,7 @@ module PodgenCLI
         items = doc.elements.to_a("//item")
 
         # Count MP3s for comparison
-        mp3_count = if Dir.exist?(config.episodes_dir)
-          # Count only English/primary episodes for feed comparison
-          Dir.glob(File.join(config.episodes_dir, "*.mp3"))
-            .reject { |f| File.basename(f).include?("_concat") }
-            .reject { |f| File.basename(f, ".mp3").match?(/-[a-z]{2}$/) }
-            .length
-        else
-          0
-        end
+        mp3_count = EpisodeFiltering.english_episodes(config.episodes_dir).length
 
         if items.length == mp3_count
           passes << "Feed: well-formed XML, #{items.length} episodes"
@@ -338,10 +329,7 @@ module PodgenCLI
 
         # Compare with episode count (rough — only English/primary MP3s)
         if Dir.exist?(config.episodes_dir)
-          mp3_count = Dir.glob(File.join(config.episodes_dir, "*.mp3"))
-            .reject { |f| File.basename(f).include?("_concat") }
-            .reject { |f| File.basename(f, ".mp3").match?(/-[a-z]{2}$/) }
-            .length
+          mp3_count = EpisodeFiltering.english_episodes(config.episodes_dir).length
 
           if entries.length == mp3_count
             passes << "History: #{entries.length} entries"

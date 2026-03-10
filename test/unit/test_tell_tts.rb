@@ -112,7 +112,7 @@ class TestTellTts < Minitest::Test
       err = assert_raises(RuntimeError) do
         capture_stderr { HTTParty.stub(:post, stub) { tts.synthesize("hello") } }
       end
-      assert_match(/after #{Tell::ElevenlabsTts::MAX_RETRIES} retries/, err.message)
+      assert_match(/after \d+ attempts/, err.message)
     end
   end
 
@@ -206,7 +206,7 @@ class TestTellTts < Minitest::Test
       err = assert_raises(RuntimeError) do
         capture_stderr { HTTParty.stub(:post, stub) { tts.synthesize("hello") } }
       end
-      assert_match(/after #{Tell::GoogleTts::MAX_RETRIES} retries/, err.message)
+      assert_match(/after \d+ attempts/, err.message)
     end
   end
 

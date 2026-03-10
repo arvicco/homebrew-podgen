@@ -1,39 +1,23 @@
 # frozen_string_literal: true
 
 require "httparty"
-require "set"
-require_relative "../loggable"
+require_relative "base_source"
 
-class XSource
-  include Loggable
-  MAX_RETRIES = 2
+class XSource < BaseSource
   RESULTS_PER_TOPIC = 5
   API_BASE = "https://api.socialdata.tools/twitter/search"
 
   def initialize(logger: nil, priority_handles: [], **_options)
-    @logger = logger
+    super(logger: logger)
     @api_key = ENV["SOCIALDATA_API_KEY"]
     @priority_handles = priority_handles.map { |h| h.delete_prefix("@") }
   end
 
-  # Returns: [{ topic: String, findings: [{ title:, url:, summary: }] }]
-  def research(topics, exclude_urls: Set.new)
-    unless @api_key
-      log("SOCIALDATA_API_KEY not set, skipping X source")
-      return topics.map { |t| { topic: t, findings: [] } }
-    end
-
-    topics.map do |topic|
-      log("Searching X: #{topic}")
-      start = Time.now
-      findings = search_topic(topic, exclude_urls)
-      elapsed = (Time.now - start).round(2)
-      log("X found #{findings.length} results for '#{topic}' (#{elapsed}s)")
-      { topic: topic, findings: findings }
-    end
-  end
-
   private
+
+  def available?
+    !!@api_key
+  end
 
   def search_topic(topic, exclude_urls)
     seen_urls = exclude_urls.dup
@@ -107,9 +91,7 @@ class XSource
   end
 
   def request_with_retry(**params)
-    attempts = 0
-    begin
-      attempts += 1
+    with_retries(max: MAX_RETRIES, label: source_name) do
       response = HTTParty.get(
         API_BASE,
         query: params,
@@ -119,20 +101,8 @@ class XSource
         },
         timeout: 15
       )
-
-      unless response.success?
-        raise "HTTP #{response.code} from SocialData API"
-      end
-
+      raise "HTTP #{response.code} from SocialData API" unless response.success?
       response.parsed_response
-    rescue => e
-      if attempts <= MAX_RETRIES
-        sleep_time = 2**attempts
-        log("SocialData API error: #{e.message}, retry #{attempts}/#{MAX_RETRIES} in #{sleep_time}s")
-        sleep(sleep_time)
-        retry
-      end
-      raise
     end
   end
 end

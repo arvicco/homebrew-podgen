@@ -1,38 +1,24 @@
 # frozen_string_literal: true
 
 require "anthropic"
-require "set"
-require_relative "../loggable"
+require_relative "base_source"
 
-class ClaudeWebSource
-  include Loggable
+class ClaudeWebSource < BaseSource
   MAX_RETRIES = 3
   DEFAULT_MODEL = "claude-haiku-4-5-20251001"
   MAX_SEARCH_USES = 3
 
   def initialize(logger: nil, max_results: 5, **_options)
-    @logger = logger
+    super(logger: logger)
     @client = Anthropic::Client.new
     @model = ENV.fetch("CLAUDE_WEB_MODEL", DEFAULT_MODEL)
     @max_results = max_results
   end
 
-  # Returns: [{ topic: String, findings: [{ title:, url:, summary: }] }]
-  def research(topics, exclude_urls: Set.new)
-    topics.map do |topic|
-      log("Claude web search: #{topic}")
-      start = Time.now
-      findings = search_topic(topic, exclude_urls)
-      elapsed = (Time.now - start).round(2)
-      log("Claude web found #{findings.length} results for '#{topic}' (#{elapsed}s)")
-      { topic: topic, findings: findings }
-    end
-  end
-
   private
 
   def search_topic(topic, exclude_urls)
-    message = request_with_retry(topic)
+    message = call_api(topic)
     return [] unless message
 
     findings = extract_findings(message)
@@ -43,10 +29,8 @@ class ClaudeWebSource
     []
   end
 
-  def request_with_retry(topic)
-    attempts = 0
-    begin
-      attempts += 1
+  def call_api(topic)
+    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError], label: source_name) do
       @client.messages.create(
         model: @model,
         max_tokens: 1024,
@@ -60,16 +44,10 @@ class ClaudeWebSource
           }
         ]
       )
-    rescue Anthropic::Errors::APIError => e
-      if attempts <= MAX_RETRIES
-        sleep_time = 2**attempts
-        log("API error (attempt #{attempts}/#{MAX_RETRIES}): #{e.message}. Retrying in #{sleep_time}s...")
-        sleep(sleep_time)
-        retry
-      end
-      log("Claude web search failed after #{MAX_RETRIES} retries: #{e.message}")
-      nil
     end
+  rescue => e
+    log("Claude web search failed: #{e.message}")
+    nil
   end
 
   def extract_findings(message)

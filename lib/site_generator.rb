@@ -8,6 +8,7 @@ require "fileutils"
 require_relative "loggable"
 require_relative "language_names"
 require_relative "audio_assembler"
+require_relative "episode_filtering"
 
 class SiteGenerator
   include Loggable
@@ -136,22 +137,10 @@ class SiteGenerator
   # --- Episode scanning ---
 
   def scan_episodes(lang_code)
-    return [] unless Dir.exist?(@episodes_dir)
-
-    Dir.glob(File.join(@episodes_dir, "*.mp3"))
-      .reject { |f| f.include?("_concat") }
-      .select { |f| matches_language?(File.basename(f, ".mp3"), lang_code) }
+    EpisodeFiltering.episodes_for_language(@episodes_dir, lang_code)
       .sort
       .reverse
       .filter_map { |path| build_episode(path, lang_code) }
-  end
-
-  def matches_language?(basename, lang_code)
-    if lang_code == "en"
-      !basename.match?(/-[a-z]{2}$/)
-    else
-      basename.end_with?("-#{lang_code}")
-    end
   end
 
   def build_episode(mp3_path, lang_code)

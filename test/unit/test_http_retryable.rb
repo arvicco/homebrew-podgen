@@ -6,7 +6,10 @@ require "json"
 
 class TestHttpRetryable < Minitest::Test
   def setup
-    @host = Class.new { include HttpRetryable }.new
+    @host = Class.new {
+      include HttpRetryable
+      def sleep(_seconds); end
+    }.new
   end
 
   # --- parse_error ---
@@ -55,6 +58,54 @@ class TestHttpRetryable < Minitest::Test
   def test_included_sets_retriable_error_on_host
     klass = Class.new { include HttpRetryable }
     assert_equal HttpRetryable::RetriableError, klass::RetriableError
+  end
+
+  # --- with_http_retries delegates to with_retries ---
+
+  def test_http_retries_succeeds_without_retry
+    result = @host.send(:with_http_retries, "Test") { 42 }
+    assert_equal 42, result
+  end
+
+  def test_http_retries_retries_on_retriable_error
+    attempts = 0
+    result = @host.send(:with_http_retries, "Test", max: 2) do
+      attempts += 1
+      raise HttpRetryable::RetriableError, "rate limited" if attempts < 2
+      "ok"
+    end
+
+    assert_equal "ok", result
+    assert_equal 2, attempts
+  end
+
+  def test_http_retries_raises_after_max
+    err = assert_raises(RuntimeError) do
+      @host.send(:with_http_retries, "MyAPI", max: 1) do
+        raise HttpRetryable::RetriableError, "always fails"
+      end
+    end
+
+    assert_includes err.message, "MyAPI failed after 2 attempts"
+  end
+
+  def test_http_retries_does_not_catch_unrelated_errors
+    assert_raises(ArgumentError) do
+      @host.send(:with_http_retries, "Test") do
+        raise ArgumentError, "bad"
+      end
+    end
+  end
+
+  # --- Retryable is included automatically ---
+
+  def test_includes_retryable
+    klass = Class.new { include HttpRetryable }
+    assert klass.ancestors.include?(Retryable)
+  end
+
+  def test_with_retries_available
+    assert @host.respond_to?(:with_retries, true)
   end
 
   private
