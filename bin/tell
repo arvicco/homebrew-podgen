@@ -47,13 +47,17 @@ parser = OptionParser.new do |opts|
   opts.on("-v", "--voice ID", "Override voice ID") { |v| overrides[:voice] = v }
   opts.on("-o", "--output FILE", "Save audio to FILE instead of playing") { |f| output_path = f }
   opts.on("-r", "--reverse", "Show reverse translation for target-language input") { overrides[:reverse] = true }
-  opts.on("-g", "--gloss", "Show word-by-word grammatical analysis") { overrides[:gloss] = true }
-  opts.on("--gr", "--rg", "Gloss with translations: word(grammar)translation") { overrides[:gloss_reverse] = true }
+  opts.on("-g", "--gloss [OPTS]", "Grammatical gloss (p=phonetic, r=reverse, e.g. -g pr)") do |v|
+    overrides[:gloss] = true
+    if v && v.match?(/\A[rp]+\z/)
+      overrides[:phonetic] = true if v.include?("p")
+      overrides[:gloss_reverse] = true if v.include?("r")
+    elsif v
+      ARGV.unshift(v) # not a flag combo — put it back as text
+    end
+  end
   opts.on("-p", "--phonetic", "Show phonetic reading (kana/pinyin/romanization)") { overrides[:phonetic] = true }
   opts.on("--ps SYSTEM", "--phonetic-system SYSTEM", "Set phonetic system (e.g. hepburn, pinyin, ipa)") { |s| overrides[:phonetic] = true; overrides[:phonetic_system] = s }
-  opts.on("--gp", "--pg", "Gloss with phonetic: word(grammar)[reading]") { overrides[:gloss] = true; overrides[:phonetic] = true }
-  opts.on("--rp", "--pr", "Reverse translate + phonetic reading") { overrides[:reverse] = true; overrides[:phonetic] = true }
-  opts.on("--grp", "--gpr", "--rgp", "--rpg", "--prg", "--pgr", "Gloss with translations + phonetic") { overrides[:gloss_reverse] = true; overrides[:phonetic] = true }
   opts.on("-n", "--no-translate", "Override config auto back to default (no translation)") { no_translate = true }
   opts.on("-h", "--help", "Show this help") { puts opts; exit }
 end

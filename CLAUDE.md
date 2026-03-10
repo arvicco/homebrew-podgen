@@ -159,9 +159,9 @@ Standalone CLI (`bin/tell`) for pronouncing text via TTS with auto-translation. 
 - **Translation failover:** `TranslatorChain` tries engines in order with per-engine timeout (default 8s, `TELL_TRANSLATE_TIMEOUT`). Engines: DeepL, Claude, OpenAI
 - **Explanation detection:** If translation is 3x+ longer than input, it's displayed but not spoken (original is spoken instead)
 - **Interactive mode:** Reline-based REPL with persistent history (`~/.tell_history`, 1000 entries), dedup, non-blocking playback (new input interrupts current audio)
-- **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), gloss+translate (`--gr`), phonetic (`-p`) — run in background threads. Combinable: `--gp`, `--grp`, `--rp`
-- **Gloss:** Claude produces `word(grammar)` interlinear analysis with agrammatical marking (`*wrong*correction(grammar)`). `--gr` adds translations: `word(grammar)translation`. Multi-model consensus: `gloss_model: [opus, sonnet]` runs models in parallel, reconciler (first model) keeps error markings only when models agree. Single model still works: `gloss_model: opus`
-- **Phonetic:** `-p` shows reading (kana for Japanese, pinyin for Chinese, IPA/romanization for others). `--ps SYSTEM` selects a specific system (e.g. `hepburn`, `pinyin`, `ipa`). `--gp` inlines phonetic into gloss: `word[reading](grammar)`. Standalone `-p` always fires alongside combined modes. Per-language systems defined in `Glosser::PHONETIC_SYSTEMS` with data-driven prompt generation
+- **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), phonetic (`-p`) — run in background threads
+- **Gloss:** `-g` for basic gloss, `-g r` adds reverse translations, `-g p` adds inline phonetic, `-g rp` for both. Claude produces `word(grammar)` interlinear analysis with agrammatical marking (`*wrong*correction(grammar)`). Multi-model consensus: `gloss_model: [opus, sonnet]` runs models in parallel, reconciler (first model) keeps error markings only when models agree. Single model still works: `gloss_model: opus`
+- **Phonetic:** `-p` shows reading (kana for Japanese, pinyin for Chinese, IPA/romanization for others). `--ps SYSTEM` selects a specific system (e.g. `hepburn`, `pinyin`, `ipa`). `-g p` inlines phonetic into gloss: `word[reading](grammar)`. Standalone `-p` always fires alongside combined modes. Per-language systems defined in `Glosser::PHONETIC_SYSTEMS` with data-driven prompt generation
 - **Style hints:** Append `/p`, `/c`, `/m`, `/f` (or combos like `/pm`, `/cf`) to input text. `/p` = polite, `/c` = casual, `/m` = male voice, `/f` = female voice. Stripped before synthesis, passed to translator. Voice switching requires `voice_male`/`voice_female` in config
 - **Output:** `afplay` (terminal), file (`-o`), stdout (pipe)
 
@@ -181,7 +181,6 @@ model_id: eleven_multilingual_v2    # ElevenLabs model
 output_format: mp3_44100_128        # ElevenLabs output format
 reverse_translate: false            # Show reverse translation by default
 gloss: false                        # Show grammatical gloss by default
-gloss_reverse: false                # Show gloss with translations by default
 phonetic: false                      # Show phonetic reading by default
 gloss_model: opus                    # opus | sonnet | haiku (or array for multi-model consensus)
 # gloss_model:                      # multi-model consensus example
@@ -206,13 +205,9 @@ tell [options] [text...]
   -v, --voice ID        Override voice ID
   -o, --output FILE     Save audio to file instead of playing
   -r, --reverse         Show reverse translation for target-language input
-  -g, --gloss           Show word-by-word grammatical analysis
-  --gr                  Gloss with word translations: word(grammar)translation
+  -g, --gloss [OPTS]    Grammatical gloss (p=phonetic, r=reverse, e.g. -g pr)
   -p, --phonetic        Show phonetic reading (kana/pinyin/romanization)
   --ps SYSTEM           Set phonetic system (e.g. hepburn, pinyin, ipa)
-  --gp                  Gloss with inline phonetic: word[reading](grammar)
-  --grp                 Gloss with translations + phonetic
-  --rp                  Reverse translate + phonetic reading
   -n, --no-translate    Speak text as-is without translation
   -h, --help            Show help
 Style hints: append /p (polite), /c (casual), /m (male voice), /f (female voice) to input
