@@ -7,12 +7,13 @@ require "fileutils"
 
 root = File.expand_path("../..", __dir__)
 
-require_relative File.join(root, "lib", "podcast_config")
+require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
 
 module PodgenCLI
   class PublishCommand
+    include PodcastCommand
     REQUIRED_ENV = %w[R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT R2_BUCKET].freeze
 
     def initialize(args, options)
@@ -25,19 +26,10 @@ module PodgenCLI
     end
 
     def run
-      unless @podcast_name
-        available = PodcastConfig.available
-        $stderr.puts "Usage: podgen publish <podcast_name>"
-        $stderr.puts
-        if available.any?
-          $stderr.puts "Available podcasts:"
-          available.each { |name| $stderr.puts "  - #{name}" }
-        end
-        return 2
-      end
+      code = require_podcast!("publish")
+      return code if code
 
-      @config = PodcastConfig.new(@podcast_name)
-      @config.load_env!
+      load_config!
 
       # Regenerate RSS feed and static site before publishing
       regenerate_rss

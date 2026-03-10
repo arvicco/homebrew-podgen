@@ -4,7 +4,7 @@ root = File.expand_path("../..", __dir__)
 
 require "optparse"
 require "fileutils"
-require_relative File.join(root, "lib", "podcast_config")
+require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "agents", "tts_agent")
@@ -13,6 +13,8 @@ require_relative File.join(root, "lib", "rss_generator")
 
 module PodgenCLI
   class TranslateCommand
+    include PodcastCommand
+
     def initialize(args, options)
       @options = options
       @last_n = nil
@@ -28,19 +30,10 @@ module PodgenCLI
     end
 
     def run
-      unless @podcast_name
-        available = PodcastConfig.available
-        $stderr.puts "Usage: podgen translate <podcast>"
-        $stderr.puts
-        if available.any?
-          $stderr.puts "Available podcasts:"
-          available.each { |name| $stderr.puts "  - #{name}" }
-        end
-        return 2
-      end
+      code = require_podcast!("translate <podcast>")
+      return code if code
 
-      config = PodcastConfig.new(@podcast_name)
-      config.load_env!
+      config = load_config!
 
       logger = PodcastAgent::Logger.new(log_path: config.log_path(Date.today), verbosity: @options[:verbosity])
       logger.log("Translate started for '#{@podcast_name}'")

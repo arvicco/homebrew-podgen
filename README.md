@@ -707,8 +707,9 @@ podgen/
 │   ├── cli.rb                # CLI dispatcher (OptionParser + command registry)
 │   ├── cli/
 │   │   ├── version.rb        # PodgenCLI::VERSION
+│   │   ├── podcast_command.rb # Shared mixin: podcast name validation + config loading
 │   │   ├── generate_command.rb # Pipeline dispatcher (news or language)
-│   │   ├── language_pipeline.rb # Language pipeline
+│   │   ├── language_pipeline.rb # Language pipeline (phased orchestrator)
 │   │   ├── translate_command.rb # Backfill translations for existing episodes
 │   │   ├── scrap_command.rb  # Remove last episode + history entry
 │   │   ├── rss_command.rb    # RSS feed generation
@@ -722,7 +723,11 @@ podgen/
 │   │   └── schedule_command.rb # Install launchd scheduler
 │   ├── time_value.rb          # TimeValue: seconds or min:sec with absolute? flag
 │   ├── snip_interval.rb      # SnipInterval: unified skip/cut/snip interval math
-│   ├── podcast_config.rb     # Resolves all paths, parses config from guidelines
+│   ├── podcast_config.rb     # Config resolver (delegates parsing to GuidelinesParser)
+│   ├── guidelines_parser.rb  # Parses guidelines.md sections into structured config
+│   ├── episode_filtering.rb  # Shared MP3 glob/filter helpers
+│   ├── loggable.rb           # Mixin: logger accessor with $stderr fallback
+│   ├── retryable.rb          # Mixin: exponential backoff retries
 │   ├── source_manager.rb     # Multi-source research coordinator
 │   ├── research_cache.rb     # File-based research cache (24h TTL)
 │   ├── transcription/
@@ -743,6 +748,7 @@ podgen/
 │   │   ├── lingq_agent.rb    # LingQ lesson upload
 │   │   └── cover_agent.rb    # ImageMagick cover image generation
 │   ├── sources/
+│   │   ├── base_source.rb    # Template base class for topic-based sources
 │   │   ├── rss_source.rb     # RSS/Atom feed fetcher + episode fetcher
 │   │   ├── hn_source.rb      # Hacker News Algolia API
 │   │   ├── claude_web_source.rb # Claude + web_search tool
