@@ -1,281 +1,58 @@
 # Podcast Agent — Claude Code Instructions
 
-## Overview
-Autonomous podcast pipeline. Ruby 3.2+, macOS, ffmpeg, yt-dlp, ImageMagick+librsvg.
+## Work Protocol
 
-**Two pipelines:**
-1. **News** (`type: news`): Research topics → Claude script → TTS (ElevenLabs) → multi-language MP3s
-2. **Language** (`type: language`): RSS/YouTube/local MP3 → multi-engine STT → Claude reconciliation → auto-trim outro → clean MP3 + transcript
+### For ALL tasks:
+1. **Read relevant code** before proposing or making changes — never rely on assumptions
+2. **Propose your plan** and wait for explicit approval before implementing
+3. **Never change behavior** beyond what was explicitly requested — no drive-by refactors, no "improvements"
+4. **Run tests** after making changes (see Testing below)
+5. **All tests must pass.** If a test fails, investigate — never dismiss it as "pre-existing"
 
-**Standalone tool:**
-- **tell**: Interactive TTS pronunciation with auto-translation and grammatical glossing
+### When a bug or problem is reported:
+1. **STOP. Do not touch the codebase.**
+2. Think through potential root causes — list them explicitly
+3. Run exploratory read-only commands (grep, logs, traces) to gather evidence
+4. Present a diagnosis with your reasoning and a proposed fix plan
+5. Wait for explicit approval before making any code changes
 
-**APIs:** Claude (topics, scripting, translation, reconciliation, description cleanup, glossing), Exa.ai (research), ElevenLabs (TTS + Scribe), OpenAI/Groq (transcription), DeepL (translation), Google TTS, yt-dlp (YouTube), Cloudflare Analytics Engine (download stats)
+**Never implement a fix speculatively.** "This might help" changes are not allowed.
+If you are unsure about the root cause, say so and ask a clarifying question instead of guessing with code.
 
-## Project Structure
-```
-bin/podgen                       # CLI entry point
-bin/tell                         # TTS pronunciation CLI (standalone)
-podcasts/<name>/                 # Per-podcast: guidelines.md, queue.yml, pronunciation.pls, site.css, favicon.*, .env
-lib/
-  cli.rb                         # CLI dispatcher
-  cli/
-    podcast_command.rb            # Shared mixin: podcast name validation + config loading
-    generate_command.rb           # Pipeline dispatcher (news or language)
-    language_pipeline.rb          # Language pipeline orchestrator (phased: acquire → trim → transcribe → assemble)
-    translate_command.rb          # Backfill translations
-    scrap_command.rb              # Remove last episode
-    rss_command.rb                # RSS feed generation
-    site_command.rb               # Static HTML website generation
-    publish_command.rb            # Publish to R2 or LingQ
-    analytics_command.rb          # Manage Cloudflare analytics Worker
-    list_command.rb | test_command.rb | schedule_command.rb
-  time_value.rb                  # TimeValue: seconds or min:sec with absolute? flag
-  snip_interval.rb               # SnipInterval: unified skip/cut/snip interval math
-  podcast_config.rb              # Config resolver (paths, delegates parsing to GuidelinesParser)
-  guidelines_parser.rb           # Parses guidelines.md sections into structured config hashes
-  episode_filtering.rb           # Shared MP3 glob/filter: all_episodes, english_episodes, matches_language?
-  loggable.rb                    # Mixin: logger accessor with $stderr fallback
-  retryable.rb                   # Mixin: with_retries (exponential backoff, configurable exceptions)
-  source_manager.rb              # Parallel multi-source research
-  research_cache.rb              # File cache (SHA256, 24h TTL, atomic writes)
-  transcription/
-    base_engine.rb | openai_engine.rb | elevenlabs_engine.rb | groq_engine.rb
-    engine_manager.rb             # Single or parallel comparison mode
-    reconciler.rb                 # Claude Opus reconciliation of multi-engine transcripts
-  agents/
-    topic_agent.rb | research_agent.rb | description_agent.rb | script_agent.rb
-    tts_agent.rb | translation_agent.rb | transcription_agent.rb
-    lingq_agent.rb | cover_agent.rb
-  sources/
-    base_source.rb                # Template base class: research loop, logging, retries
-    rss_source.rb | hn_source.rb | claude_web_source.rb | bluesky_source.rb | x_source.rb
-  audio_trimmer.rb                 # Audio trimming: skip/cut/snip, autotrim outro, word matching
-  episode_source.rb                # Episode acquisition: local/YouTube/RSS, dedup, download
-  youtube_downloader.rb | episode_history.rb | audio_assembler.rb | rss_generator.rb | logger.rb
-  site_generator.rb                # Static HTML website generator (ERB templates)
-  templates/                       # ERB templates + CSS for site generator
-  analytics_client.rb              # Cloudflare Analytics Engine GraphQL client
-  http_retryable.rb               # Mixin: HTTP-specific retries (includes Retryable), RetriableError, RETRIABLE_CODES
-  tell/
-    config.rb                     # Config loader (~/.tell.yml)
-    detector.rb                   # Language detection (Unicode scripts + stop words)
-    translator.rb                 # Translation engines (DeepL, Claude, OpenAI) + failover chain
-    tts.rb                        # TTS engines (ElevenLabs, Google)
-    glosser.rb                    # Grammatical glossing via Claude
-    hints.rb                      # Style hint parser (/p, /c, /m, /f suffixes)
-    colors.rb                     # ANSI colorization for gloss/phonetic output
-    error_formatter.rb            # Friendly error messages for API errors
-    processor.rb                  # Main processing: detect → translate → synthesize → play
-    web.rb                        # Sinatra web UI: SSE streaming, /speak, /systems endpoints
-    web/views/index.erb           # Single-page web UI (HTML + CSS + JS)
-output/<name>/                   # episodes/, tails/, site/, research_cache/, history.yml, feed.xml
-docs/cloudflare.md               # Cloudflare R2 + Worker + analytics setup guide
-test/                            # unit/, integration/, api/ (minitest)
-scripts/serve.rb                 # WEBrick server for RSS
-scripts/tell_web.rb              # Tell Web UI launcher
-```
+## Testing
 
-## Pipeline Details
-
-### News: `generate_command.rb`
-1. TopicAgent (Claude) → fallback queue.yml
-2. SourceManager → parallel sources → cache → merge
-3. ScriptAgent (Claude structured output) → `_script.md`
-4. Per language: translate → TTS (chunked) → assemble (ffmpeg: concat + crossfade + loudnorm)
-5. Record history (with duration + timestamp)
-
-### Language: `language_pipeline.rb`
-1. Get episode: `--file` (local MP3) | `--url` (YouTube) | RSS (next unprocessed)
-2. Download + unified trim: skip/cut/snip → SnipInterval → single `atrim+concat` pass (priority: CLI → per-feed → `## Audio`)
-3. Transcribe via EngineManager (parallel engines). Groq provides word timestamps. Reconciler (Claude Opus) produces clean text
-4. Clean title/description via DescriptionAgent (Claude Haiku) — non-fatal
-5. Autotrim outro (opt-in): map reconciled text → Groq timestamps → trim at speech_end + 2s, save tail
-6. Assemble: intro + trimmed audio + outro → loudnorm
-7. Save transcript, resolve cover, optional LingQ upload (`--lingq`)
-8. Record history (with duration + timestamp)
-
-### Key behaviors
-- **Multi-podcast:** `podcasts/<name>/` each with own config. `podgen generate <name>`
-- **Input sources:** `--file PATH` (local MP3, dedup via `file://name:size`), `--url URL` (YouTube via yt-dlp, auto-thumbnail+captions), RSS (per-feed `skip: N cut: N autotrim: true base_image: PATH image: none`)
-- **Flags:** `--title`, `--skip N` (seconds or min:sec), `--cut N` (seconds=relative from end, min:sec=absolute cut point), `--snip INTERVALS` (remove interior segments, CLI-only), `--autotrim`, `--force` (skip dedup), `--image PATH|thumb|last`, `--base-image PATH`, `--lingq`, `--dry-run`
-- **TimeValue:** `skip`/`cut` accept plain seconds (`30`) or min:sec (`1:20`). Plain seconds are relative (skip/cut that many seconds); min:sec is absolute (skip to / cut at that timestamp). Implemented via `TimeValue` class (`DelegateClass(Float)` + `absolute?` flag)
-- **SnipInterval:** Unified interval math for all trimming. Formats: `1:20-2:30` (range), `1:20+30` (offset), `1:20-end` (open-ended), comma-separated for multiple. Skip/cut/snip fold into removal intervals → merged → inverted to keep segments → single ffmpeg `atrim+concat` pass. `--snip` is CLI-only (per-episode manual operation)
-- **Autotrim:** Opt-in via `--autotrim`, per-feed, or `## Audio`. Requires 2+ engines including groq
-- **Episode dedup:** News pipeline uses 7-day lookback; language pipeline checks all history (permanent). `--force` to bypass
-- **Same-day suffix:** `name-date.mp3`, then `name-date-a.mp3`, etc.
-- **Multi-language:** Language list in `## Podcast`. English first, then translations. Per-language voice IDs
-- **Cover generation:** Title overlay on base_image via ImageMagick/SVG/rsvg-convert. Priority: `--image` → per-feed → `--base-image` → per-feed base_image → `## Image` → YouTube thumb → nil
-- **TTS:** ElevenLabs with chunking (10k char limit), pronunciation dictionaries (`.pls`), trailing hallucination trimming via `/with-timestamps`
-- **Transcript post-processing:** Claude Opus. Multi-engine: reconcile + remove hallucinations. Single: clean up. YouTube captions as tiebreaker reference
-- **Site:** `podgen site <name>` generates static HTML website in `output/<name>/site/`. Episode list + per-episode pages with transcripts. Multi-language support (subdirectories per language). `--clean` removes existing site first. `--base-url` overrides config. Auto-generated during `publish`
-- **Publish:** `podgen publish <name>` → regenerate RSS + site → sync to R2 via rclone. `--lingq` for LingQ instead
-- **Analytics:** `podgen analytics setup` deploys a Cloudflare Worker that logs MP3 downloads to Analytics Engine. `deploy`/`tail`/`status` subcommands. Worker project at `~/.podgen/analytics-worker/`. `podgen stats --downloads [podcast] [--days N]` queries via SQL API — shows per-episode counts, avg/day, country + app breakdown, daily history. User-agent parsed into app names (Apple Podcasts, Overcast, Pocket Casts, etc.). See `docs/cloudflare.md`
-- **Scrap:** `podgen scrap <name>` removes last episode files + history + LingQ tracking
-- **Translate:** `podgen translate <name>` backfills translations (`--last N`, `--lang xx`)
-- **RSS:** iTunes + Podcasting 2.0 namespaces, transcript tags, `base_url` for absolute URLs. pubDate from history timestamp (fallback: date + 06:00). Duration from history (fallback: ffprobe → size estimate)
-- **Lockfile:** `flock` prevents concurrent runs per podcast
-
-## Configuration
-
-### guidelines.md sections
-| Section | Description |
-|---------|-------------|
-| `## Podcast` | `name`, `type` (news/language), `author`, `description`, `language` (list with voice IDs), `base_url` |
-| `## Format` | Length, structure, pacing (required for news) |
-| `## Tone` | Voice and style (required for news) |
-| `## Topics` | Default topic rotation (required for news) |
-| `## Sources` | `exa` (or `exa: category`), `hackernews`, `rss:` (with URLs + per-feed options), `claude_web`, `bluesky`, `x:` |
-| `## Audio` | `engine` list (`open`/`elab`/`groq`), `language`, `target_language`, `skip`, `cut`, `autotrim` |
-| `## Site` | `accent`, `accent_dark`, `bg`, `bg_dark`, `radius`, `max_width`, `footer`, `show_duration`, `show_transcript`. Custom `site.css` → `custom.css`. Auto-detect `favicon.*` → copied to site. RSS feed icon after title when `base_url` set |
-| `## Image` | `cover`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset` |
-| `## LingQ` | `collection`, `level`, `tags`, `accent`, `status`. Image keys are legacy → prefer `## Image` |
-| `## Do not include` | Content restrictions |
-
-HTML comments (`<!-- -->`) are stripped before parsing.
-
-### Environment variables
-**Root `.env`:** `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` (eleven_multilingual_v2), `ELEVENLABS_OUTPUT_FORMAT` (mp3_44100_128), `ELEVENLABS_SCRIBE_MODEL` (scribe_v2), `EXA_API_KEY`, `CLAUDE_MODEL` (claude-opus-4-6), `CLAUDE_WEB_MODEL` (claude-haiku-4-5-20251001), `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD`, `SOCIALDATA_API_KEY`, `OPENAI_API_KEY`, `WHISPER_MODEL` (gpt-4o-mini-transcribe), `GROQ_API_KEY`, `GROQ_WHISPER_MODEL` (whisper-large-v3), `YOUTUBE_BROWSER` (chrome), `LINGQ_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
-
-Per-podcast `.env` overrides root via `Dotenv.overload`.
+- Framework: Minitest (`test/unit/`, `test/integration/`, `test/api/`)
+- Run single file: `bundle exec ruby -Ilib:test test/unit/test_tell_glosser.rb`
+- Run unit tests: `rake test:unit`
+- Run all tests: `rake test`
+- **A failing test is a bug signal.** Investigate every failure — determine root cause, whether related to your changes or a separate issue. If separate, flag it to the user
+- Never treat failing tests as acceptable background noise
 
 ## Coding Standards
 - Single responsibility per class/method
 - API calls: retry with exponential backoff via `Retryable` mixin (`with_retries`), HTTP calls via `HttpRetryable` (`with_http_retries`), keys from ENV only
 - Sources extend `BaseSource` (template method: subclasses implement `search_topic`); `RSSSource` is standalone (different research pattern)
 - CLI commands include `PodcastCommand` mixin for podcast name validation (`require_podcast!`) and config loading (`load_config!`)
-- Episode MP3 filtering via `EpisodeFiltering` module (shared across rss_generator, site_generator, validate, stats, scrap)
 - Guidelines parsing via `GuidelinesParser` (extracted from `PodcastConfig`, which delegates all section parsing)
+- Episode MP3 filtering via `EpisodeFiltering` module (shared across rss_generator, site_generator, validate, stats, scrap)
 - Paths: `File.join` + `__dir__`-relative, `require_relative` throughout
 - Atomic writes (temp + rename) for history/cache
 - Shell commands: `Open3.capture3` (capture stdout, stderr, status)
 - Gems pinned `~> x.y`
-- Research data: `[{ topic:, findings: [{ title:, url:, summary: }] }]`
 - TTS splitting: paragraph → sentence → comma → whitespace → UTF-8-safe char boundary
-
-## Tell (TTS Pronunciation Tool)
-
-Standalone CLI (`bin/tell`) for pronouncing text via TTS with auto-translation. Designed for language learning — type a word or phrase in your native language and hear it spoken in the target language.
-
-### Architecture
-1. Input: argument (`tell "hello"`), pipe (`echo "hello" | tell`), or interactive REPL
-2. Detect language via `Detector` (Unicode script analysis + stop words + characteristic diacritics)
-3. If input is in original language → translate to target language via `TranslatorChain`, then speak
-4. If input is already in target language → speak directly, fire add-ons (reverse translate, gloss)
-5. Synthesize via `ElevenlabsTts` or `GoogleTts`, play via `afplay` (macOS)
-
-### Key behaviors
-- **Language detection:** Unicode script ranges (CJK, Hangul, Cyrillic, Arabic, Hebrew, Thai, Devanagari) then Latin stop-word scoring across 20+ languages. Fallback: characteristic diacritics (e.g. č/š/ž → Slovenian)
-- **Translation failover:** `TranslatorChain` tries engines in order with per-engine timeout (default 8s, `TELL_TRANSLATE_TIMEOUT`). Engines: DeepL, Claude, OpenAI
-- **Explanation detection:** If translation is 3x+ longer than input, it's displayed but not spoken (original is spoken instead)
-- **Interactive mode:** Reline-based REPL with persistent history (`~/.tell_history`, 1000 entries), dedup, non-blocking playback (new input interrupts current audio)
-- **Add-ons (target-language input only):** reverse translation (`-r`), gloss (`-g`), phonetic (`-p`) — run in background threads
-- **Gloss:** `-g` for basic gloss, `-g r` adds reverse translations, `-g p` adds inline phonetic, `-g rp` for both. Claude produces `word(grammar)` interlinear analysis with agrammatical marking (`*wrong*correction(grammar)`). Multi-model consensus: `gloss_model: [opus, sonnet]` runs models in parallel, reconciler (first model) keeps error markings only when models agree. Single model still works: `gloss_model: opus`
-- **Phonetic:** `-p` shows reading (kana for Japanese, pinyin for Chinese, IPA/romanization for others). `--ps SYSTEM` selects a specific system (e.g. `hepburn`, `pinyin`, `ipa`). `-g p` inlines phonetic into gloss: `word[reading](grammar)`. Standalone `-p` always fires alongside combined modes. Per-language systems defined in `Glosser::PHONETIC_SYSTEMS` with data-driven prompt generation
-- **Style hints:** Append `/p`, `/c`, `/m`, `/f` (or combos like `/pm`, `/cf`) to input text. `/p` = polite, `/c` = casual, `/m` = male voice, `/f` = female voice. Stripped before synthesis, passed to translator. Voice switching requires `voice_male`/`voice_female` in config
-- **Output:** `afplay` (terminal), file (`-o`), stdout (pipe)
-
-### Configuration: `~/.tell.yml`
-```yaml
-original_language: en
-target_language: sl
-voice_id: "elevenlabs_voice_id"
-voice_male: "elevenlabs_male_voice_id"    # Optional: voice for /m hint
-voice_female: "elevenlabs_female_voice_id"  # Optional: voice for /f hint
-tts_engine: elevenlabs              # elevenlabs | google
-translation_engine: deepl           # deepl | claude | openai (or array for failover)
-# translation_engine:              # failover chain example
-#   - deepl
-#   - claude
-model_id: eleven_multilingual_v2    # ElevenLabs model
-output_format: mp3_44100_128        # ElevenLabs output format
-reverse_translate: false            # Show reverse translation by default
-gloss: false                        # Show grammatical gloss by default
-phonetic: false                      # Show phonetic reading by default
-gloss_model: opus                    # opus | sonnet | haiku (or array for multi-model consensus)
-# gloss_model:                      # multi-model consensus example
-#   - opus
-#   - sonnet
-phonetic_model: opus                 # opus | sonnet | haiku (default: first gloss_model)
-phonetic_system: ipa                 # Phonetic system: string (global) or hash (per-language)
-translation_timeout: 8.0            # Per-engine timeout in seconds
-```
-
-### Environment variables
-`ELEVENLABS_API_KEY`, `GOOGLE_API_KEY`, `DEEPL_AUTH_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TELL_TRANSLATE_TIMEOUT`, `CLAUDE_MODEL` (for Claude translator), `OPENAI_TRANSLATE_MODEL` (gpt-4o-mini), `TELL_GLOSS_MODEL` (overrides config gloss_model), `TELL_PHONETIC_MODEL` (overrides config phonetic_model), `TELL_PHONETIC_SYSTEM` (overrides config phonetic_system)
-
-Loads `.env` from code root + `~/.env`.
-
-### CLI
-```
-tell [options] [text...]
-  -f, --from LANG       Override origin language
-  -t, --to LANG         Override target language
-  -e, --engine NAME     Override TTS engine (elevenlabs|google)
-  -v, --voice ID        Override voice ID
-  -o, --output FILE     Save audio to file instead of playing
-  -r, --reverse         Show reverse translation for target-language input
-  -g, --gloss [OPTS]    Grammatical gloss (p=phonetic, r=reverse, e.g. -g pr)
-  -p, --phonetic        Show phonetic reading (kana/pinyin/romanization)
-  --ps SYSTEM           Set phonetic system (e.g. hepburn, pinyin, ipa)
-  -n, --no-translate    Speak text as-is without translation
-  -h, --help            Show help
-Style hints: append /p (polite), /c (casual), /m (male voice), /f (female voice) to input
-```
-
-### Web UI
-Sinatra-based single-page app with SSE streaming. Launch: `ruby scripts/tell_web.rb [port]` (default 9090).
-
-**Endpoints:**
-- `GET /` — HTML page with textarea, addon/style pills, language selectors, audio playback
-- `GET /speak?text=...` — SSE stream: `translation`, `audio` (base64), `speak_text`, `reverse`, `phonetic`, `gloss`/`gloss_translate`, `error`, `done` events
-- `GET /systems?lang=xx` — JSON array of `{key, label, separator}` for phonetic system dropdown
-
-**SSE params:** `text`, `from`, `to`, `hint`, `reverse`, `phonetic`, `gloss`, `gloss_phonetic`, `gloss_translate`, `phonetic_system`, `no_tts`, `no_translate`, `token`
-
-**Client-side features:**
-- **Addon pills** (reverse, phonetic, gloss, +words, +trans): toggled independently, state persisted in localStorage (`tell_addons`)
-- **Smart gloss caching:** `glossRaw` stores richest server result; `deriveGloss()` strips unneeded parts locally. `canDeriveGloss()` gates whether server call is needed. `enrichWithPhonetic()` attempts client-side `mergePhonetic()` (port of `Glosser.merge_phonetic`); falls back to server `gloss_phonetic` on word-count mismatch
-- **Per-system phonetic cache:** `phCacheBySystem[systemKey]` survives system switches without re-calling AI. Cleared on new `speak()`
-- **Phonetic system selector:** visible when phonetic OR (gloss AND +words) is active. Selection persisted per language in localStorage
-- **Language swap:** `await loadPhSystems()` before `speak()` to prevent stale system in request
-- **Style hint pills:** polite/casual (mutually exclusive), male/female (mutually exclusive). Re-triggers speak on change
-- **History:** Last 50 phrases in localStorage, click to replay, x to remove
-
-**Server-side optimization:** When both `phonetic` and `gloss_phonetic` requested, runs phonetic + base gloss in parallel threads, attempts mechanical merge (`Glosser.merge_phonetic`). Falls back to AI `gloss_phonetic` (with phonetic result as reference) if word counts don't align.
-
-**Auth/security:** Optional `TELL_WEB_TOKEN` (query param or Bearer header). Token-bucket rate limiter per IP (`TELL_WEB_RATE_LIMIT`, default 30 rpm). Text capped at 500 chars.
-
-**Environment:** `TELL_WEB_PORT` (default 9090), `TELL_WEB_BIND` (default localhost), `TELL_WEB_TOKEN`, `TELL_WEB_RATE_LIMIT`
-
-## CLI Reference
-```
-podgen [flags] <command> <args>
-  generate <podcast>   # Full pipeline
-    --file PATH | --url URL | --title TEXT | --skip N|M:SS | --cut N|M:SS
-    --snip INTERVALS | --autotrim | --force | --image PATH|thumb|last | --base-image PATH | --lingq
-  translate <podcast>  # Backfill translations (--last N, --lang xx)
-  scrap <podcast>      # Remove last episode
-  rss <podcast>        # Generate RSS (--base-url URL)
-  site <podcast>       # Generate static HTML website (--clean, --base-url URL)
-  publish <podcast>    # Publish to R2 (--lingq for LingQ)
-  stats <podcast>      # Stats (--all for summary, --downloads for analytics, --days N)
-  analytics <sub>      # Manage analytics Worker (setup, deploy, tail, status)
-  validate <podcast>   # Validate (--all)
-  list                 # List podcasts
-  test <name>          # Run diagnostic test
-  schedule <podcast>   # Install launchd plist
-Flags: -v  -q  --dry-run  --lingq  -V  -h
-```
-
-## Serving RSS (Tailscale Funnel)
-`ruby scripts/serve.rb 8080` + `tailscale funnel 8080` → `https://<hostname>.ts.net/<podcast>/feed.xml`. Requires Tailscale HTTPS + Funnel enabled in admin console. Set `base_url` in guidelines.md accordingly.
-
-## Known Constraints
-- ElevenLabs: 10k char/request (auto-split), pronunciation IPA only with flash/turbo/monolingual models
-- ffmpeg + yt-dlp must be on `$PATH`; ImageMagick + librsvg for covers (`brew install imagemagick librsvg`)
-- All audio forced to mono 44100 Hz
-- macOS must be awake for launchd scheduling
 
 ## Workflow Notes
 - When user mentions screenshots or pics, check ~/Desktop for recent .png files sorted by date
+- "Document" means update both CLAUDE.md and README.md
+- "CPR" means commit, push, release (commit → push to origin → GitHub release → update Homebrew formula)
+
+## Project Overview
+
+Ruby 3.2+, macOS. Dependencies: ffmpeg, yt-dlp, ImageMagick+librsvg, espeak-ng (optional), libicu (optional).
+
+Two pipelines + standalone tool:
+1. **News** (`type: news`): Research → Claude script → ElevenLabs TTS → multi-language MP3s. Entry: `cli/generate_command.rb`
+2. **Language** (`type: language`): RSS/YouTube/local MP3 → multi-engine STT → Claude reconciliation → trim → clean MP3 + transcript. Entry: `cli/language_pipeline.rb`
+3. **Tell** (`lib/tell/`): Standalone TTS pronunciation CLI + Sinatra web UI with auto-translation and grammatical glossing
+
+Config per podcast in `podcasts/<name>/guidelines.md` (parsed by `GuidelinesParser`). See README.md for full user-facing documentation.
