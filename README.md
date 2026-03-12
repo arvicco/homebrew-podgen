@@ -53,8 +53,14 @@ SOCIALDATA_API_KEY=...        # Optional: https://socialdata.tools
 OPENAI_API_KEY=...            # Required for language pipeline (Whisper transcription)
 WHISPER_MODEL=gpt-4o-mini-transcribe  # Optional: default gpt-4o-mini-transcribe, alt whisper-1
 GROQ_API_KEY=...              # Optional: Groq transcription engine (language pipeline)
+GROQ_WHISPER_MODEL=whisper-large-v3   # Optional: Groq Whisper model (default: whisper-large-v3)
 LINGQ_API_KEY=...             # Optional: LingQ upload (language pipeline)
 YOUTUBE_BROWSER=chrome        # Optional: browser for yt-dlp cookie auth (default: chrome)
+CLAUDE_MODEL=claude-opus-4-6          # Optional: Claude model for scripts/reconciliation
+CLAUDE_WEB_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for web search source
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
+ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
+ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription model
 ```
 
 ### Project root resolution
@@ -639,6 +645,17 @@ cd output/ruby_world && ruby -run -e httpd . -p 8080
 
 Then add `http://localhost:8080/feed.xml` to your podcast app. For remote access, host the `output/` directory on any static file server (nginx, S3, Cloudflare Pages, etc.) and update the enclosure URLs in the feed accordingly.
 
+### Serving via Tailscale Funnel
+
+For remote access without port forwarding or a public server:
+
+```bash
+ruby scripts/serve.rb 8080
+tailscale funnel 8080
+```
+
+This exposes your feed at `https://<hostname>.ts.net/<podcast>/feed.xml`. Requires Tailscale HTTPS + Funnel enabled in the admin console. Set `base_url` in `guidelines.md` accordingly.
+
 ## Publishing to Cloudflare R2
 
 Publish your podcast to [Cloudflare R2](https://developers.cloudflare.com/r2/) for always-available hosting at $0/month (free tier covers typical podcast usage). A Cloudflare Worker serves files and tracks per-episode download analytics.
@@ -764,18 +781,28 @@ podgen/
 │   ├── templates/            # ERB templates + CSS for site generator
 │   ├── logger.rb             # Structured logging with phase timings
 │   ├── analytics_client.rb   # Cloudflare Analytics Engine GraphQL client
+│   ├── http_retryable.rb    # Mixin: HTTP-specific retries (includes Retryable)
 │   └── tell/                 # TTS pronunciation tool modules
 │       ├── config.rb         # Config loader (~/.tell.yml)
 │       ├── detector.rb       # Language detection (Unicode + stop words)
 │       ├── translator.rb     # Translation engines (DeepL, Claude, OpenAI)
 │       ├── tts.rb            # TTS engines (ElevenLabs, Google)
 │       ├── glosser.rb        # Grammatical glossing via Claude
-│       └── processor.rb      # Main processing pipeline
+│       ├── espeak.rb         # eSpeak-ng wrapper: IPA phonetic transcription
+│       ├── icu_phonetic.rb   # ICU transliteration: Cyrillic/Greek/Korean romanization
+│       ├── kana.rb           # Japanese kana conversion utilities
+│       ├── hints.rb          # Style hint parser (/p, /c, /m, /f suffixes)
+│       ├── colors.rb         # ANSI colorization for gloss/phonetic output
+│       ├── error_formatter.rb # Friendly error messages for API errors
+│       ├── processor.rb      # Main processing pipeline
+│       ├── web.rb            # Sinatra web UI: SSE streaming, /speak, /systems
+│       └── web/views/index.erb # Single-page web UI (HTML + CSS + JS)
 ├── docs/
 │   ├── cloudflare.md          # Cloudflare R2 + Worker + analytics setup guide
 │   └── pronunciation.md      # PLS format guide & IPA reference
 ├── scripts/
 │   ├── serve.rb              # WEBrick static file server
+│   ├── tell_web.rb           # Tell Web UI launcher
 │   └── test_*.rb             # Diagnostic scripts
 ├── output/<name>/
 │   ├── episodes/             # MP3s + transcripts/scripts
@@ -832,6 +859,9 @@ Each additional language adds ~$0.10 (translation) + ElevenLabs TTS cost.
 - **Ruby 3.2+**
 - At least one TTS API: [ElevenLabs](https://elevenlabs.io/) or [Google Cloud TTS](https://cloud.google.com/text-to-speech)
 - At least one translation API: [DeepL](https://www.deepl.com/pro-api), [Anthropic](https://console.anthropic.com/) (Claude), or [OpenAI](https://platform.openai.com/)
+- **Optional phonetic engines** (fall back to Claude AI if not installed):
+  - **espeak-ng**: `brew install espeak-ng` — accurate IPA transcription for 36+ languages
+  - **libicu**: ships with macOS (also `brew install icu4c`) — Cyrillic/Greek/Korean romanization via `ffi-icu` gem
 
 ### Setup
 
@@ -868,6 +898,24 @@ translation_engine: claude
 translation_engine: openai
 # Requires OPENAI_API_KEY
 ```
+
+#### Per-language overrides
+
+Use the `languages:` block to override settings for specific target languages (e.g. use ElevenLabs for Japanese where Google TTS struggles with kanji):
+
+```yaml
+tts_engine: google                  # Default: Google TTS
+voice_id: "sl-SI-Chirp3-HD-Kore"
+
+languages:
+  ja:
+    tts_engine: elevenlabs          # Japanese: use ElevenLabs instead
+    voice_id: "japanese_voice_id"
+  ko:
+    voice_id: "korean_voice_id"     # Korean: different voice, same engine
+```
+
+Overrides are merged when the target language matches (via `-t` or `target_language`). CLI flags (`-e`, `-v`) take highest priority.
 
 #### Translation failover
 
@@ -912,6 +960,8 @@ SL: dobro jutro
 $ tell "dobro jutro"
 [audio plays directly — already in target language]
 ```
+
+**Explanation detection:** If a translation engine returns text much longer than the input (e.g. an LLM explanation instead of a translation), it's detected and shown with an error prefix — no speech, no add-ons. Thresholds are script-aware: 3x for Latin scripts, 8x for dense scripts (CJK, Hangul, Thai, Arabic, Hebrew, Devanagari) since they naturally expand 4-6x into European languages.
 
 ### Flags
 
@@ -993,7 +1043,7 @@ GL: dober[ˈdɔːbəɾ](adj.m.N.sg) dan[ˈdaːn](n.m.N.sg)
 [audio plays]
 ```
 
-The phonetic model defaults to the first `gloss_model` (override with `phonetic_model` in config or `TELL_PHONETIC_MODEL` env).
+Like `gloss_model`, `phonetic_model` accepts an array for multi-model consensus. Defaults to the first `gloss_model` (override with `phonetic_model` in config or `TELL_PHONETIC_MODEL` env).
 
 #### Phonetic systems
 
@@ -1011,19 +1061,21 @@ PH: /kʲoː wa iː teŋki desɯ/
 
 Available systems per language (first is the default):
 
-| Language | Systems |
-|----------|---------|
-| Japanese | `hiragana`, `hepburn`, `ipa` |
-| Chinese | `pinyin`, `zhuyin`, `ipa` |
-| Korean | `rr` (Revised Romanization), `mr` (McCune-Reischauer), `ipa` |
-| Arabic | `romanization`, `ipa` |
-| Thai | `rtgs`, `ipa` |
-| Georgian | `national`, `ipa` |
-| Greek | `elot`, `ipa` |
-| Cyrillic (ru, uk, bg, sr, mk, be) | `scholarly`, `simple`, `ipa` |
-| Indic (hi, sa, ne, mr) | `iast`, `ipa` |
-| Hebrew (he, yi) | `standard`, `ipa` |
-| Other languages | `ipa`, `simple` |
+| Language | Systems | Engine |
+|----------|---------|--------|
+| Japanese | `hiragana`, `hepburn`, `ipa` | AI, AI, eSpeak |
+| Chinese | `pinyin`, `zhuyin`, `ipa` | AI, AI, AI |
+| Korean | `rr` (Revised Romanization), `mr` (McCune-Reischauer), `ipa` | ICU, AI, eSpeak |
+| Arabic | `romanization`, `ipa` | AI, AI |
+| Thai | `rtgs`, `ipa` | AI, AI |
+| Georgian | `national`, `ipa` | AI, eSpeak |
+| Greek | `elot`, `ipa` | ICU, eSpeak |
+| Cyrillic (ru, uk, bg, sr, mk, be) | `scholarly`, `simple`, `ipa` | ICU, ICU, eSpeak |
+| Indic (hi, sa, ne, mr) | `iast`, `ipa` | AI, AI |
+| Hebrew (he, yi) | `standard`, `ipa` | AI, AI |
+| Other languages | `ipa` | eSpeak (36 langs) or AI |
+
+**Phonetic engine cascade:** eSpeak-ng (IPA) → ICU transliteration (Cyrillic/Greek/Korean) → Claude AI (everything else). Rule-based engines are faster, free, and more accurate than AI. All are optional — if not installed, Claude handles everything.
 
 Set a default in `~/.tell.yml`:
 
@@ -1070,7 +1122,7 @@ voice_male: "elevenlabs_male_id"    # Optional: voice for /m hint
 voice_female: "elevenlabs_female_id" # Optional: voice for /f hint
 tts_engine: elevenlabs              # elevenlabs | google
 translation_engine: deepl           # deepl | claude | openai (or array)
-model_id: eleven_multilingual_v2    # ElevenLabs model
+tts_model_id: eleven_multilingual_v2    # ElevenLabs model
 output_format: mp3_44100_128        # ElevenLabs output format
 reverse_translate: false            # Always show reverse translation
 gloss: false                        # Always show grammatical gloss
@@ -1079,9 +1131,17 @@ gloss_model: opus                    # opus | sonnet | haiku (or array for multi
 # gloss_model:                      # multi-model consensus example
 #   - opus
 #   - sonnet
-phonetic_model: opus                 # opus | sonnet | haiku (default: first gloss_model)
+phonetic_model: opus                 # opus | sonnet | haiku (or array for multi-model consensus; default: first gloss_model)
 phonetic_system: ipa                 # Default phonetic system (or hash of lang→system)
 translation_timeout: 8.0            # Per-engine timeout (seconds)
+
+# Per-language overrides (merged when target language matches):
+# languages:
+#   ja:
+#     tts_engine: elevenlabs        # Use ElevenLabs for Japanese
+#     voice_id: "japanese_voice_id"
+#   ko:
+#     voice_id: "korean_voice_id"
 
 # API keys (can also be set via environment variables)
 # deepl_auth_key: "..."            # or DEEPL_AUTH_KEY env
@@ -1090,6 +1150,28 @@ translation_timeout: 8.0            # Per-engine timeout (seconds)
 # elevenlabs_api_key: "..."        # or ELEVENLABS_API_KEY env
 # google_api_key: "..."            # or GOOGLE_API_KEY env
 ```
+
+The `languages:` block lets you override any top-level setting per target language. When you use `-t ja`, settings from `languages.ja` are merged on top of the defaults. CLI flags (`-e`, `-v`) still take highest priority.
+
+Overridable keys per language: `tts_engine`, `voice_id`, `voice_male`, `voice_female`, `tts_model_id`, `output_format`, `translation_engine`, `phonetic_system`.
+
+### Environment variables
+
+Tell loads `.env` from the code root and `~/.env`. Available variables:
+
+| Variable | Description |
+|----------|-------------|
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS |
+| `GOOGLE_API_KEY` | Google Cloud TTS |
+| `DEEPL_AUTH_KEY` | DeepL translation |
+| `ANTHROPIC_API_KEY` | Claude translation + glossing |
+| `OPENAI_API_KEY` | OpenAI translation |
+| `CLAUDE_MODEL` | Claude model for translation (default: claude-opus-4-6) |
+| `OPENAI_TRANSLATE_MODEL` | OpenAI model for translation (default: gpt-4o-mini) |
+| `TELL_TRANSLATE_TIMEOUT` | Per-engine timeout in seconds (default: 8) |
+| `TELL_GLOSS_MODEL` | Override gloss_model config |
+| `TELL_PHONETIC_MODEL` | Override phonetic_model config |
+| `TELL_PHONETIC_SYSTEM` | Override phonetic_system config |
 
 ### Supported languages
 
@@ -1133,6 +1215,13 @@ Features:
 - **Style hint pills** — polite/casual, male/female voice
 - **Language selector** — swap languages, auto-detect source language
 - **History** — last 50 phrases, click to replay
+
+**Endpoints:**
+- `GET /` — HTML page with textarea, addon/style pills, language selectors, audio playback
+- `GET /speak?text=...` — SSE stream with events: `translation`, `audio` (base64), `speak_text`, `reverse`, `phonetic`, `gloss`/`gloss_translate`, `error`, `done`
+- `GET /systems?lang=xx` — JSON array of `{key, label, separator}` for phonetic system dropdown
+
+**SSE params:** `text`, `from`, `to`, `hint`, `reverse`, `phonetic`, `gloss`, `gloss_phonetic`, `gloss_translate`, `phonetic_system`, `no_tts`, `no_translate`, `token`
 
 Optional security: set `TELL_WEB_TOKEN` to require authentication (pass as `?token=...` URL param or `Authorization: Bearer ...` header). Rate limited to 30 requests/minute per IP by default (`TELL_WEB_RATE_LIMIT`).
 
