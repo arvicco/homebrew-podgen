@@ -4,6 +4,9 @@ require "open3"
 require "tmpdir"
 require_relative "colors"
 require_relative "hints"
+require_relative "espeak"
+require_relative "icu_phonetic"
+require_relative "kana"
 require_relative "error_formatter"
 
 module Tell
@@ -44,7 +47,9 @@ module Tell
         speak_target(text, output_path, voice: voice)
       else
         translation = forward_translate(text, from: source, hints: parsed)
-        if translation
+        if translation == :explanation
+          # Explanation shown, no speech
+        elsif translation
           speak_target(translation, output_path, voice: voice)
         else
           synthesize_and_output(text, output_path, voice: voice)
@@ -100,10 +105,11 @@ module Tell
       tag = @config.target_language.upcase
 
       # If translation is much longer than input, it's likely an explanation
-      # rather than a clean translation — show it but speak the original
-      if translation.length > text.length * 3
+      # rather than a clean translation — show it but don't speak
+      if Detector.explanation?(text, translation)
+        $stderr.puts Colors.error("Translation returned an explanation instead of a direct translation:")
         $stderr.puts "#{Colors.tag("#{tag}:")} #{Colors.forward(translation)}"
-        return nil
+        return :explanation
       end
 
       $stderr.puts "#{Colors.tag("#{tag}:")} #{Colors.forward(translation)}"
@@ -138,43 +144,77 @@ module Tell
 
     def phonetic(text)
       sys = @config.phonetic_system_for(@config.target_language)
-      result = build_glosser(@config.phonetic_model).phonetic(text, lang: @config.target_language, system: sys)
+      lang = @config.target_language
+      resolved = sys || Glosser.default_system(lang)
+
+      # Japanese pipeline: AI hiragana → deterministic derivation
+      result = japanese_phonetic(text, resolved) if lang == "ja"
+
+      result ||= if resolved == "ipa" && Espeak.supports?(lang)
+        Espeak.ipa(text, lang: lang)
+      elsif IcuPhonetic.supports?(lang, resolved)
+        IcuPhonetic.transliterate(text, lang: lang, system: resolved)
+      end
+
+      unless result
+        results = Glosser.multi_model(@config.phonetic_model) do |model_id|
+          build_glosser(model_id).phonetic(text, lang: lang, system: sys)
+        end
+
+        result = if results.size > 1
+          build_glosser(@config.phonetic_reconciler).reconcile_phonetic(results, text, lang: lang, system: sys)
+        else
+          results.values.first
+        end
+      end
+
       $stderr.puts "#{Colors.tag("PH:")} #{Colors.phonetic(result)}"
     rescue => e
       $stderr.puts Colors.error("Phonetic failed: #{friendly_error(e)}")
     end
 
-    def run_gloss(mode, text)
-      sys = @config.phonetic_system_for(@config.target_language)
-      if @config.gloss_model.size == 1
-        build_glosser(@config.gloss_reconciler).public_send(mode, text, from: @config.target_language, to: @config.reverse_language, system: sys)
-      else
-        run_consensus(mode, text, system: sys)
+    # Japanese phonetic pipeline: single AI call for hiragana, then derive
+    # hepburn/kunrei deterministically via Kana module, IPA via eSpeak.
+    def japanese_phonetic(text, system)
+      return nil unless %w[hiragana hepburn kunrei ipa].include?(system)
+
+      hiragana = japanese_hiragana(text)
+      return nil unless hiragana
+
+      case system
+      when "hiragana" then hiragana
+      when "hepburn"  then kana_words_to_romaji(hiragana, "hepburn")
+      when "kunrei"   then kana_words_to_romaji(hiragana, "kunrei")
+      when "ipa"      then "/#{kana_words_to_romaji(hiragana, "ipa")}/"
       end
     end
 
-    def run_consensus(mode, text, system: nil)
-      mutex = Mutex.new
-      glosses = {}
-      errors = {}
-
-      threads = @config.gloss_model.map do |model_id|
-        Thread.new(model_id) do |mid|
-          result = build_glosser(mid).public_send(mode, text, from: @config.target_language, to: @config.reverse_language, system: system)
-          mutex.synchronize { glosses[mid] = result }
-        rescue => e
-          mutex.synchronize { errors[mid] = e }
-        end
+    # Get hiragana reading via AI, cached per text for interactive reuse.
+    def japanese_hiragana(text)
+      @ja_hiragana_cache ||= {}
+      @ja_hiragana_cache[text] ||= begin
+        model_id = Array(@config.phonetic_model).first
+        build_glosser(model_id).phonetic(text, lang: "ja", system: "hiragana")
       end
-      threads.each(&:join)
+    end
 
-      raise errors.values.first if glosses.empty?
+    # Convert ・-separated hiragana words to romaji.
+    def kana_words_to_romaji(hiragana, system)
+      words = hiragana.split(/\s*・\s*/)
+      words.map { |w| Kana.to_romaji(w, system: system) }.join(" ")
+    end
 
-      if glosses.size == 1
-        glosses.values.first
+    def run_gloss(mode, text)
+      sys = @config.phonetic_system_for(@config.target_language)
+
+      results = Glosser.multi_model(@config.gloss_model) do |model_id|
+        build_glosser(model_id).public_send(mode, text, from: @config.target_language, to: @config.reverse_language, system: sys)
+      end
+
+      if results.size > 1
+        build_glosser(@config.gloss_reconciler).reconcile(results, text, from: @config.target_language, to: @config.reverse_language, mode: mode, system: sys)
       else
-        reconciler = build_glosser(@config.gloss_reconciler)
-        reconciler.reconcile(glosses, text, from: @config.target_language, to: @config.reverse_language, mode: mode, system: system)
+        results.values.first
       end
     end
 

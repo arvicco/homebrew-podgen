@@ -363,19 +363,11 @@ phSystemSelect.addEventListener('change', () => {
   const sys = phSystemSelect.value;
   localStorage.setItem('tell_ph_system_' + lang, sys);
 
-  // Switch to cached phonetic for this system (or null if not yet fetched)
-  const cached = phCacheBySystem[sys];
-  phCached = cached || null;
-
-  // If gloss has phonetic from a different system, strip and re-merge
-  if (glossHasPhonetic) {
-    glossRaw = stripPhonetic(glossRaw);
-    glossHasPhonetic = false;
-    if (phCached) enrichWithPhonetic();
-  }
-
+  // Update standalone PH line from cache or trigger server call
   if (optPhonetic.checked && speakText) {
+    const cached = phCacheBySystem[sys];
     if (cached) {
+      phCached = cached;
       const slot = document.getElementById('slot-phonetic');
       const cls = 'result-slot result-row result-phonetic';
       const html = '<span class="tag">PH:</span>' + esc(cached);
@@ -383,10 +375,20 @@ phSystemSelect.addEventListener('change', () => {
       slot.innerHTML = html;
       cache['phonetic'] = { className: cls, html: html };
     } else {
+      phCached = null;
       delete cache['phonetic'];
       triggerAddon('phonetic');
     }
-    if (optGloss.checked && optGlossPhonetic.checked) updateGloss();
+  }
+
+  // Re-derive gloss with new system (local conversion or server call)
+  if (optGloss.checked && optGlossPhonetic.checked && glossRaw && glossHasPhonetic) {
+    if (glossBracketCache[sys] || sys === 'hiragana') {
+      const d = deriveGloss();
+      if (d) displayGloss(d.text, d.isTranslate);
+    } else {
+      triggerGlossAddon();
+    }
   }
 });
 
@@ -401,6 +403,7 @@ loadPhSystems(langTo.value);
 let glossRaw = null;          // richest raw gloss text from server
 let glossHasPhonetic = false; // does glossRaw contain [readings]?
 let glossHasTranslate = false;// does glossRaw contain translations?
+let glossBracketCache = {};   // system → array of bracket readings (gloss-aligned)
 let phCached = null;          // standalone phonetic result text
 
 function stripTranslations(text) {
@@ -411,25 +414,30 @@ function stripPhonetic(text) {
   return text.replace(/\[[^\]]+\]/g, '');
 }
 
-// Port of Glosser.merge_phonetic — insert readings into gloss words
-function mergePhonetic(gloss, phoneticText) {
-  let readings;
-  if (phSeparator === '・') {
-    readings = phoneticText.trim().split(/\s*・\s*/);
-  } else {
-    readings = phoneticText.trim().replace(/^\/|\/$/g, '').trim().split(/\s+/);
+// Convert [bracket] contents from hiragana to a different phonetic system
+// using gloss-aligned bracket readings from gloss_phonetic_cache event.
+// These are extracted from the gloss itself, so positional match is guaranteed.
+function convertBracketSystem(glossText, targetSystem) {
+  if (!targetSystem || targetSystem === 'hiragana') {
+    // Strip redundant brackets where content equals the word (は[は] → は)
+    return glossText.replace(/([^\s\[\]]+)\[([^\]]+)\]/g, (m, word, bracket) =>
+      word === bracket ? word : m
+    );
   }
-  if (!readings.length || (readings.length === 1 && !readings[0])) return null;
-
-  const wordRe = /(?:\*\S+?\*)?\S+?\([^)]+\)\S*/g;
-  const words = gloss.match(wordRe);
-  if (!words || words.length !== readings.length) return null;
+  const brackets = glossBracketCache[targetSystem];
+  if (!brackets || !brackets.length) return glossText;
 
   let idx = 0;
-  return gloss.replace(wordRe, m => m.replace('(', '[' + readings[idx++] + ']('));
+  return glossText.replace(/\[([^\]]+)\]/g, function(match) {
+    if (idx < brackets.length) {
+      return '[' + brackets[idx++] + ']';
+    }
+    return match;
+  });
 }
 
-// Derive the right gloss variant from glossRaw based on current toggles
+// Derive the right gloss variant from glossRaw based on current toggles.
+// glossRaw is never mutated — always derive from it on the fly.
 function deriveGloss() {
   if (!glossRaw) return null;
   let text = glossRaw;
@@ -439,8 +447,12 @@ function deriveGloss() {
     text = stripTranslations(text);
     isTranslate = false;
   }
-  if (!optGlossPhonetic.checked) {
-    text = stripPhonetic(text);
+  if (glossHasPhonetic) {
+    if (optGlossPhonetic.checked) {
+      text = convertBracketSystem(text, currentPhSystem());
+    } else {
+      text = stripPhonetic(text);
+    }
   }
   return { text, isTranslate };
 }
@@ -456,16 +468,6 @@ function canDeriveGloss() {
   if (!glossRaw) return false;
   if (optGlossTranslate.checked && !glossHasTranslate) return false;
   if (optGlossPhonetic.checked && !glossHasPhonetic) return false;
-  return true;
-}
-
-// Enrich glossRaw with phonetic via merge, upgrade cache
-function enrichWithPhonetic() {
-  if (!glossRaw || !phCached) return false;
-  const merged = mergePhonetic(glossRaw, phCached);
-  if (!merged) return false;
-  glossRaw = merged;
-  glossHasPhonetic = true;
   return true;
 }
 
@@ -526,18 +528,10 @@ optGlossTranslate.addEventListener('click', () => {
 
 function updateGloss() {
   if (!speakText) return;
-
-  // Try phonetic merge if needed and possible
-  if (optGlossPhonetic.checked && !glossHasPhonetic && phCached) {
-    enrichWithPhonetic();
-  }
-
   if (canDeriveGloss()) {
     const d = deriveGloss();
     if (d) { displayGloss(d.text, d.isTranslate); return; }
   }
-
-  // Need server call — request the richest variant needed
   triggerGlossAddon();
 }
 
@@ -550,8 +544,15 @@ function triggerGlossAddon() {
   const p = new URLSearchParams({ text: speakText, no_tts: 'true', no_translate: 'true' });
   addLangs(p);
   p.set('gloss', 'true');
-  if (optGlossPhonetic.checked) { p.set('gloss_phonetic', 'true'); addPhSystem(p); }
-  if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
+  if (langTo.value === 'ja') {
+    // Japanese: always request richest for caching, force hiragana brackets
+    p.set('gloss_phonetic', 'true');
+    p.set('gloss_translate', 'true');
+    p.set('phonetic_system', 'hiragana');
+  } else {
+    if (optGlossPhonetic.checked) { p.set('gloss_phonetic', 'true'); addPhSystem(p); }
+    if (optGlossTranslate.checked) p.set('gloss_translate', 'true');
+  }
   addToken(p);
 
   const es = new EventSource('/speak?' + p.toString());
@@ -617,6 +618,7 @@ function speak() {
   glossHasTranslate = false;
   phCached = null;
   phCacheBySystem = {};
+  glossBracketCache = {};
 
   // Show labeled placeholders for checked addons
   if (optReverse.checked) setSlotLoading('reverse');
@@ -754,6 +756,16 @@ function attachHandlers(es) {
     cache['phonetic'] = { className: cls, html: html };
   });
 
+  es.addEventListener('phonetic_cache', e => {
+    const d = JSON.parse(e.data);
+    phCacheBySystem[d.system] = d.text;
+  });
+
+  es.addEventListener('gloss_phonetic_cache', e => {
+    const d = JSON.parse(e.data);
+    glossBracketCache = d.brackets;
+  });
+
   ['gloss', 'gloss_translate'].forEach(evt => {
     es.addEventListener(evt, e => {
       const d = JSON.parse(e.data);
@@ -770,7 +782,10 @@ function attachHandlers(es) {
         glossHasPhonetic = hasP;
       }
 
-      displayGloss(d.text, hasT);
+      // Derive display from immutable glossRaw based on current toggles
+      const derived = deriveGloss();
+      if (derived) displayGloss(derived.text, derived.isTranslate);
+      else displayGloss(d.text, hasT);
     });
   });
 

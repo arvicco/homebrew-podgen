@@ -5,7 +5,7 @@ require "tell/tts"
 
 class TestTellTts < Minitest::Test
   def test_build_elevenlabs
-    config = mock_config(api_key: "key", voice_id: "v1", model_id: "m1", output_format: "mp3_44100_128")
+    config = mock_config(api_key: "key", voice_id: "v1", tts_model_id: "m1", output_format: "mp3_44100_128")
     tts = Tell.build_tts("elevenlabs", config)
     assert_instance_of Tell::ElevenlabsTts, tts
   end
@@ -213,7 +213,7 @@ class TestTellTts < Minitest::Test
   private
 
   MockConfig = Struct.new(
-    :api_key, :tts_api_key, :voice_id, :model_id, :output_format, :google_language_code,
+    :api_key, :tts_api_key, :voice_id, :tts_model_id, :output_format, :google_language_code,
     keyword_init: true
   )
 
@@ -222,7 +222,7 @@ class TestTellTts < Minitest::Test
   end
 
   def build_elevenlabs
-    config = mock_config(api_key: "test_key", voice_id: "test_voice", model_id: "eleven_multilingual_v2", output_format: "mp3_44100_128")
+    config = mock_config(api_key: "test_key", voice_id: "test_voice", tts_model_id: "eleven_multilingual_v2", output_format: "mp3_44100_128")
     Tell::ElevenlabsTts.new(config)
   end
 

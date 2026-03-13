@@ -340,7 +340,7 @@ class TestTellGlosser < Minitest::Test
 
   def test_systems_for_known_language
     systems = Tell::Glosser.systems_for("ja")
-    assert_equal %w[hiragana hepburn ipa], systems.keys
+    assert_equal %w[hiragana hepburn kunrei ipa], systems.keys
   end
 
   def test_systems_for_unknown_language_returns_default
@@ -528,6 +528,49 @@ class TestTellGlosser < Minitest::Test
           "System #{lang}/#{key} standalone prompt missing 'Output ONLY' constraint"
       end
     end
+  end
+
+  # --- correct_readings ---
+
+  def test_correct_readings_replaces_brackets_positionally
+    gloss = "今日は[きょうわ](n.sg)today 世界[せかい](n.sg)world"
+    phonetic = "きょうは・せかい"
+    result = Tell::Glosser.correct_readings(gloss, phonetic, lang: "ja", system: "hiragana")
+    assert_equal "今日は[きょうは](n.sg)today 世界[せかい](n.sg)world", result
+  end
+
+  def test_correct_readings_count_mismatch_returns_original
+    gloss = "今日は[きょうわ](n.sg)today 世界[せかい](n.sg)world"
+    phonetic = "きょうは"
+    result = Tell::Glosser.correct_readings(gloss, phonetic, lang: "ja", system: "hiragana")
+    assert_equal gloss, result
+  end
+
+  def test_correct_readings_empty_phonetic_returns_original
+    gloss = "今日は[きょうわ](n.sg)today"
+    result = Tell::Glosser.correct_readings(gloss, "  ", lang: "ja", system: "hiragana")
+    assert_equal gloss, result
+  end
+
+  def test_correct_readings_preserves_words_without_brackets
+    gloss = "今日は[きょうわ](n.sg)today の(part) 世界[せかい](n.sg)world"
+    phonetic = "きょうは・の・せかい"
+    result = Tell::Glosser.correct_readings(gloss, phonetic, lang: "ja", system: "hiragana")
+    assert_equal "今日は[きょうは](n.sg)today の(part) 世界[せかい](n.sg)world", result
+  end
+
+  def test_correct_readings_with_agrammatical
+    gloss = "*napačno*pravilno[praˈviːlnɔ](adj.m.N.sg)correct besedo[bɛˈsɛːdɔ](n.f.A.sg)word"
+    phonetic = "/praˈviːlno bɛˈsɛːdo/"
+    result = Tell::Glosser.correct_readings(gloss, phonetic, lang: "sl")
+    assert_equal "*napačno*pravilno[praˈviːlno](adj.m.N.sg)correct besedo[bɛˈsɛːdo](n.f.A.sg)word", result
+  end
+
+  def test_correct_readings_with_non_japanese_ipa
+    gloss = "Po[pɔ](pr) odmoru[ɔdˈmɔːru](n.m.L.sg)"
+    phonetic = "/po ɔdˈmoːru/"
+    result = Tell::Glosser.correct_readings(gloss, phonetic, lang: "sl")
+    assert_equal "Po[po](pr) odmoru[ɔdˈmoːru](n.m.L.sg)", result
   end
 
   # --- Reconcile includes original text ---

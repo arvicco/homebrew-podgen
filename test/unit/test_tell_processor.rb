@@ -6,6 +6,7 @@ require "tell/detector"
 require "tell/translator"
 require "tell/tts"
 require "tell/glosser"
+require "tell/espeak"
 require "tell/processor"
 
 class TestTellProcessor < Minitest::Test
@@ -18,7 +19,7 @@ class TestTellProcessor < Minitest::Test
       tts_engine: "elevenlabs",
       engine_api_keys: { "deepl" => "fake_key" },
       api_key: "fake_eleven_key",
-      model_id: "eleven_multilingual_v2",
+      tts_model_id: "eleven_multilingual_v2",
       output_format: "mp3_44100_128",
       translation_timeout: 8.0,
       reverse_translate: false,
@@ -26,7 +27,7 @@ class TestTellProcessor < Minitest::Test
       gloss_reverse: false,
       phonetic: false,
       gloss_model: ["claude-opus-4-6"],
-      phonetic_model: "claude-opus-4-6"
+      phonetic_model: ["claude-opus-4-6"]
     )
   end
 
@@ -224,15 +225,15 @@ class TestTellProcessor < Minitest::Test
 
   # --- Translation returns nil (explanation or same-text) ---
 
-  def test_explanation_speaks_original_no_addons
-    # Translation 3x+ longer → explanation → forward_translate returns nil
+  def test_explanation_no_speech_no_addons
+    # Translation 3x+ longer → explanation → no speech, no addons
     @config.gloss = true
     processor = build_processor
     @translator.forward_result = "This is a very long explanation that is much longer than the original text"
     stub_detect("en") do
       processor.process("hi", translate_from: "auto")
     end
-    assert_equal ["hi"], @tts.calls
+    assert_empty @tts.calls
     assert_empty @glosser.calls
   end
 
@@ -367,13 +368,13 @@ class TestTellProcessor < Minitest::Test
   end
 
   def test_explanation_just_over_3x_is_explanation
-    # Translation >3x length IS an explanation — original gets spoken
+    # Translation >3x length IS an explanation — no speech
     processor = build_processor
     @translator.forward_result = "abcd" # 4 chars > 3x "x" (1 char)
     stub_detect("en") do
       processor.process("x", translate_from: "auto")
     end
-    assert_equal ["x"], @tts.calls
+    assert_empty @tts.calls
   end
 
   # --- Piped output (stdout not tty) ---
@@ -534,12 +535,12 @@ class TestTellProcessor < Minitest::Test
     assert_equal ["female_voice"], @tts.voices
   end
 
-  # --- Phonetic add-on (standalone) ---
+  # --- Phonetic add-on (standalone, Claude fallback) ---
 
-  def test_standalone_phonetic_fires
+  def test_standalone_phonetic_fires_claude_when_espeak_unavailable
     @config.phonetic = true
     processor = build_processor
-    processor.process("dober dan")
+    stub_espeak_off { processor.process("dober dan") }
     assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
     assert_empty @glosser.calls  # no gloss calls
   end
@@ -550,21 +551,25 @@ class TestTellProcessor < Minitest::Test
     assert_empty @glosser.phonetic_calls
   end
 
-  def test_auto_detect_target_fires_standalone_phonetic
+  def test_auto_detect_target_fires_standalone_phonetic_claude
     @config.phonetic = true
     processor = build_processor
-    stub_detect("sl") do
-      processor.process("danes je lep dan", translate_from: "auto")
+    stub_espeak_off do
+      stub_detect("sl") do
+        processor.process("danes je lep dan", translate_from: "auto")
+      end
     end
     assert_equal [[:phonetic, "danes je lep dan"]], @glosser.phonetic_calls
   end
 
-  def test_auto_detect_forward_fires_standalone_phonetic
+  def test_auto_detect_forward_fires_standalone_phonetic_claude
     @config.phonetic = true
     processor = build_processor
     @translator.forward_result = "dober dan"
-    stub_detect("en") do
-      processor.process("good morning", translate_from: "auto")
+    stub_espeak_off do
+      stub_detect("en") do
+        processor.process("good morning", translate_from: "auto")
+      end
     end
     assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
   end
@@ -573,8 +578,37 @@ class TestTellProcessor < Minitest::Test
     @config.phonetic = true
     processor = build_processor
     @glosser.error = RuntimeError.new("Anthropic down")
-    processor.process("danes je lep dan")
+    stub_espeak_off { processor.process("danes je lep dan") }
     assert_equal ["danes je lep dan"], @tts.calls
+  end
+
+  # --- Phonetic add-on (eSpeak path) ---
+
+  def test_standalone_phonetic_uses_espeak_for_ipa
+    skip "espeak-ng not installed" unless Tell::Espeak.available?
+    @config.phonetic = true
+    processor = build_processor
+    processor.process("dober dan")
+    # eSpeak handles it — glosser NOT called
+    assert_empty @glosser.phonetic_calls
+  end
+
+  def test_standalone_phonetic_espeak_output_displayed
+    skip "espeak-ng not installed" unless Tell::Espeak.available?
+    @config.phonetic = true
+    processor = build_processor
+    output = capture_stderr { processor.process("dober dan") }
+    assert_match %r{PH:.*/.+/}, output
+  end
+
+  def test_non_ipa_system_skips_espeak
+    skip "espeak-ng not installed" unless Tell::Espeak.available?
+    @config.phonetic = true
+    @config.phonetic_system = "simple"
+    processor = build_processor
+    processor.process("dober dan")
+    # Non-IPA system → Claude glosser called, not eSpeak
+    assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
   end
 
   # --- Combined --gp (gloss + phonetic inline) ---
@@ -583,7 +617,7 @@ class TestTellProcessor < Minitest::Test
     @config.gloss = true
     @config.phonetic = true
     processor = build_processor
-    processor.process("dober dan")
+    stub_espeak_off { processor.process("dober dan") }
     assert_equal [[:gloss_phonetic, "dober dan"]], @glosser.calls
     assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
   end
@@ -593,8 +627,10 @@ class TestTellProcessor < Minitest::Test
     @config.phonetic = true
     processor = build_processor
     @translator.forward_result = "dober dan"
-    stub_detect("en") do
-      processor.process("good morning", translate_from: "auto")
+    stub_espeak_off do
+      stub_detect("en") do
+        processor.process("good morning", translate_from: "auto")
+      end
     end
     assert_equal [[:gloss_phonetic, "dober dan"]], @glosser.calls
     assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
@@ -606,7 +642,7 @@ class TestTellProcessor < Minitest::Test
     @config.gloss_reverse = true
     @config.phonetic = true
     processor = build_processor
-    processor.process("dober dan")
+    stub_espeak_off { processor.process("dober dan") }
     assert_equal [[:gloss_translate_phonetic, "dober dan"]], @glosser.calls
     assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
   end
@@ -617,7 +653,7 @@ class TestTellProcessor < Minitest::Test
     @config.reverse_translate = true
     @config.phonetic = true
     processor = build_processor
-    processor.process("dober dan")
+    stub_espeak_off { processor.process("dober dan") }
     assert_includes @translator.reverse_calls, ["dober dan", { from: "sl", to: "en" }]
     assert_equal [[:phonetic, "dober dan"]], @glosser.phonetic_calls
     assert_empty @glosser.calls  # no gloss
@@ -631,7 +667,7 @@ class TestTellProcessor < Minitest::Test
     @config.gloss_reverse = true
     @config.phonetic = true
     processor = build_processor
-    processor.process("dober dan")
+    stub_espeak_off { processor.process("dober dan") }
     assert_includes @glosser.calls, [:gloss_phonetic, "dober dan"]
     assert_includes @glosser.calls, [:gloss_translate_phonetic, "dober dan"]
     assert_includes @translator.reverse_calls, ["dober dan", { from: "sl", to: "en" }]
@@ -693,16 +729,91 @@ class TestTellProcessor < Minitest::Test
     end
   end
 
+  # --- Japanese phonetic pipeline ---
+
+  def test_japanese_hiragana_calls_ai_with_hiragana_system
+    @config.target_language = "ja"
+    @config.phonetic = true
+    @config.phonetic_system = "hiragana"
+    @glosser_ja = MockGlosser.new(phonetic_result: "おはよう・ございます")
+    processor = build_processor_with_glosser(@glosser_ja)
+    output = capture_stderr { processor.process("おはようございます") }
+    # AI called with hiragana system
+    assert_equal [[:phonetic, "おはようございます"]], @glosser_ja.phonetic_calls
+    assert_match(/PH:.*おはよう・ございます/, output)
+  end
+
+  def test_japanese_hepburn_derives_from_ai_hiragana
+    @config.target_language = "ja"
+    @config.phonetic = true
+    @config.phonetic_system = "hepburn"
+    @glosser_ja = MockGlosser.new(phonetic_result: "おはよう・ございます")
+    processor = build_processor_with_glosser(@glosser_ja)
+    output = capture_stderr { processor.process("おはようございます") }
+    # AI called once for hiragana, then Kana converts to hepburn
+    assert_equal [[:phonetic, "おはようございます"]], @glosser_ja.phonetic_calls
+    assert_match(/PH:.*ohayou gozaimasu/, output)
+  end
+
+  def test_japanese_kunrei_derives_from_ai_hiragana
+    @config.target_language = "ja"
+    @config.phonetic = true
+    @config.phonetic_system = "kunrei"
+    @glosser_ja = MockGlosser.new(phonetic_result: "おはよう・ございます")
+    processor = build_processor_with_glosser(@glosser_ja)
+    output = capture_stderr { processor.process("おはようございます") }
+    assert_equal [[:phonetic, "おはようございます"]], @glosser_ja.phonetic_calls
+    assert_match(/PH:.*ohayou gozaimasu/, output)
+  end
+
+  def test_japanese_ipa_uses_kana_module
+    @config.target_language = "ja"
+    @config.phonetic = true
+    @config.phonetic_system = "ipa"
+    @glosser_ja = MockGlosser.new(phonetic_result: "おはよう・ございます")
+    processor = build_processor_with_glosser(@glosser_ja)
+    output = capture_stderr { processor.process("おはようございます") }
+    # AI called for hiragana, then Kana module converts to broad IPA
+    assert_equal [[:phonetic, "おはようございます"]], @glosser_ja.phonetic_calls
+    assert_match %r{PH:.*/.+/}, output
+    # Verify broad IPA symbols from Kana (not eSpeak narrow phonetic)
+    assert_match(/ɡozaimasɯ/, output)
+  end
+
+  def test_japanese_hiragana_cached_across_calls
+    @config.target_language = "ja"
+    @config.phonetic = true
+    @config.phonetic_system = "hiragana"
+    @glosser_ja = MockGlosser.new(phonetic_result: "こんにちは")
+    processor = build_processor_with_glosser(@glosser_ja)
+    # First call
+    capture_stderr { processor.process("こんにちは") }
+    assert_equal 1, @glosser_ja.phonetic_calls.size
+    # Switch to hepburn — should reuse cached hiragana
+    @config.phonetic_system = "hepburn"
+    output = capture_stderr { processor.process("こんにちは") }
+    assert_equal 1, @glosser_ja.phonetic_calls.size  # no additional AI call
+    assert_match(/PH:.*konnichiha/, output)
+  end
+
   private
 
   # --- Helpers ---
+
+  def build_processor_with_glosser(glosser, interactive: false)
+    @tts = MockTts.new
+    @translator = MockTranslator.new
+    glossers = @config.gloss_model.each_with_object({}) { |m, h| h[m] = glosser }
+    @config.phonetic_model.each { |m| glossers[m] = glosser }
+    Tell::Processor.new(@config, interactive: interactive, tts: @tts, translator: @translator, glossers: glossers)
+  end
 
   def build_processor(interactive: false)
     @tts = MockTts.new
     @translator = MockTranslator.new
     @glosser = MockGlosser.new
     glossers = @config.gloss_model.each_with_object({}) { |m, h| h[m] = @glosser }
-    glossers[@config.phonetic_model] = @glosser
+    @config.phonetic_model.each { |m| glossers[m] = @glosser }
     Tell::Processor.new(@config, interactive: interactive, tts: @tts, translator: @translator, glossers: glossers)
   end
 
@@ -712,13 +823,26 @@ class TestTellProcessor < Minitest::Test
     end
   end
 
+  def stub_espeak_off(&block)
+    Tell::Espeak.stub(:supports?, false, &block)
+  end
+
+  def capture_stderr
+    old = $stderr
+    $stderr = StringIO.new
+    yield
+    $stderr.string
+  ensure
+    $stderr = old
+  end
+
   # --- Mock collaborators ---
 
   MockConfig = Struct.new(
     :original_language, :target_language, :voice_id,
     :voice_male, :voice_female,
     :translation_engines, :tts_engine, :engine_api_keys,
-    :api_key, :tts_api_key, :model_id, :output_format,
+    :api_key, :tts_api_key, :tts_model_id, :output_format,
     :google_language_code, :reverse_translate, :gloss, :gloss_reverse,
     :phonetic, :gloss_model, :phonetic_model, :phonetic_system,
     :translation_timeout,
@@ -738,6 +862,10 @@ class TestTellProcessor < Minitest::Test
 
     def gloss_reconciler
       gloss_model&.first
+    end
+
+    def phonetic_reconciler
+      phonetic_model&.first
     end
 
     def phonetic_system_for(_lang)
@@ -835,6 +963,11 @@ class TestTellProcessor < Minitest::Test
     def reconcile(glosses, text, from:, to:, mode:, system: nil)
       @reconcile_calls << { glosses: glosses, text: text, from: from, to: to, mode: mode }
       "reconciled(n.m.N.sg)"
+    end
+
+    def reconcile_phonetic(phonetics, text, lang:, system: nil)
+      @reconcile_calls << { phonetics: phonetics, text: text, lang: lang, system: system }
+      "reconciled_phonetic"
     end
   end
 end

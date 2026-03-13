@@ -57,7 +57,7 @@ module Tell
         "ja" => {
           "hiragana" => {
             label: "Hiragana",
-            standalone: "Convert to hiragana reading. Separate words with middle dots (・). Output ONLY the hiragana.",
+            standalone: "Convert to hiragana reading. Separate words with middle dots (・). Spell particles phonetically: は→わ, へ→え. Output ONLY the hiragana.",
             bracket: "Phonetic: hiragana reading in brackets, e.g. [おげんき]",
             separator: "・"
           }.freeze,
@@ -65,6 +65,12 @@ module Tell
             label: "Hepburn",
             standalone: "Romanize using modified Hepburn romanization. Separate words with spaces. Output ONLY the romanization.",
             bracket: "Phonetic: Hepburn romanization in brackets, e.g. [ogenki]",
+            separator: " "
+          }.freeze,
+          "kunrei" => {
+            label: "Kunrei",
+            standalone: "Romanize using Kunrei-shiki romanization. Separate words with spaces. Output ONLY the romanization.",
+            bracket: "Phonetic: Kunrei-shiki romanization in brackets, e.g. [ogenki]",
             separator: " "
           }.freeze,
           "ipa" => ipa.call
@@ -176,6 +182,32 @@ module Tell
       end
     end
 
+    # Run a block across one or more models, collecting results.
+    # Single model: call directly (no thread overhead).
+    # Multi model: parallel threads, filter errors, raise only if ALL fail.
+    # Returns {model_id => result}.
+    def self.multi_model(models)
+      models = Array(models)
+      if models.size == 1
+        { models.first => yield(models.first) }
+      else
+        results = {}
+        errors = {}
+        mu = Mutex.new
+        threads = models.map do |mid|
+          Thread.new(mid) do |m|
+            r = yield(m)
+            mu.synchronize { results[m] = r }
+          rescue => e
+            mu.synchronize { errors[m] = e }
+          end
+        end
+        threads.each(&:join)
+        raise errors.values.first if results.empty?
+        results
+      end
+    end
+
     def initialize(api_key, model: "claude-opus-4-6")
       require "anthropic"
       @client = Anthropic::Client.new(api_key: api_key, timeout: 15, max_retries: 1)
@@ -228,6 +260,28 @@ module Tell
       end
     end
 
+    # Replace existing [bracket] readings in a gloss using standalone phonetic readings.
+    # Unlike merge_phonetic (which inserts new brackets and returns nil on mismatch),
+    # this corrects EXISTING bracket contents and always returns a string.
+    def self.correct_readings(gloss, phonetic_text, lang:, system: nil)
+      readings = split_phonetic(phonetic_text, lang: lang, system: system)
+      return gloss if readings.empty?
+
+      words = gloss.scan(GLOSS_WORD_RE)
+      return gloss unless words.size == readings.size
+
+      idx = 0
+      gloss.gsub(GLOSS_WORD_RE) do |match|
+        reading = readings[idx]
+        idx += 1
+        if match.include?("[")
+          match.sub(/\[[^\]]+\]/, "[#{reading}]")
+        else
+          match
+        end
+      end
+    end
+
     def phonetic(text, lang:, system: nil)
       lang_name = LANGUAGE_NAMES.fetch(lang, lang)
       instruction = phonetic_standalone_instruction(lang, system: system)
@@ -276,6 +330,25 @@ module Tell
         - Output format: #{format_instruction}#{ph_instruction}
         - Keep punctuation in place without glossing it.
         - Output ONLY the reconciled gloss line. One line, words separated by spaces.
+      PROMPT
+    end
+
+    def reconcile_phonetic(phonetics, text, lang:, system: nil)
+      lang_name = LANGUAGE_NAMES.fetch(lang, lang)
+      sys_cfg = self.class.system_config(lang, system: system)
+      parts = phonetics.map { |model, ph| "=== #{model} ===\n#{ph}" }.join("\n\n")
+
+      ask(<<~PROMPT)
+        You are a phonetic transcription reconciliation expert. Compare these #{phonetics.size} transcriptions of the same #{lang_name} text and produce the best consensus.
+
+        Original text: #{text}
+
+        #{parts}
+
+        Rules:
+        - #{sys_cfg[:standalone]}
+        - Pick the most accurate transcription for each word.
+        - Output ONLY the reconciled transcription on a single line.
       PROMPT
     end
 
