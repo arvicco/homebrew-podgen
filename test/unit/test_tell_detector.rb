@@ -180,4 +180,25 @@ class TestTellDetector < Minitest::Test
     # Mostly Cyrillic with one Latin word — Cyrillic should dominate
     assert_equal "ru", Tell::Detector.detect("Привет мир сегодня hello тест")
   end
+
+  # --- explanation? ---
+
+  def test_explanation_latin_3x_triggers
+    refute Tell::Detector.explanation?("hello", "dober dan")           # 2x
+    assert Tell::Detector.explanation?("hello", "a" * 16)             # 3.2x
+  end
+
+  def test_explanation_cjk_uses_higher_threshold
+    ja = "日本語テスト"  # 6 chars
+    # 4x expansion is normal for CJK → Latin, should NOT be flagged
+    refute Tell::Detector.explanation?(ja, "a" * 24)                  # 4x
+    refute Tell::Detector.explanation?(ja, "a" * 48)                  # 8x
+    assert Tell::Detector.explanation?(ja, "a" * 49)                  # >8x
+  end
+
+  def test_explanation_korean_uses_higher_threshold
+    ko = "안녕하세요"  # 5 chars
+    refute Tell::Detector.explanation?(ko, "a" * 40)                  # 8x
+    assert Tell::Detector.explanation?(ko, "a" * 41)                  # >8x
+  end
 end

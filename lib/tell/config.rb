@@ -39,23 +39,28 @@ module Tell
     attr_reader :original_language, :target_language, :voice_id,
                 :voice_male, :voice_female,
                 :translation_engines, :tts_engine,
-                :model_id, :output_format,
+                :tts_model_id, :output_format,
                 :api_key, :tts_api_key, :google_language_code,
                 :reverse_translate, :gloss, :gloss_reverse, :phonetic,
                 :gloss_model, :phonetic_model, :phonetic_system,
                 :engine_api_keys, :translation_timeout
 
-    def initialize(overrides: {})
-      data = load_config
+    def initialize(overrides: {}, data: nil)
+      @raw_data = data || load_config
+      data = @raw_data.dup
       validate!(data)
 
       @original_language  = normalize_lang(overrides[:from] || data["original_language"])
       @target_language    = normalize_lang(overrides[:to]   || data["target_language"])
+
+      # Merge per-language overrides before reading remaining settings
+      apply_language_overrides!(data, overrides)
+
       @voice_id           = overrides[:voice] || data["voice_id"]
       @voice_male         = data["voice_male"]
       @voice_female       = data["voice_female"]
       @tts_engine         = overrides[:tts_engine] || data.fetch("tts_engine", "elevenlabs")
-      @model_id           = data.fetch("model_id", "eleven_multilingual_v2")
+      @tts_model_id       = data["tts_model_id"] || data.fetch("model_id", "eleven_multilingual_v2")
       @output_format      = data.fetch("output_format", "mp3_44100_128")
       @reverse_translate  = overrides[:reverse] || data.fetch("reverse_translate", false)
       @gloss              = overrides[:gloss] || data.fetch("gloss", false)
@@ -82,14 +87,26 @@ module Tell
       @engine_api_keys[translation_engine]
     end
 
-    # Convenience: first (strongest) model
+    # Convenience: first (strongest) model is the reconciler
     def gloss_reconciler = gloss_model.first
+    def phonetic_reconciler = phonetic_model.first
 
     # Language to use as "to" for reverse translation and glossing.
     # When original_language is "auto" (config-driven translation mode),
     # we don't have a real language code, so default to English.
     def reverse_language
       @original_language == "auto" ? "en" : @original_language
+    end
+
+    # Return a Config for a specific target language, with per-language
+    # overrides applied. Cached so each language is built once.
+    # No file re-read — uses the raw YAML data from initial load.
+    def for_language(lang)
+      lang = normalize_lang(lang.to_s)
+      return self if lang == @target_language
+
+      @lang_configs ||= {}
+      @lang_configs[lang] ||= self.class.new(overrides: { to: lang }, data: @raw_data)
     end
 
     # Resolve phonetic system for a specific language.
@@ -103,7 +120,29 @@ module Tell
 
     private
 
+    VOICE_KEYS = %w[voice_id voice_male voice_female].freeze
+
+    # Merge language-specific overrides from the `languages:` block into data.
+    # e.g. languages: { ja: { tts_engine: elevenlabs, voice_id: "..." } }
+    # When CLI overrides tts_engine to a different engine than the language block
+    # specifies, skip voice keys — they're paired with the language block's engine.
+    def apply_language_overrides!(data, overrides)
+      languages = data["languages"]
+      return unless languages.is_a?(Hash)
+
+      lang_overrides = languages[@target_language]
+      return unless lang_overrides.is_a?(Hash)
+
+      if overrides[:tts_engine] && lang_overrides["tts_engine"] &&
+         overrides[:tts_engine] != lang_overrides["tts_engine"]
+        lang_overrides = lang_overrides.reject { |k, _| VOICE_KEYS.include?(k) }
+      end
+
+      data.merge!(lang_overrides)
+    end
+
     def normalize_lang(code)
+      code = code.to_s.downcase
       LANGUAGE_ALIASES.fetch(code, code)
     end
 
@@ -114,22 +153,32 @@ module Tell
 
           Create ~/.tell.yml with:
 
-            original_language: en
-            target_language: sl
-            voice_id: "your_voice_id"
-            tts_engine: elevenlabs        # elevenlabs | google
-            translation_engine: deepl     # deepl | claude | openai (or array for failover)
-            gloss_model: opus             # opus | sonnet | haiku (or full model ID)
+            original_language:   en
+            target_language:     sl
+            voice_id:            "voice_id"
+            # voice_male:        "male_voice_id"              # for /m style hint
+            # voice_female:      "female_voice_id"            # for /f style hint
+            tts_engine:          elevenlabs                    # elevenlabs | google
+            tts_model_id:        eleven_multilingual_v2        # ElevenLabs model
+            output_format:       mp3_44100_128                 # ElevenLabs format
+            translation_engine:  deepl                         # deepl | claude | openai (or [deepl, claude])
+            translation_timeout: 8.0                           # per-engine timeout (seconds)
+            reverse_translate:   false                         # show reverse translation
+            gloss:               false                         # grammatical gloss
+            phonetic:            false                         # phonetic reading
+            gloss_model:         opus                          # opus | sonnet | haiku (or [opus, sonnet])
+            phonetic_model:      opus                          # opus | sonnet | haiku (default: first gloss_model)
+            # phonetic_system:   ipa                           # ipa | hepburn | pinyin | ... (or {ja: hepburn, zh: pinyin})
 
-          ElevenLabs example:
-            voice_id: "elevenlabs_voice_id"
-            # ELEVENLABS_API_KEY env required
+            # Per-language overrides (merged when target language matches):
+            # languages:
+            #   ja:
+            #     tts_engine:    elevenlabs
+            #     voice_id:      "japanese_voice_id"
+            #   ko:
+            #     voice_id:      "korean_voice_id"
 
-          Google TTS example:
-            tts_engine: google
-            voice_id: "sl-SI-Wavenet-A"
-            # google_language_code: sl-SI  # auto-derived from target_language if omitted
-            # google_api_key: "..."        # or GOOGLE_API_KEY env
+          Env: ELEVENLABS_API_KEY, GOOGLE_API_KEY, DEEPL_AUTH_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY
         MSG
       end
 
@@ -144,16 +193,17 @@ module Tell
     end
 
     def resolve_gloss_model!(data)
-      raw = ENV["TELL_GLOSS_MODEL"] || data["gloss_models"] || data.fetch("gloss_model", DEFAULT_GLOSS_MODEL)
+      raw = ENV["TELL_GLOSS_MODEL"] || data.fetch("gloss_model", DEFAULT_GLOSS_MODEL)
       @gloss_model = Array(raw).map { |m| GLOSS_MODEL_IDS.fetch(m.to_s, m.to_s) }
     end
 
     def resolve_phonetic_model!(data)
       raw = ENV["TELL_PHONETIC_MODEL"] || data.fetch("phonetic_model", nil)
       if raw
-        @phonetic_model = GLOSS_MODEL_IDS.fetch(raw.to_s, raw.to_s)
+        @phonetic_model = Array(raw).map { |m| GLOSS_MODEL_IDS.fetch(m.to_s, m.to_s) }
       else
-        @phonetic_model = @gloss_model.first
+        # Default: first gloss model only (single-element array)
+        @phonetic_model = [@gloss_model.first]
       end
     end
 

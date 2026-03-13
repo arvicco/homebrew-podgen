@@ -9,6 +9,9 @@ require_relative "translator"
 require_relative "tts"
 require_relative "glosser"
 require_relative "hints"
+require_relative "espeak"
+require_relative "icu_phonetic"
+require_relative "kana"
 
 module Tell
   class Web < Sinatra::Base
@@ -104,6 +107,9 @@ module Tell
       target_lang  = params["to"]   || config.target_language
       reverse_lang = from_lang == "auto" ? "en" : from_lang
 
+      # Apply per-language config (voice, TTS engine, etc.)
+      config = config.for_language(target_lang)
+
       # Parse style hints
       input = hint && !hint.empty? ? "#{text} /#{hint}" : text
       parsed = Hints.parse(input)
@@ -128,8 +134,11 @@ module Tell
 
             unless translation.strip.downcase == clean_text.strip.downcase
               tag = target_lang.upcase
-              if translation.length > clean_text.length * 3
+              if Detector.explanation?(clean_text, translation)
+                sse(out, "error", { message: "Translation returned an explanation instead of a direct translation" })
                 sse(out, "translation", { lang: tag, text: translation, explanation: true })
+                sse(out, "done", {})
+                return
               else
                 sse(out, "translation", { lang: tag, text: translation })
                 speak_text = translation
@@ -179,16 +188,67 @@ module Tell
         end
       end
 
-      if do_phonetic && do_gloss_phonetic
-        # Run phonetic + base gloss (without phonetic) in parallel,
-        # then try mechanical merge. Fall back to AI if counts don't align.
+      if target_lang == "ja" && (do_phonetic || do_gloss_phonetic)
+        # Japanese combined path: single hiragana AI call, derive all systems
+        ph_thread = Thread.new do
+          compute_phonetic(speak_text, "ja", ph_system, config)
+        rescue => e
+          mutex.synchronize { sse(out, "error", { message: "Phonetic: #{e.message}" }) }
+          nil
+        end
+
+        gloss_thread = if do_gloss
+          Thread.new do
+            run_gloss(config, :gloss_translate_phonetic, speak_text, target_lang, reverse_lang, system: "hiragana")
+          rescue => e
+            mutex.synchronize { sse(out, "error", { message: "Gloss: #{e.message}" }) }
+            nil
+          end
+        end
+
+        threads << Thread.new do
+          ph_result = ph_thread.value
+
+          if ph_result
+            mutex.synchronize { sse(out, "phonetic", { text: ph_result[:primary] }) } if do_phonetic
+            ph_result[:sisters]&.each do |sys_key, sys_text|
+              mutex.synchronize { sse(out, "phonetic_cache", { system: sys_key, text: sys_text }) }
+            end
+          end
+
+          if gloss_thread
+            gloss_result = gloss_thread.value
+            if gloss_result
+              if ph_result
+                gloss_result = Glosser.correct_readings(
+                  gloss_result, ph_result[:hiragana], lang: "ja", system: "hiragana"
+                )
+              end
+
+              # Ensure hiragana-only words get brackets too (は → は[は])
+              # so bracket cache covers ALL words for system conversion
+              gloss_result = ensure_all_brackets(gloss_result)
+
+              # Extract bracket readings and derive per-system conversions
+              bracket_cache = build_gloss_bracket_cache(gloss_result)
+              if bracket_cache
+                mutex.synchronize { sse(out, "gloss_phonetic_cache", { brackets: bracket_cache }) }
+              end
+
+              mutex.synchronize { sse(out, "gloss_translate", { text: gloss_result }) }
+            end
+          end
+        rescue => e
+          mutex.synchronize { sse(out, "error", { message: "Gloss: #{e.message}" }) }
+        end
+      elsif do_phonetic && do_gloss_phonetic
+        # Non-Japanese combined path: phonetic + gloss in parallel, then merge
         base_mode = do_gloss_translate ? :gloss_translate : :gloss
         full_mode = do_gloss_translate ? :gloss_translate_phonetic : :gloss_phonetic
         gloss_event = do_gloss_translate ? "gloss_translate" : "gloss"
 
         ph_thread = Thread.new do
-          Glosser.new(ENV["ANTHROPIC_API_KEY"], model: config.phonetic_model)
-            .phonetic(speak_text, lang: target_lang, system: ph_system)
+          compute_phonetic(speak_text, target_lang, ph_system, config)
         rescue => e
           mutex.synchronize { sse(out, "error", { message: "Phonetic: #{e.message}" }) }
           nil
@@ -205,15 +265,14 @@ module Tell
           ph_result = ph_thread.value
           base_result = gloss_thread.value
 
-          mutex.synchronize { sse(out, "phonetic", { text: ph_result }) } if ph_result
+          mutex.synchronize { sse(out, "phonetic", { text: ph_result[:primary] }) } if ph_result
 
           if ph_result && base_result
-            merged = Glosser.merge_phonetic(base_result, ph_result, lang: target_lang, system: ph_system)
+            merged = Glosser.merge_phonetic(base_result, ph_result[:primary], lang: target_lang, system: ph_system)
             if merged
               mutex.synchronize { sse(out, gloss_event, { text: merged }) }
             else
-              # Counts didn't align — re-run gloss with phonetic as reference
-              result = run_gloss(config, full_mode, speak_text, target_lang, reverse_lang, phonetic_ref: ph_result, system: ph_system)
+              result = run_gloss(config, full_mode, speak_text, target_lang, reverse_lang, phonetic_ref: ph_result[:primary], system: ph_system)
               mutex.synchronize { sse(out, gloss_event, { text: result }) }
             end
           elsif base_result
@@ -241,9 +300,8 @@ module Tell
 
         if do_phonetic
           threads << Thread.new do
-            g = Glosser.new(ENV["ANTHROPIC_API_KEY"], model: config.phonetic_model)
-            result = g.phonetic(speak_text, lang: target_lang, system: ph_system)
-            mutex.synchronize { sse(out, "phonetic", { text: result }) }
+            result = compute_phonetic(speak_text, target_lang, ph_system, config)
+            mutex.synchronize { sse(out, "phonetic", { text: result[:primary] }) } if result
           rescue => e
             mutex.synchronize { sse(out, "error", { message: "Phonetic: #{e.message}" }) }
           end
@@ -254,6 +312,114 @@ module Tell
       sse(out, "done", {})
     rescue => e
       sse(out, "error", { message: e.message }) rescue nil
+    end
+
+    # Compute phonetic for a given text and language.
+    # Japanese: AI hiragana → derive selected system + sister phonetics.
+    # Others: eSpeak → ICU → AI fallback.
+    def compute_phonetic(text, lang, system, config)
+      if lang == "ja"
+        hiragana = ai_hiragana(text, config)
+        return nil unless hiragana
+
+        primary = derive_japanese_system(hiragana, system)
+        sisters = compute_sister_phonetics(hiragana)
+        { primary: primary, hiragana: hiragana, sisters: sisters }
+      else
+        resolved = system || Glosser.default_system(lang)
+        result = deterministic_phonetic(text, lang, resolved)
+        result ||= Glosser.new(ENV["ANTHROPIC_API_KEY"], model: config.phonetic_model.first)
+          .phonetic(text, lang: lang, system: system)
+        { primary: result }
+      end
+    end
+
+    def compute_sister_phonetics(hiragana)
+      sisters = { "hiragana" => hiragana }
+      sisters["hepburn"] = kana_words_to_romaji(hiragana, "hepburn")
+      sisters["kunrei"] = kana_words_to_romaji(hiragana, "kunrei")
+      ipa = per_word_ipa_from_kana(hiragana)
+      sisters["ipa"] = ipa if ipa
+      sisters
+    end
+
+    # Per-word IPA from kana, preserving word alignment with hiragana.
+    # Each ・-separated word is transcribed individually so the word count
+    # matches gloss words for bracket conversion.
+    def per_word_ipa_from_kana(hiragana)
+      return nil unless Espeak.available?
+
+      words = hiragana.split(/\s*・\s*/)
+      ipa_words = words.map do |w|
+        result = Espeak.ipa_from_kana(w)
+        return nil unless result
+        result.delete_prefix("/").delete_suffix("/").strip
+      end
+      ipa_words.join(" ")
+    end
+
+    def ai_hiragana(text, config)
+      model_id = config.phonetic_model.first
+      Glosser.new(ENV["ANTHROPIC_API_KEY"], model: model_id)
+        .phonetic(text, lang: "ja", system: "hiragana")
+    end
+
+    def derive_japanese_system(hiragana, system)
+      case system
+      when "hiragana", nil then hiragana
+      when "hepburn" then kana_words_to_romaji(hiragana, "hepburn")
+      when "kunrei"  then kana_words_to_romaji(hiragana, "kunrei")
+      when "ipa"     then Espeak.ipa_from_kana(hiragana) || hiragana
+      else hiragana
+      end
+    end
+
+    def kana_words_to_romaji(hiragana, system)
+      words = hiragana.split(/\s*・\s*/)
+      words.map { |w| system == "hepburn" ? Kana.to_hepburn(w) : Kana.to_kunrei(w) }.join(" ")
+    end
+
+    # Insert [brackets] for hiragana-only gloss words that lack them.
+    # E.g. は(part) → は[は](part), so bracket cache covers ALL words.
+    HIRAGANA_RE = /\A[\u3040-\u309F]+\z/
+
+    def ensure_all_brackets(gloss)
+      gloss.gsub(Glosser::GLOSS_WORD_RE) do |match|
+        next match if match.include?("[")
+
+        # Extract word text before first ( — handles *wrong*correct(grammar)
+        m = match.match(/(?:\*\S+?\*)?(\S+?)\(/)
+        next match unless m
+
+        word = m[1]
+        next match unless word.match?(HIRAGANA_RE)
+
+        match.sub("(", "[#{word}](")
+      end
+    end
+
+    # Extract [bracket] readings from a gloss and convert to all Japanese phonetic systems.
+    # Returns a hash { "hiragana" => [...], "hepburn" => [...], ... } or nil if no brackets found.
+    def build_gloss_bracket_cache(gloss)
+      readings = gloss.scan(/\[([^\]]+)\]/).flatten
+      return nil if readings.empty?
+
+      cache = { "hiragana" => readings }
+      cache["hepburn"] = readings.map { |r| Kana.to_hepburn(r) }
+      cache["kunrei"] = readings.map { |r| Kana.to_kunrei(r) }
+      if Espeak.available?
+        ipa_readings = readings.map { |r| Espeak.ipa_from_kana(r) }
+        cache["ipa"] = ipa_readings unless ipa_readings.any?(&:nil?)
+      end
+      cache
+    end
+
+    def deterministic_phonetic(text, lang, system)
+      if system == "ipa" && Espeak.supports?(lang)
+        Espeak.ipa(text, lang: lang)
+      elsif IcuPhonetic.supports?(lang, system)
+        IcuPhonetic.transliterate(text, lang: lang, system: system)
+      end
     end
 
     def resolve_source(text, translate_from, target_lang)

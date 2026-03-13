@@ -915,7 +915,7 @@ languages:
     voice_id: "korean_voice_id"     # Korean: different voice, same engine
 ```
 
-Overrides are merged when the target language matches (via `-t` or `target_language`). CLI flags (`-e`, `-v`) take highest priority.
+Overrides are merged when the target language matches (via `-t` or `target_language`). CLI flags (`-e`, `-v`) take highest priority. When `-e` overrides the TTS engine to a different engine than the language block configures, voice settings from the language block are skipped (they'd be for the wrong engine).
 
 #### Translation failover
 
@@ -1027,7 +1027,7 @@ Use `-p` to show phonetic readings alongside TTS playback:
 
 ```
 $ tell -p "今日はいい天気です"
-PH: きょう・は・いい・てんき・です
+PH: きょう・わ・いい・てんき・です
 [audio plays]
 
 $ tell -p "dober dan"
@@ -1055,7 +1055,7 @@ PH: kyō wa ii tenki desu
 [audio plays]
 
 $ tell --ps ipa -p "今日はいい天気です"
-PH: /kʲoː wa iː teŋki desɯ/
+PH: /kjoɯ wa ii teɴki desɯ/
 [audio plays]
 ```
 
@@ -1063,7 +1063,7 @@ Available systems per language (first is the default):
 
 | Language | Systems | Engine |
 |----------|---------|--------|
-| Japanese | `hiragana`, `hepburn`, `ipa` | AI, AI, eSpeak |
+| Japanese | `hiragana`, `hepburn`, `kunrei`, `ipa` | AI, Kana, Kana, Kana |
 | Chinese | `pinyin`, `zhuyin`, `ipa` | AI, AI, AI |
 | Korean | `rr` (Revised Romanization), `mr` (McCune-Reischauer), `ipa` | ICU, AI, eSpeak |
 | Arabic | `romanization`, `ipa` | AI, AI |
@@ -1075,7 +1075,7 @@ Available systems per language (first is the default):
 | Hebrew (he, yi) | `standard`, `ipa` | AI, AI |
 | Other languages | `ipa` | eSpeak (36 langs) or AI |
 
-**Phonetic engine cascade:** eSpeak-ng (IPA) → ICU transliteration (Cyrillic/Greek/Korean) → Claude AI (everything else). Rule-based engines are faster, free, and more accurate than AI. All are optional — if not installed, Claude handles everything.
+**Phonetic engine cascade:** Kana (Japanese hepburn/kunrei/IPA from AI hiragana) → eSpeak-ng (IPA, 36 langs) → ICU transliteration (Cyrillic/Greek/Korean) → Claude AI (everything else). Rule-based engines are faster, free, and more accurate than AI. eSpeak-ng and libicu are optional — if not installed, Claude handles everything.
 
 Set a default in `~/.tell.yml`:
 
@@ -1151,7 +1151,7 @@ translation_timeout: 8.0            # Per-engine timeout (seconds)
 # google_api_key: "..."            # or GOOGLE_API_KEY env
 ```
 
-The `languages:` block lets you override any top-level setting per target language. When you use `-t ja`, settings from `languages.ja` are merged on top of the defaults. CLI flags (`-e`, `-v`) still take highest priority.
+The `languages:` block lets you override any top-level setting per target language. When you use `-t ja`, settings from `languages.ja` are merged on top of the defaults. CLI flags (`-e`, `-v`) still take highest priority. When `-e` selects a different TTS engine than the language block specifies, voice settings (`voice_id`, `voice_male`, `voice_female`) from the language block are skipped — they'd be for the wrong engine.
 
 Overridable keys per language: `tts_engine`, `voice_id`, `voice_male`, `voice_female`, `tts_model_id`, `output_format`, `translation_engine`, `phonetic_system`.
 

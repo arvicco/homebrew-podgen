@@ -14,6 +14,7 @@ Tell::Web.set :environment, :test
 Tell::Web.set :logging, false
 Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
   .new(original_language: "en", target_language: "sl")
+  .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
 
 class TestTellWeb < Minitest::Test
   include Rack::Test::Methods
@@ -33,7 +34,7 @@ class TestTellWeb < Minitest::Test
     assert_equal 200, last_response.status
     systems = JSON.parse(last_response.body)
     keys = systems.map { |s| s["key"] }
-    assert_equal %w[hiragana hepburn ipa], keys
+    assert_equal %w[hiragana hepburn kunrei ipa], keys
     assert_equal "Hiragana", systems.first["label"]
     assert_equal "・", systems.first["separator"]
   end
@@ -167,6 +168,162 @@ class TestTellWeb < Minitest::Test
         assert_nil web.send(:resolve_source, "xyz", "auto", "sl")
       end
     end
+  end
+
+  # --- explanation detection ---
+
+  def test_explanation_skips_tts_and_addons
+    # When translation is an explanation (3x+ longer), emit translation + done
+    # only — no audio, phonetic, gloss, or reverse events.
+    explanation = "This is a long explanation of the word " * 10
+    fake_translator = Object.new
+    fake_translator.define_singleton_method(:translate) { |*_args, **_kw| explanation }
+
+    config = Struct.new(:original_language, :target_language,
+                        :translation_engines, :engine_api_keys,
+                        :translation_timeout, :tts_engine,
+                        :voice_male, :voice_female,
+                        keyword_init: true).new(
+      original_language: "en", target_language: "sl",
+      translation_engines: ["deepl"], engine_api_keys: {},
+      translation_timeout: 8, tts_engine: "google",
+      voice_male: nil, voice_female: nil
+    ).tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+    Tell::Web.set :tell_config, config
+
+    Tell.stub(:build_translator_chain, fake_translator) do
+      Tell::Detector.stub(:detect, "ja") do
+        Tell::Espeak.stub(:supports?, false) do
+          get "/speak", text: "日本語", from: "auto", to: "sl",
+              phonetic: "true", gloss: "true", reverse: "true"
+        end
+      end
+    end
+
+    body = last_response.body
+    assert_includes body, "event: error"
+    assert_includes body, "explanation instead of"
+    assert_includes body, "event: translation"
+    assert_includes body, "event: done"
+    refute_includes body, "event: audio"
+    refute_includes body, "event: phonetic"
+    refute_includes body, "event: gloss"
+    refute_includes body, "event: reverse"
+  ensure
+    # Restore minimal config for other tests
+    Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
+      .new(original_language: "en", target_language: "sl")
+      .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+  end
+
+  # --- for_language integration ---
+
+  def test_speak_uses_per_language_config_for_tts
+    # Base config: Google TTS for Slovenian
+    base_config = Struct.new(:original_language, :target_language,
+                             :translation_engines, :engine_api_keys,
+                             :translation_timeout, :tts_engine,
+                             :voice_id, :voice_male, :voice_female,
+                             :api_key, :tts_model_id, :output_format,
+                             keyword_init: true)
+
+    sl_config = base_config.new(
+      original_language: "en", target_language: "sl",
+      translation_engines: ["deepl"], engine_api_keys: {},
+      translation_timeout: 8, tts_engine: "google",
+      voice_id: "sl-SI-Chirp3-HD-Kore", voice_male: nil, voice_female: nil,
+      api_key: nil, tts_model_id: nil, output_format: nil
+    )
+
+    # Per-language config: ElevenLabs for Japanese
+    ja_config = base_config.new(
+      original_language: "en", target_language: "ja",
+      translation_engines: ["deepl"], engine_api_keys: {},
+      translation_timeout: 8, tts_engine: "elevenlabs",
+      voice_id: "ja_eleven_voice", voice_male: nil, voice_female: nil,
+      api_key: "test_key", tts_model_id: "eleven_multilingual_v2",
+      output_format: "mp3_44100_128"
+    )
+
+    # for_language returns ja_config when target is "ja", self otherwise
+    sl_config.define_singleton_method(:for_language) do |lang|
+      lang == "ja" ? ja_config : self
+    end
+
+    Tell::Web.set :tell_config, sl_config
+
+    # Track which tts_engine was used
+    captured_engine = nil
+    fake_tts = Object.new
+    fake_tts.define_singleton_method(:synthesize) { |*_| "fake_audio" }
+
+    original_build_tts = Tell.method(:build_tts)
+    Tell.define_singleton_method(:build_tts) do |engine, config|
+      captured_engine = engine
+      fake_tts
+    end
+
+    Tell::Detector.stub(:detect, "en") do
+      Tell.stub(:build_translator_chain, Object.new.tap { |t|
+        t.define_singleton_method(:translate) { |*_args, **_kw| "日本語テキスト" }
+      }) do
+        get "/speak", text: "hello", from: "en", to: "ja"
+      end
+    end
+
+    assert_equal "elevenlabs", captured_engine
+    assert_includes last_response.body, "event: audio"
+  ensure
+    Tell.define_singleton_method(:build_tts, original_build_tts) if original_build_tts
+    Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
+      .new(original_language: "en", target_language: "sl")
+      .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+  end
+
+  # --- ensure_all_brackets ---
+
+  def test_ensure_all_brackets_inserts_for_hiragana_words
+    web = Tell::Web.new!
+    gloss = "今日[きょう](today) は(part)TOP こと(n.sg)thing"
+    result = web.send(:ensure_all_brackets, gloss)
+    assert_equal "今日[きょう](today) は[は](part)TOP こと[こと](n.sg)thing", result
+  end
+
+  def test_ensure_all_brackets_skips_kanji_words
+    web = Tell::Web.new!
+    gloss = "今日(today) 元気(healthy)"
+    result = web.send(:ensure_all_brackets, gloss)
+    assert_equal "今日(today) 元気(healthy)", result
+  end
+
+  def test_ensure_all_brackets_preserves_existing_brackets
+    web = Tell::Web.new!
+    gloss = "今日[きょう](today) は[わ](part)"
+    result = web.send(:ensure_all_brackets, gloss)
+    assert_equal gloss, result
+  end
+
+  # --- build_gloss_bracket_cache ---
+
+  def test_build_gloss_bracket_cache_extracts_and_converts_brackets
+    web = Tell::Web.new!
+    gloss = "今日[きょう](today) は[わ](topic) 元気[げんき](healthy) です(copula)"
+
+    Tell::Espeak.stub(:available?, true) do
+      Tell::Espeak.stub(:ipa_from_kana, ->(_kana) { "/ipa/" }) do
+        result = web.send(:build_gloss_bracket_cache, gloss)
+        assert_equal %w[きょう わ げんき], result["hiragana"]
+        assert_equal 3, result["hepburn"].size
+        assert_equal 3, result["kunrei"].size
+        assert_equal 3, result["ipa"].size
+      end
+    end
+  end
+
+  def test_build_gloss_bracket_cache_returns_nil_without_brackets
+    web = Tell::Web.new!
+    result = web.send(:build_gloss_bracket_cache, "今日(today) です(copula)")
+    assert_nil result
   end
 
   # --- / (index) ---

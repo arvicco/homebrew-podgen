@@ -147,5 +147,16 @@ module Tell
       return false unless pattern
       text.match?(pattern)
     end
+
+    # CJK, Hangul, Thai etc. pack far more meaning per character than Latin.
+    # A 60-char Japanese sentence routinely becomes 250+ chars in Slovenian.
+    # Use a higher multiplier for dense scripts to avoid false positives.
+    DENSE_SCRIPTS = %i[cjk hangul thai arabic hebrew devanagari].freeze
+
+    # Is the translation likely an LLM explanation rather than a real translation?
+    def self.explanation?(input, translation)
+      multiplier = DENSE_SCRIPTS.include?(dominant_script(input)) ? 8 : 3
+      translation.length > input.length * multiplier
+    end
   end
 end

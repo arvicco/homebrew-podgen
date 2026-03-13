@@ -59,7 +59,7 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal "eleven_multilingual_v2", config.model_id
+    assert_equal "eleven_multilingual_v2", config.tts_model_id
     assert_equal "mp3_44100_128", config.output_format
   end
 
@@ -556,18 +556,6 @@ class TestTellConfig < Minitest::Test
     assert_equal ["claude-haiku-4-5-20251001"], config.gloss_model
   end
 
-  def test_gloss_model_full_model_id
-    write_config(
-      "original_language" => "en",
-      "target_language" => "sl",
-      "voice_id" => "abc123",
-      "gloss_model" => ["claude-opus-4-6", "claude-sonnet-4-6"]
-    )
-
-    config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
-  end
-
   def test_gloss_model_default_to_opus
     write_config(
       "original_language" => "en",
@@ -592,29 +580,16 @@ class TestTellConfig < Minitest::Test
     assert_equal ["claude-haiku-4-5-20251001"], config.gloss_model
   end
 
-  def test_gloss_model_plural_key_accepted
+  def test_gloss_model_full_model_id_scalar
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
       "voice_id" => "abc123",
-      "gloss_models" => ["opus", "sonnet"]
+      "gloss_model" => "claude-sonnet-4-6"
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
-  end
-
-  def test_gloss_model_plural_key_preferred_over_singular
-    write_config(
-      "original_language" => "en",
-      "target_language" => "sl",
-      "voice_id" => "abc123",
-      "gloss_model" => "haiku",
-      "gloss_models" => ["opus", "sonnet"]
-    )
-
-    config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
+    assert_equal ["claude-sonnet-4-6"], config.gloss_model
   end
 
   # --- phonetic_model ---
@@ -628,10 +603,11 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal "claude-opus-4-6", config.phonetic_model
+    assert_equal ["claude-opus-4-6"], config.phonetic_model
+    assert_equal "claude-opus-4-6", config.phonetic_reconciler
   end
 
-  def test_phonetic_model_explicit_config
+  def test_phonetic_model_explicit_scalar
     write_config(
       "original_language" => "en",
       "target_language" => "sl",
@@ -640,7 +616,21 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal "claude-haiku-4-5-20251001", config.phonetic_model
+    assert_equal ["claude-haiku-4-5-20251001"], config.phonetic_model
+    assert_equal "claude-haiku-4-5-20251001", config.phonetic_reconciler
+  end
+
+  def test_phonetic_model_explicit_array
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "abc123",
+      "phonetic_model" => ["sonnet", "haiku"]
+    )
+
+    config = Tell::Config.new
+    assert_equal ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"], config.phonetic_model
+    assert_equal "claude-sonnet-4-6", config.phonetic_reconciler
   end
 
   def test_phonetic_model_env_override
@@ -653,7 +643,7 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal "claude-sonnet-4-6", config.phonetic_model
+    assert_equal ["claude-sonnet-4-6"], config.phonetic_model
   end
 
   # --- Gendered voices ---
@@ -683,6 +673,312 @@ class TestTellConfig < Minitest::Test
     config = Tell::Config.new
     assert_nil config.voice_male
     assert_nil config.voice_female
+  end
+
+  # --- All settings accept both scalar and array ---
+
+  def test_translation_engine_scalar_becomes_array
+    write_config(base_config.merge("translation_engine" => "deepl"))
+    config = Tell::Config.new
+    assert_equal ["deepl"], config.translation_engines
+    assert_equal "deepl", config.translation_engine
+  end
+
+  def test_translation_engine_array_preserved
+    ENV["ANTHROPIC_API_KEY"] = "test_claude_key"
+    write_config(base_config.merge("translation_engine" => ["deepl", "claude"]))
+    config = Tell::Config.new
+    assert_equal ["deepl", "claude"], config.translation_engines
+    assert_equal "deepl", config.translation_engine # first = primary
+  end
+
+  def test_gloss_model_scalar_becomes_array
+    write_config(base_config.merge("gloss_model" => "sonnet"))
+    config = Tell::Config.new
+    assert_equal ["claude-sonnet-4-6"], config.gloss_model
+    assert_equal "claude-sonnet-4-6", config.gloss_reconciler
+  end
+
+  def test_gloss_model_array_preserved_for_consensus
+    write_config(base_config.merge("gloss_model" => ["opus", "sonnet"]))
+    config = Tell::Config.new
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
+    assert_equal "claude-opus-4-6", config.gloss_reconciler # first = reconciler
+  end
+
+  def test_gloss_model_array_resolves_short_names
+    write_config(base_config.merge("gloss_model" => ["sonnet", "haiku"]))
+    config = Tell::Config.new
+    assert_equal ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"], config.gloss_model
+  end
+
+  def test_gloss_model_array_passes_through_full_ids
+    write_config(base_config.merge("gloss_model" => ["claude-opus-4-6", "claude-sonnet-4-6"]))
+    config = Tell::Config.new
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
+  end
+
+  def test_phonetic_model_scalar_becomes_array
+    write_config(base_config.merge("phonetic_model" => "haiku"))
+    config = Tell::Config.new
+    assert_equal ["claude-haiku-4-5-20251001"], config.phonetic_model
+    assert_equal "claude-haiku-4-5-20251001", config.phonetic_reconciler
+  end
+
+  def test_phonetic_model_array_preserved_for_consensus
+    write_config(base_config.merge("phonetic_model" => ["sonnet", "haiku"]))
+    config = Tell::Config.new
+    assert_equal ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"], config.phonetic_model
+    assert_equal "claude-sonnet-4-6", config.phonetic_reconciler
+  end
+
+  def test_phonetic_model_array_passes_through_full_ids
+    write_config(base_config.merge("phonetic_model" => ["claude-haiku-4-5-20251001", "claude-opus-4-6"]))
+    config = Tell::Config.new
+    assert_equal ["claude-haiku-4-5-20251001", "claude-opus-4-6"], config.phonetic_model
+  end
+
+  def test_phonetic_model_defaults_to_first_gloss_model_when_absent
+    write_config(base_config.merge("gloss_model" => ["sonnet", "opus"]))
+    config = Tell::Config.new
+    assert_equal ["claude-sonnet-4-6"], config.phonetic_model
+  end
+
+  # --- Per-language overrides ---
+
+  def test_language_override_switches_tts_engine
+    write_config(base_config.merge(
+      "tts_engine" => "elevenlabs",
+      "languages" => {
+        "ja" => { "tts_engine" => "elevenlabs", "voice_id" => "ja_voice" }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja" })
+    assert_equal "elevenlabs", config.tts_engine
+    assert_equal "ja_voice", config.voice_id
+  end
+
+  def test_language_override_switches_voice_only
+    write_config(base_config.merge(
+      "languages" => {
+        "de" => { "voice_id" => "de_voice" }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "de" })
+    assert_equal "de_voice", config.voice_id
+    assert_equal "elevenlabs", config.tts_engine # unchanged default
+  end
+
+  def test_language_override_includes_gendered_voices
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => {
+          "voice_id" => "ja_default",
+          "voice_male" => "ja_male",
+          "voice_female" => "ja_female"
+        }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja" })
+    assert_equal "ja_default", config.voice_id
+    assert_equal "ja_male", config.voice_male
+    assert_equal "ja_female", config.voice_female
+  end
+
+  def test_language_override_no_match_uses_defaults
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => { "voice_id" => "ja_voice" }
+      }
+    ))
+
+    config = Tell::Config.new  # target=sl, no override for sl
+    assert_equal "abc123", config.voice_id
+  end
+
+  def test_language_override_no_languages_block
+    write_config(base_config)
+
+    config = Tell::Config.new
+    assert_equal "abc123", config.voice_id
+  end
+
+  def test_cli_tts_engine_override_skips_language_voices_when_engines_differ
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "voice_male" => "sl-SI-Chirp3-HD-Puck",
+      "tts_engine" => "google",
+      "languages" => {
+        "ja" => {
+          "tts_engine" => "elevenlabs",
+          "voice_id" => "WQz3clzUdMqvBf0jswZQ",
+          "voice_male" => "bYqmvVkXUBwLwYpGHGz3"
+        }
+      }
+    )
+
+    config = Tell::Config.new(overrides: { to: "ja", tts_engine: "google" })
+    assert_equal "google", config.tts_engine
+    # Base Google voices adapted for Japanese, NOT the ElevenLabs voices
+    assert_equal "ja-JP-Chirp3-HD-Kore", config.voice_id
+    assert_equal "ja-JP-Chirp3-HD-Puck", config.voice_male
+  end
+
+  def test_cli_tts_engine_override_keeps_language_voices_when_engines_match
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => {
+          "tts_engine" => "elevenlabs",
+          "voice_id" => "ja_eleven_voice",
+          "voice_male" => "ja_eleven_male"
+        }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja", tts_engine: "elevenlabs" })
+    assert_equal "elevenlabs", config.tts_engine
+    assert_equal "ja_eleven_voice", config.voice_id
+    assert_equal "ja_eleven_male", config.voice_male
+  end
+
+  def test_cli_tts_engine_override_keeps_non_voice_language_settings
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(base_config.merge(
+      "tts_engine" => "google",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "languages" => {
+        "ja" => {
+          "tts_engine" => "elevenlabs",
+          "voice_id" => "ja_eleven_voice",
+          "phonetic_model" => "haiku"
+        }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja", tts_engine: "google" })
+    # Non-voice settings from language block still applied
+    assert_equal ["claude-haiku-4-5-20251001"], config.phonetic_model
+  end
+
+  def test_no_cli_tts_engine_override_merges_language_voices_normally
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => {
+          "tts_engine" => "elevenlabs",
+          "voice_id" => "ja_eleven_voice"
+        }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja" })
+    assert_equal "elevenlabs", config.tts_engine
+    assert_equal "ja_eleven_voice", config.voice_id
+  end
+
+  def test_cli_override_takes_precedence_over_language_override
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => { "voice_id" => "ja_voice" }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja", voice: "cli_voice" })
+    assert_equal "cli_voice", config.voice_id
+  end
+
+  def test_language_override_elevenlabs_to_google
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(base_config.merge(
+      "tts_engine" => "elevenlabs",
+      "languages" => {
+        "de" => {
+          "tts_engine" => "google",
+          "voice_id" => "de-DE-Chirp3-HD-Kore"
+        }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "de" })
+    assert_equal "google", config.tts_engine
+    assert_equal "de-DE", config.google_language_code
+    assert_equal "de-DE-Chirp3-HD-Kore", config.voice_id
+  end
+
+  def test_language_override_google_to_elevenlabs
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "tts_engine" => "google",
+      "languages" => {
+        "ja" => {
+          "tts_engine" => "elevenlabs",
+          "voice_id" => "ja_eleven_voice"
+        }
+      }
+    )
+
+    config = Tell::Config.new(overrides: { to: "ja" })
+    assert_equal "elevenlabs", config.tts_engine
+    assert_equal "ja_eleven_voice", config.voice_id
+    assert_equal "test_eleven_key", config.api_key
+  end
+
+  def test_language_override_model_id_and_output_format
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => {
+          "voice_id" => "ja_voice",
+          "tts_model_id" => "eleven_turbo_v2_5",
+          "output_format" => "mp3_22050_32"
+        }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja" })
+    assert_equal "eleven_turbo_v2_5", config.tts_model_id
+    assert_equal "mp3_22050_32", config.output_format
+  end
+
+  def test_language_override_phonetic_system
+    write_config(base_config.merge(
+      "phonetic_system" => "ipa",
+      "languages" => {
+        "ja" => { "phonetic_system" => "hepburn" }
+      }
+    ))
+
+    config = Tell::Config.new(overrides: { to: "ja" })
+    assert_equal "hepburn", config.phonetic_system
+  end
+
+  # --- Language normalization ---
+
+  def test_auto_original_language_lowercase
+    write_config(base_config.merge("original_language" => "auto"))
+    config = Tell::Config.new
+    assert_equal "auto", config.original_language
+    assert_equal "en", config.reverse_language
+  end
+
+  def test_auto_original_language_capitalized
+    write_config(base_config.merge("original_language" => "Auto"))
+    config = Tell::Config.new
+    assert_equal "auto", config.original_language
+  end
+
+  def test_uppercase_language_codes_normalized
+    write_config(base_config.merge("original_language" => "EN", "target_language" => "SL"))
+    config = Tell::Config.new
+    assert_equal "en", config.original_language
+    assert_equal "sl", config.target_language
   end
 
   # --- Edge cases ---
@@ -830,7 +1126,157 @@ class TestTellConfig < Minitest::Test
     assert_equal "ipa", config.phonetic_system
   end
 
+  # --- for_language ---
+
+  def test_for_language_returns_self_when_matching_default
+    write_config(base_config)
+    config = Tell::Config.new
+    assert_same config, config.for_language("sl")
+  end
+
+  def test_for_language_returns_self_for_normalized_alias
+    write_config(base_config.merge("target_language" => "ja"))
+    config = Tell::Config.new
+    assert_same config, config.for_language("jp")  # jp → ja
+  end
+
+  def test_for_language_creates_new_config_for_different_language
+    write_config(base_config)
+    config = Tell::Config.new
+    ja_config = config.for_language("ja")
+    refute_same config, ja_config
+    assert_equal "ja", ja_config.target_language
+    assert_equal "en", ja_config.original_language
+  end
+
+  def test_for_language_caches_same_object
+    write_config(base_config)
+    config = Tell::Config.new
+    assert_same config.for_language("ja"), config.for_language("ja")
+  end
+
+  def test_for_language_alias_and_canonical_same_cache
+    write_config(base_config)
+    config = Tell::Config.new
+    assert_same config.for_language("jp"), config.for_language("ja")
+  end
+
+  def test_for_language_different_languages_different_objects
+    write_config(base_config)
+    config = Tell::Config.new
+    refute_same config.for_language("ja"), config.for_language("de")
+  end
+
+  def test_for_language_applies_per_language_overrides
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => {
+          "tts_engine" => "elevenlabs",
+          "voice_id" => "ja_voice",
+          "voice_male" => "ja_male",
+          "voice_female" => "ja_female",
+          "phonetic_model" => "haiku"
+        }
+      }
+    ))
+    config = Tell::Config.new
+    ja = config.for_language("ja")
+    assert_equal "elevenlabs", ja.tts_engine
+    assert_equal "ja_voice", ja.voice_id
+    assert_equal "ja_male", ja.voice_male
+    assert_equal "ja_female", ja.voice_female
+    assert_equal ["claude-haiku-4-5-20251001"], ja.phonetic_model
+  end
+
+  def test_for_language_inherits_defaults_without_override
+    write_config(base_config.merge(
+      "languages" => {
+        "ja" => { "voice_id" => "ja_voice" }
+      }
+    ))
+    config = Tell::Config.new
+    de = config.for_language("de")
+    assert_equal "abc123", de.voice_id       # default voice
+    assert_equal "elevenlabs", de.tts_engine  # default engine
+  end
+
+  def test_for_language_without_languages_block
+    write_config(base_config)
+    config = Tell::Config.new
+    ja = config.for_language("ja")
+    assert_equal "ja", ja.target_language
+    assert_equal "abc123", ja.voice_id  # default voice carried over
+  end
+
+  def test_for_language_preserves_translation_settings
+    ENV["ANTHROPIC_API_KEY"] = "test_claude_key"
+    write_config(base_config.merge(
+      "translation_engine" => ["deepl", "claude"],
+      "translation_timeout" => 5.0
+    ))
+    config = Tell::Config.new
+    ja = config.for_language("ja")
+    assert_equal ["deepl", "claude"], ja.translation_engines
+    assert_equal 5.0, ja.translation_timeout
+  end
+
+  def test_for_language_preserves_reverse_language
+    write_config(base_config)
+    config = Tell::Config.new
+    ja = config.for_language("ja")
+    assert_equal "en", ja.reverse_language
+  end
+
+  def test_for_language_no_file_reread
+    write_config(base_config)
+    config = Tell::Config.new
+    # Overwrite config file — for_language should use cached raw data
+    write_config(base_config.merge("voice_id" => "changed"))
+    ja = config.for_language("ja")
+    assert_equal "abc123", ja.voice_id  # from original load, not re-read
+  end
+
+  def test_for_language_google_voice_adaptation
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(base_config.merge(
+      "tts_engine" => "google",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "voice_male" => "sl-SI-Chirp3-HD-Puck"
+    ))
+    config = Tell::Config.new
+    de = config.for_language("de")
+    assert_equal "de-DE-Chirp3-HD-Kore", de.voice_id
+    assert_equal "de-DE-Chirp3-HD-Puck", de.voice_male
+  end
+
+  def test_for_language_switches_google_to_elevenlabs
+    ENV["GOOGLE_API_KEY"] = "test_google_key"
+    write_config(
+      "original_language" => "en",
+      "target_language" => "sl",
+      "voice_id" => "sl-SI-Chirp3-HD-Kore",
+      "tts_engine" => "google",
+      "languages" => {
+        "ja" => {
+          "tts_engine" => "elevenlabs",
+          "voice_id" => "ja_eleven_voice"
+        }
+      }
+    )
+    config = Tell::Config.new
+    assert_equal "google", config.tts_engine
+
+    ja = config.for_language("ja")
+    assert_equal "elevenlabs", ja.tts_engine
+    assert_equal "ja_eleven_voice", ja.voice_id
+    assert_equal "test_eleven_key", ja.api_key
+  end
+
   private
+
+  def base_config
+    { "original_language" => "en", "target_language" => "sl", "voice_id" => "abc123" }
+  end
 
   def write_config(data)
     require "yaml"

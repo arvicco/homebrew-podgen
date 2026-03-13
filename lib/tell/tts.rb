@@ -24,7 +24,7 @@ module Tell
     def initialize(config)
       @api_key       = config.api_key
       @voice_id      = config.voice_id
-      @model_id      = config.model_id
+      @model_id      = config.tts_model_id
       @output_format = config.output_format
     end
 

@@ -15,6 +15,7 @@ gem "logger",    "~> 1.6"   # Logging (removed from Ruby 4.0 defaults, required 
 gem "sinatra",   "~> 4.1"   # Web framework (for tell web UI)
 gem "rackup",    "~> 2.2"   # Rack server launcher (required by Sinatra 4+)
 gem "puma",      "~> 6.5"   # Threaded web server (SSE streaming for tell web)
+gem "ffi-icu",   "~> 0.5"   # ICU transliteration for Cyrillic/Greek/Korean romanization
 
 group :test do
   gem "minitest",  "~> 5.25"
