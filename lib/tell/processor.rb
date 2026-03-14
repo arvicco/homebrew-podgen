@@ -143,8 +143,8 @@ module Tell
     end
 
     def phonetic(text)
-      sys = @config.phonetic_system_for(@config.target_language)
       lang = @config.target_language
+      sys = Glosser.resolve_phonetic_system(lang, @config.phonetic_system_for(lang))
       resolved = sys || Glosser.default_system(lang)
 
       # Japanese pipeline: AI hiragana → deterministic derivation
@@ -205,7 +205,7 @@ module Tell
     end
 
     def run_gloss(mode, text)
-      sys = @config.phonetic_system_for(@config.target_language)
+      sys = Glosser.resolve_phonetic_system(@config.target_language, @config.phonetic_system_for(@config.target_language))
 
       results = Glosser.multi_model(@config.gloss_model) do |model_id|
         build_glosser(model_id).public_send(mode, text, from: @config.target_language, to: @config.reverse_language, system: sys)

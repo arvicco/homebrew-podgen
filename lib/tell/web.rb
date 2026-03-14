@@ -175,6 +175,7 @@ module Tell
       do_gloss_phonetic  = params["gloss_phonetic"] == "true" && do_gloss
       do_gloss_translate = params["gloss_translate"] == "true" && do_gloss
       ph_system          = params["phonetic_system"]&.then { |s| s.empty? ? nil : s }
+      ph_system          = Glosser.resolve_phonetic_system(target_lang, ph_system) if ph_system
 
       if do_reverse
         threads << Thread.new do
