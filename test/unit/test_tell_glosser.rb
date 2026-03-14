@@ -625,3 +625,39 @@ class TestTellGlosser < Minitest::Test
     end
   end
 end
+
+class TestGlosserResolvePhoneticSystem < Minitest::Test
+  def test_nil_returns_nil
+    assert_nil Tell::Glosser.resolve_phonetic_system("ja", nil)
+  end
+
+  def test_exact_match
+    assert_equal "hepburn", Tell::Glosser.resolve_phonetic_system("ja", "hepburn")
+  end
+
+  def test_unique_prefix
+    assert_equal "hepburn", Tell::Glosser.resolve_phonetic_system("ja", "hep")
+    assert_equal "ipa", Tell::Glosser.resolve_phonetic_system("ja", "i")
+    assert_equal "kunrei", Tell::Glosser.resolve_phonetic_system("ja", "k")
+  end
+
+  def test_ambiguous_prefix_raises
+    # "s" matches scholarly and simple for Russian
+    err = assert_raises(ArgumentError) { Tell::Glosser.resolve_phonetic_system("ru", "s") }
+    assert_includes err.message, "Ambiguous"
+    assert_includes err.message, "scholarly"
+    assert_includes err.message, "simple"
+  end
+
+  def test_no_match_raises
+    err = assert_raises(ArgumentError) { Tell::Glosser.resolve_phonetic_system("ja", "bogus") }
+    assert_includes err.message, "Unknown"
+    assert_includes err.message, "hiragana"
+  end
+
+  def test_single_char_prefix_for_default_lang
+    # Default systems: ipa, simple
+    assert_equal "ipa", Tell::Glosser.resolve_phonetic_system("fr", "i")
+    assert_equal "simple", Tell::Glosser.resolve_phonetic_system("fr", "s")
+  end
+end

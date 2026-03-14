@@ -182,6 +182,23 @@ module Tell
       end
     end
 
+    # Resolve an abbreviated phonetic system name to its full form.
+    # Returns nil for nil input, exact match as-is, or unique prefix expansion.
+    # Raises ArgumentError on ambiguous or unknown abbreviations.
+    def self.resolve_phonetic_system(lang, input)
+      return nil if input.nil?
+
+      systems = systems_for(lang)
+      return input if systems.key?(input)
+
+      matches = systems.keys.select { |k| k.start_with?(input) }
+      case matches.size
+      when 1 then matches.first
+      when 0 then raise ArgumentError, "Unknown phonetic system '#{input}' for #{lang}. Valid: #{systems.keys.join(', ')}"
+      else raise ArgumentError, "Ambiguous phonetic system '#{input}' for #{lang}. Matches: #{matches.join(', ')}"
+      end
+    end
+
     # Run a block across one or more models, collecting results.
     # Single model: call directly (no thread overhead).
     # Multi model: parallel threads, filter errors, raise only if ALL fail.
