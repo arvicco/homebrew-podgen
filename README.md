@@ -601,7 +601,7 @@ News pipeline episodes can include a "More info" section at the end of the trans
 - show: true
 ```
 
-When enabled, the script agent asks Claude to list every source it referenced while writing the episode. These appear as a `## More info` section at the bottom of the saved script file, with tracking parameters stripped from URLs. The links render as clickable items on the episode's site page and in the RSS transcript HTML.
+When enabled, the script agent asks Claude to list every source it referenced while writing the episode. These appear as a `## More info` section at the bottom of the saved script file, with tracking parameters stripped from URLs. The links render as clickable items on the episode's site page. RSS transcript HTML includes the links but note that most podcast apps (Pocket Casts, Apple Podcasts) do not render HTML links in transcripts.
 
 ### Vocabulary Annotation
 
@@ -619,7 +619,9 @@ When enabled, after the transcript is saved the pipeline sends the transcript te
 1. **Marked words** in the transcript — first occurrence of each vocabulary word is wrapped in `**bold**`
 2. **Vocabulary section** appended to the transcript file, grouped by CEFR level (hardest first), with lemma, part of speech, translation, definition, and original inflected form
 
-On the generated site, bold vocabulary words become clickable links that jump to the corresponding dictionary entry at the bottom of the page (styled with a dotted underline). The vocabulary section renders as a definition list with anchored entries.
+On the generated **site**, bold vocabulary words become clickable links that jump to the corresponding dictionary entry at the bottom of the page (styled with a dotted underline). The vocabulary section renders as a definition list with anchored entries.
+
+In **RSS transcript HTML** (for podcast apps), the vocabulary section is stripped and bold markers are removed, producing clean readable text. This is because podcast apps (Pocket Casts, Apple Podcasts, etc.) do not render HTML formatting or links in transcripts.
 
 If the section is absent or has no `level` key, the pipeline is unchanged.
 
