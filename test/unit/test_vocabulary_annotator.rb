@@ -1,0 +1,150 @@
+# frozen_string_literal: true
+
+require_relative "../test_helper"
+require "vocabulary_annotator"
+
+class TestVocabularyAnnotator < Minitest::Test
+  def setup
+    @annotator = VocabularyAnnotator.new("test-key", model: "claude-sonnet-4-6")
+  end
+
+  # --- CEFR level validation ---
+
+  def test_rejects_invalid_cefr_level
+    assert_raises(ArgumentError) do
+      @annotator.annotate("some text", language: "Slovenian", cutoff: "X1")
+    end
+  end
+
+  def test_accepts_lowercase_cutoff
+    # Should normalize to uppercase — won't reach API since we stub nothing,
+    # but validates the argument check passes
+    stub_classify_empty do
+      marked, vocab = @annotator.annotate("hello", language: "English", cutoff: "b1")
+      assert_equal "hello", marked
+      assert_equal "", vocab
+    end
+  end
+
+  # --- mark_words ---
+
+  def test_mark_words_bolds_first_occurrence
+    entries = [{ word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To make known publicly." }]
+    result = @annotator.send(:mark_words, "On je razglasil novico. Potem je razglasil še drugo.", entries)
+
+    assert_includes result, "**razglasil**"
+    # Should only bold the first occurrence
+    assert_equal 1, result.scan("**razglasil**").length
+  end
+
+  def test_mark_words_case_insensitive
+    entries = [{ word: "Zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An organization." }]
+    result = @annotator.send(:mark_words, "Zavod je odprt. Pridi v zavod.", entries)
+
+    # Should bold the first occurrence (capital Z)
+    assert_includes result, "**Zavod**"
+    assert_equal 1, result.scan(/\*\*[Zz]avod\*\*/).length
+  end
+
+  def test_mark_words_does_not_double_bold
+    entries = [{ word: "test", lemma: "test", level: "B1", pos: "n.", translation: "test", definition: "A test." }]
+    result = @annotator.send(:mark_words, "This is a **test** already.", entries)
+
+    # Should not create ***test*** — the already-bolded word should be left alone
+    refute_includes result, "***"
+  end
+
+  # --- build_vocabulary_section ---
+
+  def test_build_vocabulary_section_sorts_by_level_then_alpha
+    entries = [
+      { word: "oddaja", lemma: "oddaja", level: "B2", pos: "n.f.", translation: "broadcast", definition: "A radio or TV show." },
+      { word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To declare publicly." },
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.m.", translation: "institute", definition: "An organization." }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries)
+
+    # C1 should come before B2
+    c1_pos = result.index("**C1**")
+    b2_pos = result.index("**B2**")
+    assert c1_pos < b2_pos, "C1 should appear before B2"
+
+    # Within B2, oddaja should come before zavod (alphabetical)
+    oddaja_pos = result.index("oddaja")
+    zavod_pos = result.index("zavod")
+    assert oddaja_pos < zavod_pos, "oddaja should appear before zavod"
+  end
+
+  def test_build_vocabulary_section_includes_original_when_different
+    entries = [
+      { word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To declare publicly." }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries)
+
+    assert_includes result, "## Vocabulary"
+    assert_includes result, "**razglasiti**"
+    assert_includes result, "_Original: razglasil_"
+  end
+
+  def test_build_vocabulary_section_omits_original_when_same
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.m.", translation: "institute", definition: "An organization." }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries)
+
+    refute_includes result, "_Original:"
+  end
+
+  # --- valid_entry? ---
+
+  def test_valid_entry_filters_below_cutoff
+    refute @annotator.send(:valid_entry?, { word: "hi", lemma: "hi", level: "A1" }, "B1")
+    refute @annotator.send(:valid_entry?, { word: "hi", lemma: "hi", level: "A2" }, "B1")
+    assert @annotator.send(:valid_entry?, { word: "hi", lemma: "hi", level: "B1" }, "B1")
+    assert @annotator.send(:valid_entry?, { word: "hi", lemma: "hi", level: "C2" }, "B1")
+  end
+
+  def test_valid_entry_rejects_missing_fields
+    refute @annotator.send(:valid_entry?, { word: "hi", lemma: "hi" }, "B1")
+    refute @annotator.send(:valid_entry?, { word: "hi", level: "B1" }, "B1")
+    refute @annotator.send(:valid_entry?, {}, "B1")
+  end
+
+  def test_valid_entry_rejects_invalid_level
+    refute @annotator.send(:valid_entry?, { word: "hi", lemma: "hi", level: "X1" }, "B1")
+  end
+
+  # --- annotate integration (with stubbed API) ---
+
+  def test_annotate_returns_unchanged_when_no_words
+    stub_classify_empty do
+      marked, vocab = @annotator.annotate("Hello world", language: "English", cutoff: "C1")
+      assert_equal "Hello world", marked
+      assert_equal "", vocab
+    end
+  end
+
+  def test_annotate_returns_marked_text_and_vocab_section
+    entries = [
+      { word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To declare publicly." }
+    ]
+    stub_classify(entries) do
+      marked, vocab = @annotator.annotate("On je razglasil novico.", language: "Slovenian", cutoff: "B1")
+      assert_includes marked, "**razglasil**"
+      assert_includes vocab, "## Vocabulary"
+      assert_includes vocab, "razglasiti"
+    end
+  end
+
+  private
+
+  def stub_classify_empty(&block)
+    stub_classify([], &block)
+  end
+
+  def stub_classify(entries)
+    @annotator.stub(:classify_words, entries) do
+      yield
+    end
+  end
+end

@@ -164,6 +164,18 @@ class PodcastConfig
     parser.lingq_config
   end
 
+  def links_config
+    parser.links_config
+  end
+
+  def vocabulary_level
+    parser.vocabulary_config&.dig(:level)
+  end
+
+  def links_enabled?
+    !!links_config&.dig(:show)
+  end
+
   def lingq_enabled?
     config = lingq_config
     config && config[:collection] && ENV["LINGQ_API_KEY"] && !ENV["LINGQ_API_KEY"].empty?

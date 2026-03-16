@@ -11,9 +11,15 @@ class Segment < Anthropic::BaseModel
   required :text, String
 end
 
+class Source < Anthropic::BaseModel
+  required :title, String
+  required :url, String
+end
+
 class PodcastScript < Anthropic::BaseModel
   required :title, String
   required :segments, Anthropic::ArrayOf[Segment]
+  required :sources, Anthropic::ArrayOf[Source]
 end
 
 class ScriptAgent
@@ -61,7 +67,8 @@ class ScriptAgent
 
       result = {
         title: script.title,
-        segments: script.segments.map { |s| { name: s.name, text: s.text } }
+        segments: script.segments.map { |s| { name: s.name, text: s.text } },
+        sources: script.sources.map { |s| { title: s.title, url: s.url } }
       }
 
       save_script_debug(result)
@@ -86,6 +93,11 @@ class ScriptAgent
 
           Write naturally as spoken word — no stage directions, no timestamps, no markdown.
           Each segment's text should be the exact words the host will speak aloud.
+
+          In the sources field, list every article or source you actually referenced in the
+          script. Each source needs a short descriptive title (5-8 words max, like a headline)
+          and the original URL from the research data. Only include sources whose content
+          materially contributed to the script.
         PROMPT
       },
       {

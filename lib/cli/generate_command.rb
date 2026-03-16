@@ -18,6 +18,7 @@ require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "cli", "language_pipeline")
 
 module PodgenCLI
@@ -165,6 +166,9 @@ module PodgenCLI
               { name: topics.first.to_s, text: "Here is segment one covering #{topics.first} in detail with synthetic content for testing purposes." },
               { name: topics.last.to_s, text: "Here is segment two covering #{topics.last} with more synthetic content." },
               { name: "Wrap-Up", text: "Thanks for listening to this dry-run episode. Until next time." }
+            ],
+            sources: [
+              { title: "Example source for #{topics.first}", url: "https://example.com/#{topics.first.to_s.downcase.gsub(/\s+/, '-')}" }
             ]
           }
           logger.log("[dry-run] Synthetic script generated: \"#{script[:title]}\"")
@@ -222,8 +226,10 @@ module PodgenCLI
               end
 
               # --- Save translated script for debugging ---
+              # Merge English sources into translated script (sources aren't translated)
+              lang_script_with_sources = lang_script.merge(sources: script[:sources])
               lang_script_path = File.join(config.episodes_dir, "#{lang_basename}_script.md")
-              save_script_debug(lang_script, lang_script_path, logger)
+              save_script_debug(lang_script_with_sources, lang_script_path, logger, links: config.links_enabled?)
 
               # --- TTS ---
               logger.phase_start("TTS (#{lang_code})")
@@ -302,7 +308,7 @@ module PodgenCLI
       raise "ffmpeg is not installed or not on $PATH. Install with: brew install ffmpeg"
     end
 
-    def save_script_debug(script, path, logger)
+    def save_script_debug(script, path, logger, links: false)
       FileUtils.mkdir_p(File.dirname(path))
       File.open(path, "w") do |f|
         f.puts "# #{script[:title]}"
@@ -311,6 +317,17 @@ module PodgenCLI
           f.puts "## #{seg[:name]}"
           f.puts
           f.puts seg[:text]
+          f.puts
+        end
+
+        sources = script[:sources]
+        if links && sources && !sources.empty?
+          f.puts "## More info"
+          f.puts
+          sources.each do |src|
+            clean_url = UrlCleaner.clean(src[:url])
+            f.puts "- [#{src[:title]}](#{clean_url})"
+          end
           f.puts
         end
       end

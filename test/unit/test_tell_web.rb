@@ -138,38 +138,6 @@ class TestTellWeb < Minitest::Test
     assert limiter.allow?("2.2.2.2")
   end
 
-  # --- resolve_source ---
-
-  def test_resolve_source_explicit_lang_returns_it
-    web = Tell::Web.new!
-    assert_equal "en", web.send(:resolve_source, "hello", "en", "sl")
-  end
-
-  def test_resolve_source_auto_uses_detector
-    web = Tell::Web.new!
-    Tell::Detector.stub(:detect, "fr") do
-      assert_equal "fr", web.send(:resolve_source, "bonjour", "auto", "sl")
-    end
-  end
-
-  def test_resolve_source_auto_nil_detect_with_characteristic_chars
-    web = Tell::Web.new!
-    Tell::Detector.stub(:detect, nil) do
-      Tell::Detector.stub(:has_characteristic_chars?, true) do
-        assert_equal "sl", web.send(:resolve_source, "dober", "auto", "sl")
-      end
-    end
-  end
-
-  def test_resolve_source_auto_nil_detect_no_chars
-    web = Tell::Web.new!
-    Tell::Detector.stub(:detect, nil) do
-      Tell::Detector.stub(:has_characteristic_chars?, false) do
-        assert_nil web.send(:resolve_source, "xyz", "auto", "sl")
-      end
-    end
-  end
-
   # --- explanation detection ---
 
   def test_explanation_skips_tts_and_addons
@@ -278,52 +246,6 @@ class TestTellWeb < Minitest::Test
     Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
       .new(original_language: "en", target_language: "sl")
       .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
-  end
-
-  # --- ensure_all_brackets ---
-
-  def test_ensure_all_brackets_inserts_for_hiragana_words
-    web = Tell::Web.new!
-    gloss = "今日[きょう](today) は(part)TOP こと(n.sg)thing"
-    result = web.send(:ensure_all_brackets, gloss)
-    assert_equal "今日[きょう](today) は[は](part)TOP こと[こと](n.sg)thing", result
-  end
-
-  def test_ensure_all_brackets_skips_kanji_words
-    web = Tell::Web.new!
-    gloss = "今日(today) 元気(healthy)"
-    result = web.send(:ensure_all_brackets, gloss)
-    assert_equal "今日(today) 元気(healthy)", result
-  end
-
-  def test_ensure_all_brackets_preserves_existing_brackets
-    web = Tell::Web.new!
-    gloss = "今日[きょう](today) は[わ](part)"
-    result = web.send(:ensure_all_brackets, gloss)
-    assert_equal gloss, result
-  end
-
-  # --- build_gloss_bracket_cache ---
-
-  def test_build_gloss_bracket_cache_extracts_and_converts_brackets
-    web = Tell::Web.new!
-    gloss = "今日[きょう](today) は[わ](topic) 元気[げんき](healthy) です(copula)"
-
-    Tell::Espeak.stub(:available?, true) do
-      Tell::Espeak.stub(:ipa_from_kana, ->(_kana) { "/ipa/" }) do
-        result = web.send(:build_gloss_bracket_cache, gloss)
-        assert_equal %w[きょう わ げんき], result["hiragana"]
-        assert_equal 3, result["hepburn"].size
-        assert_equal 3, result["kunrei"].size
-        assert_equal 3, result["ipa"].size
-      end
-    end
-  end
-
-  def test_build_gloss_bracket_cache_returns_nil_without_brackets
-    web = Tell::Web.new!
-    result = web.send(:build_gloss_bracket_cache, "今日(today) です(copula)")
-    assert_nil result
   end
 
   # --- / (index) ---

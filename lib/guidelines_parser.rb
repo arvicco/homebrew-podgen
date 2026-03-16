@@ -34,6 +34,14 @@ class GuidelinesParser
     @lingq_config ||= parse_lingq_section
   end
 
+  def links_config
+    @links_config ||= parse_links_section
+  end
+
+  def vocabulary_config
+    @vocabulary_config ||= parse_vocabulary_section
+  end
+
   def languages
     @languages ||= podcast_section[:languages] || parse_language_section
   end
@@ -295,6 +303,51 @@ class GuidelinesParser
     end
 
     config.empty? ? nil : config
+  end
+
+  def parse_vocabulary_section
+    body = extract_section("Vocabulary")
+    return nil unless body
+
+    config = {}
+    body.each_line do |line|
+      line = line.strip
+      next unless line.start_with?("- ")
+
+      entry = line.sub(/^- /, "").strip
+      next unless entry.include?(":")
+
+      key, value = entry.split(":", 2).map(&:strip)
+      case key
+      when "level"
+        level = value.upcase
+        config[:level] = level if %w[A1 A2 B1 B2 C1 C2].include?(level)
+      end
+    end
+
+    config.empty? ? nil : config
+  end
+
+  def parse_links_section
+    body = extract_section("Links")
+    return nil unless body
+
+    config = {}
+    body.each_line do |line|
+      line = line.strip
+      next unless line.start_with?("- ")
+
+      entry = line.sub(/^- /, "").strip
+      next unless entry.include?(":")
+
+      key, value = entry.split(":", 2).map(&:strip)
+      case key
+      when "show"
+        config[:show] = value == "true"
+      end
+    end
+
+    config[:show] ? config : nil
   end
 
   def parse_sources_section

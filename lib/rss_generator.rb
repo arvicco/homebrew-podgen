@@ -26,7 +26,20 @@ class RssGenerator
         text.sub(/\A#[^\n]*\n+([^\n]*\n+)?/, "")
       end
 
-      paragraphs = body.strip.split(/\n{2,}/).map { |p| "<p>#{p.strip}</p>" }
+      paragraphs = body.strip.split(/\n{2,}/).map do |block|
+        block = block.strip
+        if block.start_with?("## ")
+          "<h2>#{block.sub(/^## /, "")}</h2>"
+        elsif block.match?(/\A- \[.+\]\(.+\)/)
+          items = block.split("\n").map do |line|
+            line = line.strip.sub(/^- /, "")
+            line.gsub(/\[([^\]]+)\]\(([^)]+)\)/) { "<a href=\"#{$2}\">#{$1}</a>" }
+          end
+          "<ul>#{items.map { |i| "<li>#{i}</li>" }.join}</ul>"
+        else
+          "<p>#{block}</p>"
+        end
+      end
       html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n#{paragraphs.join("\n")}\n</body></html>\n"
       File.write(html_path, html)
     end
