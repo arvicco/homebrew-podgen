@@ -4,10 +4,11 @@
 # Used by both RssGenerator (podcast feed HTML) and SiteGenerator (static site).
 module TranscriptRenderer
   # Converts a transcript/script body (after header extraction) to HTML.
-  # Handles vocabulary sections, bold word linking, HTML escaping, and markdown links.
-  def render_body_html(body)
+  # When vocab: true (default), renders vocabulary section with linked bold words.
+  # When vocab: false, strips vocabulary section and removes bold markers (for podcast apps).
+  def render_body_html(body, vocab: true)
     transcript_body, vocab_body = split_vocabulary_section(body)
-    vocab_lemmas = parse_vocab_lemmas(vocab_body) if vocab_body
+    vocab_lemmas = vocab && vocab_body ? parse_vocab_lemmas(vocab_body) : nil
 
     paragraphs = transcript_body.strip.split(/\n{2,}/).map do |block|
       block = block.strip
@@ -21,14 +22,23 @@ module TranscriptRenderer
         "<ul>#{items.map { |i| "<li>#{i}</li>" }.join}</ul>"
       else
         html = escape_html(block)
-        html = linkify_vocab_words(html, vocab_lemmas) if vocab_lemmas
+        if vocab_lemmas
+          html = linkify_vocab_words(html, vocab_lemmas)
+        else
+          html = strip_bold_markers(html)
+        end
         "<p>#{html}</p>"
       end
     end
 
     result = paragraphs.join("\n")
-    result += "\n" + render_vocabulary_html(vocab_body) if vocab_body
+    result += "\n" + render_vocabulary_html(vocab_body) if vocab && vocab_body
     result
+  end
+
+  # Removes **bold** markers, keeping the text inside.
+  def strip_bold_markers(html)
+    html.gsub(/\*\*([^*]+)\*\*/, '\1')
   end
 
   def escape_html(text)

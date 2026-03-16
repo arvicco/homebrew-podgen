@@ -74,7 +74,7 @@ class TestRssGenerator < Minitest::Test
     refute_includes html, "<script>"
   end
 
-  def test_convert_transcripts_renders_vocabulary_as_html
+  def test_convert_transcripts_strips_vocabulary_section
     md = File.join(@episodes_dir, "test-2026-01-01_transcript.md")
     File.write(md, <<~MD)
       # Title
@@ -92,16 +92,13 @@ class TestRssGenerator < Minitest::Test
     RssGenerator.convert_transcripts(@episodes_dir)
 
     html = File.read(md.sub(/\.md$/, ".html"))
-    # Vocabulary should be rendered as HTML, not raw markdown
-    refute_includes html, "## Vocabulary", "Raw markdown vocabulary heading should not appear"
-    refute_includes html, "- **word**", "Raw markdown vocabulary entry should not appear"
-    assert_includes html, "<h2>Vocabulary</h2>"
-    assert_includes html, "<dt"
-    assert_includes html, "<dd>"
-    assert_includes html, "translation"
+    # Vocabulary section should be completely stripped for podcast apps
+    refute_includes html, "Vocabulary", "Vocabulary section should not appear in RSS transcript"
+    refute_includes html, "translation", "Vocabulary entries should not appear in RSS transcript"
+    refute_includes html, "<dt", "Vocabulary HTML should not appear in RSS transcript"
   end
 
-  def test_convert_transcripts_links_bold_vocab_words
+  def test_convert_transcripts_unbolds_vocab_words
     md = File.join(@episodes_dir, "test-2026-01-01_transcript.md")
     File.write(md, <<~MD)
       # Title
@@ -119,8 +116,10 @@ class TestRssGenerator < Minitest::Test
     RssGenerator.convert_transcripts(@episodes_dir)
 
     html = File.read(md.sub(/\.md$/, ".html"))
-    assert_includes html, 'href="#vocab-beseda"', "Bold words should link to vocabulary entries"
-    assert_includes html, 'id="vocab-beseda"', "Vocabulary entries should have anchor IDs"
+    # Bold markers should be removed, word kept as plain text
+    assert_includes html, "The beseda is here.", "Vocab words should appear as plain text"
+    refute_includes html, "**beseda**", "Bold markers should be removed"
+    refute_includes html, "vocab-beseda", "No vocab anchors in RSS transcript"
   end
 
   def test_convert_transcripts_renders_markdown_links
