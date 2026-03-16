@@ -29,7 +29,7 @@ class RssGenerator
       else
         text.sub(/\A#[^\n]*\n+([^\n]*\n+)?/, "")
       end
-      content = renderer.render_body_html(body)
+      content = renderer.render_body_html(body, vocab: false)
       html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n#{content}\n</body></html>\n"
       File.write(html_path, html)
     end
