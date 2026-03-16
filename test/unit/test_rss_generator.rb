@@ -62,6 +62,78 @@ class TestRssGenerator < Minitest::Test
     assert_equal first_content, File.read(html_path), "Should not rewrite up-to-date HTML"
   end
 
+  def test_convert_transcripts_escapes_html_entities
+    md = File.join(@episodes_dir, "test-2026-01-01_transcript.md")
+    File.write(md, "# Title\n\n## Transcript\n\nUse <script> & \"quotes\".")
+
+    RssGenerator.convert_transcripts(@episodes_dir)
+
+    html = File.read(md.sub(/\.md$/, ".html"))
+    assert_includes html, "&lt;script&gt;"
+    assert_includes html, "&amp;"
+    refute_includes html, "<script>"
+  end
+
+  def test_convert_transcripts_renders_vocabulary_as_html
+    md = File.join(@episodes_dir, "test-2026-01-01_transcript.md")
+    File.write(md, <<~MD)
+      # Title
+
+      ## Transcript
+
+      The **word** is here.
+
+      ## Vocabulary
+
+      **B1**
+      - **word** (noun) — translation. definition
+    MD
+
+    RssGenerator.convert_transcripts(@episodes_dir)
+
+    html = File.read(md.sub(/\.md$/, ".html"))
+    # Vocabulary should be rendered as HTML, not raw markdown
+    refute_includes html, "## Vocabulary", "Raw markdown vocabulary heading should not appear"
+    refute_includes html, "- **word**", "Raw markdown vocabulary entry should not appear"
+    assert_includes html, "<h2>Vocabulary</h2>"
+    assert_includes html, "<dt"
+    assert_includes html, "<dd>"
+    assert_includes html, "translation"
+  end
+
+  def test_convert_transcripts_links_bold_vocab_words
+    md = File.join(@episodes_dir, "test-2026-01-01_transcript.md")
+    File.write(md, <<~MD)
+      # Title
+
+      ## Transcript
+
+      The **beseda** is here.
+
+      ## Vocabulary
+
+      **B1**
+      - **beseda** (noun) — word. a unit of language
+    MD
+
+    RssGenerator.convert_transcripts(@episodes_dir)
+
+    html = File.read(md.sub(/\.md$/, ".html"))
+    assert_includes html, 'href="#vocab-beseda"', "Bold words should link to vocabulary entries"
+    assert_includes html, 'id="vocab-beseda"', "Vocabulary entries should have anchor IDs"
+  end
+
+  def test_convert_transcripts_renders_markdown_links
+    md = File.join(@episodes_dir, "test-2026-01-01_script.md")
+    File.write(md, "# Title\n\nMeta\n\n## More info\n\n- [Example](https://example.com)\n- [Other](https://other.com)")
+
+    RssGenerator.convert_transcripts(@episodes_dir)
+
+    html = File.read(md.sub(/\.md$/, ".html"))
+    assert_includes html, '<a href="https://example.com"'
+    assert_includes html, "Example</a>"
+  end
+
   # --- scan_episodes ---
 
   def test_scan_episodes_finds_mp3s_with_dates
