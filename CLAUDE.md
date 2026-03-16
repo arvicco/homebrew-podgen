@@ -55,6 +55,7 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 - CLI commands include `PodcastCommand` mixin for podcast name validation (`require_podcast!`) and config loading (`load_config!`)
 - Guidelines parsing via `GuidelinesParser` (extracted from `PodcastConfig`, which delegates all section parsing)
 - Episode MP3 filtering via `EpisodeFiltering` module (shared across rss_generator, site_generator, validate, stats, scrap)
+- Transcript HTML via `TranscriptRenderer` module (shared by RssGenerator and SiteGenerator). RSS passes `vocab: false` (strips vocabulary, removes bold markers); site uses default `vocab: true` (linked words + rendered definitions)
 - URL cleaning via `UrlCleaner` module (strips tracking params like utm_*, fbclid, gclid)
 - Paths: `File.join` + `__dir__`-relative, `require_relative` throughout
 - Atomic writes (temp + rename) for history/cache
