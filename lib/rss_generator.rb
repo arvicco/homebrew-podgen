@@ -9,12 +9,16 @@ require "open3"
 require_relative "loggable"
 require_relative "audio_assembler"
 require_relative "episode_filtering"
+require_relative "transcript_renderer"
 
 class RssGenerator
   include Loggable
+  include TranscriptRenderer
+
   # Converts markdown transcripts/scripts to HTML for podcast apps.
   # Skips files where the HTML is already up-to-date.
   def self.convert_transcripts(episodes_dir)
+    renderer = new_renderer
     Dir.glob(File.join(episodes_dir, "*_{transcript,script}.md")).each do |md_path|
       html_path = md_path.sub(/\.md$/, ".html")
       next if File.exist?(html_path) && File.mtime(html_path) >= File.mtime(md_path)
@@ -25,24 +29,15 @@ class RssGenerator
       else
         text.sub(/\A#[^\n]*\n+([^\n]*\n+)?/, "")
       end
-
-      paragraphs = body.strip.split(/\n{2,}/).map do |block|
-        block = block.strip
-        if block.start_with?("## ")
-          "<h2>#{block.sub(/^## /, "")}</h2>"
-        elsif block.match?(/\A- \[.+\]\(.+\)/)
-          items = block.split("\n").map do |line|
-            line = line.strip.sub(/^- /, "")
-            line.gsub(/\[([^\]]+)\]\(([^)]+)\)/) { "<a href=\"#{$2}\">#{$1}</a>" }
-          end
-          "<ul>#{items.map { |i| "<li>#{i}</li>" }.join}</ul>"
-        else
-          "<p>#{block}</p>"
-        end
-      end
-      html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n#{paragraphs.join("\n")}\n</body></html>\n"
+      content = renderer.render_body_html(body)
+      html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n#{content}\n</body></html>\n"
       File.write(html_path, html)
     end
+  end
+
+  # Minimal instance for class-method access to TranscriptRenderer
+  def self.new_renderer
+    allocate
   end
 
   def initialize(episodes_dir:, feed_path:, title: "Podcast", description: nil, author: "Podcast Agent", language: "en", base_url: nil, image: nil, history_path: nil, logger: nil)

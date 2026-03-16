@@ -263,6 +263,12 @@ module PodgenCLI
         return
       end
 
+      unless ENV["ANTHROPIC_API_KEY"] && !ENV["ANTHROPIC_API_KEY"].empty?
+        logger.log("ANTHROPIC_API_KEY not set, skipping vocabulary annotation")
+        logger.phase_end("Vocabulary")
+        return
+      end
+
       annotator = VocabularyAnnotator.new(
         ENV["ANTHROPIC_API_KEY"],
         model: "claude-sonnet-4-6",
