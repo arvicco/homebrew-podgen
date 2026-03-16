@@ -247,21 +247,141 @@ class SiteGenerator
       text.sub(/\A#[^\n]*\n+/, "")
     end
 
+    # Split off ## Vocabulary section if present
+    transcript_body, vocab_body = split_vocabulary_section(body)
+
+    # Build lemma lookup from vocabulary section (for linking bold words)
+    vocab_lemmas = parse_vocab_lemmas(vocab_body) if vocab_body
+
     # Convert markdown sections and paragraphs to HTML
-    paragraphs = body.strip.split(/\n{2,}/).map do |block|
+    paragraphs = transcript_body.strip.split(/\n{2,}/).map do |block|
       block = block.strip
       if block.start_with?("## ")
         "<h2>#{escape_html(block.sub(/^## /, ""))}</h2>"
+      elsif block.match?(/\A- \[.+\]\(.+\)/)
+        # Markdown link list (e.g. "## More info" sources)
+        items = block.split("\n").map do |line|
+          line = line.strip.sub(/^- /, "")
+          linkify_markdown(line)
+        end
+        "<ul>\n#{items.map { |i| "<li>#{i}</li>" }.join("\n")}\n</ul>"
       else
-        "<p>#{escape_html(block)}</p>"
+        html = escape_html(block)
+        html = linkify_vocab_words(html, vocab_lemmas) if vocab_lemmas
+        "<p>#{html}</p>"
       end
     end
 
-    paragraphs.join("\n")
+    result = paragraphs.join("\n")
+    result += "\n" + render_vocabulary_html(vocab_body) if vocab_body
+    result
   end
 
   def escape_html(text)
     text.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;")
+  end
+
+  def linkify_markdown(text)
+    text.gsub(/\[([^\]]+)\]\(([^)]+)\)/) do
+      title = escape_html(Regexp.last_match(1))
+      url = escape_html(Regexp.last_match(2))
+      "<a href=\"#{url}\" target=\"_blank\" rel=\"noopener\">#{title}</a>"
+    end
+  end
+
+  # --- Vocabulary helpers ---
+
+  def split_vocabulary_section(body)
+    if body.include?("## Vocabulary")
+      parts = body.split("## Vocabulary", 2)
+      [parts[0], parts[1]]
+    else
+      [body, nil]
+    end
+  end
+
+  # Parses vocabulary markdown to extract word→lemma mappings for linking.
+  # Returns hash: { "word_downcase" => "lemma" }
+  def parse_vocab_lemmas(vocab_body)
+    lemmas = {}
+    vocab_body.scan(/\*\*(\w+)\*\*\s*\(/).each do |match|
+      lemma = match[0]
+      lemmas[lemma.downcase] = lemma
+    end
+
+    # Also extract "Original: word" references
+    vocab_body.scan(/_Original:\s*(\w+)_/).each do |match|
+      word = match[0]
+      # Find the lemma this original belongs to — scan backward for the preceding **lemma**
+      # Use a more targeted regex
+      vocab_body.scan(/\*\*(\w+)\*\*.*?_Original:\s*#{Regexp.escape(word)}_/) do
+        lemmas[word.downcase] = Regexp.last_match(1)
+      end
+    end
+
+    lemmas.empty? ? nil : lemmas
+  end
+
+  # Wraps **bold** words (escaped as &ast;&ast; after escape_html) with vocab anchor links.
+  def linkify_vocab_words(html, vocab_lemmas)
+    # After escape_html, **word** becomes **word** (asterisks aren't HTML-special)
+    html.gsub(/\*\*([^*]+)\*\*/) do
+      word = Regexp.last_match(1)
+      lemma = vocab_lemmas[word.downcase] || word.downcase
+      anchor = vocab_anchor(lemma)
+      "<a href=\"##{anchor}\" class=\"vocab-word\">#{word}</a>"
+    end
+  end
+
+  def vocab_anchor(lemma)
+    "vocab-#{lemma.downcase.gsub(/[^a-z0-9]+/, '-').gsub(/^-|-$/, '')}"
+  end
+
+  def render_vocabulary_html(vocab_body)
+    lines = ["<div class=\"vocabulary\">", "<h2>Vocabulary</h2>"]
+    current_level = nil
+
+    vocab_body.each_line do |line|
+      line = line.strip
+      next if line.empty?
+
+      if line.match?(/\A\*\*[A-Z]\d\*\*\z/)
+        # Level header like **B1**
+        lines << "</dl>" if current_level
+        current_level = line.gsub("**", "")
+        lines << "<h3>#{escape_html(current_level)}</h3>"
+        lines << "<dl>"
+      elsif line.start_with?("- **") && current_level
+        # Vocabulary entry: - **lemma** (pos) — translation. definition _Original: word_
+        if line =~ /\A- \*\*(.+?)\*\*\s*\(([^)]+)\)\s*(?:—\s*(.+))?\z/
+          lemma = Regexp.last_match(1)
+          pos = Regexp.last_match(2)
+          rest = Regexp.last_match(3) || ""
+
+          anchor = vocab_anchor(lemma)
+
+          # Split rest into translation/definition and original
+          original = nil
+          if rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
+            rest = Regexp.last_match(1).strip
+            original = Regexp.last_match(2).strip
+          end
+
+          dt = "<dt id=\"#{anchor}\"><strong>#{escape_html(lemma)}</strong> <span class=\"pos\">(#{escape_html(pos)})</span></dt>"
+          dd_parts = []
+          dd_parts << escape_html(rest) unless rest.empty?
+          dd_parts << "<span class=\"original\">#{escape_html(original)}</span>" if original
+          dd = "<dd>#{dd_parts.join(' ')}</dd>"
+
+          lines << dt
+          lines << dd
+        end
+      end
+    end
+
+    lines << "</dl>" if current_level
+    lines << "</div>"
+    lines.join("\n")
   end
 
   # --- URL helpers ---

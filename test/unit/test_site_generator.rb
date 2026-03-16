@@ -121,6 +121,20 @@ class TestSiteGenerator < Minitest::Test
     assert_includes html, "&lt;script&gt;"
   end
 
+  def test_parse_transcript_html_renders_more_info_links
+    path = File.join(@episodes_dir, "test.md")
+    File.write(path, "# Title\n\n## Opening\n\nHello world.\n\n## More info\n\n- [GPT-5 launches](https://example.com/gpt5)\n- [Bitcoin surges](https://example.com/btc)")
+
+    gen = build_generator
+    html = gen.send(:parse_transcript_html, path)
+
+    assert_includes html, "<h2>More info</h2>"
+    assert_includes html, '<a href="https://example.com/gpt5" target="_blank" rel="noopener">GPT-5 launches</a>'
+    assert_includes html, '<a href="https://example.com/btc" target="_blank" rel="noopener">Bitcoin surges</a>'
+    assert_includes html, "<ul>"
+    assert_includes html, "<li>"
+  end
+
   def test_parse_transcript_html_returns_nil_for_missing_file
     gen = build_generator
     assert_nil gen.send(:parse_transcript_html, nil)
@@ -353,6 +367,49 @@ class TestSiteGenerator < Minitest::Test
     index = File.read(File.join(site_dir, "index.html"))
     assert_includes index, 'rel="icon"'
     assert_includes index, "favicon.ico"
+  end
+
+  # --- vocabulary section ---
+
+  def test_parse_transcript_html_renders_vocabulary_section
+    path = File.join(@episodes_dir, "test.md")
+    File.write(path, <<~MD)
+      # Title
+
+      ## Transcript
+
+      On je **razglasil** novico.
+
+      ## Vocabulary
+
+      **C1**
+      - **razglasiti** (v.) — to announce, proclaim. To declare publicly. _Original: razglasil_
+    MD
+
+    gen = build_generator
+    html = gen.send(:parse_transcript_html, path)
+
+    # Vocabulary section rendered
+    assert_includes html, '<div class="vocabulary">'
+    assert_includes html, "<h2>Vocabulary</h2>"
+    assert_includes html, "<h3>C1</h3>"
+    assert_includes html, "razglasiti"
+    assert_includes html, "<dl>"
+
+    # Bold words in transcript linked to vocabulary
+    assert_includes html, 'class="vocab-word"'
+    assert_includes html, 'href="#vocab-razglasiti"'
+  end
+
+  def test_parse_transcript_html_without_vocabulary_unchanged
+    path = File.join(@episodes_dir, "test.md")
+    File.write(path, "# Title\n\n## Transcript\n\nSimple text.")
+
+    gen = build_generator
+    html = gen.send(:parse_transcript_html, path)
+
+    assert_includes html, "<p>Simple text.</p>"
+    refute_includes html, "vocabulary"
   end
 
   def test_generate_no_style_tag_when_no_site_config

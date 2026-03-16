@@ -307,6 +307,70 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal ["open"], parser.transcription_engines
   end
 
+  # --- links_config ---
+
+  def test_parses_links_section
+    parser = build_parser(<<~MD)
+      ## Links
+      - show: true
+    MD
+
+    assert_equal({ show: true }, parser.links_config)
+  end
+
+  def test_links_config_nil_when_show_false
+    parser = build_parser(<<~MD)
+      ## Links
+      - show: false
+    MD
+
+    assert_nil parser.links_config
+  end
+
+  def test_links_config_nil_when_missing
+    parser = build_parser("## Podcast\n- name: Test\n")
+    assert_nil parser.links_config
+  end
+
+  # --- vocabulary_config ---
+
+  def test_parses_vocabulary_level
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B1
+    MD
+
+    assert_equal({ level: "B1" }, parser.vocabulary_config)
+  end
+
+  def test_parses_vocabulary_level_case_insensitive
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: b2
+    MD
+
+    assert_equal({ level: "B2" }, parser.vocabulary_config)
+  end
+
+  def test_vocabulary_config_nil_when_missing
+    parser = build_parser("## Podcast\n- name: Test\n")
+    assert_nil parser.vocabulary_config
+  end
+
+  def test_vocabulary_config_nil_when_empty
+    parser = build_parser("## Vocabulary\n\n## Podcast\n- name: Test\n")
+    assert_nil parser.vocabulary_config
+  end
+
+  def test_vocabulary_rejects_invalid_level
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: X1
+    MD
+
+    assert_nil parser.vocabulary_config
+  end
+
   # --- text accessor ---
 
   def test_text_returns_comment_stripped_guidelines

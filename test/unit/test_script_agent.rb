@@ -99,6 +99,25 @@ class TestScriptAgent < Minitest::Test
     assert_equal "Hello!", result[:segments].first[:text]
   end
 
+  def test_generate_returns_sources
+    agent = build_agent
+    stub_client(agent, title: "Episode 1", segments: [{ name: "Opening", text: "Hello!" }],
+                sources: [{ title: "GPT-5 launches", url: "https://example.com/gpt5" }])
+
+    result = agent.generate(valid_research_data)
+    assert_equal 1, result[:sources].length
+    assert_equal "GPT-5 launches", result[:sources].first[:title]
+    assert_equal "https://example.com/gpt5", result[:sources].first[:url]
+  end
+
+  def test_generate_returns_empty_sources_when_none
+    agent = build_agent
+    stub_client(agent, title: "Episode 1", segments: [{ name: "Opening", text: "Hello!" }])
+
+    result = agent.generate(valid_research_data)
+    assert_equal [], result[:sources]
+  end
+
   def test_generate_saves_debug_file
     agent = build_agent
     stub_client(agent, title: "Episode 1", segments: [{ name: "Intro", text: "Welcome" }])
@@ -158,12 +177,13 @@ class TestScriptAgent < Minitest::Test
     agent
   end
 
-  def stub_client(agent, title: nil, segments: nil, nil_output: false)
+  def stub_client(agent, title: nil, segments: nil, sources: nil, nil_output: false)
     output = if nil_output
       nil
     else
       segs = (segments || []).map { |s| MockSegment.new(s[:name], s[:text]) }
-      MockScript.new(title, segs)
+      srcs = (sources || []).map { |s| MockSource.new(s[:title], s[:url]) }
+      MockScript.new(title, segs, srcs)
     end
     client = MockClient.new(output)
     agent.instance_variable_set(:@client, client)
@@ -171,7 +191,8 @@ class TestScriptAgent < Minitest::Test
   end
 
   MockSegment = Struct.new(:name, :text)
-  MockScript = Struct.new(:title, :segments)
+  MockSource = Struct.new(:title, :url)
+  MockScript = Struct.new(:title, :segments, :sources)
 
   class MockClient
     attr_reader :calls

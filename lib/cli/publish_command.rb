@@ -233,8 +233,9 @@ module PodgenCLI
         description = desc_lines.join("\n")
         description = nil if description.empty?
 
-        # Transcript text is everything after ## Transcript
-        transcript = lines[(transcript_idx + 1)..].join.strip
+        # Transcript text is everything after ## Transcript, excluding ## Vocabulary
+        transcript = lines[(transcript_idx + 1)..].join
+        transcript = transcript.split("## Vocabulary", 2).first.strip
       else
         description = nil
         transcript = lines[1..].join.strip

@@ -185,9 +185,12 @@ module Tell
     # Resolve an abbreviated phonetic system name to its full form.
     # Returns nil for nil input, exact match as-is, or unique prefix expansion.
     # Raises ArgumentError on ambiguous or unknown abbreviations.
+    PHONETIC_ALIASES = { "kana" => "hiragana" }.freeze
+
     def self.resolve_phonetic_system(lang, input)
       return nil if input.nil?
 
+      input = PHONETIC_ALIASES.fetch(input, input)
       systems = systems_for(lang)
       return input if systems.key?(input)
 

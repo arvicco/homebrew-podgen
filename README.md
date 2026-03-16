@@ -592,6 +592,37 @@ For full CSS control, drop a `site.css` file in your podcast directory (`podcast
 
 **RSS icon:** When `base_url` is configured, a small feed icon appears next to the podcast title linking to the RSS feed.
 
+### Source Links
+
+News pipeline episodes can include a "More info" section at the end of the transcript with links to the articles referenced in the episode. Add a `## Links` section to your `guidelines.md`:
+
+```markdown
+## Links
+- show: true
+```
+
+When enabled, the script agent asks Claude to list every source it referenced while writing the episode. These appear as a `## More info` section at the bottom of the saved script file, with tracking parameters stripped from URLs. The links render as clickable items on the episode's site page and in the RSS transcript HTML.
+
+### Vocabulary Annotation
+
+Language pipeline transcripts can be automatically annotated with vocabulary entries for words above a given CEFR level. Add a `## Vocabulary` section to your `guidelines.md`:
+
+```markdown
+## Vocabulary
+- level: B1
+```
+
+- `level`: CEFR cutoff — words **at or above** this level are annotated. Valid values: A1, A2, B1, B2, C1, C2.
+
+When enabled, after the transcript is saved the pipeline sends the transcript text to Claude, which classifies words by CEFR level, identifies dictionary forms (lemmas), and generates translations and definitions. The result is:
+
+1. **Marked words** in the transcript — first occurrence of each vocabulary word is wrapped in `**bold**`
+2. **Vocabulary section** appended to the transcript file, grouped by CEFR level (hardest first), with lemma, part of speech, translation, definition, and original inflected form
+
+On the generated site, bold vocabulary words become clickable links that jump to the corresponding dictionary entry at the bottom of the page (styled with a dotted underline). The vocabulary section renders as a definition list with anchored entries.
+
+If the section is absent or has no `level` key, the pipeline is unchanged.
+
 ### LingQ Upload Configuration
 
 ```markdown

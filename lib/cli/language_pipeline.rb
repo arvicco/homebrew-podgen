@@ -13,6 +13,7 @@ require_relative File.join(root, "lib", "agents", "lingq_agent")
 require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "agents", "description_agent")
 require_relative File.join(root, "lib", "youtube_downloader")
+require_relative File.join(root, "lib", "vocabulary_annotator")
 
 module PodgenCLI
   class LanguagePipeline
@@ -47,6 +48,7 @@ module PodgenCLI
       trim_outro
       assemble_episode
       save_transcript_and_cover
+      annotate_vocabulary if @config.vocabulary_level
       upload_to_lingq(@episode, @reconciled_text || @transcript, @output_path, @base_name) if @options[:lingq]
       record_history
 
@@ -245,6 +247,44 @@ module PodgenCLI
         FileUtils.cp(cover_source, cover_dest)
         logger.log("Episode cover saved: #{cover_dest}")
       end
+    end
+
+    def annotate_vocabulary
+      logger.phase_start("Vocabulary")
+      transcript_path = File.join(@config.episodes_dir, "#{@base_name}_transcript.md")
+      text = File.read(transcript_path)
+
+      # Extract just the transcript body (after ## Transcript)
+      parts = text.split("## Transcript", 2)
+      body = parts.last&.strip
+      unless body && !body.empty?
+        logger.log("No transcript body found, skipping vocabulary annotation")
+        logger.phase_end("Vocabulary")
+        return
+      end
+
+      annotator = VocabularyAnnotator.new(
+        ENV["ANTHROPIC_API_KEY"],
+        model: "claude-sonnet-4-6",
+        logger: logger
+      )
+      marked_body, vocabulary_md = annotator.annotate(
+        body,
+        language: @config.transcription_language,
+        cutoff: @config.vocabulary_level
+      )
+
+      # Rewrite transcript file with marked words + vocabulary appendix
+      new_text = parts.first + "## Transcript\n\n" + marked_body
+      new_text += "\n\n" + vocabulary_md unless vocabulary_md.empty?
+      File.write(transcript_path, new_text)
+
+      logger.log("Vocabulary annotated (#{@config.vocabulary_level}+ cutoff)")
+      logger.phase_end("Vocabulary")
+    rescue => e
+      logger.log("Warning: Vocabulary annotation failed: #{e.message} (non-fatal, continuing)")
+      logger.log(e.backtrace.first(3).join("\n"))
+      logger.phase_end("Vocabulary") rescue nil
     end
 
     def record_history
