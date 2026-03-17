@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "yaml"
 require "cli/validate_command"
+require "podcast_validator"
 
 class TestValidateCommand < Minitest::Test
   def setup
@@ -23,23 +24,23 @@ class TestValidateCommand < Minitest::Test
   # --- format_size ---
 
   def test_format_size_bytes
-    cmd = build_command
-    assert_equal "500 B", cmd.send(:format_size, 500)
+    v = build_validator
+    assert_equal "500 B", v.send(:format_size, 500)
   end
 
   def test_format_size_kilobytes
-    cmd = build_command
-    assert_equal "10 KB", cmd.send(:format_size, 10_000)
+    v = build_validator
+    assert_equal "10 KB", v.send(:format_size, 10_000)
   end
 
   def test_format_size_megabytes
-    cmd = build_command
-    assert_equal "1.5 MB", cmd.send(:format_size, 1_500_000)
+    v = build_validator
+    assert_equal "1.5 MB", v.send(:format_size, 1_500_000)
   end
 
   def test_format_size_gigabytes
-    cmd = build_command
-    assert_equal "2.3 GB", cmd.send(:format_size, 2_300_000_000)
+    v = build_validator
+    assert_equal "2.3 GB", v.send(:format_size, 2_300_000_000)
   end
 
   # --- check_guidelines ---
@@ -346,18 +347,15 @@ class TestValidateCommand < Minitest::Test
     StubValidateConfig.new(**defaults.merge(overrides))
   end
 
-  def build_command
-    # Create a command instance without running it
-    cmd = PodgenCLI::ValidateCommand.allocate
-    cmd
+  def build_validator(config = nil)
+    PodcastValidator.new(config || stub_config)
   end
 
   def run_check(method, config)
-    cmd = build_command
-    passes = []
-    warnings = []
-    errors = []
-    cmd.send(method, config, passes, warnings, errors)
-    [passes, warnings, errors]
+    validator = PodcastValidator.new(config)
+    validator.send(method)
+    [validator.instance_variable_get(:@passes),
+     validator.instance_variable_get(:@warnings),
+     validator.instance_variable_get(:@errors)]
   end
 end
