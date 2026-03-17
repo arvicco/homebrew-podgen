@@ -10,7 +10,7 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
-require_relative File.join(root, "lib", "atomic_writer")
+require_relative File.join(root, "lib", "lingq_tracker")
 
 module PodgenCLI
   class PublishCommand
@@ -281,22 +281,16 @@ module PodgenCLI
     rescue # rubocop:disable Lint/SuppressedException
     end
 
-    def tracking_path
-      @tracking_path ||= File.join(File.dirname(@config.episodes_dir), "lingq_uploads.yml")
+    def lingq_tracker
+      @lingq_tracker ||= LingqTracker.for_config(@config)
     end
 
     def load_tracking
-      return {} unless File.exist?(tracking_path)
-
-      data = YAML.load_file(tracking_path)
-      return {} unless data.is_a?(Hash)
-
-      # Normalize keys to strings
-      data.transform_keys(&:to_s).transform_values { |v| v.is_a?(Hash) ? v.transform_keys(&:to_s) : v }
+      lingq_tracker.load
     end
 
     def save_tracking(tracking)
-      AtomicWriter.write_yaml(tracking_path, tracking)
+      lingq_tracker.save(tracking)
     end
 
     def rclone_available?
