@@ -84,12 +84,8 @@ class RssGenerator
     EpisodeFiltering.episodes_for_language(@episodes_dir, @language)
       .sort
       .reverse
-      .map do |path|
-        filename = File.basename(path, ".mp3")
-        # Extract date from patterns like "name-2026-02-18" or "name-2026-02-18a"
-        date_match = filename.match(/(\d{4}-\d{2}-\d{2})/)
-        next unless date_match
-        date = Date.parse(date_match[1]) rescue nil
+      .filter_map do |path|
+        date = EpisodeFiltering.parse_date(path)
         next unless date
 
         {
@@ -99,7 +95,6 @@ class RssGenerator
           size: File.size(path)
         }
       end
-      .compact
   end
 
   def build_feed(episodes)

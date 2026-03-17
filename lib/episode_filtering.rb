@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "date"
+
 # Shared episode filtering helpers.
 # Centralizes logic for excluding ffmpeg intermediary files (_concat)
 # and matching episodes to language codes.
@@ -32,5 +34,18 @@ module EpisodeFiltering
   def self.episodes_for_language(dir, lang_code)
     all_episodes(dir)
       .select { |f| matches_language?(File.basename(f, ".mp3"), lang_code) }
+  end
+
+  # Extract date from an episode filename or path.
+  # Handles: "show-2026-03-01.mp3", "show-2026-03-01a.mp3", "show-2026-03-01-es.mp3"
+  # Returns Date or nil if no valid date found.
+  def self.parse_date(filename)
+    basename = File.basename(filename)
+    match = basename.match(/(\d{4}-\d{2}-\d{2})/)
+    return nil unless match
+
+    Date.parse(match[1])
+  rescue Date::Error
+    nil
   end
 end
