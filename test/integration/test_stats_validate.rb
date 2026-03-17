@@ -192,9 +192,10 @@ class TestStatsValidate < Minitest::Test
   end
 
   def test_validate_format_size
-    cmd = PodgenCLI::ValidateCommand.new([], verbosity: :normal)
-    assert_equal "1.5 MB", cmd.send(:format_size, 1_500_000)
-    assert_equal "999 B",  cmd.send(:format_size, 999)
+    require "podcast_validator"
+    validator = PodcastValidator.allocate
+    assert_equal "1.5 MB", validator.send(:format_size, 1_500_000)
+    assert_equal "999 B",  validator.send(:format_size, 999)
   end
 
   private
