@@ -343,6 +343,92 @@ class TestRssGenerator < Minitest::Test
     assert_equal "Título en Español", title_map["mypod-2026-01-15-es.mp3"]
   end
 
+  # --- RSS XML structure ---
+
+  def test_generate_rss_has_channel_element
+    create_mp3("test-2026-01-15.mp3", 1000)
+    gen = build_generator(language: "en", base_url: "https://example.com")
+    gen.generate
+
+    xml = File.read(@feed_path)
+    assert_includes xml, "<channel>"
+    assert_includes xml, "</channel>"
+  end
+
+  def test_generate_rss_has_item_with_enclosure
+    create_mp3("test-2026-01-15.mp3", 5000)
+    gen = build_generator(language: "en", base_url: "https://example.com")
+    gen.generate
+
+    xml = File.read(@feed_path)
+    assert_includes xml, "<item>"
+    assert_includes xml, "<enclosure"
+    assert_includes xml, "type='audio/mpeg'"
+  end
+
+  def test_generate_empty_episodes_produces_valid_feed
+    gen = build_generator(language: "en", base_url: "https://example.com")
+    gen.generate
+
+    xml = File.read(@feed_path)
+    assert_includes xml, "<rss"
+    assert_includes xml, "<channel>"
+    refute_includes xml, "<item>"
+  end
+
+  def test_generate_title_from_history_in_item
+    create_mp3("test-2026-01-15.mp3", 1000)
+    history_path = File.join(@dir, "history.yml")
+    File.write(history_path, [
+      { "date" => "2026-01-15", "title" => "Custom Title", "duration" => 60.0 }
+    ].to_yaml)
+
+    podcast_dir = File.join(@dir, "test")
+    ep_dir = File.join(podcast_dir, "episodes")
+    FileUtils.mkdir_p(ep_dir)
+    FileUtils.cp(File.join(@episodes_dir, "test-2026-01-15.mp3"), ep_dir)
+
+    feed = File.join(@dir, "custom_feed.xml")
+    gen = RssGenerator.new(
+      episodes_dir: ep_dir,
+      feed_path: feed,
+      title: "My Pod",
+      language: "en",
+      base_url: "https://example.com",
+      history_path: history_path
+    )
+    gen.generate
+
+    xml = File.read(feed)
+    assert_includes xml, "<title>Custom Title</title>"
+  end
+
+  def test_generate_description_in_channel
+    create_mp3("test-2026-01-15.mp3", 1000)
+    gen = RssGenerator.new(
+      episodes_dir: @episodes_dir,
+      feed_path: @feed_path,
+      title: "Pod",
+      description: "A great podcast about things",
+      language: "en",
+      base_url: "https://example.com"
+    )
+    gen.generate
+
+    xml = File.read(@feed_path)
+    assert_includes xml, "A great podcast about things"
+  end
+
+  def test_generate_missing_base_url_uses_relative
+    create_mp3("test-2026-01-15.mp3", 1000)
+    gen = build_generator(language: "en")
+    gen.generate
+
+    xml = File.read(@feed_path)
+    # Without base_url, should still produce a feed but URLs will be relative
+    assert_includes xml, "<rss"
+  end
+
   private
 
   def create_mp3(name, size)

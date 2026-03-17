@@ -423,6 +423,119 @@ class TestSiteGenerator < Minitest::Test
     refute_includes index, "<style>"
   end
 
+  # --- find_transcript ---
+
+  def test_find_transcript_prefers_transcript_md
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"), "# T")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_script.md"), "# S")
+
+    gen = build_generator
+    result = gen.send(:find_transcript, "mypod-2026-01-15")
+
+    assert_includes result, "_transcript.md"
+  end
+
+  def test_find_transcript_falls_back_to_script_md
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_script.md"), "# S")
+
+    gen = build_generator
+    result = gen.send(:find_transcript, "mypod-2026-01-15")
+
+    assert_includes result, "_script.md"
+  end
+
+  def test_find_transcript_returns_nil_when_missing
+    gen = build_generator
+    result = gen.send(:find_transcript, "mypod-2026-01-15")
+
+    assert_nil result
+  end
+
+  # --- extract_title_from_file ---
+
+  def test_extract_title_from_file_returns_title
+    path = File.join(@episodes_dir, "test.md")
+    File.write(path, "# My Title\n\nBody text.")
+
+    gen = build_generator
+    assert_equal "My Title", gen.send(:extract_title_from_file, path)
+  end
+
+  def test_extract_title_from_file_nil_path
+    gen = build_generator
+    assert_nil gen.send(:extract_title_from_file, nil)
+  end
+
+  def test_extract_title_from_file_missing_file
+    gen = build_generator
+    assert_nil gen.send(:extract_title_from_file, "/nonexistent.md")
+  end
+
+  # --- URL helpers ---
+
+  def test_audio_url_with_base_url
+    gen = build_generator(base_url: "https://example.com/pod")
+    assert_equal "https://example.com/pod/episodes/test.mp3", gen.send(:audio_url, "test.mp3", true)
+  end
+
+  def test_audio_url_primary_without_base_url
+    gen = build_generator
+    assert_equal "../episodes/test.mp3", gen.send(:audio_url, "test.mp3", true)
+  end
+
+  def test_audio_url_secondary_without_base_url
+    gen = build_generator
+    assert_equal "../../episodes/test.mp3", gen.send(:audio_url, "test.mp3", false)
+  end
+
+  def test_cover_url_with_base_url
+    gen = build_generator(base_url: "https://example.com/pod")
+    gen.instance_variable_get(:@config).image = "cover.jpg"
+    assert_equal "https://example.com/pod/cover.jpg", gen.send(:cover_url, true)
+  end
+
+  def test_cover_url_nil_when_no_image
+    gen = build_generator
+    assert_nil gen.send(:cover_url, true)
+  end
+
+  def test_feed_url_primary_language
+    gen = build_generator(base_url: "https://example.com/pod")
+    assert_equal "https://example.com/pod/feed.xml", gen.send(:feed_url, "en")
+  end
+
+  def test_feed_url_secondary_language
+    gen = build_generator(base_url: "https://example.com/pod")
+    assert_equal "https://example.com/pod/feed-es.xml", gen.send(:feed_url, "es")
+  end
+
+  def test_feed_url_nil_without_base_url
+    gen = build_generator
+    assert_nil gen.send(:feed_url, "en")
+  end
+
+  # --- language nav ---
+
+  def test_build_lang_nav_single_language
+    gen = build_generator
+    nav = gen.send(:build_lang_nav, "en")
+
+    assert_equal 1, nav.length
+    assert_equal "en", nav.first[:code]
+    assert_nil nav.first[:index_path] # Current language, no link
+  end
+
+  def test_build_lang_nav_multi_language
+    gen = build_generator(languages: [{ "code" => "en" }, { "code" => "es" }])
+    nav = gen.send(:build_lang_nav, "en")
+
+    assert_equal 2, nav.length
+    en_entry = nav.find { |e| e[:code] == "en" }
+    es_entry = nav.find { |e| e[:code] == "es" }
+    assert_nil en_entry[:index_path]
+    assert_equal "es/index.html", es_entry[:index_path]
+  end
+
   private
 
   def create_mp3(name)

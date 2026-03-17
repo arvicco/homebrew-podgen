@@ -304,6 +304,37 @@ class TestLanguagePipeline < Minitest::Test
     assert @logger.messages.any? { |m| m.include?("Config validated") }
   end
 
+  # --- validate_image_options ---
+
+  def test_validate_image_options_thumb_without_url_returns_error
+    pipeline = build_pipeline(options: { image: "thumb" })
+    # No @youtube_url set
+    result = pipeline.send(:validate_image_options)
+    assert_equal 1, result
+  end
+
+  def test_validate_image_options_thumb_with_url_returns_nil
+    pipeline = build_pipeline(options: { image: "thumb", url: "https://youtube.com/watch?v=abc" })
+    pipeline.instance_variable_set(:@youtube_url, "https://youtube.com/watch?v=abc")
+    result = pipeline.send(:validate_image_options)
+    assert_nil result
+  end
+
+  def test_validate_image_options_nil_returns_nil
+    pipeline = build_pipeline
+    result = pipeline.send(:validate_image_options)
+    assert_nil result
+  end
+
+  def test_validate_image_options_last_with_no_screenshots
+    pipeline = build_pipeline(options: { image: "last" })
+    # Stub Dir.glob to return empty
+    Dir.stub(:glob, []) do
+      result = pipeline.send(:validate_image_options)
+      assert_equal 1, result
+    end
+  end
+
   private
 
   def build_pipeline(options: {})
