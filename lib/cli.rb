@@ -16,7 +16,9 @@ module PodgenCLI
     "list"      => ["List available podcasts",             "cli/list_command",        "ListCommand"],
     "test"      => ["Run a standalone test script",        "cli/test_command",        "TestCommand"],
     "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",    "ScheduleCommand"],
-    "analytics" => ["Manage download analytics Worker",    "cli/analytics_command",   "AnalyticsCommand"]
+    "analytics" => ["Manage download analytics Worker",    "cli/analytics_command",   "AnalyticsCommand"],
+    "add"       => ["Add a priority link for next episode", "cli/add_command",         "AddCommand"],
+    "links"     => ["List or manage queued priority links", "cli/links_command",       "LinksCommand"]
   }.freeze
 
   def self.run(argv)
@@ -40,6 +42,8 @@ module PodgenCLI
       opts.separator "  test <name> [args]             Run a standalone test"
       opts.separator "  schedule <podcast>             Install launchd scheduler"
       opts.separator "  analytics <setup|deploy|tail|status>  Manage download analytics Worker"
+      opts.separator "  add <podcast> <url> [--note ...]     Queue a priority link for next episode"
+      opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"
       opts.separator ""
       opts.separator "Pipelines (configured via ## Type in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"

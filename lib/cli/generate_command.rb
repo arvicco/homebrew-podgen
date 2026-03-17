@@ -19,6 +19,7 @@ require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "url_cleaner")
+require_relative File.join(root, "lib", "priority_links")
 require_relative File.join(root, "lib", "cli", "language_pipeline")
 
 module PodgenCLI
@@ -156,6 +157,21 @@ module PodgenCLI
         logger.log("Research complete: #{total_findings} findings across #{research_data.length} topics")
         logger.phase_end("Research")
 
+        # --- Priority links injection ---
+        priority_links = PriorityLinks.new(config.links_path)
+        priority_urls = []
+        unless priority_links.empty?
+          logger.phase_start("Priority Links")
+          logger.log("Fetching #{priority_links.count} priority link(s)...")
+          priority_findings = priority_links.fetch_all(logger: logger)
+          priority_urls = priority_findings.map { |f| f[:url] }
+
+          # Prepend as first topic so ScriptAgent sees them first
+          research_data.unshift({ topic: "Priority links", findings: priority_findings })
+          logger.log("Injected #{priority_findings.length} priority link(s) into research data")
+          logger.phase_end("Priority Links")
+        end
+
         # --- Phase 2: Script generation ---
         logger.phase_start("Script")
         if @dry_run
@@ -176,7 +192,8 @@ module PodgenCLI
           script_agent = ScriptAgent.new(
             guidelines: guidelines,
             script_path: config.script_path(today),
-            logger: logger
+            logger: logger,
+            priority_urls: priority_urls
           )
           script = script_agent.generate(research_data)
         end
@@ -275,6 +292,12 @@ module PodgenCLI
             timestamp: Time.now.iso8601
           )
           logger.log("Episode recorded in history: #{config.history_path}")
+
+          # --- Consume priority links ---
+          unless priority_urls.empty?
+            priority_links.consume!(priority_urls)
+            logger.log("#{priority_urls.length} priority link(s) consumed")
+          end
 
           # --- Done ---
           total_time = (Time.now - pipeline_start).round(2)

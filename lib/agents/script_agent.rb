@@ -28,12 +28,13 @@ class ScriptAgent
 
   MAX_RETRIES = 3
 
-  def initialize(guidelines:, script_path:, logger: nil)
+  def initialize(guidelines:, script_path:, logger: nil, priority_urls: [])
     @logger = logger
     @client = Anthropic::Client.new
     @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
     @guidelines = guidelines
     @script_path = script_path
+    @priority_urls = Array(priority_urls)
   end
 
   # Input: array of { topic:, findings: [{ title:, url:, summary: }] }
@@ -79,27 +80,36 @@ class ScriptAgent
   private
 
   def build_system_prompt
+    base_prompt = <<~PROMPT
+      You are an expert podcast scriptwriter. Generate a complete podcast script
+      following the provided guidelines exactly.
+
+      Each segment must have a short descriptive name that reflects its content
+      (e.g. "Opening", "Bitcoin ETF Surge", "Rails 8 Authentication", "Wrap-Up").
+      These names are internal labels, not read aloud — they serve as section titles.
+      Do NOT use generic names like "intro", "segment_1", or "outro".
+
+      Write naturally as spoken word — no stage directions, no timestamps, no markdown.
+      Each segment's text should be the exact words the host will speak aloud.
+
+      In the sources field, list every article or source you actually referenced in the
+      script. Each source needs a short descriptive title (5-8 words max, like a headline)
+      and the original URL from the research data. Only include sources whose content
+      materially contributed to the script.
+    PROMPT
+
+    unless @priority_urls.empty?
+      base_prompt += <<~PRIORITY
+
+        PRIORITY LINKS: The research includes links under the "Priority links" topic
+        that the producer specifically selected. You MUST cover every priority link
+        in the script — do not skip any of them. Weave them naturally into the episode
+        alongside the other research findings.
+      PRIORITY
+    end
+
     [
-      {
-        type: "text",
-        text: <<~PROMPT
-          You are an expert podcast scriptwriter. Generate a complete podcast script
-          following the provided guidelines exactly.
-
-          Each segment must have a short descriptive name that reflects its content
-          (e.g. "Opening", "Bitcoin ETF Surge", "Rails 8 Authentication", "Wrap-Up").
-          These names are internal labels, not read aloud — they serve as section titles.
-          Do NOT use generic names like "intro", "segment_1", or "outro".
-
-          Write naturally as spoken word — no stage directions, no timestamps, no markdown.
-          Each segment's text should be the exact words the host will speak aloud.
-
-          In the sources field, list every article or source you actually referenced in the
-          script. Each source needs a short descriptive title (5-8 words max, like a headline)
-          and the original URL from the research data. Only include sources whose content
-          materially contributed to the script.
-        PROMPT
-      },
+      { type: "text", text: base_prompt },
       {
         type: "text",
         text: @guidelines,
