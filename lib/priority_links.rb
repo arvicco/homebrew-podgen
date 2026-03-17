@@ -98,7 +98,7 @@ class PriorityLinks
 
   def write!(entries)
     if entries.empty?
-      AtomicWriter.delete_if_empty(@path)
+      AtomicWriter.delete_if_exists(@path)
     else
       AtomicWriter.write_yaml(@path, entries)
     end

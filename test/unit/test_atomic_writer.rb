@@ -41,14 +41,7 @@ class TestAtomicWriter < Minitest::Test
 
   # --- Error handling ---
 
-  def test_write_cleans_up_temp_on_rename_failure
-    # Make the directory read-only after writing temp to force rename failure
-    # This is hard to simulate portably, so test via the rescue path directly
-    path = File.join(@tmpdir, "no_such_dir_exists", "nested", "file.yml")
-
-    # write should raise since parent dir doesn't exist...
-    # Actually AtomicWriter creates parent dirs, so this won't fail.
-    # Instead, test that content is written correctly after a previous failure scenario.
+  def test_write_successive_writes_produce_correct_content
     AtomicWriter.write(@path, "first")
     AtomicWriter.write(@path, "second")
     assert_equal "second", File.read(@path)
@@ -103,30 +96,27 @@ class TestAtomicWriter < Minitest::Test
 
   # --- Atomicity ---
 
-  def test_write_does_not_corrupt_on_concurrent_access
+  def test_write_sequential_writes_last_wins
     AtomicWriter.write(@path, "initial")
-
-    # Simulate two concurrent writes
     AtomicWriter.write(@path, "writer_a")
     AtomicWriter.write(@path, "writer_b")
 
-    content = File.read(@path)
-    assert_includes ["writer_a", "writer_b"], content
+    assert_equal "writer_b", File.read(@path)
   end
 
-  # --- delete_if_empty ---
+  # --- delete_if_exists ---
 
-  def test_delete_if_empty_removes_file
+  def test_delete_if_exists_removes_file
     File.write(@path, "data")
     assert File.exist?(@path)
 
-    AtomicWriter.delete_if_empty(@path)
+    AtomicWriter.delete_if_exists(@path)
     refute File.exist?(@path)
   end
 
-  def test_delete_if_empty_noop_when_no_file
+  def test_delete_if_exists_noop_when_no_file
     refute File.exist?(@path)
-    AtomicWriter.delete_if_empty(@path) # should not raise
+    AtomicWriter.delete_if_exists(@path) # should not raise
     refute File.exist?(@path)
   end
 end

@@ -59,7 +59,7 @@ module Tell
 
     def save!
       if entries.empty?
-        AtomicWriter.delete_if_empty(@path)
+        AtomicWriter.delete_if_exists(@path)
       else
         AtomicWriter.write(@path, entries.join("\n") + "\n", perm: 0o600)
       end

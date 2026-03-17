@@ -30,7 +30,7 @@ module AtomicWriter
   end
 
   # Delete a file if it exists (used when data becomes empty).
-  def self.delete_if_empty(path)
+  def self.delete_if_exists(path)
     File.delete(path) if File.exist?(path)
   end
 end
