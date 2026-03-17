@@ -3,6 +3,7 @@
 require "digest"
 require "yaml"
 require "fileutils"
+require_relative "atomic_writer"
 
 class ResearchCache
   TTL_SECONDS = 24 * 3600 # 24 hours
@@ -26,15 +27,12 @@ class ResearchCache
   end
 
   # Writes results to cache using atomic write (temp + rename).
+  # Silently swallows write failures — cache is best-effort.
   def set(source_name, topics, results)
     path = cache_path(source_name, topics)
-    tmp_path = "#{path}.tmp.#{Process.pid}"
-    begin
-      File.write(tmp_path, results.to_yaml)
-      File.rename(tmp_path, path)
-    rescue => e
-      File.delete(tmp_path) if File.exist?(tmp_path)
-    end
+    AtomicWriter.write_yaml(path, results)
+  rescue => _e
+    # Cache write failure is non-fatal
   end
 
   # Deletes cache entries older than TTL.

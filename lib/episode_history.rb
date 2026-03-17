@@ -3,7 +3,7 @@
 require "yaml"
 require "date"
 require "set"
-require "fileutils"
+require_relative "atomic_writer"
 
 class EpisodeHistory
   LOOKBACK_DAYS = 7
@@ -73,17 +73,7 @@ class EpisodeHistory
 
   private
 
-  # Atomic write: temp file + rename to prevent corruption.
   def write_entries!(entries)
-    dir = File.dirname(@path)
-    FileUtils.mkdir_p(dir)
-    tmp_path = File.join(dir, ".history.yml.tmp.#{Process.pid}")
-    begin
-      File.write(tmp_path, entries.to_yaml)
-      File.rename(tmp_path, @path)
-    rescue => e
-      File.delete(tmp_path) if File.exist?(tmp_path)
-      raise e
-    end
+    AtomicWriter.write_yaml(@path, entries)
   end
 end
