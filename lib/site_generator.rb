@@ -10,12 +10,12 @@ require_relative "language_names"
 require_relative "audio_assembler"
 require_relative "episode_filtering"
 require_relative "transcript_renderer"
+require_relative "history_maps"
 
 class SiteGenerator
   include Loggable
   include TranscriptRenderer
 
-  SUFFIXES = [""] + ("a".."z").to_a
   TEMPLATES_DIR = File.join(__dir__, "templates")
 
   def initialize(config:, base_url: nil, clean: false, logger: nil)
@@ -31,7 +31,12 @@ class SiteGenerator
     @site_config = config.respond_to?(:site_config) ? config.site_config : {}
     @site_css_path = config.respond_to?(:site_css_path) ? config.site_css_path : nil
     @favicon_path = config.respond_to?(:favicon_path) ? config.favicon_path : nil
-    @title_map, @timestamp_map, @duration_map = build_history_maps
+    @title_map, @timestamp_map, @duration_map = HistoryMaps.build(
+      history_path: config.history_path,
+      podcast_name: @podcast_name,
+      episodes_dir: @episodes_dir,
+      languages: @languages.map { |l| l["code"] }
+    )
   end
 
   def generate
@@ -183,56 +188,6 @@ class SiteGenerator
 
     first_line = File.foreach(path).first
     first_line&.strip&.sub(/^#\s+/, "")
-  end
-
-  # --- History maps (same logic as RssGenerator) ---
-
-  def build_history_maps
-    history_path = @config.history_path
-    empty = [{}, {}, {}]
-    return empty unless history_path && File.exist?(history_path)
-
-    entries = YAML.load_file(history_path) rescue nil
-    return empty unless entries.is_a?(Array)
-
-    by_date = {}
-    entries.each do |entry|
-      date = entry["date"]
-      next unless date
-      (by_date[date] ||= []) << entry
-    end
-
-    title_map = {}
-    timestamp_map = {}
-    duration_map = {}
-
-    by_date.each do |date, date_entries|
-      date_entries.each_with_index do |entry, idx|
-        suffix = SUFFIXES[idx] || idx.to_s
-        filename = "#{@podcast_name}-#{date}#{suffix}.mp3"
-        title_map[filename] = entry["title"] if entry["title"]
-        timestamp_map[filename] = entry["timestamp"] if entry["timestamp"]
-        duration_map[filename] = entry["duration"] if entry["duration"]
-
-        # Map language-suffixed filenames for non-primary languages
-        @languages.each do |lang_entry|
-          code = lang_entry["code"]
-          next if code == "en"
-
-          lang_filename = "#{@podcast_name}-#{date}#{suffix}-#{code}.mp3"
-          lang_script = File.join(@episodes_dir, "#{@podcast_name}-#{date}#{suffix}-#{code}_script.md")
-          if File.exist?(lang_script)
-            translated_title = File.read(lang_script)[/^# (.+)$/, 1]
-            title_map[lang_filename] = translated_title if translated_title
-          end
-          title_map[lang_filename] ||= entry["title"] if entry["title"]
-          timestamp_map[lang_filename] = entry["timestamp"] if entry["timestamp"]
-          duration_map[lang_filename] = entry["duration"] if entry["duration"]
-        end
-      end
-    end
-
-    [title_map, timestamp_map, duration_map]
   end
 
   # --- Transcript parsing ---

@@ -10,6 +10,7 @@ require_relative "loggable"
 require_relative "audio_assembler"
 require_relative "episode_filtering"
 require_relative "transcript_renderer"
+require_relative "history_maps"
 
 class RssGenerator
   include Loggable
@@ -50,7 +51,12 @@ class RssGenerator
     @language = language
     @base_url = base_url&.chomp("/")
     @image = image
-    @title_map, @timestamp_map, @duration_map = build_history_maps(history_path)
+    @title_map, @timestamp_map, @duration_map = HistoryMaps.build(
+      history_path: history_path,
+      podcast_name: File.basename(File.dirname(@episodes_dir)),
+      episodes_dir: @episodes_dir,
+      languages: @language != "en" ? [@language] : []
+    )
   end
 
   def generate
@@ -170,60 +176,6 @@ class RssGenerator
     el = parent.add_element(name)
     el.text = text
     el
-  end
-
-  # Build maps from MP3 filename → title/timestamp/duration using history.yml.
-  # History entries are chronological; same-day episodes get suffixes: "", "a", "b", etc.
-  # Returns [title_map, timestamp_map, duration_map].
-  SUFFIXES = [""] + ("a".."z").to_a
-
-  def build_history_maps(history_path)
-    empty = [{}, {}, {}]
-    return empty unless history_path && File.exist?(history_path)
-
-    entries = YAML.load_file(history_path) rescue nil
-    return empty unless entries.is_a?(Array)
-
-    # Determine the podcast name prefix from the episodes directory
-    podcast_name = File.basename(File.dirname(@episodes_dir))
-
-    # Group entries by date, preserving order within each date
-    by_date = {}
-    entries.each do |entry|
-      date = entry["date"]
-      next unless date
-      (by_date[date] ||= []) << entry
-    end
-
-    title_map = {}
-    timestamp_map = {}
-    duration_map = {}
-
-    by_date.each do |date, date_entries|
-      date_entries.each_with_index do |entry, idx|
-        suffix = SUFFIXES[idx] || idx.to_s
-        filename = "#{podcast_name}-#{date}#{suffix}.mp3"
-        title_map[filename] = entry["title"] if entry["title"]
-        timestamp_map[filename] = entry["timestamp"] if entry["timestamp"]
-        duration_map[filename] = entry["duration"] if entry["duration"]
-
-        # For non-English feeds, map language-suffixed filenames to translated
-        # titles from script files, falling back to the English title.
-        if @language != "en"
-          lang_filename = "#{podcast_name}-#{date}#{suffix}-#{@language}.mp3"
-          lang_script = File.join(@episodes_dir, "#{podcast_name}-#{date}#{suffix}-#{@language}_script.md")
-          if File.exist?(lang_script)
-            translated_title = File.read(lang_script)[/^# (.+)$/, 1]
-            title_map[lang_filename] = translated_title if translated_title
-          end
-          title_map[lang_filename] ||= entry["title"] if entry["title"]
-          timestamp_map[lang_filename] = entry["timestamp"] if entry["timestamp"]
-          duration_map[lang_filename] = entry["duration"] if entry["duration"]
-        end
-      end
-    end
-
-    [title_map, timestamp_map, duration_map]
   end
 
   # Duration from history, falling back to ffprobe, then 192kbps estimate
