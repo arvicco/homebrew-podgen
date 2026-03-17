@@ -54,6 +54,18 @@ class TestAddLinksCommands < Minitest::Test
     assert_equal "Great read", links.all.first["note"]
   end
 
+  def test_add_command_strips_tracking_params
+    require "cli/add_command"
+
+    capture_io do
+      cmd = PodgenCLI::AddCommand.new(["test_pod", "https://example.com/article?utm_source=twitter&fbclid=abc123"], {})
+      cmd.run
+    end
+
+    links = PriorityLinks.new(File.join(@podcast_dir, "links.yml"))
+    assert_equal "https://example.com/article", links.all.first["url"]
+  end
+
   def test_add_command_detects_duplicate
     require "cli/add_command"
 
