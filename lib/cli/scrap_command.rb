@@ -7,6 +7,7 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "episode_filtering")
+require_relative File.join(root, "lib", "atomic_writer")
 
 module PodgenCLI
   class ScrapCommand
@@ -120,14 +121,7 @@ module PodgenCLI
 
       return unless changed
 
-      tmp = "#{tracking_path}.tmp.#{Process.pid}"
-      begin
-        File.write(tmp, tracking.to_yaml)
-        File.rename(tmp, tracking_path)
-      rescue => e
-        File.delete(tmp) if File.exist?(tmp)
-        raise e
-      end
+      AtomicWriter.write_yaml(tracking_path, tracking)
     end
   end
 end

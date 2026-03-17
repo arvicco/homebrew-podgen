@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "fileutils"
+require_relative "../atomic_writer"
 
 module Tell
   class History
@@ -57,24 +57,11 @@ module Tell
       count
     end
 
-    # Atomic write: temp file + rename, 0o600 permissions, UTF-8
     def save!
       if entries.empty?
-        File.delete(@path) if File.exist?(@path)
-        return
-      end
-
-      dir = File.dirname(@path)
-      FileUtils.mkdir_p(dir)
-      tmp_path = "#{@path}.tmp.#{Process.pid}"
-      begin
-        File.open(tmp_path, "w:UTF-8", perm: 0o600) do |f|
-          f.write(entries.join("\n") + "\n")
-        end
-        File.rename(tmp_path, @path)
-      rescue => e
-        File.delete(tmp_path) if File.exist?(tmp_path)
-        raise e
+        AtomicWriter.delete_if_empty(@path)
+      else
+        AtomicWriter.write(@path, entries.join("\n") + "\n", perm: 0o600)
       end
     end
 

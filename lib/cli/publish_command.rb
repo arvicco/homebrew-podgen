@@ -10,6 +10,7 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
+require_relative File.join(root, "lib", "atomic_writer")
 
 module PodgenCLI
   class PublishCommand
@@ -294,18 +295,8 @@ module PodgenCLI
       data.transform_keys(&:to_s).transform_values { |v| v.is_a?(Hash) ? v.transform_keys(&:to_s) : v }
     end
 
-    # Atomic write: temp + rename
     def save_tracking(tracking)
-      dir = File.dirname(tracking_path)
-      FileUtils.mkdir_p(dir)
-      tmp = File.join(dir, ".lingq_uploads.yml.tmp.#{Process.pid}")
-      begin
-        File.write(tmp, tracking.to_yaml)
-        File.rename(tmp, tracking_path)
-      rescue => e
-        File.delete(tmp) if File.exist?(tmp)
-        raise e
-      end
+      AtomicWriter.write_yaml(tracking_path, tracking)
     end
 
     def rclone_available?

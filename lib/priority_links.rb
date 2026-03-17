@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 require "yaml"
-require "fileutils"
 require "date"
 require "net/http"
 require "uri"
+require_relative "atomic_writer"
 
 # Manages priority links for news podcasts.
 # Links are stored in podcasts/<name>/links.yml and consumed on successful generation.
@@ -96,23 +96,11 @@ class PriorityLinks
 
   private
 
-  # Atomic write: temp file + rename.
   def write!(entries)
-    dir = File.dirname(@path)
-    FileUtils.mkdir_p(dir)
-
     if entries.empty?
-      File.delete(@path) if File.exist?(@path)
-      return
-    end
-
-    tmp = File.join(dir, ".links.yml.tmp.#{Process.pid}")
-    begin
-      File.write(tmp, entries.to_yaml)
-      File.rename(tmp, @path)
-    rescue => e
-      File.delete(tmp) if File.exist?(tmp)
-      raise e
+      AtomicWriter.delete_if_empty(@path)
+    else
+      AtomicWriter.write_yaml(@path, entries)
     end
   end
 

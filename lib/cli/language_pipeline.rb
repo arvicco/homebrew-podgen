@@ -14,6 +14,7 @@ require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "agents", "description_agent")
 require_relative File.join(root, "lib", "youtube_downloader")
 require_relative File.join(root, "lib", "vocabulary_annotator")
+require_relative File.join(root, "lib", "atomic_writer")
 
 module PodgenCLI
   class LanguagePipeline
@@ -452,16 +453,7 @@ module PodgenCLI
       tracking[collection_key] ||= {}
       tracking[collection_key][base_name] = lesson_id
 
-      dir = File.dirname(tracking_path)
-      FileUtils.mkdir_p(dir)
-      tmp = File.join(dir, ".lingq_uploads.yml.tmp.#{Process.pid}")
-      begin
-        File.write(tmp, tracking.to_yaml)
-        File.rename(tmp, tracking_path)
-      rescue => e
-        File.delete(tmp) if File.exist?(tmp)
-        raise e
-      end
+      AtomicWriter.write_yaml(tracking_path, tracking)
 
       logger.log("Recorded LingQ upload: #{base_name} → lesson #{lesson_id}")
     end
