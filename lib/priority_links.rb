@@ -2,9 +2,9 @@
 
 require "yaml"
 require "fileutils"
+require "date"
 require "net/http"
 require "uri"
-require "set"
 
 # Manages priority links for news podcasts.
 # Links are stored in podcasts/<name>/links.yml and consumed on successful generation.
@@ -88,9 +88,10 @@ class PriorityLinks
   # Remove all links that were successfully consumed (by URL set).
   def consume!(urls)
     entries = all
+    before = entries.length
     url_set = urls.to_set
     entries.reject! { |e| url_set.include?(e["url"]) }
-    write!(entries)
+    write!(entries) if entries.length != before
   end
 
   private
@@ -117,7 +118,9 @@ class PriorityLinks
 
   # Fetch page title and first paragraph via simple HTTP GET.
   # Returns [title, summary] or [nil, nil] on failure.
-  def fetch_page_info(url)
+  def fetch_page_info(url, max_redirects: 3)
+    return [nil, nil] if max_redirects <= 0
+
     uri = URI.parse(url)
     return [nil, nil] unless uri.is_a?(URI::HTTP) || uri.is_a?(URI::HTTPS)
 
@@ -128,9 +131,8 @@ class PriorityLinks
       http.request(request)
     end
 
-    # Follow one redirect
     if response.is_a?(Net::HTTPRedirection) && response["location"]
-      return fetch_page_info(response["location"])
+      return fetch_page_info(response["location"], max_redirects: max_redirects - 1)
     end
 
     return [nil, nil] unless response.is_a?(Net::HTTPSuccess)

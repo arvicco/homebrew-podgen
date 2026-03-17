@@ -4,6 +4,7 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "priority_links")
+require_relative File.join(root, "lib", "url_cleaner")
 
 module PodgenCLI
   class AddCommand
@@ -33,6 +34,8 @@ module PodgenCLI
 
       config = PodcastConfig.new(@podcast_name)
       links = PriorityLinks.new(config.links_path)
+
+      @url = UrlCleaner.clean(@url)
 
       if links.add(@url, note: @note)
         puts "\u2713 Added to #{@podcast_name}: #{@url}"

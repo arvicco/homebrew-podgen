@@ -160,7 +160,7 @@ module PodgenCLI
         # --- Priority links injection ---
         priority_links = PriorityLinks.new(config.links_path)
         priority_urls = []
-        unless priority_links.empty?
+        unless priority_links.empty? || @dry_run
           logger.phase_start("Priority Links")
           logger.log("Fetching #{priority_links.count} priority link(s)...")
           priority_findings = priority_links.fetch_all(logger: logger)
