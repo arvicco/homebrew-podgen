@@ -7,7 +7,7 @@ require_relative "episode_filtering"
 require_relative "guidelines_parser"
 
 class PodcastConfig
-  attr_reader :name, :podcast_dir, :guidelines_path, :queue_path, :episodes_dir, :feed_path, :log_dir, :history_path
+  attr_reader :name, :podcast_dir, :guidelines_path, :queue_path, :links_path, :episodes_dir, :feed_path, :log_dir, :history_path
 
   def initialize(name)
     @name = name
@@ -21,6 +21,7 @@ class PodcastConfig
 
     @guidelines_path = File.join(podcast_dir, "guidelines.md")
     @queue_path      = File.join(podcast_dir, "queue.yml")
+    @links_path      = File.join(podcast_dir, "links.yml")
     @env_path        = File.join(podcast_dir, ".env")
     @episodes_dir    = File.join(@root, "output", name, "episodes")
     @feed_path       = File.join(@root, "output", name, "feed.xml")

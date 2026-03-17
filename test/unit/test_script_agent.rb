@@ -149,6 +149,42 @@ class TestScriptAgent < Minitest::Test
     assert_equal "Test guidelines", cached_block[:text]
   end
 
+  def test_system_prompt_without_priority_urls_has_no_priority_instruction
+    agent = build_agent
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    system = client.last_call[:system]
+    prompt_text = system.map { |s| s[:text] }.join("\n")
+    refute_includes prompt_text, "PRIORITY LINKS"
+  end
+
+  def test_system_prompt_with_priority_urls_includes_priority_instruction
+    agent = ScriptAgent.new(
+      guidelines: "Test guidelines",
+      script_path: @script_path,
+      priority_urls: ["https://example.com/priority"]
+    )
+    agent.define_singleton_method(:sleep) { |_| }
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    system = client.last_call[:system]
+    prompt_text = system.map { |s| s[:text] }.join("\n")
+    assert_includes prompt_text, "PRIORITY LINKS"
+    assert_includes prompt_text, "MUST cover every priority link"
+  end
+
+  def test_priority_urls_defaults_to_empty
+    agent = build_agent
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    system = client.last_call[:system]
+    prompt_text = system.map { |s| s[:text] }.join("\n")
+    refute_includes prompt_text, "PRIORITY"
+  end
+
   def setup
     @tmpdir = Dir.mktmpdir("podgen_test")
     @script_path = File.join(@tmpdir, "script.md")
