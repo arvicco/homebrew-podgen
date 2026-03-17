@@ -126,6 +126,32 @@ class TestEpisodeFiltering < Minitest::Test
     assert_equal 1, result.length
   end
 
+  # --- parse_date ---
+
+  def test_parse_date_standard_filename
+    assert_equal Date.new(2026, 3, 1), EpisodeFiltering.parse_date("show-2026-03-01.mp3")
+  end
+
+  def test_parse_date_with_day_suffix
+    assert_equal Date.new(2026, 3, 1), EpisodeFiltering.parse_date("show-2026-03-01a.mp3")
+  end
+
+  def test_parse_date_with_language_suffix
+    assert_equal Date.new(2026, 3, 1), EpisodeFiltering.parse_date("show-2026-03-01-es.mp3")
+  end
+
+  def test_parse_date_full_path
+    assert_equal Date.new(2026, 3, 1), EpisodeFiltering.parse_date("/some/path/show-2026-03-01.mp3")
+  end
+
+  def test_parse_date_no_date_returns_nil
+    assert_nil EpisodeFiltering.parse_date("show-episode.mp3")
+  end
+
+  def test_parse_date_invalid_date_returns_nil
+    assert_nil EpisodeFiltering.parse_date("show-9999-99-99.mp3")
+  end
+
   private
 
   def create_file(name, content = "x")

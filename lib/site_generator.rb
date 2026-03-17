@@ -154,10 +154,7 @@ class SiteGenerator
     filename = File.basename(mp3_path)
     basename = File.basename(mp3_path, ".mp3")
 
-    date_match = filename.match(/(\d{4}-\d{2}-\d{2})/)
-    return nil unless date_match
-
-    date = Date.parse(date_match[1]) rescue nil
+    date = EpisodeFiltering.parse_date(filename)
     return nil unless date
 
     # Find transcript or script
