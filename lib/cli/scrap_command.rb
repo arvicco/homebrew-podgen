@@ -7,7 +7,7 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "episode_filtering")
-require_relative File.join(root, "lib", "atomic_writer")
+require_relative File.join(root, "lib", "lingq_tracker")
 
 module PodgenCLI
   class ScrapCommand
@@ -107,21 +107,7 @@ module PodgenCLI
     private
 
     def remove_lingq_tracking(config, base_name)
-      tracking_path = File.join(File.dirname(config.episodes_dir), "lingq_uploads.yml")
-      return unless File.exist?(tracking_path)
-
-      tracking = YAML.load_file(tracking_path)
-      return unless tracking.is_a?(Hash)
-
-      changed = false
-      tracking.each_value do |collection_entries|
-        next unless collection_entries.is_a?(Hash)
-        changed = true if collection_entries.delete(base_name)
-      end
-
-      return unless changed
-
-      AtomicWriter.write_yaml(tracking_path, tracking)
+      LingqTracker.for_config(config).remove(base_name)
     end
   end
 end

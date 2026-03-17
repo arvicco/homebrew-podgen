@@ -14,7 +14,7 @@ require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "agents", "description_agent")
 require_relative File.join(root, "lib", "youtube_downloader")
 require_relative File.join(root, "lib", "vocabulary_annotator")
-require_relative File.join(root, "lib", "atomic_writer")
+require_relative File.join(root, "lib", "lingq_tracker")
 
 module PodgenCLI
   class LanguagePipeline
@@ -438,23 +438,8 @@ module PodgenCLI
       logger.log(e.backtrace.first(3).join("\n"))
     end
 
-    # Records a LingQ upload in the tracking file (same format as publish command)
-    # so that publish --lingq won't re-upload episodes already uploaded during generate.
     def record_lingq_upload(collection, base_name, lesson_id)
-      tracking_path = File.join(File.dirname(@config.episodes_dir), "lingq_uploads.yml")
-      tracking = if File.exist?(tracking_path)
-                   data = YAML.load_file(tracking_path)
-                   data.is_a?(Hash) ? data.transform_keys(&:to_s) : {}
-                 else
-                   {}
-                 end
-
-      collection_key = collection.to_s
-      tracking[collection_key] ||= {}
-      tracking[collection_key][base_name] = lesson_id
-
-      AtomicWriter.write_yaml(tracking_path, tracking)
-
+      LingqTracker.for_config(@config).record(collection, base_name, lesson_id)
       logger.log("Recorded LingQ upload: #{base_name} → lesson #{lesson_id}")
     end
 
