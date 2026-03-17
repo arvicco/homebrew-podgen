@@ -181,22 +181,47 @@ class TestPriorityLinks < Minitest::Test
   end
 
   def test_fetch_all_returns_findings_with_fallback_title
-    @links.add("https://httpbin.org/status/404")
+    @links.add("https://example.com/article")
+
+    # Stub fetch_page_info to simulate a failed fetch
+    @links.define_singleton_method(:fetch_page_info) { |_url, **_kw| [nil, nil] }
 
     findings = @links.fetch_all
     assert_equal 1, findings.length
     finding = findings.first
-    assert_equal "https://httpbin.org/status/404", finding[:url]
-    # Title falls back to URL when page can't be fetched
-    assert_kind_of String, finding[:title]
-    assert_kind_of String, finding[:summary]
+    assert_equal "https://example.com/article", finding[:url]
+    assert_equal "https://example.com/article", finding[:title], "Title should fall back to URL"
+    assert_equal "Priority link added by producer", finding[:summary]
+  end
+
+  def test_fetch_all_returns_findings_with_page_info
+    @links.add("https://example.com/article")
+
+    @links.define_singleton_method(:fetch_page_info) { |_url, **_kw| ["Great Article Title", "A summary of the article."] }
+
+    findings = @links.fetch_all
+    finding = findings.first
+    assert_equal "Great Article Title", finding[:title]
+    assert_equal "A summary of the article.", finding[:summary]
   end
 
   def test_fetch_all_includes_note_in_summary
-    File.write(@path, [{ "url" => "https://httpbin.org/status/404", "added" => "2026-03-18", "note" => "Important article" }].to_yaml)
+    File.write(@path, [{ "url" => "https://example.com/article", "added" => "2026-03-18", "note" => "Important article" }].to_yaml)
+
+    @links.define_singleton_method(:fetch_page_info) { |_url, **_kw| [nil, "Page summary"] }
 
     findings = @links.fetch_all
     assert_includes findings.first[:summary], "Important article"
+    assert_includes findings.first[:summary], "Page summary"
+  end
+
+  def test_fetch_all_note_only_when_no_page_info
+    File.write(@path, [{ "url" => "https://example.com/article", "added" => "2026-03-18", "note" => "Must cover this" }].to_yaml)
+
+    @links.define_singleton_method(:fetch_page_info) { |_url, **_kw| [nil, nil] }
+
+    findings = @links.fetch_all
+    assert_includes findings.first[:summary], "Must cover this"
   end
 
   # --- atomic writes ---
