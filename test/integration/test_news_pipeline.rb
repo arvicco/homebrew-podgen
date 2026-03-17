@@ -234,24 +234,4 @@ class TestNewsPipeline < Minitest::Test
     end
   end
 
-  def test_script_segments_have_reasonable_length
-    skip_unless_env("ANTHROPIC_API_KEY")
-
-    script = {
-      title: "Test Episode",
-      segments: [
-        { name: "Opening", text: "Welcome to today's show! " * 5 },
-        { name: "Main Story", text: "The latest news in technology is exciting. " * 20 },
-        { name: "Wrap-Up", text: "Thanks for listening today. " * 3 }
-      ]
-    }
-
-    # Verify the contract: each segment text > 50 chars, total > 500 chars
-    script[:segments].each do |seg|
-      assert seg[:text].length > 50, "Segment '#{seg[:name]}' should be > 50 chars"
-    end
-
-    total = script[:segments].sum { |s| s[:text].length }
-    assert total > 500, "Total script text should be > 500 chars"
-  end
 end

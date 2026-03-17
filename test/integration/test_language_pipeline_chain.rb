@@ -332,16 +332,16 @@ class TestLanguagePipelineChain < Minitest::Test
       history_path: File.join(@podcast_dir, "history.yml")
     )
   end
-end
 
-# Minimal config struct for SiteGenerator
-SiteConfig = Struct.new(
-  :episodes_dir, :base_url, :languages, :title, :description,
-  :image, :site_config, :site_css_path, :favicon_path, :history_path,
-  keyword_init: true
-)
+  # Minimal config struct for SiteGenerator
+  SiteConfig = Struct.new(
+    :episodes_dir, :base_url, :languages, :title, :description,
+    :image, :site_config, :site_css_path, :favicon_path, :history_path,
+    keyword_init: true
+  )
 
-# Helper to access TranscriptRenderer instance methods
-class TranscriptRendererHelper
-  include TranscriptRenderer
+  # Helper to access TranscriptRenderer instance methods
+  class TranscriptRendererHelper
+    include TranscriptRenderer
+  end
 end
