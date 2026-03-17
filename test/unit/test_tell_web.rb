@@ -248,6 +248,113 @@ class TestTellWeb < Minitest::Test
       .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
   end
 
+  # --- /speak SSE stream ---
+
+  def test_speak_happy_path_returns_sse_stream
+    fake_translator = Object.new
+    fake_translator.define_singleton_method(:translate) { |*_args, **_kw| "translated" }
+
+    config = Struct.new(:original_language, :target_language,
+                        :translation_engines, :engine_api_keys,
+                        :translation_timeout, :tts_engine,
+                        :voice_male, :voice_female,
+                        keyword_init: true).new(
+      original_language: "en", target_language: "sl",
+      translation_engines: ["deepl"], engine_api_keys: {},
+      translation_timeout: 8, tts_engine: "google",
+      voice_male: nil, voice_female: nil
+    ).tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+    Tell::Web.set :tell_config, config
+
+    fake_tts = Object.new
+    fake_tts.define_singleton_method(:synthesize) { |*_| "fake_audio" }
+
+    Tell.stub(:build_translator_chain, fake_translator) do
+      Tell.stub(:build_tts, fake_tts) do
+        Tell::Detector.stub(:detect, "en") do
+          Tell::Espeak.stub(:supports?, false) do
+            get "/speak", text: "hello", from: "auto", to: "sl"
+          end
+        end
+      end
+    end
+
+    assert_equal 200, last_response.status
+    assert_includes last_response.body, "event: translation"
+    assert_includes last_response.body, "event: audio"
+    assert_includes last_response.body, "event: done"
+  ensure
+    Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
+      .new(original_language: "en", target_language: "sl")
+      .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+  end
+
+  def test_speak_no_tts_flag_skips_audio_and_translation
+    # no_tts skips both translation and TTS — only emits done
+    config = Struct.new(:original_language, :target_language,
+                        :translation_engines, :engine_api_keys,
+                        :translation_timeout, :tts_engine,
+                        :voice_male, :voice_female,
+                        keyword_init: true).new(
+      original_language: "en", target_language: "sl",
+      translation_engines: ["deepl"], engine_api_keys: {},
+      translation_timeout: 8, tts_engine: "google",
+      voice_male: nil, voice_female: nil
+    ).tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+    Tell::Web.set :tell_config, config
+
+    Tell::Detector.stub(:detect, "en") do
+      Tell::Espeak.stub(:supports?, false) do
+        get "/speak", text: "hello", from: "auto", to: "sl", no_tts: "true"
+      end
+    end
+
+    refute_includes last_response.body, "event: audio"
+    assert_includes last_response.body, "event: done"
+  ensure
+    Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
+      .new(original_language: "en", target_language: "sl")
+      .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+  end
+
+  def test_speak_sse_format_has_data_prefix
+    fake_translator = Object.new
+    fake_translator.define_singleton_method(:translate) { |*_args, **_kw| "translated" }
+
+    config = Struct.new(:original_language, :target_language,
+                        :translation_engines, :engine_api_keys,
+                        :translation_timeout, :tts_engine,
+                        :voice_male, :voice_female,
+                        keyword_init: true).new(
+      original_language: "en", target_language: "sl",
+      translation_engines: ["deepl"], engine_api_keys: {},
+      translation_timeout: 8, tts_engine: "google",
+      voice_male: nil, voice_female: nil
+    ).tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+    Tell::Web.set :tell_config, config
+
+    fake_tts = Object.new
+    fake_tts.define_singleton_method(:synthesize) { |*_| "fake_audio" }
+
+    Tell.stub(:build_translator_chain, fake_translator) do
+      Tell.stub(:build_tts, fake_tts) do
+        Tell::Detector.stub(:detect, "en") do
+          Tell::Espeak.stub(:supports?, false) do
+            get "/speak", text: "hello", from: "auto", to: "sl"
+          end
+        end
+      end
+    end
+
+    # SSE format: "event: ...\ndata: ...\n\n"
+    assert_match(/event: translation\ndata: /, last_response.body)
+    assert_match(/event: done\ndata: /, last_response.body)
+  ensure
+    Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
+      .new(original_language: "en", target_language: "sl")
+      .tap { |c| c.define_singleton_method(:for_language) { |_| self } }
+  end
+
   # --- / (index) ---
 
   def test_index_returns_html

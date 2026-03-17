@@ -53,6 +53,25 @@ class TestResearchAgent < Minitest::Test
     assert_equal "Ruby", results[1][:topic]
   end
 
+  def test_research_empty_topics_returns_empty
+    agent = build_agent
+    results = agent.research([])
+    assert_empty results
+  end
+
+  def test_initialization_sets_results_per_topic
+    agent = ResearchAgent.new(results_per_topic: 10)
+    assert_equal 10, agent.instance_variable_get(:@results_per_topic)
+  end
+
+  def test_initialization_raises_without_api_key
+    original = ENV["EXA_API_KEY"]
+    ENV.delete("EXA_API_KEY")
+    assert_raises(RuntimeError) { ResearchAgent.new }
+  ensure
+    ENV["EXA_API_KEY"] = original
+  end
+
   private
 
   def build_agent(exclude_urls: Set.new)
