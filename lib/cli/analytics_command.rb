@@ -104,6 +104,7 @@ module PodgenCLI
         return 2
       end
 
+      write_worker_js
       puts "Deploying Worker..."
       success = run_wrangler("deploy")
       success ? 0 : 1
@@ -193,9 +194,11 @@ module PodgenCLI
               });
             }
 
-            // Serve the file from R2
+            // Serve the file from R2, supporting Range requests for audio seeking
             const key = path.slice(1);
-            const object = await env.BUCKET.get(key);
+
+            const hasRange = request.headers.has("range");
+            const object = await env.BUCKET.get(key, hasRange ? { range: request.headers } : {});
 
             if (!object) {
               return new Response("Not Found", { status: 404 });
@@ -205,6 +208,7 @@ module PodgenCLI
             object.writeHttpMetadata(headers);
             headers.set("etag", object.httpEtag);
             headers.set("cache-control", "public, max-age=86400");
+            headers.set("accept-ranges", "bytes");
 
             const ext = path.split(".").pop();
             const types = {
@@ -221,6 +225,13 @@ module PodgenCLI
             if (types[ext]) headers.set("content-type", types[ext]);
 
             headers.set("access-control-allow-origin", "*");
+
+            if (object.range) {
+              const start = object.range.offset;
+              const end = start + object.range.length - 1;
+              headers.set("content-range", `bytes ${start}-${end}/${object.size}`);
+              return new Response(object.body, { status: 206, headers });
+            }
 
             return new Response(object.body, { headers });
           },
