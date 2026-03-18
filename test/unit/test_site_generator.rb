@@ -412,6 +412,21 @@ class TestSiteGenerator < Minitest::Test
     refute_includes html, "vocabulary"
   end
 
+  def test_audio_elements_use_preload_metadata
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Test" }])
+
+    gen = build_generator
+    gen.generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    assert_includes index, 'preload="metadata"'
+    refute_includes index, 'preload="none"'
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    assert_includes page, 'preload="metadata"'
+  end
+
   def test_generate_no_style_tag_when_no_site_config
     create_mp3("mypod-2026-01-15.mp3")
     write_history([{ "date" => "2026-01-15", "title" => "Test" }])
