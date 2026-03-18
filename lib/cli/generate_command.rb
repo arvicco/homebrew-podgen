@@ -193,7 +193,8 @@ module PodgenCLI
             guidelines: guidelines,
             script_path: config.script_path(today),
             logger: logger,
-            priority_urls: priority_urls
+            priority_urls: priority_urls,
+            links_config: config.links_enabled? ? config.links_config : nil
           )
           script = script_agent.generate(research_data)
         end
@@ -246,7 +247,8 @@ module PodgenCLI
               # Merge English sources into translated script (sources aren't translated)
               lang_script_with_sources = lang_script.merge(sources: script[:sources])
               lang_script_path = File.join(config.episodes_dir, "#{lang_basename}_script.md")
-              save_script_debug(lang_script_with_sources, lang_script_path, logger, links: config.links_enabled?)
+              save_script_debug(lang_script_with_sources, lang_script_path, logger,
+                                links_config: config.links_enabled? ? config.links_config : nil)
 
               # --- TTS ---
               logger.phase_start("TTS (#{lang_code})")
@@ -331,8 +333,11 @@ module PodgenCLI
       raise "ffmpeg is not installed or not on $PATH. Install with: brew install ffmpeg"
     end
 
-    def save_script_debug(script, path, logger, links: false)
+    def save_script_debug(script, path, logger, links_config: nil)
       FileUtils.mkdir_p(File.dirname(path))
+      position = links_config&.dig(:position) || "bottom"
+      max = links_config&.dig(:max)
+
       File.open(path, "w") do |f|
         f.puts "# #{script[:title]}"
         f.puts
@@ -341,20 +346,32 @@ module PodgenCLI
           f.puts
           f.puts seg[:text]
           f.puts
+
+          if links_config && position == "inline" && seg[:sources]&.any?
+            write_sources(f, seg[:sources], max: max)
+          end
         end
 
-        sources = script[:sources]
-        if links && sources && !sources.empty?
-          f.puts "## More info"
-          f.puts
-          sources.each do |src|
-            clean_url = UrlCleaner.clean(src[:url])
-            f.puts "- [#{src[:title]}](#{clean_url})"
+        if links_config && position == "bottom"
+          sources = script[:sources]
+          if sources && !sources.empty?
+            title = links_config[:title] || "More info"
+            f.puts "## #{title}"
+            f.puts
+            write_sources(f, sources, max: max)
           end
-          f.puts
         end
       end
       logger.log("Script saved to #{path}")
+    end
+
+    def write_sources(f, sources, max: nil)
+      sources = sources.first(max) if max
+      sources.each do |src|
+        clean_url = UrlCleaner.clean(src[:url])
+        f.puts "- [#{src[:title]}](#{clean_url})"
+      end
+      f.puts
     end
   end
 end
