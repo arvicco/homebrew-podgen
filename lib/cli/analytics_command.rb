@@ -227,9 +227,9 @@ module PodgenCLI
             headers.set("access-control-allow-origin", "*");
 
             if (object.range) {
-              const start = object.range.offset;
-              const end = start + object.range.length - 1;
-              headers.set("content-range", `bytes ${start}-${end}/${object.size}`);
+              const rangeStart = object.range.offset;
+              const rangeEnd = rangeStart + object.range.length - 1;
+              headers.set("content-range", `bytes ${rangeStart}-${rangeEnd}/${object.size}`);
               return new Response(object.body, { status: 206, headers });
             }
 
