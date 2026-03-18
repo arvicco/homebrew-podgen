@@ -423,6 +423,52 @@ class TestGuidelinesParser < Minitest::Test
     assert_nil parser.links_config
   end
 
+  def test_parses_links_position_bottom
+    parser = build_parser("## Links\n- show: true\n- position: bottom\n")
+    assert_equal "bottom", parser.links_config[:position]
+  end
+
+  def test_parses_links_position_inline
+    parser = build_parser("## Links\n- show: true\n- position: inline\n")
+    assert_equal "inline", parser.links_config[:position]
+  end
+
+  def test_parses_links_invalid_position_ignored
+    parser = build_parser("## Links\n- show: true\n- position: scattered\n")
+    refute parser.links_config.key?(:position)
+  end
+
+  def test_parses_links_title
+    parser = build_parser("## Links\n- show: true\n- title: Read more\n")
+    assert_equal "Read more", parser.links_config[:title]
+  end
+
+  def test_parses_links_max
+    parser = build_parser("## Links\n- show: true\n- max: 5\n")
+    assert_equal 5, parser.links_config[:max]
+  end
+
+  def test_parses_links_max_zero_ignored
+    parser = build_parser("## Links\n- show: true\n- max: 0\n")
+    refute parser.links_config.key?(:max)
+  end
+
+  def test_parses_links_full_config
+    parser = build_parser(<<~MD)
+      ## Links
+      - show: true
+      - position: inline
+      - title: Sources
+      - max: 3
+    MD
+
+    c = parser.links_config
+    assert_equal true, c[:show]
+    assert_equal "inline", c[:position]
+    assert_equal "Sources", c[:title]
+    assert_equal 3, c[:max]
+  end
+
   def test_links_config_nil_when_missing
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_nil parser.links_config
