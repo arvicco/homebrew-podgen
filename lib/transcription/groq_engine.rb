@@ -28,18 +28,14 @@ module Transcription
       validate_audio!(audio_path)
 
       file_size = File.size(audio_path)
-      size_mb = (file_size / (1024.0 * 1024)).round(2)
-
       if file_size > MAX_FILE_SIZE
+        size_mb = (file_size / (1024.0 * 1024)).round(2)
         audio_path = downsample(audio_path, size_mb)
-        size_mb = (File.size(audio_path) / (1024.0 * 1024)).round(2)
       end
 
-      log("Transcribing #{audio_path} (#{size_mb} MB, model: #{@model}, language: #{@language})")
+      log_transcription_start(audio_path)
 
-      retries = 0
-      begin
-        retries += 1
+      with_engine_retries do
         start = Time.now
 
         body = {
@@ -67,42 +63,21 @@ module Transcription
         result = JSON.parse(response.body)
         transcript = result["text"] || ""
         duration = result["duration"]&.round(1)
-        segments = result["segments"] || []
-
-        parsed_segments = segments.map do |s|
-          {
-            start: s["start"].to_f,
-            end: s["end"].to_f,
-            text: s["text"].to_s,
-            no_speech_prob: s["no_speech_prob"].to_f,
-            compression_ratio: s["compression_ratio"].to_f,
-            avg_logprob: s["avg_logprob"].to_f
-          }
-        end
+        parsed_segments = parse_segments(result["segments"])
 
         words = (result["words"] || []).map do |w|
           { word: w["word"].to_s, start: w["start"].to_f, end: w["end"].to_f }
         end
 
-        speech_start = parsed_segments.any? ? parsed_segments.first[:start] : 0.0
-        speech_end = parsed_segments.any? ? parsed_segments.last[:end] : (duration || 0.0)
+        speech_start, speech_end = speech_boundaries(parsed_segments, duration: duration)
 
         log("Transcription complete in #{elapsed}s (audio duration: #{duration}s, #{transcript.length} chars, #{parsed_segments.length} segments, #{words.length} words)")
         log("Speech boundaries: #{speech_start.round(1)}s → #{speech_end.round(1)}s")
 
         { text: transcript, speech_start: speech_start, speech_end: speech_end, segments: parsed_segments, words: words }
-
-      rescue => e
-        if retries <= MAX_RETRIES && retryable?(e)
-          sleep_time = 2**retries
-          log("Error (attempt #{retries}/#{MAX_RETRIES}): #{e.message}. Retrying in #{sleep_time}s...")
-          sleep(sleep_time)
-          retry
-        end
-        raise "GroqEngine failed after #{retries} attempts: #{e.message}"
-      ensure
-        cleanup_downsample
       end
+    ensure
+      cleanup_downsample
     end
 
     private

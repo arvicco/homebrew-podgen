@@ -99,6 +99,95 @@ class TestBaseEngine < Minitest::Test
     engine = Transcription::BaseEngine.new
     assert_equal "sl", engine.instance_variable_get(:@language)
   end
+
+  # parse_segments
+
+  def test_parse_segments_maps_fields
+    raw = [
+      { "start" => 0.5, "end" => 2.3, "text" => "Hello.",
+        "no_speech_prob" => 0.01, "compression_ratio" => 1.2, "avg_logprob" => -0.3 }
+    ]
+    result = @engine.send(:parse_segments, raw)
+    assert_equal 1, result.length
+    assert_equal 0.5, result[0][:start]
+    assert_equal 2.3, result[0][:end]
+    assert_equal "Hello.", result[0][:text]
+    assert_in_delta 0.01, result[0][:no_speech_prob]
+    assert_in_delta 1.2, result[0][:compression_ratio]
+    assert_in_delta(-0.3, result[0][:avg_logprob])
+  end
+
+  def test_parse_segments_empty_array
+    assert_empty @engine.send(:parse_segments, [])
+  end
+
+  def test_parse_segments_nil_input
+    assert_empty @engine.send(:parse_segments, nil)
+  end
+
+  def test_parse_segments_coerces_nil_values
+    raw = [{ "start" => nil, "end" => nil, "text" => nil,
+             "no_speech_prob" => nil, "compression_ratio" => nil, "avg_logprob" => nil }]
+    result = @engine.send(:parse_segments, raw)
+    assert_equal 0.0, result[0][:start]
+    assert_equal 0.0, result[0][:end]
+    assert_equal "", result[0][:text]
+    assert_equal 0.0, result[0][:no_speech_prob]
+  end
+
+  # speech_boundaries
+
+  def test_speech_boundaries_from_segments
+    segments = [{ start: 1.0 }, { end: 9.0 }]
+    s, e = @engine.send(:speech_boundaries, segments, duration: 10.0)
+    assert_equal 1.0, s
+    assert_equal 9.0, e
+  end
+
+  def test_speech_boundaries_empty_with_duration
+    s, e = @engine.send(:speech_boundaries, [], duration: 5.0)
+    assert_equal 0.0, s
+    assert_equal 5.0, e
+  end
+
+  def test_speech_boundaries_empty_nil_duration
+    s, e = @engine.send(:speech_boundaries, [], duration: nil)
+    assert_equal 0.0, s
+    assert_equal 0.0, e
+  end
+
+  # with_engine_retries
+
+  def test_with_engine_retries_yields_block
+    result = @engine.send(:with_engine_retries) { 42 }
+    assert_equal 42, result
+  end
+
+  def test_with_engine_retries_raises_after_max_retries
+    call_count = 0
+    @engine.stub(:sleep, nil) do
+      err = assert_raises(RuntimeError) do
+        @engine.send(:with_engine_retries) do
+          call_count += 1
+          raise "HTTP 429 Too Many Requests"
+        end
+      end
+      assert_match(/BaseEngine failed after 4 attempts/, err.message)
+      assert_equal 4, call_count # 1 initial + 3 retries
+    end
+  end
+
+  def test_with_engine_retries_does_not_retry_non_retryable
+    call_count = 0
+    err = assert_raises(RuntimeError) do
+      @engine.send(:with_engine_retries) do
+        call_count += 1
+        raise "HTTP 400 Bad Request"
+      end
+    end
+    assert_match(/BaseEngine failed after 1 attempts/, err.message)
+    assert_equal 1, call_count
+  end
 end
 
 # ── OpenaiEngine ────────────────────────────────────────────────────────────
