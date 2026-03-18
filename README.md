@@ -594,14 +594,24 @@ For full CSS control, drop a `site.css` file in your podcast directory (`podcast
 
 ### Source Links
 
-News pipeline episodes can include a "More info" section at the end of the transcript with links to the articles referenced in the episode. Add a `## Links` section to your `guidelines.md`:
+News pipeline episodes can include source links in the transcript. Add a `## Links` section to your `guidelines.md`:
 
 ```markdown
 ## Links
 - show: true
+- position: bottom
+- title: More info
+- max: 5
 ```
 
-When enabled, the script agent asks Claude to list every source it referenced while writing the episode. These appear as a `## More info` section at the bottom of the saved script file, with tracking parameters stripped from URLs. The links render as clickable items on the episode's site page. RSS transcript HTML includes the links but note that most podcast apps (Pocket Casts, Apple Podcasts) do not render HTML links in transcripts.
+| Key | Values | Default | Description |
+|-----|--------|---------|-------------|
+| `show` | `true`/`false` | — | Enable source links in transcripts |
+| `position` | `bottom`/`inline` | `bottom` | `bottom`: all links in one section at the end. `inline`: links after each podcast section where they were referenced |
+| `title` | any string | `More info` | Heading for the bottom links section (ignored in inline mode) |
+| `max` | integer | unlimited | Max links total (bottom) or per section (inline). Forces the script agent to choose the most relevant sources and drop near-duplicates |
+
+When enabled, the script agent asks Claude to list every source it referenced while writing the episode. Tracking parameters are stripped from URLs. The links render as clickable items on the episode's site page. RSS transcript HTML includes the links but note that most podcast apps (Pocket Casts, Apple Podcasts) do not render HTML links in transcripts.
 
 ### Vocabulary Annotation
 
