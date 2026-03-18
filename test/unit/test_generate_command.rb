@@ -38,7 +38,7 @@ class TestGenerateCommand < Minitest::Test
     assert_includes content, "## Topic"
   end
 
-  def test_save_script_debug_with_links
+  def test_save_script_debug_bottom_links
     cmd = build_command
     script = {
       title: "Episode",
@@ -50,14 +50,123 @@ class TestGenerateCommand < Minitest::Test
     path = File.join(@episodes_dir, "test_script.md")
     logger = StubGenLogger.new
 
-    cmd.send(:save_script_debug, script, path, logger, links: true)
+    cmd.send(:save_script_debug, script, path, logger, links_config: { show: true })
 
     content = File.read(path)
     assert_includes content, "## More info"
     assert_includes content, "[Example Article]"
-    # URL should be cleaned of tracking params
     refute_includes content, "utm_source"
     assert_includes content, "https://example.com/article"
+  end
+
+  def test_save_script_debug_bottom_links_custom_title
+    cmd = build_command
+    script = {
+      title: "Episode",
+      segments: [{ name: "Main", text: "Content." }],
+      sources: [{ title: "Source", url: "https://example.com" }]
+    }
+    path = File.join(@episodes_dir, "test_script.md")
+    logger = StubGenLogger.new
+
+    cmd.send(:save_script_debug, script, path, logger, links_config: { show: true, title: "Read more" })
+
+    content = File.read(path)
+    assert_includes content, "## Read more"
+    refute_includes content, "## More info"
+  end
+
+  def test_save_script_debug_bottom_links_with_max
+    cmd = build_command
+    script = {
+      title: "Episode",
+      segments: [{ name: "Main", text: "Content." }],
+      sources: [
+        { title: "Source 1", url: "https://example.com/1" },
+        { title: "Source 2", url: "https://example.com/2" },
+        { title: "Source 3", url: "https://example.com/3" }
+      ]
+    }
+    path = File.join(@episodes_dir, "test_script.md")
+    logger = StubGenLogger.new
+
+    cmd.send(:save_script_debug, script, path, logger, links_config: { show: true, max: 2 })
+
+    content = File.read(path)
+    assert_includes content, "Source 1"
+    assert_includes content, "Source 2"
+    refute_includes content, "Source 3"
+  end
+
+  def test_save_script_debug_inline_links
+    cmd = build_command
+    script = {
+      title: "Episode",
+      segments: [
+        { name: "AI News", text: "GPT-5 launched.", sources: [{ title: "GPT-5", url: "https://example.com/gpt5" }] },
+        { name: "Wrap-Up", text: "Thanks for listening." }
+      ],
+      sources: [{ title: "GPT-5", url: "https://example.com/gpt5" }]
+    }
+    path = File.join(@episodes_dir, "test_script.md")
+    logger = StubGenLogger.new
+
+    cmd.send(:save_script_debug, script, path, logger, links_config: { show: true, position: "inline" })
+
+    content = File.read(path)
+    # Links appear after their segment, not in a bottom section
+    assert_includes content, "[GPT-5]"
+    refute_includes content, "## More info"
+    # Links should be after the segment text, before the next segment
+    ai_pos = content.index("GPT-5 launched.")
+    link_pos = content.index("[GPT-5]")
+    wrapup_pos = content.index("## Wrap-Up")
+    assert link_pos > ai_pos
+    assert link_pos < wrapup_pos
+  end
+
+  def test_save_script_debug_inline_links_with_max
+    cmd = build_command
+    script = {
+      title: "Episode",
+      segments: [{
+        name: "News", text: "Content.",
+        sources: [
+          { title: "S1", url: "https://example.com/1" },
+          { title: "S2", url: "https://example.com/2" },
+          { title: "S3", url: "https://example.com/3" }
+        ]
+      }],
+      sources: []
+    }
+    path = File.join(@episodes_dir, "test_script.md")
+    logger = StubGenLogger.new
+
+    cmd.send(:save_script_debug, script, path, logger, links_config: { show: true, position: "inline", max: 1 })
+
+    content = File.read(path)
+    assert_includes content, "S1"
+    refute_includes content, "S2"
+  end
+
+  def test_save_script_debug_inline_skips_segments_without_sources
+    cmd = build_command
+    script = {
+      title: "Episode",
+      segments: [
+        { name: "Opening", text: "Welcome." },
+        { name: "News", text: "Content.", sources: [{ title: "S1", url: "https://example.com" }] }
+      ],
+      sources: []
+    }
+    path = File.join(@episodes_dir, "test_script.md")
+    logger = StubGenLogger.new
+
+    cmd.send(:save_script_debug, script, path, logger, links_config: { show: true, position: "inline" })
+
+    content = File.read(path)
+    # Only one link list, after News segment
+    assert_equal 1, content.scan(/\[S1\]/).length
   end
 
   def test_save_script_debug_without_links
@@ -70,7 +179,7 @@ class TestGenerateCommand < Minitest::Test
     path = File.join(@episodes_dir, "test_script.md")
     logger = StubGenLogger.new
 
-    cmd.send(:save_script_debug, script, path, logger, links: false)
+    cmd.send(:save_script_debug, script, path, logger, links_config: nil)
 
     content = File.read(path)
     refute_includes content, "## More info"
