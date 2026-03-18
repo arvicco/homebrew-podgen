@@ -21,6 +21,10 @@ module Validators
     end
 
     def format_size(bytes)
+      self.class.format_size(bytes)
+    end
+
+    def self.format_size(bytes)
       if bytes >= 1_000_000_000
         format("%.1f GB", bytes / 1_000_000_000.0)
       elsif bytes >= 1_000_000

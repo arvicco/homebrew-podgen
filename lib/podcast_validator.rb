@@ -54,7 +54,7 @@ class PodcastValidator
 
   def run
     validators = VALIDATORS.dup
-    validators << PIPELINE_VALIDATORS[@config.type]
+    validators << (PIPELINE_VALIDATORS[@config.type] || Validators::NewsPipelineValidator)
     validators << Validators::OrphansValidator
 
     validators.compact.each { |klass| merge_result(klass.new(@config).validate) }
@@ -84,6 +84,6 @@ class PodcastValidator
   def check_orphans          = merge_result(Validators::OrphansValidator.new(@config).validate)
 
   def format_size(bytes)
-    Validators::BaseValidator.new(@config).send(:format_size, bytes)
+    Validators::BaseValidator.format_size(bytes)
   end
 end
