@@ -78,6 +78,29 @@ class GuidelinesParser
     value.gsub(/[;{}]/, "")
   end
 
+  # Shared iterator for flat key-value sections.
+  # Yields (key, value) for each "- key: value" line.
+  # Returns nil when the section is missing, otherwise the accumulated config hash.
+  def parse_kv_section(heading)
+    body = extract_section(heading)
+    return nil unless body
+
+    config = {}
+    body.each_line do |line|
+      next unless line.match?(/^- \S/)
+      item = line.strip.sub(/^- /, "")
+      if item.include?(":")
+        key, value = item.split(":", 2)
+        result = yield(key.strip, value.strip)
+        config.merge!(result) if result
+      else
+        result = yield(item.strip, nil)
+        config.merge!(result) if result
+      end
+    end
+    config
+  end
+
   # --- Section parsers ---
 
   def parse_podcast_section
@@ -159,61 +182,33 @@ class GuidelinesParser
   end
 
   def parse_image_section
-    body = extract_section("Image")
-    return {} unless body
-
-    config = {}
-    body.each_line do |line|
-      if line.match?(/^- \S/)
-        item = line.strip.sub(/^- /, "")
-        if item.include?(":")
-          key, value = item.split(":", 2)
-          key = key.strip
-          value = value.strip
-          case key
-          when "cover"        then config[:cover] = value
-          when "image"        then config[:image] = value
-          when "base_image"   then config[:base_image] = resolve_path(value)
-          when "font"         then config[:font] = value
-          when "font_color"   then config[:font_color] = value
-          when "font_size"    then config[:font_size] = value.to_i
-          when "text_width"   then config[:text_width] = value.to_i
-          when "text_gravity"  then config[:text_gravity] = value
-          when "text_x_offset" then config[:text_x_offset] = value.to_i
-          when "text_y_offset" then config[:text_y_offset] = value.to_i
-          end
-        end
+    parse_kv_section("Image") do |key, value|
+      case key
+      when "cover"         then { cover: value }
+      when "image"         then { image: value }
+      when "base_image"    then { base_image: resolve_path(value) }
+      when "font"          then { font: value }
+      when "font_color"    then { font_color: value }
+      when "font_size"     then { font_size: value.to_i }
+      when "text_width"    then { text_width: value.to_i }
+      when "text_gravity"  then { text_gravity: value }
+      when "text_x_offset" then { text_x_offset: value.to_i }
+      when "text_y_offset" then { text_y_offset: value.to_i }
       end
-    end
-    config
+    end || {}
   end
 
   def parse_site_section
-    body = extract_section("Site")
-    return {} unless body
-
-    config = {}
-    body.each_line do |line|
-      if line.match?(/^- \S/)
-        item = line.strip.sub(/^- /, "")
-        if item.include?(":")
-          key, value = item.split(":", 2)
-          key = key.strip
-          value = value.strip
-          case key
-          when "accent", "accent_dark", "bg", "bg_dark"
-            config[key.to_sym] = sanitize_css(value)
-          when "radius", "max_width"
-            config[key.to_sym] = sanitize_css(value)
-          when "footer"
-            config[:footer] = value
-          when "show_duration", "show_transcript"
-            config[key.to_sym] = value != "false"
-          end
-        end
+    parse_kv_section("Site") do |key, value|
+      case key
+      when "accent", "accent_dark", "bg", "bg_dark", "radius", "max_width"
+        { key.to_sym => sanitize_css(value) }
+      when "footer"
+        { footer: value }
+      when "show_duration", "show_transcript"
+        { key.to_sym => value != "false" }
       end
-    end
-    config
+    end || {}
   end
 
   def parse_language_section
@@ -258,96 +253,47 @@ class GuidelinesParser
   end
 
   def parse_lingq_section
-    body = extract_section("LingQ")
-    return nil unless body
-
-    config = {}
-    body.each_line do |line|
-      line = line.strip
-      next unless line.start_with?("- ")
-
-      entry = line.sub(/^- /, "").strip
-      next unless entry.include?(":")
-
-      key, value = entry.split(":", 2).map(&:strip)
+    config = parse_kv_section("LingQ") do |key, value|
       case key
-      when "collection"
-        config[:collection] = value.to_i
-      when "level"
-        config[:level] = value.to_i
-      when "tags"
-        config[:tags] = value.split(",").map(&:strip)
-      when "image"
-        config[:image] = resolve_path(value)
-      when "base_image"
-        config[:base_image] = resolve_path(value)
-      when "font"
-        config[:font] = value
-      when "font_color"
-        config[:font_color] = value
-      when "font_size"
-        config[:font_size] = value.to_i
-      when "text_width"
-        config[:text_width] = value.to_i
-      when "text_gravity"
-        config[:text_gravity] = value
-      when "text_x_offset"
-        config[:text_x_offset] = value.to_i
-      when "text_y_offset"
-        config[:text_y_offset] = value.to_i
-      when "accent"
-        config[:accent] = value
-      when "status"
-        config[:status] = value
+      when "collection"  then { collection: value.to_i }
+      when "level"       then { level: value.to_i }
+      when "tags"        then { tags: value.split(",").map(&:strip) }
+      when "image"       then { image: resolve_path(value) }
+      when "base_image"  then { base_image: resolve_path(value) }
+      when "font"        then { font: value }
+      when "font_color"  then { font_color: value }
+      when "font_size"   then { font_size: value.to_i }
+      when "text_width"  then { text_width: value.to_i }
+      when "text_gravity" then { text_gravity: value }
+      when "text_x_offset" then { text_x_offset: value.to_i }
+      when "text_y_offset" then { text_y_offset: value.to_i }
+      when "accent"      then { accent: value }
+      when "status"      then { status: value }
       end
     end
-
-    config.empty? ? nil : config
+    return nil if config.nil? || config.empty?
+    config
   end
 
   def parse_vocabulary_section
-    body = extract_section("Vocabulary")
-    return nil unless body
-
-    config = {}
-    body.each_line do |line|
-      line = line.strip
-      next unless line.start_with?("- ")
-
-      entry = line.sub(/^- /, "").strip
-      next unless entry.include?(":")
-
-      key, value = entry.split(":", 2).map(&:strip)
+    config = parse_kv_section("Vocabulary") do |key, value|
       case key
       when "level"
         level = value.upcase
-        config[:level] = level if %w[A1 A2 B1 B2 C1 C2].include?(level)
+        { level: level } if %w[A1 A2 B1 B2 C1 C2].include?(level)
       end
     end
-
-    config.empty? ? nil : config
+    return nil if config.nil? || config.empty?
+    config
   end
 
   def parse_links_section
-    body = extract_section("Links")
-    return nil unless body
-
-    config = {}
-    body.each_line do |line|
-      line = line.strip
-      next unless line.start_with?("- ")
-
-      entry = line.sub(/^- /, "").strip
-      next unless entry.include?(":")
-
-      key, value = entry.split(":", 2).map(&:strip)
+    config = parse_kv_section("Links") do |key, value|
       case key
-      when "show"
-        config[:show] = value == "true"
+      when "show" then { show: value == "true" }
       end
     end
-
-    config[:show] ? config : nil
+    config&.dig(:show) ? config : nil
   end
 
   def parse_sources_section
