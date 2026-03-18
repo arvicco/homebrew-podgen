@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "set"
 require_relative "base_validator"
 
 module Validators
