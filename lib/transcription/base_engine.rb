@@ -33,5 +33,45 @@ module Transcription
         error.is_a?(Net::OpenTimeout) || error.is_a?(Net::ReadTimeout) ||
         error.is_a?(Errno::ETIMEDOUT)
     end
+
+    def with_engine_retries
+      retries = 0
+      begin
+        retries += 1
+        yield
+      rescue => e
+        if retries <= MAX_RETRIES && retryable?(e)
+          sleep_time = 2**retries
+          log("Error (attempt #{retries}/#{MAX_RETRIES}): #{e.message}. Retrying in #{sleep_time}s...")
+          sleep(sleep_time)
+          retry
+        end
+        raise "#{self.class.name.split('::').last} failed after #{retries} attempts: #{e.message}"
+      end
+    end
+
+    def parse_segments(raw_segments)
+      (raw_segments || []).map do |s|
+        {
+          start: s["start"].to_f,
+          end: s["end"].to_f,
+          text: s["text"].to_s,
+          no_speech_prob: s["no_speech_prob"].to_f,
+          compression_ratio: s["compression_ratio"].to_f,
+          avg_logprob: s["avg_logprob"].to_f
+        }
+      end
+    end
+
+    def speech_boundaries(parsed_segments, duration: nil)
+      speech_start = parsed_segments.any? ? parsed_segments.first[:start] : 0.0
+      speech_end = parsed_segments.any? ? parsed_segments.last[:end] : (duration || 0.0)
+      [speech_start, speech_end]
+    end
+
+    def log_transcription_start(audio_path)
+      size_mb = (File.size(audio_path) / (1024.0 * 1024)).round(2)
+      log("Transcribing #{audio_path} (#{size_mb} MB, model: #{@model}, language: #{@language})")
+    end
   end
 end
