@@ -246,6 +246,12 @@ module PodgenCLI
               # --- Save translated script for debugging ---
               # Merge English sources into translated script (sources aren't translated)
               lang_script_with_sources = lang_script.merge(sources: script[:sources])
+              # Restore per-segment sources from English script for inline link mode
+              script[:segments].each_with_index do |en_seg, i|
+                if en_seg[:sources]&.any? && lang_script_with_sources[:segments][i]
+                  lang_script_with_sources[:segments][i][:sources] = en_seg[:sources]
+                end
+              end
               lang_script_path = File.join(config.episodes_dir, "#{lang_basename}_script.md")
               save_script_debug(lang_script_with_sources, lang_script_path, logger,
                                 links_config: config.links_enabled? ? config.links_config : nil)

@@ -177,18 +177,6 @@ class PodcastConfig
     !!links_config&.dig(:show)
   end
 
-  def links_position
-    links_config&.dig(:position) || "bottom"
-  end
-
-  def links_title
-    links_config&.dig(:title) || "More info"
-  end
-
-  def links_max
-    links_config&.dig(:max)
-  end
-
   def lingq_enabled?
     config = lingq_config
     config && config[:collection] && ENV["LINGQ_API_KEY"] && !ENV["LINGQ_API_KEY"].empty?
