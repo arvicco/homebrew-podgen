@@ -148,6 +148,39 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "/absolute/bg.png", parser.image_section[:base_image]
   end
 
+  def test_image_section_parses_all_fields
+    parser = build_parser(<<~MD)
+      ## Image
+      - cover: artwork.png
+      - image: ep.png
+      - base_image: bg.png
+      - font: Arial
+      - font_color: #fff
+      - font_size: 36
+      - text_width: 400
+      - text_gravity: north
+      - text_x_offset: 10
+      - text_y_offset: 20
+    MD
+
+    s = parser.image_section
+    assert_equal "artwork.png", s[:cover]
+    assert_equal "ep.png", s[:image]
+    assert_equal File.join(@podcast_dir, "bg.png"), s[:base_image]
+    assert_equal "Arial", s[:font]
+    assert_equal "#fff", s[:font_color]
+    assert_equal 36, s[:font_size]
+    assert_equal 400, s[:text_width]
+    assert_equal "north", s[:text_gravity]
+    assert_equal 10, s[:text_x_offset]
+    assert_equal 20, s[:text_y_offset]
+  end
+
+  def test_image_section_empty_when_missing
+    parser = build_parser("## Podcast\n- name: Test\n")
+    assert_equal({}, parser.image_section)
+  end
+
   # --- site_config ---
 
   def test_parses_site_section
@@ -168,6 +201,37 @@ class TestGuidelinesParser < Minitest::Test
   def test_site_sanitizes_css
     parser = build_parser("## Site\n- accent: red;}\n")
     assert_equal "red", parser.site_config[:accent]
+  end
+
+  def test_site_section_parses_all_fields
+    parser = build_parser(<<~MD)
+      ## Site
+      - accent: #ff0000
+      - accent_dark: #cc0000
+      - bg: #ffffff
+      - bg_dark: #000000
+      - radius: 4px
+      - max_width: 800px
+      - footer: Copyright 2025
+      - show_duration: true
+      - show_transcript: false
+    MD
+
+    s = parser.site_config
+    assert_equal "#ff0000", s[:accent]
+    assert_equal "#cc0000", s[:accent_dark]
+    assert_equal "#ffffff", s[:bg]
+    assert_equal "#000000", s[:bg_dark]
+    assert_equal "4px", s[:radius]
+    assert_equal "800px", s[:max_width]
+    assert_equal "Copyright 2025", s[:footer]
+    assert_equal true, s[:show_duration]
+    assert_equal false, s[:show_transcript]
+  end
+
+  def test_site_config_empty_when_missing
+    parser = build_parser("## Podcast\n- name: Test\n")
+    assert_equal({}, parser.site_config)
   end
 
   # --- sources ---
@@ -242,6 +306,38 @@ class TestGuidelinesParser < Minitest::Test
   def test_lingq_config_nil_when_missing
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_nil parser.lingq_config
+  end
+
+  def test_lingq_config_parses_image_and_style_fields
+    parser = build_parser(<<~MD)
+      ## LingQ
+      - collection: 999
+      - image: cover.png
+      - base_image: bg.png
+      - font: Arial
+      - font_color: white
+      - font_size: 24
+      - text_width: 300
+      - text_gravity: center
+      - text_x_offset: 5
+      - text_y_offset: 10
+      - accent: blue
+      - status: private
+    MD
+
+    c = parser.lingq_config
+    assert_equal 999, c[:collection]
+    assert_equal File.join(@podcast_dir, "cover.png"), c[:image]
+    assert_equal File.join(@podcast_dir, "bg.png"), c[:base_image]
+    assert_equal "Arial", c[:font]
+    assert_equal "white", c[:font_color]
+    assert_equal 24, c[:font_size]
+    assert_equal 300, c[:text_width]
+    assert_equal "center", c[:text_gravity]
+    assert_equal 5, c[:text_x_offset]
+    assert_equal 10, c[:text_y_offset]
+    assert_equal "blue", c[:accent]
+    assert_equal "private", c[:status]
   end
 
   # --- languages ---
