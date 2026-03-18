@@ -175,6 +175,81 @@ class TestScriptAgent < Minitest::Test
     assert_includes prompt_text, "MUST cover every priority link"
   end
 
+  def test_generate_returns_per_segment_sources
+    agent = build_agent
+    seg_sources = [MockSource.new("GPT-5 launches", "https://example.com/gpt5")]
+    segs = [MockSegment.new("AI News", "Hello!", seg_sources)]
+    output = MockScript.new("Episode 1", segs, [])
+    client = MockClient.new(output)
+    agent.instance_variable_set(:@client, client)
+
+    result = agent.generate(valid_research_data)
+    assert_equal 1, result[:segments].first[:sources].length
+    assert_equal "GPT-5 launches", result[:segments].first[:sources].first[:title]
+  end
+
+  def test_generate_omits_segment_sources_when_nil
+    agent = build_agent
+    stub_client(agent, title: "Episode 1", segments: [{ name: "Opening", text: "Hello!" }])
+
+    result = agent.generate(valid_research_data)
+    refute result[:segments].first.key?(:sources)
+  end
+
+  def test_system_prompt_with_inline_links_includes_per_segment_instruction
+    agent = ScriptAgent.new(
+      guidelines: "Test", script_path: @script_path,
+      links_config: { show: true, position: "inline" }
+    )
+    agent.define_singleton_method(:sleep) { |_| }
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    prompt_text = client.last_call[:system].map { |s| s[:text] }.join("\n")
+    assert_includes prompt_text, "SOURCE ATTRIBUTION"
+    assert_includes prompt_text, "sources"
+  end
+
+  def test_system_prompt_with_bottom_links_has_no_per_segment_instruction
+    agent = ScriptAgent.new(
+      guidelines: "Test", script_path: @script_path,
+      links_config: { show: true, position: "bottom" }
+    )
+    agent.define_singleton_method(:sleep) { |_| }
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    prompt_text = client.last_call[:system].map { |s| s[:text] }.join("\n")
+    refute_includes prompt_text, "SOURCE ATTRIBUTION"
+  end
+
+  def test_system_prompt_with_max_includes_limit_instruction
+    agent = ScriptAgent.new(
+      guidelines: "Test", script_path: @script_path,
+      links_config: { show: true, max: 5 }
+    )
+    agent.define_singleton_method(:sleep) { |_| }
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    prompt_text = client.last_call[:system].map { |s| s[:text] }.join("\n")
+    assert_includes prompt_text, "SOURCE LIMIT"
+    assert_includes prompt_text, "5 source links total"
+  end
+
+  def test_system_prompt_with_max_and_inline_says_per_segment
+    agent = ScriptAgent.new(
+      guidelines: "Test", script_path: @script_path,
+      links_config: { show: true, position: "inline", max: 3 }
+    )
+    agent.define_singleton_method(:sleep) { |_| }
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    prompt_text = client.last_call[:system].map { |s| s[:text] }.join("\n")
+    assert_includes prompt_text, "3 source links per segment"
+  end
+
   def test_priority_urls_defaults_to_empty
     agent = build_agent
     client = stub_client(agent, title: "T", segments: [])
@@ -226,7 +301,7 @@ class TestScriptAgent < Minitest::Test
     client
   end
 
-  MockSegment = Struct.new(:name, :text)
+  MockSegment = Struct.new(:name, :text, :sources)
   MockSource = Struct.new(:title, :url)
   MockScript = Struct.new(:title, :segments, :sources)
 
