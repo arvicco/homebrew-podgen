@@ -6,14 +6,15 @@ require "date"
 require_relative "../loggable"
 require_relative "../retryable"
 
-class Segment < Anthropic::BaseModel
-  required :name, String
-  required :text, String
-end
-
 class Source < Anthropic::BaseModel
   required :title, String
   required :url, String
+end
+
+class Segment < Anthropic::BaseModel
+  required :name, String
+  required :text, String
+  optional :sources, Anthropic::ArrayOf[Source]
 end
 
 class PodcastScript < Anthropic::BaseModel
@@ -28,13 +29,14 @@ class ScriptAgent
 
   MAX_RETRIES = 3
 
-  def initialize(guidelines:, script_path:, logger: nil, priority_urls: [])
+  def initialize(guidelines:, script_path:, logger: nil, priority_urls: [], links_config: nil)
     @logger = logger
     @client = Anthropic::Client.new
     @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
     @guidelines = guidelines
     @script_path = script_path
     @priority_urls = Array(priority_urls)
+    @links_config = links_config || {}
   end
 
   # Input: array of { topic:, findings: [{ title:, url:, summary: }] }
@@ -68,7 +70,11 @@ class ScriptAgent
 
       result = {
         title: script.title,
-        segments: script.segments.map { |s| { name: s.name, text: s.text } },
+        segments: script.segments.map { |s|
+          seg = { name: s.name, text: s.text }
+          seg[:sources] = s.sources.map { |src| { title: src.title, url: src.url } } if s.sources&.any?
+          seg
+        },
         sources: script.sources.map { |s| { title: s.title, url: s.url } }
       }
 
@@ -106,6 +112,28 @@ class ScriptAgent
         in the script — do not skip any of them. Weave them naturally into the episode
         alongside the other research findings.
       PRIORITY
+    end
+
+    if @links_config[:position] == "inline"
+      base_prompt += <<~INLINE
+
+        SOURCE ATTRIBUTION: For each segment, include a `sources` array listing the
+        specific articles you referenced in THAT segment. Each source needs a title and
+        URL from the research data. Only include sources whose content materially
+        contributed to that specific segment. Segments without source references (like
+        Opening or Wrap-Up) should omit the sources field.
+      INLINE
+    end
+
+    max = @links_config[:max]
+    if max
+      scope = @links_config[:position] == "inline" ? "per segment" : "total"
+      base_prompt += <<~MAX
+
+        SOURCE LIMIT: Include at most #{max} source links #{scope}. Choose the most
+        relevant and diverse sources. Drop near-duplicate links that cover the same
+        story from similar angles.
+      MAX
     end
 
     [
