@@ -16,7 +16,7 @@
   <li class="episode-item">
     <div class="episode-meta"><%= ep[:date] %><% if ep[:duration] && site_config.fetch(:show_duration, true) %> &middot; <%= ep[:duration] %><% end %></div>
     <a class="episode-title" href="<%= ep[:page_path] %>"><%= ep[:title] %></a>
-    <audio controls preload="none" src="<%= ep[:audio_url] %>"></audio>
+    <audio controls preload="metadata" src="<%= ep[:audio_url] %>"></audio>
   </li>
 <% end %>
 </ul>
