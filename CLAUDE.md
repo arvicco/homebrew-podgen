@@ -83,7 +83,7 @@ The review loop (steps 2–3) is mandatory unless the user explicitly says "CPR"
 Ruby 3.2+, macOS. Dependencies: ffmpeg, yt-dlp, ImageMagick+librsvg, espeak-ng (optional), libicu (optional).
 
 Two pipelines + standalone tool:
-1. **News** (`type: news`): Research → Claude script (with source tracking) → ElevenLabs TTS → multi-language MP3s. Entry: `cli/generate_command.rb`. Optional `## Links` in guidelines appends "More info" section with source URLs to transcript.
+1. **News** (`type: news`): Research → Claude script (with source tracking) → ElevenLabs TTS → multi-language MP3s. Entry: `cli/generate_command.rb`. Optional `## Links` in guidelines controls source URL display: `position: bottom` (default, single section at end) or `position: inline` (per-segment), with configurable `title` and `max` limit.
 2. **Language** (`type: language`): RSS/YouTube/local MP3 → multi-engine STT → Claude reconciliation → trim → clean MP3 + transcript. Entry: `cli/language_pipeline.rb`
 3. **Tell** (`lib/tell/`): Standalone TTS pronunciation CLI + Sinatra web UI with auto-translation and grammatical glossing
 
