@@ -290,7 +290,10 @@ class GuidelinesParser
   def parse_links_section
     config = parse_kv_section("Links") do |key, value|
       case key
-      when "show" then { show: value == "true" }
+      when "show"     then { show: value == "true" }
+      when "position" then %w[bottom inline].include?(value) ? { position: value } : nil
+      when "title"    then { title: value }
+      when "max"      then value.to_i > 0 ? { max: value.to_i } : nil
       end
     end
     config&.dig(:show) ? config : nil
