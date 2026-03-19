@@ -98,6 +98,9 @@ ruby bin/podgen <command> [options]
 | `podgen analytics <sub>` | Manage download analytics Worker (`setup`, `deploy`, `tail`, `status`) |
 | `podgen validate <podcast>` | Validate config and output (`--all` for all podcasts) |
 | `podgen list` | List available podcasts with titles |
+| `podgen add <podcast> <url>` | Queue a priority link for next episode (`--note "..."`) |
+| `podgen links <podcast>` | List or manage queued priority links (`--remove URL`, `--clear`) |
+| `podgen vocab <sub> <podcast>` | Manage known vocabulary words (`add`, `remove`, `list`; `--lang`) |
 | `podgen test <name>` | Run a standalone test (research, hn, rss, tts, etc.) |
 | `podgen schedule <podcast>` | Install a daily launchd scheduler |
 
@@ -613,6 +616,26 @@ News pipeline episodes can include source links in the transcript. Add a `## Lin
 
 When enabled, the script agent asks Claude to list every source it referenced while writing the episode. Tracking parameters are stripped from URLs. The links render as clickable items on the episode's site page. RSS transcript HTML includes the links but note that most podcast apps (Pocket Casts, Apple Podcasts) do not render HTML links in transcripts.
 
+### Priority Links
+
+Queue specific URLs for inclusion in the next episode's research. Priority links are consumed during generation and fed to the script agent alongside regular source results.
+
+```bash
+# Add a link (URL tracking params stripped automatically)
+podgen add ruby_world https://example.com/important-article --note "Cover this"
+
+# List queued links
+podgen links ruby_world
+
+# Remove a specific link
+podgen links ruby_world --remove https://example.com/important-article
+
+# Clear all queued links
+podgen links ruby_world --clear
+```
+
+Links are stored in `output/<podcast>/priority_links.yml`. Each entry records the URL, timestamp, and optional note. Duplicates are rejected.
+
 ### Vocabulary Annotation
 
 Language pipeline transcripts can be automatically annotated with vocabulary entries for words above a given CEFR level. Add a `## Vocabulary` section to your `guidelines.md`:
@@ -792,6 +815,9 @@ podgen/
 │   │   ├── analytics_command.rb # Manage Cloudflare analytics Worker
 │   │   ├── validate_command.rb # Validate config and output
 │   │   ├── list_command.rb   # List available podcasts
+│   │   ├── add_command.rb    # Queue a priority link for next episode
+│   │   ├── links_command.rb  # List/manage queued priority links
+│   │   ├── vocab_command.rb  # Manage known vocabulary words
 │   │   ├── test_command.rb   # Run test scripts
 │   │   └── schedule_command.rb # Install launchd scheduler
 │   ├── time_value.rb          # TimeValue: seconds or min:sec with absolute? flag
@@ -834,6 +860,11 @@ podgen/
 │   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, trim)
 │   ├── rss_generator.rb      # RSS 2.0 + iTunes + Podcasting 2.0 feed
 │   ├── site_generator.rb     # Static HTML website generator (ERB templates)
+│   ├── transcript_renderer.rb # Shared transcript HTML rendering (RSS + site)
+│   ├── vocabulary_annotator.rb # CEFR vocabulary annotation for transcripts
+│   ├── known_vocabulary.rb   # Per-language known word lists (filters annotations)
+│   ├── priority_links.rb     # YAML-backed priority link queue
+│   ├── url_cleaner.rb        # Strip tracking params (utm_*, fbclid, etc.)
 │   ├── templates/            # ERB templates + CSS for site generator
 │   ├── logger.rb             # Structured logging with phase timings
 │   ├── analytics_client.rb   # Cloudflare Analytics Engine GraphQL client
@@ -1031,7 +1062,7 @@ $ tell "dobro jutro"
 | `-r, --reverse` | Show reverse translation for target-language input |
 | `-g, --gloss [OPTS]` | Grammatical gloss (`p`=phonetic, `r`=reverse, e.g. `-g pr`) |
 | `-p, --phonetic` | Show phonetic reading (kana/pinyin/romanization) |
-| `--ps SYSTEM` | Set phonetic system (e.g. `hepburn`, `pinyin`, `ipa`) |
+| `-s, --system SYSTEM` | Set phonetic system (e.g. `hepburn`, `pinyin`, `ipa`) |
 | `-n, --no-translate` | Speak text as-is without translation |
 | `-h, --help` | Show help |
 
@@ -1290,4 +1321,4 @@ Environment variables: `TELL_WEB_PORT` (default 9090), `TELL_WEB_BIND` (default 
 - **OpenAI translation**: ~$0.0001 per phrase (gpt-4o-mini)
 - **ElevenLabs TTS**: varies by plan
 - **Google TTS**: $4 per 1M characters (Standard), $16 per 1M characters (WaveNet)
-- **Glossing**: ~$0.0005 per phrase (Claude Haiku)
+- **Glossing**: ~$0.01 per phrase (Claude Opus, default; ~$0.001 with Sonnet, ~$0.0005 with Haiku)
