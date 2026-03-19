@@ -270,6 +270,10 @@ module PodgenCLI
         return
       end
 
+      require_relative "../known_vocabulary"
+      known = KnownVocabulary.for_config(@config)
+      known_lemmas = known.lemma_set(@config.transcription_language)
+
       annotator = VocabularyAnnotator.new(
         ENV["ANTHROPIC_API_KEY"],
         model: "claude-sonnet-4-6",
@@ -278,7 +282,8 @@ module PodgenCLI
       marked_body, vocabulary_md = annotator.annotate(
         body,
         language: @config.transcription_language,
-        cutoff: @config.vocabulary_level
+        cutoff: @config.vocabulary_level,
+        known_lemmas: known_lemmas
       )
 
       # Rewrite transcript file with marked words + vocabulary appendix
