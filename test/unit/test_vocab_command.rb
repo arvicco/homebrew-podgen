@@ -38,33 +38,50 @@ class TestVocabCommand < Minitest::Test
   # --- add ---
 
   def test_add_word
-    out, = capture_io { build_command("add", "testpod", "beseda").run }
+    code = nil
+    out, = capture_io { code = build_command("add", "testpod", "beseda").run }
     assert_includes out, "Added 'beseda'"
     assert_includes out, "(sl)"
+    assert_equal 0, code
   end
 
   def test_add_duplicate
     capture_io { build_command("add", "testpod", "beseda").run }
-    out, = capture_io { build_command("add", "testpod", "beseda").run }
+    code = nil
+    out, = capture_io { code = build_command("add", "testpod", "beseda").run }
     assert_includes out, "Already known"
+    assert_equal 0, code
   end
 
-  def test_add_missing_word
-    _out, err = capture_io { build_command("add", "testpod").run }
+  def test_add_missing_word_argument
+    code = nil
+    _out, err = capture_io { code = build_command("add", "testpod").run }
     assert_includes err, "Usage"
+    assert_equal 2, code
   end
 
   # --- remove ---
 
   def test_remove_word
     capture_io { build_command("add", "testpod", "beseda").run }
-    out, = capture_io { build_command("remove", "testpod", "beseda").run }
+    code = nil
+    out, = capture_io { code = build_command("remove", "testpod", "beseda").run }
     assert_includes out, "Removed 'beseda'"
+    assert_equal 0, code
   end
 
-  def test_remove_missing_word
-    out, = capture_io { build_command("remove", "testpod", "beseda").run }
+  def test_remove_nonexistent_word
+    code = nil
+    out, = capture_io { code = build_command("remove", "testpod", "beseda").run }
     assert_includes out, "Not found"
+    assert_equal 0, code
+  end
+
+  def test_remove_missing_word_argument
+    code = nil
+    _out, err = capture_io { code = build_command("remove", "testpod").run }
+    assert_includes err, "Usage"
+    assert_equal 2, code
   end
 
   # --- list ---
@@ -96,8 +113,10 @@ class TestVocabCommand < Minitest::Test
   # --- usage ---
 
   def test_unknown_subcommand
-    _out, err = capture_io { build_command("unknown", "testpod").run }
+    code = nil
+    _out, err = capture_io { code = build_command("unknown", "testpod").run }
     assert_includes err, "Usage"
+    assert_equal 2, code
   end
 
   private

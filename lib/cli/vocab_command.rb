@@ -11,8 +11,6 @@ module PodgenCLI
   class VocabCommand
     include PodcastCommand
 
-    SUBCOMMANDS = %w[add remove list].freeze
-
     def initialize(args, options)
       @options = options
       @lang = nil

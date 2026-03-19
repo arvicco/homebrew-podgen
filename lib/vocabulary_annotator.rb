@@ -2,6 +2,7 @@
 
 require "anthropic"
 require "json"
+require "set"
 require_relative "loggable"
 require_relative "retryable"
 
