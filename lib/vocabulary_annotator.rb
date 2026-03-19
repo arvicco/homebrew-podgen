@@ -20,7 +20,7 @@ class VocabularyAnnotator
   # Returns [marked_body, vocabulary_md]
   # marked_body: transcript with first occurrence of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
-  def annotate(text, language:, cutoff:)
+  def annotate(text, language:, cutoff:, known_lemmas: Set.new)
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
@@ -28,6 +28,12 @@ class VocabularyAnnotator
 
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff)")
     entries = classify_words(text, language, cutoff)
+    unless known_lemmas.empty?
+      before = entries.length
+      entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) }
+      filtered = before - entries.length
+      log("Filtered #{filtered} known words") if filtered > 0
+    end
 
     if entries.empty?
       log("No vocabulary words found at #{cutoff}+ level")

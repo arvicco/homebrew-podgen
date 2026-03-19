@@ -136,6 +136,57 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # --- known_lemmas filtering ---
+
+  def test_annotate_excludes_known_lemmas
+    entries = [
+      { word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To declare." },
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    stub_classify(entries) do
+      marked, vocab = @annotator.annotate("razglasil zavod", language: "sl", cutoff: "B1",
+                                          known_lemmas: Set.new(["razglasiti"]))
+      refute_includes vocab, "razglasiti"
+      assert_includes vocab, "zavod"
+      refute_includes marked, "**razglasil**"
+      assert_includes marked, "**zavod**"
+    end
+  end
+
+  def test_annotate_known_lemmas_case_insensitive
+    entries = [
+      { word: "Beseda", lemma: "Beseda", level: "B2", pos: "n.", translation: "word", definition: "A unit." }
+    ]
+    stub_classify(entries) do
+      _marked, vocab = @annotator.annotate("Beseda", language: "sl", cutoff: "B1",
+                                           known_lemmas: Set.new(["beseda"]))
+      assert_equal "", vocab
+    end
+  end
+
+  def test_annotate_known_lemmas_empty_set_no_effect
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    stub_classify(entries) do
+      _marked, vocab = @annotator.annotate("zavod", language: "sl", cutoff: "B1",
+                                           known_lemmas: Set.new)
+      assert_includes vocab, "zavod"
+    end
+  end
+
+  def test_annotate_known_lemmas_filters_all_returns_empty
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    stub_classify(entries) do
+      marked, vocab = @annotator.annotate("zavod je tu", language: "sl", cutoff: "B1",
+                                          known_lemmas: Set.new(["zavod"]))
+      assert_equal "zavod je tu", marked
+      assert_equal "", vocab
+    end
+  end
+
   private
 
   def stub_classify_empty(&block)
