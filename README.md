@@ -635,6 +635,19 @@ In **RSS transcript HTML** (for podcast apps), the vocabulary section is strippe
 
 If the section is absent or has no `level` key, the pipeline is unchanged.
 
+#### Known Vocabulary
+
+Words you already know can be excluded from annotations. Manage the list via CLI:
+
+```bash
+podgen vocab add lahko_noc beseda          # add a word (language from config)
+podgen vocab add lahko_noc sprechen --lang de  # explicit language
+podgen vocab remove lahko_noc beseda       # remove a word
+podgen vocab list lahko_noc                # show all known words
+```
+
+Known words are stored as lemmas (dictionary forms) in `podcasts/<name>/known_vocabulary.yml`. All derivatives (conjugations, cases) of a known lemma are automatically excluded — matching is on the lemma returned by Claude, not the surface form in the text.
+
 ### LingQ Upload Configuration
 
 ```markdown

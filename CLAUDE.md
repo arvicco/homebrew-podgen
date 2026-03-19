@@ -56,6 +56,7 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 - Guidelines parsing via `GuidelinesParser` (extracted from `PodcastConfig`, which delegates all section parsing)
 - Episode MP3 filtering via `EpisodeFiltering` module (shared across rss_generator, site_generator, validate, stats, scrap)
 - Transcript HTML via `TranscriptRenderer` module (shared by RssGenerator and SiteGenerator). RSS passes `vocab: false` (strips vocabulary, removes bold markers); site uses default `vocab: true` (linked words + rendered definitions)
+- Known vocabulary via `KnownVocabulary` class — per-language lemma lists in `known_vocabulary.yml`, managed by `podgen vocab` CLI, filtered in `VocabularyAnnotator` before marking/rendering
 - URL cleaning via `UrlCleaner` module (strips tracking params like utm_*, fbclid, gclid)
 - Paths: `File.join` + `__dir__`-relative, `require_relative` throughout
 - Atomic writes (temp + rename) for history/cache
