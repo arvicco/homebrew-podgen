@@ -198,6 +198,11 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal false, parser.site_config[:show_duration]
   end
 
+  def test_site_hex_color_with_inline_comment
+    parser = build_parser("## Site\n- accent: #e11d48  # rose red\n")
+    assert_equal "#e11d48", parser.site_config[:accent]
+  end
+
   def test_site_sanitizes_css
     parser = build_parser("## Site\n- accent: red;}\n")
     assert_equal "red", parser.site_config[:accent]
@@ -430,6 +435,11 @@ class TestGuidelinesParser < Minitest::Test
 
   def test_parses_links_position_inline
     parser = build_parser("## Links\n- show: true\n- position: inline\n")
+    assert_equal "inline", parser.links_config[:position]
+  end
+
+  def test_parses_links_position_inline_with_comment
+    parser = build_parser("## Links\n- show: true\n- position: inline    # bottom or inline\n")
     assert_equal "inline", parser.links_config[:position]
   end
 
