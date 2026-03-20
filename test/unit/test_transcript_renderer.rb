@@ -117,6 +117,20 @@ class TestTranscriptRenderer < Minitest::Test
     assert_equal "Beseda", result["beseda"]
   end
 
+  def test_parse_vocab_lemmas_diacritics_in_lemma
+    vocab = "\n- **krošnja** (noun) — canopy _Original: krošnjo_\n"
+    result = @r.parse_vocab_lemmas(vocab)
+    assert_equal "krošnja", result["krošnja"]
+    assert_equal "krošnja", result["krošnjo"]
+  end
+
+  def test_parse_vocab_lemmas_multi_word_lemma
+    vocab = "\n- **prepletati se** (verb) — to intertwine _Original: prepletala_\n"
+    result = @r.parse_vocab_lemmas(vocab)
+    assert_equal "prepletati se", result["prepletati se"]
+    assert_equal "prepletati se", result["prepletala"]
+  end
+
   # --- vocab_anchor ---
 
   def test_vocab_anchor_simple
@@ -133,6 +147,14 @@ class TestTranscriptRenderer < Minitest::Test
 
   def test_vocab_anchor_strips_leading_trailing_hyphens
     assert_equal "vocab-abc", @r.vocab_anchor("--abc--")
+  end
+
+  def test_vocab_anchor_preserves_diacritics
+    assert_equal "vocab-krošnja", @r.vocab_anchor("krošnja")
+  end
+
+  def test_vocab_anchor_preserves_multi_word_with_diacritics
+    assert_equal "vocab-prepletati-se", @r.vocab_anchor("prepletati se")
   end
 
   # --- linkify_vocab_words ---
@@ -264,5 +286,19 @@ class TestTranscriptRenderer < Minitest::Test
     # No vocab section, so bold markers should be stripped
     assert_includes html, "The word is here."
     refute_includes html, "**"
+  end
+
+  def test_render_body_html_diacritics_link_matches_anchor
+    body = "Videli so **krošnjo** drevesa.\n\n## Vocabulary\n\n**B2**\n- **krošnja** (noun) — canopy _Original: krošnjo_"
+    html = @r.render_body_html(body, vocab: true)
+    assert_includes html, 'href="#vocab-krošnja"'
+    assert_includes html, 'id="vocab-krošnja"'
+  end
+
+  def test_render_body_html_multi_word_lemma_link_matches_anchor
+    body = "Barve so se **prepletale** med sabo.\n\n## Vocabulary\n\n**C1**\n- **prepletati se** (verb) — to intertwine _Original: prepletale_"
+    html = @r.render_body_html(body, vocab: true)
+    assert_includes html, 'href="#vocab-prepletati-se"'
+    assert_includes html, 'id="vocab-prepletati-se"'
   end
 end
