@@ -91,7 +91,8 @@ class GuidelinesParser
       item = line.strip.sub(/^- /, "")
       if item.include?(":")
         key, value = item.split(":", 2)
-        result = yield(key.strip, value.strip)
+        value = value.strip.sub(/\s+#.*/, "")
+        result = yield(key.strip, value)
         config.merge!(result) if result
       else
         result = yield(item.strip, nil)
