@@ -64,14 +64,14 @@ module TranscriptRenderer
 
   def parse_vocab_lemmas(vocab_body)
     lemmas = {}
-    vocab_body.scan(/\*\*(\w+)\*\*\s*\(/).each do |match|
+    vocab_body.scan(/\*\*([^*\n]+)\*\*\s*\(/).each do |match|
       lemma = match[0]
       lemmas[lemma.downcase] = lemma
     end
 
-    vocab_body.scan(/_Original:\s*(\w+)_/).each do |match|
-      word = match[0]
-      vocab_body.scan(/\*\*(\w+)\*\*.*?_Original:\s*#{Regexp.escape(word)}_/) do
+    vocab_body.scan(/_Original:\s*([^_]+)_/).each do |match|
+      word = match[0].strip
+      vocab_body.scan(/\*\*([^*\n]+)\*\*.*?_Original:\s*#{Regexp.escape(word)}_/) do
         lemmas[word.downcase] = Regexp.last_match(1)
       end
     end
@@ -89,7 +89,7 @@ module TranscriptRenderer
   end
 
   def vocab_anchor(lemma)
-    "vocab-#{lemma.downcase.gsub(/[^a-z0-9]+/, '-').gsub(/^-|-$/, '')}"
+    "vocab-#{lemma.downcase.gsub(/[^\p{L}\p{N}]+/, '-').gsub(/^-|-$/, '')}"
   end
 
   def render_vocabulary_html(vocab_body)
