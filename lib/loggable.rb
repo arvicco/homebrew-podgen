@@ -22,4 +22,13 @@ module Loggable
       puts "#{tag} #{message}"
     end
   end
+
+  # Times a block and returns [result, elapsed_seconds].
+  #   message, elapsed = measure_time { @client.messages.create(...) }
+  def measure_time
+    start = Time.now
+    result = yield
+    elapsed = (Time.now - start).round(2)
+    [result, elapsed]
+  end
 end

@@ -1,18 +1,20 @@
 # frozen_string_literal: true
 
-require "anthropic"
+require_relative "../anthropic_client"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../usage_logger"
 
 module Transcription
   class Reconciler
+    include AnthropicClient
     include Loggable
     include Retryable
+    include UsageLogger
     MAX_RETRIES = 3
 
     def initialize(language: "Slovenian", logger: nil)
-      @client = Anthropic::Client.new
-      @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
+      init_anthropic_client
       @language = language
       @logger = logger
     end
@@ -41,19 +43,18 @@ module Transcription
 
     def call_api(system, user_content)
       with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
-        start = Time.now
+        message, elapsed = measure_time do
+          @client.messages.create(
+            model: @model,
+            max_tokens: 16384,
+            system: system,
+            messages: [
+              { role: "user", content: user_content }
+            ]
+          )
+        end
 
-        message = @client.messages.create(
-          model: @model,
-          max_tokens: 16384,
-          system: system,
-          messages: [
-            { role: "user", content: user_content }
-          ]
-        )
-
-        elapsed = (Time.now - start).round(2)
-        log_usage(message, elapsed)
+        log_api_usage("Completed", message, elapsed)
 
         text = message.content
           .select { |block| block.type.to_s == "text" }
@@ -165,13 +166,5 @@ module Transcription
       prompt
     end
 
-    def log_usage(message, elapsed)
-      usage = message.usage
-      log("Completed in #{elapsed}s (#{message.stop_reason})")
-      log("  Input: #{usage.input_tokens} tokens | Output: #{usage.output_tokens} tokens")
-      cache_create = usage.cache_creation_input_tokens || 0
-      cache_read = usage.cache_read_input_tokens || 0
-      log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
-    end
   end
 end

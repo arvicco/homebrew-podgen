@@ -52,7 +52,8 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 - **Refactoring is a deliberate, separate step** — it happens after tests are green, changes no external behavior, and gets its own commit. Drive-by refactors during feature work are still not allowed
 - API calls: retry with exponential backoff via `Retryable` mixin (`with_retries`), HTTP calls via `HttpRetryable` (`with_http_retries`), keys from ENV only
 - Sources extend `BaseSource` (template method: subclasses implement `search_topic`); `RSSSource` is standalone (different research pattern)
-- CLI commands include `PodcastCommand` mixin for podcast name validation (`require_podcast!`) and config loading (`load_config!`)
+- CLI commands include `PodcastCommand` mixin for podcast name validation (`require_podcast!` — validates existence with did-you-mean suggestions) and config loading (`load_config!`)
+- Anthropic API client initialization via `AnthropicClient` mixin (`init_anthropic_client`), token usage logging via `UsageLogger` mixin (`log_api_usage`), timing via `Loggable#measure_time`
 - Guidelines parsing via `GuidelinesParser` (extracted from `PodcastConfig`, which delegates all section parsing)
 - Episode MP3 filtering via `EpisodeFiltering` module (shared across rss_generator, site_generator, validate, stats, scrap)
 - Transcript HTML via `TranscriptRenderer` module (shared by RssGenerator and SiteGenerator). RSS passes `vocab: false` (strips vocabulary, removes bold markers); site uses default `vocab: true` (linked words + rendered definitions)

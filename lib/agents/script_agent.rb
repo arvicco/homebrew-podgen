@@ -1,10 +1,11 @@
 # frozen_string_literal: true
 
-require "anthropic"
 require "fileutils"
 require "date"
+require_relative "../anthropic_client"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../usage_logger"
 
 class Source < Anthropic::BaseModel
   required :title, String
@@ -24,15 +25,16 @@ class PodcastScript < Anthropic::BaseModel
 end
 
 class ScriptAgent
+  include AnthropicClient
   include Loggable
   include Retryable
+  include UsageLogger
 
   MAX_RETRIES = 3
 
   def initialize(guidelines:, script_path:, logger: nil, priority_urls: [], links_config: nil)
     @logger = logger
-    @client = Anthropic::Client.new
-    @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
+    init_anthropic_client
     @guidelines = guidelines
     @script_path = script_path
     @priority_urls = Array(priority_urls)
@@ -47,23 +49,22 @@ class ScriptAgent
     research_text = format_research(research_data)
 
     with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
-      start = Time.now
+      message, elapsed = measure_time do
+        @client.messages.create(
+          model: @model,
+          max_tokens: 8192,
+          system: build_system_prompt,
+          messages: [
+            {
+              role: "user",
+              content: "Write a podcast script based on this research:\n\n#{research_text}"
+            }
+          ],
+          output_config: { format: PodcastScript }
+        )
+      end
 
-      message = @client.messages.create(
-        model: @model,
-        max_tokens: 8192,
-        system: build_system_prompt,
-        messages: [
-          {
-            role: "user",
-            content: "Write a podcast script based on this research:\n\n#{research_text}"
-          }
-        ],
-        output_config: { format: PodcastScript }
-      )
-
-      elapsed = (Time.now - start).round(2)
-      log_usage(message, elapsed)
+      log_api_usage("Script generated", message, elapsed)
 
       script = message.parsed_output
       raise "Structured output parsing failed" if script.nil?
@@ -192,12 +193,4 @@ class ScriptAgent
     log("Script saved to #{@script_path}")
   end
 
-  def log_usage(message, elapsed)
-    usage = message.usage
-    log("Script generated in #{elapsed}s (#{message.stop_reason})")
-    log("  Input: #{usage.input_tokens} tokens | Output: #{usage.output_tokens} tokens")
-    cache_create = usage.cache_creation_input_tokens || 0
-    cache_read = usage.cache_read_input_tokens || 0
-    log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
-  end
 end

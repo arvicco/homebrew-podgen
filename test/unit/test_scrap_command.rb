@@ -15,6 +15,67 @@ class TestScrapCommand < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # --- resolve_by_id ---
+
+  def test_resolve_by_id_parses_date_only
+    File.write(File.join(@episodes_dir, "test-2026-03-15.mp3"), "x")
+
+    cmd = build_command_with_id("2026-03-15")
+    base, date, idx = cmd.send(:resolve_by_id, @episodes_dir)
+
+    assert_equal "test-2026-03-15", base
+    assert_equal "2026-03-15", date
+    assert_equal 0, idx
+  end
+
+  def test_resolve_by_id_parses_date_with_suffix
+    File.write(File.join(@episodes_dir, "test-2026-03-15b.mp3"), "x")
+
+    cmd = build_command_with_id("2026-03-15b")
+    base, date, idx = cmd.send(:resolve_by_id, @episodes_dir)
+
+    assert_equal "test-2026-03-15b", base
+    assert_equal "2026-03-15", date
+    assert_equal 2, idx # "" is 0, "a" is 1, "b" is 2
+  end
+
+  def test_resolve_by_id_does_not_match_longer_suffix
+    # test-2026-03-15a.mp3 exists but we're looking for test-2026-03-15
+    File.write(File.join(@episodes_dir, "test-2026-03-15a.mp3"), "x")
+
+    cmd = build_command_with_id("2026-03-15")
+    result = cmd.send(:resolve_by_id, @episodes_dir)
+    assert_nil result
+  end
+
+  def test_resolve_by_id_returns_nil_for_invalid_format
+    cmd = build_command_with_id("not-a-date")
+    result = cmd.send(:resolve_by_id, @episodes_dir)
+    assert_nil result
+  end
+
+  def test_resolve_by_id_returns_nil_when_no_files_match
+    cmd = build_command_with_id("2026-03-15")
+    result = cmd.send(:resolve_by_id, @episodes_dir)
+    assert_nil result
+  end
+
+  # --- find_history_entry ---
+
+  def test_find_history_entry_returns_correct_entry
+    entries = [
+      { "date" => "2026-03-01", "title" => "First" },
+      { "date" => "2026-03-01", "title" => "Second" },
+      { "date" => "2026-03-02", "title" => "Third" }
+    ]
+    cmd = build_command(stub_config)
+
+    assert_equal "First", cmd.send(:find_history_entry, entries, "2026-03-01", 0)["title"]
+    assert_equal "Second", cmd.send(:find_history_entry, entries, "2026-03-01", 1)["title"]
+    assert_equal "Third", cmd.send(:find_history_entry, entries, "2026-03-02", 0)["title"]
+    assert_nil cmd.send(:find_history_entry, entries, "2026-03-05", 0)
+  end
+
   # --- remove_lingq_tracking ---
 
   def test_remove_lingq_tracking_deletes_entry
@@ -78,6 +139,75 @@ class TestScrapCommand < Minitest::Test
     cmd.send(:remove_lingq_tracking, config, "ep-a")
   end
 
+  # --- resolve_from_path ---
+
+  def test_resolve_from_path_mp3
+    cmd = PodgenCLI::ScrapCommand.allocate
+    name, id = cmd.send(:resolve_from_path, "/output/lahko_noc/episodes/lahko_noc-2026-02-23.mp3")
+
+    assert_equal "lahko_noc", name
+    assert_equal "2026-02-23", id
+  end
+
+  def test_resolve_from_path_mp3_with_suffix
+    cmd = PodgenCLI::ScrapCommand.allocate
+    name, id = cmd.send(:resolve_from_path, "/output/lahko_noc/episodes/lahko_noc-2026-02-23b.mp3")
+
+    assert_equal "lahko_noc", name
+    assert_equal "2026-02-23b", id
+  end
+
+  def test_resolve_from_path_transcript_md
+    cmd = PodgenCLI::ScrapCommand.allocate
+    name, id = cmd.send(:resolve_from_path, "/output/lahko_noc/episodes/lahko_noc-2026-02-23_transcript.md")
+
+    assert_equal "lahko_noc", name
+    assert_equal "2026-02-23", id
+  end
+
+  def test_resolve_from_path_script_html
+    cmd = PodgenCLI::ScrapCommand.allocate
+    name, id = cmd.send(:resolve_from_path, "/output/fulgur_news/episodes/fulgur_news-2026-03-15a_script.html")
+
+    assert_equal "fulgur_news", name
+    assert_equal "2026-03-15a", id
+  end
+
+  def test_resolve_from_path_language_suffix
+    cmd = PodgenCLI::ScrapCommand.allocate
+    name, id = cmd.send(:resolve_from_path, "/output/ruby_world/episodes/ruby_world-2026-01-10-es.mp3")
+
+    assert_equal "ruby_world", name
+    assert_equal "2026-01-10", id
+  end
+
+  def test_resolve_from_path_returns_nil_for_unrecognized
+    cmd = PodgenCLI::ScrapCommand.allocate
+    result = cmd.send(:resolve_from_path, "/some/random/file.txt")
+
+    assert_nil result
+  end
+
+  def test_initialize_accepts_file_path
+    path = File.join(@episodes_dir, "test-2026-03-15.mp3")
+    File.write(path, "x")
+
+    cmd = PodgenCLI::ScrapCommand.new([path], {})
+
+    assert_equal "test", cmd.instance_variable_get(:@podcast_name)
+    assert_equal "2026-03-15", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_initialize_accepts_file_path_with_suffix
+    path = File.join(@episodes_dir, "test-2026-03-15b_transcript.md")
+    File.write(path, "text")
+
+    cmd = PodgenCLI::ScrapCommand.new([path], {})
+
+    assert_equal "test", cmd.instance_variable_get(:@podcast_name)
+    assert_equal "2026-03-15b", cmd.instance_variable_get(:@episode_id)
+  end
+
   private
 
   StubScrapConfig = Struct.new(:episodes_dir, keyword_init: true)
@@ -89,6 +219,14 @@ class TestScrapCommand < Minitest::Test
   def build_command(config)
     cmd = PodgenCLI::ScrapCommand.allocate
     cmd.instance_variable_set(:@podcast_name, "test")
+    cmd.instance_variable_set(:@episode_id, nil)
+    cmd
+  end
+
+  def build_command_with_id(episode_id)
+    cmd = PodgenCLI::ScrapCommand.allocate
+    cmd.instance_variable_set(:@podcast_name, "test")
+    cmd.instance_variable_set(:@episode_id, episode_id)
     cmd
   end
 end

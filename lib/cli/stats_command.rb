@@ -79,37 +79,52 @@ module PodgenCLI
         return
       end
 
+      valid = PodcastConfig.available
+      totals.select! { |r| valid.include?(r[:podcast]) }
+      return puts "No download data for known podcasts." if totals.empty?
+
+      podcasts = totals.map { |r| r[:podcast] }
       total_dl = totals.sum { |r| r[:downloads] }
 
-      puts "Downloads (last #{@days} days)"
-      puts
-      fmt = "  %-20s %8s %8s"
-      puts format(fmt, "Podcast", "Total", "Avg/day")
+      puts "Downloads (last #{@days} days): #{total_dl} total"
       totals.each do |row|
         avg = row[:days] > 0 ? (row[:downloads].to_f / row[:days]).round(1) : 0
-        puts format(fmt, row[:podcast], row[:downloads], avg)
-      end
-      puts format(fmt, "", "────────", "────────")
-      total_days = totals.map { |r| r[:days] }.max || 1
-      puts format(fmt, "Total", total_dl, (total_dl.to_f / total_days).round(1))
-
-      countries = client.country_breakdown(days: @days, limit: 10)
-      apps = client.app_breakdown(days: @days, limit: 10)
-
-      if countries.any?
-        puts
-        puts "  Countries:"
-        countries.each do |row|
-          puts "    %-6s %6d" % [row[:country], row[:downloads]]
-        end
+        puts "  #{row[:podcast]}: #{row[:downloads]} (#{avg}/day)"
       end
 
-      if apps.any?
+      # Fetch per-podcast breakdowns
+      apps = {}
+      countries = {}
+      daily = {}
+      episodes = {}
+      podcasts.each do |name|
+        apps[name] = client.app_breakdown(podcast: name, days: @days)
+        countries[name] = client.country_breakdown(podcast: name, days: @days)
+        daily[name] = client.daily_breakdown(podcast: name, days: @days)
+        episodes[name] = client.episode_downloads(podcast: name, days: @days)
+      end
+
+      puts
+      print_pivoted_table("Apps", podcasts, apps, :app, :downloads)
+
+      puts
+      print_pivoted_table("Countries", podcasts, countries, :country, :downloads)
+
+      puts
+      print_pivoted_table("Daily", podcasts, daily, :date, :downloads, sort: :key_desc)
+
+      # Episodes: side-by-side per podcast (names differ across podcasts)
+      episode_columns = podcasts.filter_map do |name|
+        eps = episodes[name]
+        next if eps.empty?
+        name_w = [eps.map { |r| r[:episode].length }.max, 20].max
+        lines = eps.map { |r| format("  %-#{name_w}s %6d", r[:episode], r[:downloads]) }
+        { header: "Episodes (#{name}):", lines: lines }
+      end
+
+      if episode_columns.any?
         puts
-        puts "  Apps:"
-        apps.each do |row|
-          puts "    %-24s %6d" % [row[:app], row[:downloads]]
-        end
+        print_side_by_side(episode_columns)
       end
     end
 
@@ -124,22 +139,6 @@ module PodgenCLI
 
       puts "Downloads for #{podcast} (last #{@days} days): #{total} total, #{avg}/day avg"
 
-      if episodes.any?
-        puts
-        puts "  Episodes:"
-        episodes.each do |row|
-          puts "    %-45s %6d" % [row[:episode], row[:downloads]]
-        end
-      end
-
-      if countries.any?
-        puts
-        puts "  Countries:"
-        countries.each do |row|
-          puts "    %-6s %6d" % [row[:country], row[:downloads]]
-        end
-      end
-
       if apps.any?
         puts
         puts "  Apps:"
@@ -148,12 +147,28 @@ module PodgenCLI
         end
       end
 
+      # Episodes / Countries / Daily: three columns side by side
+      columns = []
+
+      if episodes.any?
+        name_w = [episodes.map { |r| r[:episode].length }.max, 20].max
+        lines = episodes.map { |r| format("  %-#{name_w}s %6d", r[:episode], r[:downloads]) }
+        columns << { header: "Episodes:", lines: lines }
+      end
+
+      if countries.any?
+        lines = countries.map { |r| format("  %-6s %6d", r[:country], r[:downloads]) }
+        columns << { header: "Countries:", lines: lines }
+      end
+
       if daily.any?
+        lines = daily.map { |r| format("  %-12s %6d", r[:date], r[:downloads]) }
+        columns << { header: "Daily:", lines: lines }
+      end
+
+      if columns.any?
         puts
-        puts "  Daily:"
-        daily.each do |row|
-          puts "    %-12s %6d" % [row[:date], row[:downloads]]
-        end
+        print_side_by_side(columns)
       end
     end
 
@@ -365,6 +380,70 @@ module PodgenCLI
         end
       end
       map
+    end
+
+    # Renders pre-formatted text columns side by side.
+    # columns: [{ header: String, lines: [String] }]
+    def print_side_by_side(columns, gap: 3)
+      return if columns.empty?
+
+      widths = columns.map do |col|
+        ([col[:header].length] + col[:lines].map(&:length)).max
+      end
+
+      max_rows = columns.map { |c| c[:lines].length }.max || 0
+
+      header = columns.each_with_index.map { |col, i|
+        format("%-#{widths[i]}s", col[:header])
+      }.join(" " * gap)
+      puts "  #{header.rstrip}"
+
+      max_rows.times do |r|
+        line = columns.each_with_index.map { |col, i|
+          text = col[:lines][r] || ""
+          format("%-#{widths[i]}s", text)
+        }.join(" " * gap)
+        puts "  #{line.rstrip}"
+      end
+    end
+
+    # Renders a table with shared row labels and one value column per podcast.
+    # per_podcast: { name => [{ label_key => x, value_key => y }] }
+    def print_pivoted_table(title, podcasts, per_podcast, label_key, value_key, sort: :value)
+      totals = Hash.new(0)
+      per_podcast.each_value do |rows|
+        rows.each { |r| totals[r[label_key]] += r[value_key] }
+      end
+      return if totals.empty?
+
+      labels = case sort
+               when :value then totals.sort_by { |_, v| -v }.map(&:first)
+               when :key_desc then totals.keys.sort.reverse
+               else totals.keys.sort
+               end
+
+      lookups = per_podcast.transform_values do |rows|
+        rows.each_with_object({}) { |r, h| h[r[label_key]] = r[value_key] }
+      end
+
+      label_w = ["#{title}:".length, *labels.map { |l| l.to_s.length }].max
+      val_ws = podcasts.map do |p|
+        vals = labels.filter_map { |l| lookups.dig(p, l)&.to_s&.length }
+        [p.length, *vals].max
+      end
+
+      line = format("  %-#{label_w}s", "#{title}:")
+      podcasts.each_with_index { |p, i| line += format("  %#{val_ws[i]}s", p) }
+      puts line
+
+      labels.each do |label|
+        line = format("  %-#{label_w}s", label.to_s)
+        podcasts.each_with_index do |p, i|
+          val = lookups.dig(p, label)
+          line += val ? format("  %#{val_ws[i]}d", val) : (" " * (val_ws[i] + 2))
+        end
+        puts line
+      end
     end
 
     def format_sources(sources)

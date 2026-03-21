@@ -5,10 +5,12 @@ require "json"
 require "set"
 require_relative "loggable"
 require_relative "retryable"
+require_relative "usage_logger"
 
 class VocabularyAnnotator
   include Loggable
   include Retryable
+  include UsageLogger
 
   CEFR_LEVELS = %w[A1 A2 B1 B2 C1 C2].freeze
 
@@ -52,19 +54,18 @@ class VocabularyAnnotator
 
   def classify_words(text, language, cutoff)
     with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
-      start = Time.now
+      message, elapsed = measure_time do
+        @client.messages.create(
+          model: @model,
+          max_tokens: 8192,
+          system: system_prompt(language, cutoff),
+          messages: [
+            { role: "user", content: text }
+          ]
+        )
+      end
 
-      message = @client.messages.create(
-        model: @model,
-        max_tokens: 8192,
-        system: system_prompt(language, cutoff),
-        messages: [
-          { role: "user", content: text }
-        ]
-      )
-
-      elapsed = (Time.now - start).round(2)
-      log_usage(message, elapsed)
+      log_api_usage("Vocabulary classified", message, elapsed)
 
       raw = message.content.first.text.strip
       # Extract JSON array from response (may be wrapped in ```json ... ```)
@@ -163,9 +164,4 @@ class VocabularyAnnotator
     lines.join("\n").strip
   end
 
-  def log_usage(message, elapsed)
-    usage = message.usage
-    log("Vocabulary classified in #{elapsed}s (#{message.stop_reason})")
-    log("  Input: #{usage.input_tokens} tokens | Output: #{usage.output_tokens} tokens")
-  end
 end

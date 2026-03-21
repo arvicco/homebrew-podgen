@@ -54,6 +54,21 @@ class EpisodeHistory
     removed
   end
 
+  # Remove a specific entry by date and suffix index (0-based position among
+  # entries sharing that date). Returns the removed entry, or nil if not found.
+  def remove_by_date!(date, suffix_index)
+    entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
+
+    # Find all entries with this date, in order
+    matches = entries.each_with_index.select { |e, _| e["date"] == date.to_s }
+    return nil if matches.empty? || suffix_index >= matches.length
+
+    _, global_index = matches[suffix_index]
+    removed = entries.delete_at(global_index)
+    write_entries!(entries)
+    removed
+  end
+
   # Append a new episode entry.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil)

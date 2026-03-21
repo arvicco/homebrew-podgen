@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
-require "anthropic"
 require "date"
+require_relative "../anthropic_client"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../usage_logger"
 
 class TopicQuery < Anthropic::BaseModel
   required :query, String
@@ -14,15 +15,16 @@ class TopicList < Anthropic::BaseModel
 end
 
 class TopicAgent
+  include AnthropicClient
   include Loggable
   include Retryable
+  include UsageLogger
 
   MAX_RETRIES = 3
 
   def initialize(guidelines:, recent_topics: nil, logger: nil)
     @logger = logger
-    @client = Anthropic::Client.new
-    @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
+    init_anthropic_client
     @guidelines = guidelines
     @recent_topics = recent_topics
   end
@@ -33,23 +35,22 @@ class TopicAgent
     today = Date.today.strftime("%Y-%m-%d")
 
     with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
-      start = Time.now
+      message, elapsed = measure_time do
+        @client.messages.create(
+          model: @model,
+          max_tokens: 1024,
+          system: build_system_prompt,
+          messages: [
+            {
+              role: "user",
+              content: build_user_prompt(today)
+            }
+          ],
+          output_config: { format: TopicList }
+        )
+      end
 
-      message = @client.messages.create(
-        model: @model,
-        max_tokens: 1024,
-        system: build_system_prompt,
-        messages: [
-          {
-            role: "user",
-            content: build_user_prompt(today)
-          }
-        ],
-        output_config: { format: TopicList }
-      )
-
-      elapsed = (Time.now - start).round(2)
-      log_usage(message, elapsed)
+      log_api_usage("Topics generated", message, elapsed)
 
       result = message.parsed_output
       raise "Structured output parsing failed" if result.nil?
@@ -97,12 +98,4 @@ class TopicAgent
     ]
   end
 
-  def log_usage(message, elapsed)
-    usage = message.usage
-    log("Topics generated in #{elapsed}s (#{message.stop_reason})")
-    log("  Input: #{usage.input_tokens} tokens | Output: #{usage.output_tokens} tokens")
-    cache_create = usage.cache_creation_input_tokens || 0
-    cache_read = usage.cache_read_input_tokens || 0
-    log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
-  end
 end
