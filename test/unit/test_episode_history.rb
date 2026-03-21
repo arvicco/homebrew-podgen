@@ -101,6 +101,45 @@ class TestEpisodeHistory < Minitest::Test
     assert_nil history.remove_last!
   end
 
+  def test_remove_by_date_removes_specific_entry
+    @history.record!(date: "2026-03-01", title: "Ep 1", topics: ["a"], urls: [])
+    @history.record!(date: "2026-03-02", title: "Ep 2", topics: ["b"], urls: [])
+    @history.record!(date: "2026-03-03", title: "Ep 3", topics: ["c"], urls: [])
+
+    removed = @history.remove_by_date!("2026-03-02", 0)
+    assert_equal "Ep 2", removed["title"]
+
+    entries = YAML.load_file(@history_path)
+    assert_equal 2, entries.length
+    assert_equal "Ep 1", entries[0]["title"]
+    assert_equal "Ep 3", entries[1]["title"]
+  end
+
+  def test_remove_by_date_with_suffix_index_removes_correct_entry
+    @history.record!(date: "2026-03-01", title: "Ep 1a", topics: ["a"], urls: [])
+    @history.record!(date: "2026-03-01", title: "Ep 1b", topics: ["b"], urls: [])
+    @history.record!(date: "2026-03-01", title: "Ep 1c", topics: ["c"], urls: [])
+
+    # suffix_index 1 = second entry for that date (the "a" suffix)
+    removed = @history.remove_by_date!("2026-03-01", 1)
+    assert_equal "Ep 1b", removed["title"]
+
+    entries = YAML.load_file(@history_path)
+    assert_equal 2, entries.length
+    assert_equal "Ep 1a", entries[0]["title"]
+    assert_equal "Ep 1c", entries[1]["title"]
+  end
+
+  def test_remove_by_date_returns_nil_for_missing_date
+    @history.record!(date: "2026-03-01", title: "Ep 1", topics: ["a"], urls: [])
+    assert_nil @history.remove_by_date!("2026-03-15", 0)
+  end
+
+  def test_remove_by_date_returns_nil_for_out_of_range_suffix
+    @history.record!(date: "2026-03-01", title: "Ep 1", topics: ["a"], urls: [])
+    assert_nil @history.remove_by_date!("2026-03-01", 5)
+  end
+
   def test_record_preserves_all_entries
     old_date = Date.today - 10
     @history.record!(date: old_date, title: "Old", topics: ["old"], urls: ["https://old.com"])

@@ -7,7 +7,7 @@ module PodgenCLI
   COMMANDS = {
     "generate"  => ["Run the full podcast pipeline",       "cli/generate_command",    "GenerateCommand"],
     "translate" => ["Translate episodes to new languages",  "cli/translate_command",   "TranslateCommand"],
-    "scrap"     => ["Remove last episode and history",     "cli/scrap_command",       "ScrapCommand"],
+    "scrap"     => ["Remove episode and history entry",     "cli/scrap_command",       "ScrapCommand"],
     "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",         "RssCommand"],
     "site"      => ["Generate static HTML website",        "cli/site_command",        "SiteCommand"],
     "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",    "PublishCommand"],
@@ -19,7 +19,8 @@ module PodgenCLI
     "analytics" => ["Manage download analytics Worker",    "cli/analytics_command",   "AnalyticsCommand"],
     "add"       => ["Add a priority link for next episode", "cli/add_command",         "AddCommand"],
     "links"     => ["List or manage queued priority links", "cli/links_command",       "LinksCommand"],
-    "vocab"     => ["Manage known vocabulary words",        "cli/vocab_command",       "VocabCommand"]
+    "vocab"     => ["Manage known vocabulary words",        "cli/vocab_command",       "VocabCommand"],
+    "exclude"   => ["Exclude URLs from future episodes",    "cli/exclude_command",     "ExcludeCommand"]
   }.freeze
 
   def self.run(argv)
@@ -33,7 +34,7 @@ module PodgenCLI
       opts.separator "Commands:"
       opts.separator "  generate <podcast>             Run the full pipeline (news or language)"
       opts.separator "  translate <podcast>            Translate episodes to new languages"
-      opts.separator "  scrap <podcast>                Remove last episode files + history entry"
+      opts.separator "  scrap <podcast> [episode|path]  Remove episode files + history entry"
       opts.separator "  rss <podcast>                  Generate RSS feed"
       opts.separator "  site <podcast>                 Generate static HTML website"
       opts.separator "  publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)"
@@ -46,6 +47,7 @@ module PodgenCLI
       opts.separator "  add <podcast> <url> [--note ...]     Queue a priority link for next episode"
       opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"
       opts.separator "  vocab <add|remove|list> <podcast>    Manage known vocabulary words"
+      opts.separator "  exclude <podcast> <url> [url...]     Exclude URLs from future episodes"
       opts.separator ""
       opts.separator "Pipelines (configured via ## Type in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"

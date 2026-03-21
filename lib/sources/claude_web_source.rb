@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "anthropic"
+require_relative "../anthropic_client"
 require_relative "base_source"
 
 class ClaudeWebSource < BaseSource
@@ -8,10 +8,11 @@ class ClaudeWebSource < BaseSource
   DEFAULT_MODEL = "claude-haiku-4-5-20251001"
   MAX_SEARCH_USES = 3
 
+  include AnthropicClient
+
   def initialize(logger: nil, max_results: 5, **_options)
     super(logger: logger)
-    @client = Anthropic::Client.new
-    @model = ENV.fetch("CLAUDE_WEB_MODEL", DEFAULT_MODEL)
+    init_anthropic_client(env_key: "CLAUDE_WEB_MODEL", default_model: DEFAULT_MODEL)
     @max_results = max_results
   end
 

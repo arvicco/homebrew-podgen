@@ -191,6 +191,84 @@ class TestStatsValidate < Minitest::Test
     assert_equal "\u2026",   cmd.send(:truncate, "ab", 1)
   end
 
+  def test_print_side_by_side_renders_columns
+    cmd = PodgenCLI::StatsCommand.new([], verbosity: :normal)
+    columns = [
+      { header: "Episodes:", lines: ["  ep-one    100", "  ep-two     50"] },
+      { header: "Countries:", lines: ["  US    200", "  DE    100", "  GB     50"] },
+      { header: "Daily:", lines: ["  2026-03-19    30"] }
+    ]
+
+    out = capture_stdout { cmd.send(:print_side_by_side, columns) }
+    lines = out.lines.map(&:rstrip)
+
+    # Header line has all three section titles
+    assert_match(/Episodes:.*Countries:.*Daily:/, lines[0])
+    # Data rows: shorter columns get blank padding
+    assert_includes lines[1], "ep-one"
+    assert_includes lines[1], "US"
+    assert_includes lines[1], "2026-03-19"
+    # Third row: episodes column is blank, countries still has data
+    assert_includes lines[3], "GB"
+    # Total lines: header + 3 data rows
+    assert_equal 4, lines.length
+  end
+
+  def test_print_pivoted_table_renders_shared_labels
+    cmd = PodgenCLI::StatsCommand.new([], verbosity: :normal)
+    per_podcast = {
+      "pod1" => [{ app: "Spotify", downloads: 200 }, { app: "Overcast", downloads: 100 }],
+      "pod2" => [{ app: "Spotify", downloads: 150 }, { app: "Apple", downloads: 50 }]
+    }
+
+    out = capture_stdout do
+      cmd.send(:print_pivoted_table, "Apps", %w[pod1 pod2], per_podcast, :app, :downloads)
+    end
+    lines = out.lines.map(&:rstrip)
+
+    # Header has title and podcast names
+    assert_match(/Apps:.*pod1.*pod2/, lines[0])
+    # Sorted by total value: Spotify (350) first, then Overcast (100), then Apple (50)
+    assert_match(/Spotify.*200.*150/, lines[1])
+    assert_match(/Overcast.*100/, lines[2])
+    assert_match(/Apple.*50/, lines[3])
+  end
+
+  def test_print_pivoted_table_sorts_by_key_desc
+    cmd = PodgenCLI::StatsCommand.new([], verbosity: :normal)
+    per_podcast = {
+      "pod1" => [{ date: "2026-03-18", downloads: 10 }, { date: "2026-03-19", downloads: 20 }]
+    }
+
+    out = capture_stdout do
+      cmd.send(:print_pivoted_table, "Daily", ["pod1"], per_podcast, :date, :downloads, sort: :key_desc)
+    end
+    lines = out.lines.map(&:rstrip)
+
+    # Dates sorted descending
+    assert_match(/2026-03-19/, lines[1])
+    assert_match(/2026-03-18/, lines[2])
+  end
+
+  def test_print_pivoted_table_skips_missing_values
+    cmd = PodgenCLI::StatsCommand.new([], verbosity: :normal)
+    per_podcast = {
+      "pod1" => [{ country: "US", downloads: 100 }],
+      "pod2" => [{ country: "DE", downloads: 50 }]
+    }
+
+    out = capture_stdout do
+      cmd.send(:print_pivoted_table, "Countries", %w[pod1 pod2], per_podcast, :country, :downloads)
+    end
+
+    # pod1 has US but not DE; pod2 has DE but not US
+    assert_match(/US.*100/, out)
+    assert_match(/DE.*50/, out)
+    # pod2 has no US data — only one number group on the US line
+    us_line = out.lines.find { |l| l.include?("US") }
+    refute_match(/US\s+\d+\s+\d+/, us_line)
+  end
+
   def test_validate_format_size
     require "podcast_validator"
     validator = PodcastValidator.allocate
@@ -217,6 +295,15 @@ class TestStatsValidate < Minitest::Test
   ensure
     $stdout = old_stdout
     $stderr = old_stderr
+  end
+
+  def capture_stdout
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    yield
+    $stdout.string
+  ensure
+    $stdout = old_stdout
   end
 
   def fake_file(path, content = "content")

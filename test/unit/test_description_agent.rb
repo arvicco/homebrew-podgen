@@ -137,5 +137,7 @@ class TestDescriptionAgent < Minitest::Test
   class MockUsage
     def input_tokens = 100
     def output_tokens = 30
+    def cache_creation_input_tokens = 0
+    def cache_read_input_tokens = 0
   end
 end

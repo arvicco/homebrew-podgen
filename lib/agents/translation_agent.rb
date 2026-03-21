@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
-require "anthropic"
+require_relative "../anthropic_client"
 require_relative "../loggable"
 require_relative "../retryable"
 require_relative "../language_names"
+require_relative "../usage_logger"
 
 class TranslatedSegment < Anthropic::BaseModel
   required :name, String
@@ -16,15 +17,16 @@ class TranslatedScript < Anthropic::BaseModel
 end
 
 class TranslationAgent
+  include AnthropicClient
   include Loggable
   include Retryable
+  include UsageLogger
 
   MAX_RETRIES = 3
 
   def initialize(target_language:, logger: nil)
     @logger = logger
-    @client = Anthropic::Client.new
-    @model = ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6")
+    init_anthropic_client
     @target_language = target_language
     @language_name = LANGUAGE_NAMES.fetch(target_language, target_language)
   end
@@ -37,23 +39,22 @@ class TranslationAgent
     script_text = format_script_for_translation(script)
 
     with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
-      start = Time.now
+      message, elapsed = measure_time do
+        @client.messages.create(
+          model: @model,
+          max_tokens: 8192,
+          system: build_system_prompt,
+          messages: [
+            {
+              role: "user",
+              content: "Translate this podcast script to #{@language_name}:\n\n#{script_text}"
+            }
+          ],
+          output_config: { format: TranslatedScript }
+        )
+      end
 
-      message = @client.messages.create(
-        model: @model,
-        max_tokens: 8192,
-        system: build_system_prompt,
-        messages: [
-          {
-            role: "user",
-            content: "Translate this podcast script to #{@language_name}:\n\n#{script_text}"
-          }
-        ],
-        output_config: { format: TranslatedScript }
-      )
-
-      elapsed = (Time.now - start).round(2)
-      log_usage(message, elapsed)
+      log_api_usage("Translation generated", message, elapsed)
 
       translated = message.parsed_output
       raise "Structured output parsing failed" if translated.nil?
@@ -97,12 +98,4 @@ class TranslationAgent
     parts.join("\n")
   end
 
-  def log_usage(message, elapsed)
-    usage = message.usage
-    log("Translation generated in #{elapsed}s (#{message.stop_reason})")
-    log("  Input: #{usage.input_tokens} tokens | Output: #{usage.output_tokens} tokens")
-    cache_create = usage.cache_creation_input_tokens || 0
-    cache_read = usage.cache_read_input_tokens || 0
-    log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
-  end
 end

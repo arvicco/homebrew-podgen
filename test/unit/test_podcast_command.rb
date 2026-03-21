@@ -26,7 +26,9 @@ end
 class TestPodcastCommand < Minitest::Test
   def test_require_podcast_returns_nil_when_name_present
     cmd = StubCommand.new("my_podcast")
-    assert_nil cmd.test_require_podcast!("test")
+    PodcastConfig.stub(:available, ["my_podcast"]) do
+      assert_nil cmd.test_require_podcast!("test")
+    end
   end
 
   def test_require_podcast_returns_2_when_name_missing
@@ -57,6 +59,43 @@ class TestPodcastCommand < Minitest::Test
       output = capture_io { cmd.test_require_podcast!("rss") }
       assert_includes output[1], "Usage:"
       refute_includes output[1], "Available podcasts:"
+    end
+  end
+
+  def test_require_podcast_unknown_name_returns_2
+    cmd = StubCommand.new("nonexistent")
+    PodcastConfig.stub(:available, ["alpha", "beta"]) do
+      code = nil
+      capture_io { code = cmd.test_require_podcast!("generate") }
+      assert_equal 2, code
+    end
+  end
+
+  def test_require_podcast_unknown_name_lists_available
+    cmd = StubCommand.new("nonexistent")
+    PodcastConfig.stub(:available, ["alpha", "beta"]) do
+      output = capture_io { cmd.test_require_podcast!("generate") }
+      assert_includes output[1], "Unknown podcast: nonexistent"
+      assert_includes output[1], "Available podcasts:"
+      assert_includes output[1], "alpha"
+      assert_includes output[1], "beta"
+    end
+  end
+
+  def test_require_podcast_typo_suggests_did_you_mean
+    cmd = StubCommand.new("lahco_noc")
+    PodcastConfig.stub(:available, ["fulgur_news", "lahko_noc", "ruby_world"]) do
+      output = capture_io { cmd.test_require_podcast!("generate") }
+      assert_includes output[1], "Unknown podcast: lahco_noc"
+      assert_includes output[1], "lahko_noc"
+      assert_includes output[1], "Did you mean?"
+    end
+  end
+
+  def test_require_podcast_valid_name_passes
+    cmd = StubCommand.new("alpha")
+    PodcastConfig.stub(:available, ["alpha", "beta"]) do
+      assert_nil cmd.test_require_podcast!("generate")
     end
   end
 end

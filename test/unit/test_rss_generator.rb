@@ -419,6 +419,24 @@ class TestRssGenerator < Minitest::Test
     assert_includes xml, "A great podcast about things"
   end
 
+  def test_generate_description_strips_markdown_links
+    create_mp3("test-2026-01-15.mp3", 1000)
+    gen = RssGenerator.new(
+      episodes_dir: @episodes_dir,
+      feed_path: @feed_path,
+      title: "Pod",
+      description: "Built by [Fulgur Ventures](https://fulgur.ventures)",
+      language: "en",
+      base_url: "https://example.com"
+    )
+    gen.generate
+
+    xml = File.read(@feed_path)
+    assert_includes xml, "Built by Fulgur Ventures"
+    refute_includes xml, "[Fulgur"
+    refute_includes xml, "fulgur.ventures"
+  end
+
   def test_generate_missing_base_url_uses_relative
     create_mp3("test-2026-01-15.mp3", 1000)
     gen = build_generator(language: "en")

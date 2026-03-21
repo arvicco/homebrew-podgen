@@ -1,17 +1,19 @@
 # frozen_string_literal: true
 
-require "anthropic"
+require_relative "../anthropic_client"
 require_relative "../loggable"
+require_relative "../usage_logger"
 
 class DescriptionAgent
+  include AnthropicClient
   include Loggable
+  include UsageLogger
   MAX_RETRIES = 3
   TRANSCRIPT_LIMIT = 2000
 
   def initialize(logger: nil)
     @logger = logger
-    @client = Anthropic::Client.new
-    @model = ENV.fetch("CLAUDE_WEB_MODEL", "claude-haiku-4-5-20251001")
+    init_anthropic_client(env_key: "CLAUDE_WEB_MODEL", default_model: "claude-haiku-4-5-20251001")
   end
 
   # Cleans a YouTube/RSS episode title by stripping category prefixes, labels, and noise.
@@ -21,20 +23,20 @@ class DescriptionAgent
     return title if title.to_s.strip.empty?
 
     log("Cleaning title: \"#{title}\"")
-    start = Time.now
 
-    message = @client.messages.create(
-      model: @model,
-      max_tokens: 256,
-      system: clean_title_system_prompt,
-      messages: [
-        { role: "user", content: title }
-      ]
-    )
+    message, elapsed = measure_time do
+      @client.messages.create(
+        model: @model,
+        max_tokens: 256,
+        system: clean_title_system_prompt,
+        messages: [
+          { role: "user", content: title }
+        ]
+      )
+    end
 
-    elapsed = (Time.now - start).round(2)
     result = message.content.first.text.strip
-    log_usage(message, elapsed, "clean_title")
+    log_api_usage("Description clean_title", message, elapsed)
 
     if result.empty?
       log("Cleaned title was empty, keeping original")
@@ -59,23 +61,23 @@ class DescriptionAgent
     return description if description.to_s.strip.empty?
 
     log("Cleaning description for \"#{title}\" (#{description.length} chars)")
-    start = Time.now
 
-    message = @client.messages.create(
-      model: @model,
-      max_tokens: 1024,
-      system: clean_system_prompt,
-      messages: [
-        {
-          role: "user",
-          content: "Title: #{title}\n\nDescription:\n#{description}"
-        }
-      ]
-    )
+    message, elapsed = measure_time do
+      @client.messages.create(
+        model: @model,
+        max_tokens: 1024,
+        system: clean_system_prompt,
+        messages: [
+          {
+            role: "user",
+            content: "Title: #{title}\n\nDescription:\n#{description}"
+          }
+        ]
+      )
+    end
 
-    elapsed = (Time.now - start).round(2)
     result = message.content.first.text.strip
-    log_usage(message, elapsed, "clean")
+    log_api_usage("Description clean", message, elapsed)
 
     if result.empty?
       log("Cleaned description was empty, keeping original")
@@ -96,23 +98,23 @@ class DescriptionAgent
 
     truncated = transcript[0, TRANSCRIPT_LIMIT]
     log("Generating description for \"#{title}\" from transcript (#{truncated.length} chars)")
-    start = Time.now
 
-    message = @client.messages.create(
-      model: @model,
-      max_tokens: 512,
-      system: generate_system_prompt,
-      messages: [
-        {
-          role: "user",
-          content: "Title: #{title}\n\nTranscript:\n#{truncated}"
-        }
-      ]
-    )
+    message, elapsed = measure_time do
+      @client.messages.create(
+        model: @model,
+        max_tokens: 512,
+        system: generate_system_prompt,
+        messages: [
+          {
+            role: "user",
+            content: "Title: #{title}\n\nTranscript:\n#{truncated}"
+          }
+        ]
+      )
+    end
 
-    elapsed = (Time.now - start).round(2)
     result = message.content.first.text.strip
-    log_usage(message, elapsed, "generate")
+    log_api_usage("Description generate", message, elapsed)
 
     log("Description generated: #{result.length} chars")
     result
@@ -185,9 +187,4 @@ class DescriptionAgent
     PROMPT
   end
 
-  def log_usage(message, elapsed, operation)
-    usage = message.usage
-    log("Description #{operation} in #{elapsed}s (#{message.stop_reason})")
-    log("  Input: #{usage.input_tokens} tokens | Output: #{usage.output_tokens} tokens")
-  end
 end

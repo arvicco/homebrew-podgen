@@ -108,7 +108,7 @@ class RssGenerator
 
     channel = rss.add_element("channel")
     add_text(channel, "title", @title)
-    add_text(channel, "description", @description || "Podcast by #{@author}")
+    add_text(channel, "description", strip_markdown_links(@description || "Podcast by #{@author}"))
     add_text(channel, "link", @base_url) if @base_url
     add_text(channel, "language", @language)
     add_text(channel, "generator", "podgen")
@@ -165,6 +165,10 @@ class RssGenerator
     end
 
     doc
+  end
+
+  def strip_markdown_links(text)
+    text.gsub(/\[([^\]]+)\]\([^)]+\)/, '\1')
   end
 
   def add_text(parent, name, text)
