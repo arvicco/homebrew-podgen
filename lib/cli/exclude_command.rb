@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "date"
+
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")

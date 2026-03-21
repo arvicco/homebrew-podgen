@@ -331,6 +331,18 @@ class TestSiteGenerator < Minitest::Test
     refute_includes index, "[Us]"
   end
 
+  def test_generate_description_with_ampersand_in_markdown_link
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Test" }])
+
+    gen = build_generator(description: "By [A & B](https://example.com)")
+    gen.generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    assert_includes index, ">A &amp; B</a>"
+    refute_includes index, "&amp;amp;"
+  end
+
   def test_generate_hides_duration
     create_mp3("mypod-2026-01-15.mp3")
     write_history([{ "date" => "2026-01-15", "title" => "Test", "duration" => 90.0 }])

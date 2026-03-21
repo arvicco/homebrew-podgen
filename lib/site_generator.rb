@@ -207,8 +207,8 @@ class SiteGenerator
   # Override: site links open in new tab
   def linkify_markdown(text)
     text.gsub(/\[([^\]]+)\]\(([^)]+)\)/) do
-      title = escape_html(Regexp.last_match(1))
-      url = escape_html(Regexp.last_match(2))
+      title = Regexp.last_match(1)
+      url = Regexp.last_match(2)
       "<a href=\"#{url}\" target=\"_blank\" rel=\"noopener\">#{title}</a>"
     end
   end

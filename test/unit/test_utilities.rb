@@ -199,4 +199,82 @@ class TestUtilities < Minitest::Test
 
     assert elapsed >= 0.04, "Expected elapsed >= 0.04, got #{elapsed}"
   end
+
+  # --- AnthropicClient ---
+
+  def test_anthropic_client_sets_client_and_model
+    require "anthropic_client"
+    ENV["ANTHROPIC_API_KEY"] ||= "test-key"
+
+    klass = Class.new { include AnthropicClient }
+    obj = klass.new
+    obj.send(:init_anthropic_client)
+
+    assert_kind_of Anthropic::Client, obj.instance_variable_get(:@client)
+    assert_equal ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6"), obj.instance_variable_get(:@model)
+  end
+
+  def test_anthropic_client_custom_env_key
+    require "anthropic_client"
+    ENV["ANTHROPIC_API_KEY"] ||= "test-key"
+
+    klass = Class.new { include AnthropicClient }
+    obj = klass.new
+    obj.send(:init_anthropic_client, env_key: "CLAUDE_WEB_MODEL", default_model: "claude-haiku-4-5-20251001")
+
+    expected = ENV.fetch("CLAUDE_WEB_MODEL", "claude-haiku-4-5-20251001")
+    assert_equal expected, obj.instance_variable_get(:@model)
+  end
+
+  # --- UsageLogger ---
+
+  def test_usage_logger_logs_token_counts
+    require "loggable"
+    require "usage_logger"
+
+    received = []
+    logger_stub = Object.new
+    logger_stub.define_singleton_method(:log) { |msg| received << msg }
+
+    klass = Class.new do
+      include Loggable
+      include UsageLogger
+    end
+    obj = klass.new
+    obj.instance_variable_set(:@logger, logger_stub)
+
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens)
+      .new(500, 100, 0, 0)
+    message = Struct.new(:usage, :stop_reason).new(usage, "end_turn")
+
+    obj.send(:log_api_usage, "Test completed", message, 1.23)
+
+    assert received.any? { |l| l.include?("Test completed in 1.23s") }
+    assert received.any? { |l| l.include?("Input: 500") && l.include?("Output: 100") }
+    refute received.any? { |l| l.include?("Cache") }
+  end
+
+  def test_usage_logger_logs_cache_when_present
+    require "loggable"
+    require "usage_logger"
+
+    received = []
+    logger_stub = Object.new
+    logger_stub.define_singleton_method(:log) { |msg| received << msg }
+
+    klass = Class.new do
+      include Loggable
+      include UsageLogger
+    end
+    obj = klass.new
+    obj.instance_variable_set(:@logger, logger_stub)
+
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens)
+      .new(500, 100, 200, 300)
+    message = Struct.new(:usage, :stop_reason).new(usage, "end_turn")
+
+    obj.send(:log_api_usage, "Cached call", message, 0.5)
+
+    assert received.any? { |l| l.include?("Cache create: 200") && l.include?("Cache read: 300") }
+  end
 end
