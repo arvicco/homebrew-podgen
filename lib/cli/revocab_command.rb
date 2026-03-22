@@ -91,13 +91,7 @@ module PodgenCLI
       dir = @config.episodes_dir
 
       if @episode_id
-        # Try exact match: podcast-YYYY-MM-DD[suffix]_transcript.md
         pattern = File.join(dir, "*#{@episode_id}_transcript.md")
-        files = Dir.glob(pattern).sort
-        return files unless files.empty?
-
-        # Try prefix match (date without suffix)
-        pattern = File.join(dir, "*#{@episode_id}*_transcript.md")
         Dir.glob(pattern).sort
       else
         Dir.glob(File.join(dir, "*_transcript.md")).sort
@@ -138,7 +132,7 @@ module PodgenCLI
 
       logger.log("Vocabulary re-annotated: #{File.basename(path)}")
     rescue => e
-      logger.log("Warning: Failed to re-annotate #{File.basename(path)}: #{e.message}")
+      logger.error("Failed to re-annotate #{File.basename(path)}: #{e.message}")
     end
   end
 end
