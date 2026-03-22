@@ -157,6 +157,22 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # --- system_prompt IPA conditional ---
+
+  def test_system_prompt_includes_pronunciation_when_espeak_unsupported
+    Tell::Espeak.stub(:supports?, false) do
+      prompt = @annotator.send(:system_prompt, "zh", "B1")
+      assert_includes prompt, "pronunciation"
+    end
+  end
+
+  def test_system_prompt_excludes_pronunciation_when_espeak_supported
+    Tell::Espeak.stub(:supports?, true) do
+      prompt = @annotator.send(:system_prompt, "sl", "B1")
+      refute_includes prompt, "pronunciation"
+    end
+  end
+
   # --- valid_entry? ---
 
   def test_valid_entry_filters_below_cutoff
