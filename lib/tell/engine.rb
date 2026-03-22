@@ -13,9 +13,16 @@ module Tell
       @config = config
       @translator_instance = translator
       @glossers = glossers || {}
-      @glosser_pool = glosser_pool
       @callbacks = callbacks
       @ja_hiragana_cache = {}
+
+      # Pre-populate glossers from the pool so threads spawned by
+      # fire_addons find them without racing on @glossers writes.
+      if glosser_pool
+        @glosser_pool = glosser_pool
+        all_models = Array(config.gloss_model) | Array(config.phonetic_model) if config.respond_to?(:gloss_model)
+        all_models&.each { |id| @glossers[id] = glosser_pool.glosser(id) }
+      end
     end
 
     # --- Individual operations (return structured results) ---

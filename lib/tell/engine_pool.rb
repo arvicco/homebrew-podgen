@@ -27,8 +27,11 @@ module Tell
     end
 
     # Return a cached TranslatorChain for the given config attributes.
+    # Cache key uses engine names + timeout only — api_keys are fixed per
+    # engine for the lifetime of the process (ENV-based), so engines alone
+    # are sufficient to identify the chain.
     def translator(engines:, api_keys:, timeout:)
-      cache_key = [engines, api_keys, timeout]
+      cache_key = [engines, timeout]
       @translator_mutex.synchronize do
         @translators[cache_key] ||= Tell.build_translator_chain(
           engines, api_keys, timeout: timeout
