@@ -74,8 +74,24 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .back-link { display: inline-block; margin-bottom: 1.5rem; font-size: 0.9rem; }
 
 /* Vocabulary */
-.vocab-word { color: var(--fg); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; text-decoration-color: var(--accent); }
+.vocab-word { color: var(--fg); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; text-decoration-color: var(--accent); position: relative; }
 .vocab-word:hover { color: var(--accent); text-decoration-style: solid; }
+
+/* Vocab tooltip bubble */
+.vocab-tip {
+  display: none; position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.5rem 0.75rem; min-width: 160px; max-width: 280px; width: max-content;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10;
+  font-size: 0.85rem; line-height: 1.4; text-decoration: none; color: var(--fg); text-align: left;
+}
+.vocab-tip::after {
+  content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: var(--border);
+}
+.vocab-tip .pos { color: var(--fg-muted); font-weight: normal; font-size: 0.8rem; }
+.vocab-tip-def { display: block; margin-top: 0.25rem; color: var(--fg-muted); }
+.vocab-word:hover .vocab-tip { display: block; }
 
 .vocabulary { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
 .vocabulary h2 { font-size: 1.25rem; margin-bottom: 1rem; }

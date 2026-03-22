@@ -160,21 +160,80 @@ class TestTranscriptRenderer < Minitest::Test
   # --- linkify_vocab_words ---
 
   def test_linkify_vocab_words_links_bold_to_anchor
-    lemmas = { "beseda" => "beseda" }
-    result = @r.linkify_vocab_words("The **beseda** is here.", lemmas)
-    assert_includes result, '<a href="#vocab-beseda" class="vocab-word">beseda</a>'
+    entries = { "beseda" => { lemma: "beseda", pos: "n.", definition: "word" } }
+    result = @r.linkify_vocab_words("The **beseda** is here.", entries)
+    assert_includes result, 'href="#vocab-beseda"'
+    assert_includes result, 'class="vocab-word"'
+    assert_includes result, ">beseda<"
     refute_includes result, "**"
   end
 
   def test_linkify_vocab_words_uses_lemma_for_anchor
-    lemmas = { "razglasil" => "razglasiti" }
-    result = @r.linkify_vocab_words("He **razglasil** it.", lemmas)
+    entries = { "razglasil" => { lemma: "razglasiti", pos: "v.", definition: "to announce" } }
+    result = @r.linkify_vocab_words("He **razglasil** it.", entries)
     assert_includes result, 'href="#vocab-razglasiti"'
   end
 
   def test_linkify_vocab_words_falls_back_to_lowercase
     result = @r.linkify_vocab_words("A **Unknown** word.", {})
     assert_includes result, 'href="#vocab-unknown"'
+  end
+
+  # --- parse_vocab_entries ---
+
+  def test_parse_vocab_entries_returns_structured_data
+    vocab = <<~VOCAB
+
+      **B1**
+      - **beseda** (n.) — word. a unit of language
+    VOCAB
+
+    result = @r.parse_vocab_entries(vocab)
+    entry = result["beseda"]
+    assert_equal "beseda", entry[:lemma]
+    assert_equal "n.", entry[:pos]
+    assert_equal "word. a unit of language", entry[:definition]
+    assert_nil entry[:original]
+  end
+
+  def test_parse_vocab_entries_with_original
+    vocab = <<~VOCAB
+
+      **C1**
+      - **razglasiti** (v.) — to announce _Original: razglasil_
+    VOCAB
+
+    result = @r.parse_vocab_entries(vocab)
+    assert_equal "razglasiti", result["razglasiti"][:lemma]
+    assert_equal "to announce", result["razglasiti"][:definition]
+    # Original form maps to same entry
+    assert_equal "razglasiti", result["razglasil"][:lemma]
+  end
+
+  def test_parse_vocab_entries_returns_nil_for_empty
+    assert_nil @r.parse_vocab_entries("")
+  end
+
+  # --- linkify_vocab_words with tooltips ---
+
+  def test_linkify_vocab_words_includes_tooltip_span
+    entries = { "beseda" => { lemma: "beseda", pos: "n.", definition: "word" } }
+    result = @r.linkify_vocab_words("The **beseda** is here.", entries)
+    assert_includes result, '<span class="vocab-tip">'
+    assert_includes result, "<strong>beseda</strong>"
+    assert_includes result, "word"
+  end
+
+  def test_linkify_vocab_words_tooltip_includes_pos
+    entries = { "beseda" => { lemma: "beseda", pos: "n.", definition: "word" } }
+    result = @r.linkify_vocab_words("The **beseda** is here.", entries)
+    assert_includes result, '<span class="pos">(n.)</span>'
+  end
+
+  def test_linkify_vocab_words_tooltip_escapes_html
+    entries = { "word" => { lemma: "word", pos: "n.", definition: "a <b>unit</b>" } }
+    result = @r.linkify_vocab_words("A **word** here.", entries)
+    assert_includes result, "a &lt;b&gt;unit&lt;/b&gt;"
   end
 
   # --- render_vocabulary_html ---
