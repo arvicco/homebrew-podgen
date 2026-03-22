@@ -306,7 +306,7 @@ class TestLanguagePipeline < Minitest::Test
 
     warnings = pipeline.instance_variable_get(:@warnings)
     assert_equal 1, warnings.size
-    assert_includes warnings.first, "Description cleanup failed (using original)"
+    assert_includes warnings.first, "Description cleanup failed (API error)"
   end
 
   def test_reconciliation_failure_adds_warning

@@ -377,7 +377,7 @@ module PodgenCLI
       end
     rescue => e
       logger.log("Warning: Description processing failed: #{e.message} (non-fatal, keeping original)")
-      @warnings << "Description cleanup failed (using original)"
+      @warnings << "Description cleanup failed (#{e.message})"
     end
 
     def save_transcript(episode, transcript, base_name)
@@ -458,7 +458,7 @@ module PodgenCLI
     rescue => e
       logger.log("Warning: LingQ upload failed: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
-      @warnings << "LingQ upload failed"
+      @warnings << "LingQ upload failed (#{e.message})"
     end
 
     def record_lingq_upload(collection, base_name, lesson_id)
