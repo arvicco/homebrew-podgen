@@ -55,7 +55,7 @@ module PodgenCLI
       record_history
 
       log_completion
-      @warnings.any? ? 2 : 0
+      0
     rescue => e
       logger.error("#{e.class}: #{e.message}")
       logger.error(e.backtrace.first(5).join("\n"))
@@ -299,7 +299,7 @@ module PodgenCLI
     rescue => e
       logger.log("Warning: Vocabulary annotation failed: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
-      @warnings << "Vocabulary annotation failed (no vocabulary section)"
+      @warnings << "Vocabulary annotation failed (#{e.message})"
       logger.phase_end("Vocabulary") rescue nil
     end
 
@@ -526,6 +526,7 @@ module PodgenCLI
       cover_path
     rescue => e
       logger.log("Warning: Cover generation failed: #{e.message} (falling back)")
+      @warnings << "Cover generation failed (#{e.message})"
       nil
     end
 

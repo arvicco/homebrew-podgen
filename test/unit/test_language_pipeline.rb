@@ -28,6 +28,7 @@ StubConfig = Struct.new(
   :podcast_dir, :episodes_dir, :history_path, :author,
   :cover_base_image, :cover_options, :cover_generation_enabled,
   :lingq_config, :lingq_enabled, :transcription_language,
+  :transcription_engines, :target_language,
   keyword_init: true
 ) do
   def cover_generation_enabled? = cover_generation_enabled
@@ -305,32 +306,33 @@ class TestLanguagePipeline < Minitest::Test
 
     warnings = pipeline.instance_variable_get(:@warnings)
     assert_equal 1, warnings.size
-    assert_includes warnings.first, "Description cleanup failed"
+    assert_includes warnings.first, "Description cleanup failed (using original)"
   end
 
   def test_reconciliation_failure_adds_warning
-    pipeline = build_pipeline
-    # Simulate multi-engine transcription result with nil reconciled
-    result = { all: {}, errors: {}, reconciled: nil, primary: { text: "raw" } }
-    pipeline.instance_variable_set(:@config, StubConfig.new(
+    config = StubConfig.new(
       podcast_dir: @tmpdir, episodes_dir: @episodes_dir,
       history_path: File.join(@tmpdir, "history.yml"),
       author: "Test", cover_base_image: nil, cover_options: {},
       cover_generation_enabled: false, lingq_config: nil, lingq_enabled: false,
-      transcription_language: "sl"
-    ))
+      transcription_language: "sl",
+      transcription_engines: %w[open groq], target_language: "en"
+    )
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@config, config)
 
-    # Call transcribe_audio's post-processing logic directly
-    # by simulating the multi-engine branch
-    pipeline.instance_variable_set(:@reconciled_text, nil)
+    # Stub EngineManager to return multi-engine result with reconciliation failure
+    fake_manager = Object.new
+    fake_manager.define_singleton_method(:transcribe) do |*, **|
+      { all: { "open" => { text: "raw" }, "groq" => { text: "raw" } },
+        errors: {}, reconciled: nil, primary: { text: "raw" } }
+    end
+
+    Transcription::EngineManager.stub(:new, fake_manager) do
+      pipeline.send(:transcribe_audio, "/fake/audio.mp3")
+    end
+
     warnings = pipeline.instance_variable_get(:@warnings)
-    # Simulate the multi-engine path where reconciled is nil
-    engine_codes = %w[open groq]
-    pipeline.instance_variable_set(:@comparison_results, result[:all])
-    pipeline.instance_variable_set(:@comparison_errors, result[:errors])
-    # The warning is added in transcribe_audio — test via log_completion
-    warnings << "Transcript reconciliation failed (using raw primary engine output)"
-
     assert warnings.any? { |w| w.include?("reconciliation failed") }
   end
 
