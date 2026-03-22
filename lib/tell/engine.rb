@@ -9,10 +9,11 @@ require_relative "kana"
 
 module Tell
   class Engine
-    def initialize(config, translator: nil, glossers: nil, callbacks: {})
+    def initialize(config, translator: nil, glossers: nil, glosser_pool: nil, callbacks: {})
       @config = config
       @translator_instance = translator
       @glossers = glossers || {}
+      @glosser_pool = glosser_pool
       @callbacks = callbacks
       @ja_hiragana_cache = {}
     end
@@ -474,9 +475,13 @@ module Tell
     def build_glosser(model_id)
       return @glossers[model_id] if @glossers[model_id]
 
-      key = ENV["ANTHROPIC_API_KEY"]
-      raise "Gloss requires ANTHROPIC_API_KEY" unless key
-      @glossers[model_id] = Glosser.new(key, model: model_id)
+      if @glosser_pool
+        @glossers[model_id] = @glosser_pool.glosser(model_id)
+      else
+        key = ENV["ANTHROPIC_API_KEY"]
+        raise "Gloss requires ANTHROPIC_API_KEY" unless key
+        @glossers[model_id] = Glosser.new(key, model: model_id)
+      end
     end
 
     def translator
