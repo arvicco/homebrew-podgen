@@ -63,7 +63,7 @@ class LingQAgent
   private
 
   def format_text(text)
-    text.split("\n").reject(&:empty?).join("\n")
+    text.gsub(/\*\*([^*]+)\*\*/, '\1').split("\n").reject(&:empty?).join("\n")
   end
 
   def post_with_retry(url, body)

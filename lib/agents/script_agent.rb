@@ -87,9 +87,10 @@ class ScriptAgent
   private
 
   def build_system_prompt
+    today = Date.today.strftime("%Y-%m-%d (%A)")
     base_prompt = <<~PROMPT
-      You are an expert podcast scriptwriter. Generate a complete podcast script
-      following the provided guidelines exactly.
+      You are an expert podcast scriptwriter.
+      Generate a complete podcast script following the provided guidelines exactly.
 
       Each segment must have a short descriptive name that reflects its content
       (e.g. "Opening", "Bitcoin ETF Surge", "Rails 8 Authentication", "Wrap-Up").
@@ -103,6 +104,8 @@ class ScriptAgent
       script. Each source needs a short descriptive title (5-8 words max, like a headline)
       and the original URL from the research data. Only include sources whose content
       materially contributed to the script.
+
+      For reference: today's date is #{today}.
     PROMPT
 
     unless @priority_urls.empty?

@@ -32,7 +32,7 @@ class TopicAgent
   # Output: array of topic query strings (same format ResearchAgent expects)
   def generate
     log("Generating topics with #{@model}")
-    today = Date.today.strftime("%Y-%m-%d")
+    today = Date.today.strftime("%A, %B %-d, %Y (%Y-%m-%d)")
 
     with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
       message, elapsed = measure_time do

@@ -139,6 +139,20 @@ class TestScriptAgent < Minitest::Test
     assert_includes err.message, "Structured output parsing failed"
   end
 
+  def test_system_prompt_includes_todays_date_with_day_of_week
+    agent = build_agent
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+    system = client.last_call[:system]
+    prompt_text = system.map { |s| s[:text] }.join("\n")
+
+    today_day = Date.today.strftime("%A")
+    assert_includes prompt_text, "today's date is"
+    assert_includes prompt_text, today_day
+    assert_match(/\d{4}-\d{2}-\d{2}/, prompt_text)
+  end
+
   def test_system_prompt_includes_guidelines_with_cache_control
     agent = build_agent
     client = stub_client(agent, title: "T", segments: [])

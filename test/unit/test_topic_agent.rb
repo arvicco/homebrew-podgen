@@ -22,6 +22,16 @@ class TestTopicAgent < Minitest::Test
     assert_match(/\d{4}-\d{2}-\d{2}/, user_msg)
   end
 
+  def test_prompt_includes_day_of_week
+    agent = build_agent("Guidelines")
+    client = stub_client(agent, ["q1"])
+
+    agent.generate
+    user_msg = client.last_call[:messages].first[:content]
+    today_day = Date.today.strftime("%A")
+    assert_includes user_msg, today_day
+  end
+
   def test_prompt_includes_recent_topics
     agent = build_agent("Guidelines", recent_topics: "AI, blockchain")
     client = stub_client(agent, ["q1"])
