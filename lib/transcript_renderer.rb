@@ -76,22 +76,11 @@ module TranscriptRenderer
 
     vocab_body.each_line do |line|
       line = line.strip
-      next unless line.start_with?("- **")
-      next unless line =~ /\A- \*\*(.+?)\*\*\s*\(([^)]+)\)\s*(?:—\s*(.+))?\z/
+      entry = parse_vocab_line(line)
+      next unless entry
 
-      lemma = Regexp.last_match(1)
-      pos = Regexp.last_match(2)
-      rest = Regexp.last_match(3) || ""
-
-      original = nil
-      if rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
-        rest = Regexp.last_match(1).strip
-        original = Regexp.last_match(2).strip
-      end
-
-      entry = { lemma: lemma, pos: pos, definition: rest, original: original }
-      entries[lemma.downcase] = entry
-      entries[original.downcase] = entry if original
+      entries[entry[:lemma].downcase] = entry
+      entries[entry[:original].downcase] = entry if entry[:original]
     end
 
     entries.empty? ? nil : entries
@@ -106,8 +95,8 @@ module TranscriptRenderer
 
       tip = if entry
         head = "<strong>#{escape_html(entry[:lemma])}</strong> <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
-        body = escape_html(entry[:definition]) unless entry[:definition].empty?
-        "<span class=\"vocab-tip\">#{head}#{body ? "<span class=\"vocab-tip-def\">#{body}</span>" : ""}</span>"
+        defn = escape_html(entry[:definition]) unless entry[:definition].empty?
+        "<span class=\"vocab-tip\">#{head}#{defn ? "<span class=\"vocab-tip-def\">#{defn}</span>" : ""}</span>"
       end
 
       "<a href=\"##{anchor}\" class=\"vocab-word\">#{word}#{tip}</a>"
@@ -132,33 +121,39 @@ module TranscriptRenderer
         lines << "<h3>#{escape_html(current_level)}</h3>"
         lines << "<dl>"
       elsif line.start_with?("- **") && current_level
-        if line =~ /\A- \*\*(.+?)\*\*\s*\(([^)]+)\)\s*(?:—\s*(.+))?\z/
-          lemma = Regexp.last_match(1)
-          pos = Regexp.last_match(2)
-          rest = Regexp.last_match(3) || ""
+        entry = parse_vocab_line(line)
+        next unless entry
 
-          anchor = vocab_anchor(lemma)
-
-          original = nil
-          if rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
-            rest = Regexp.last_match(1).strip
-            original = Regexp.last_match(2).strip
-          end
-
-          dt = "<dt id=\"#{anchor}\"><strong>#{escape_html(lemma)}</strong> <span class=\"pos\">(#{escape_html(pos)})</span></dt>"
-          dd_parts = []
-          dd_parts << escape_html(rest) unless rest.empty?
-          dd_parts << "<span class=\"original\">#{escape_html(original)}</span>" if original
-          dd = "<dd>#{dd_parts.join(' ')}</dd>"
-
-          lines << dt
-          lines << dd
-        end
+        anchor = vocab_anchor(entry[:lemma])
+        dt = "<dt id=\"#{anchor}\"><strong>#{escape_html(entry[:lemma])}</strong> <span class=\"pos\">(#{escape_html(entry[:pos])})</span></dt>"
+        dd_parts = []
+        dd_parts << escape_html(entry[:definition]) unless entry[:definition].empty?
+        dd_parts << "<span class=\"original\">#{escape_html(entry[:original])}</span>" if entry[:original]
+        lines << dt
+        lines << "<dd>#{dd_parts.join(' ')}</dd>"
       end
     end
 
     lines << "</dl>" if current_level
     lines << "</div>"
     lines.join("\n")
+  end
+
+  private
+
+  def parse_vocab_line(line)
+    return unless line =~ /\A- \*\*(.+?)\*\*\s*\(([^)]+)\)\s*(?:—\s*(.+))?\z/
+
+    lemma = Regexp.last_match(1)
+    pos = Regexp.last_match(2)
+    rest = Regexp.last_match(3) || ""
+
+    original = nil
+    if rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
+      rest = Regexp.last_match(1).strip
+      original = Regexp.last_match(2).strip
+    end
+
+    { lemma: lemma, pos: pos, definition: rest, original: original }
   end
 end

@@ -230,6 +230,13 @@ class TestTranscriptRenderer < Minitest::Test
     assert_includes result, '<span class="pos">(n.)</span>'
   end
 
+  def test_linkify_vocab_words_tooltip_without_definition
+    entries = { "beseda" => { lemma: "beseda", pos: "n.", definition: "" } }
+    result = @r.linkify_vocab_words("A **beseda** here.", entries)
+    assert_includes result, '<span class="vocab-tip">'
+    refute_includes result, "vocab-tip-def"
+  end
+
   def test_linkify_vocab_words_tooltip_escapes_html
     entries = { "word" => { lemma: "word", pos: "n.", definition: "a <b>unit</b>" } }
     result = @r.linkify_vocab_words("A **word** here.", entries)
