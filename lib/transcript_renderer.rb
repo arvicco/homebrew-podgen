@@ -8,7 +8,7 @@ module TranscriptRenderer
   # When vocab: false, strips vocabulary section and removes bold markers (for podcast apps).
   def render_body_html(body, vocab: true)
     transcript_body, vocab_body = split_vocabulary_section(body)
-    vocab_lemmas = vocab && vocab_body ? parse_vocab_lemmas(vocab_body) : nil
+    vocab_entries = vocab && vocab_body ? parse_vocab_entries(vocab_body) : nil
 
     paragraphs = transcript_body.strip.split(/\n{2,}/).map do |block|
       block = block.strip
@@ -22,8 +22,8 @@ module TranscriptRenderer
         "<ul>#{items.map { |i| "<li>#{i}</li>" }.join}</ul>"
       else
         html = escape_html(block)
-        if vocab_lemmas
-          html = linkify_vocab_words(html, vocab_lemmas)
+        if vocab_entries
+          html = linkify_vocab_words(html, vocab_entries)
         else
           html = strip_bold_markers(html)
         end
@@ -63,28 +63,54 @@ module TranscriptRenderer
   end
 
   def parse_vocab_lemmas(vocab_body)
+    entries = parse_vocab_entries(vocab_body)
+    return nil unless entries
+
     lemmas = {}
-    vocab_body.scan(/\*\*([^*\n]+)\*\*\s*\(/).each do |match|
-      lemma = match[0]
-      lemmas[lemma.downcase] = lemma
-    end
-
-    vocab_body.scan(/_Original:\s*([^_]+)_/).each do |match|
-      word = match[0].strip
-      vocab_body.scan(/\*\*([^*\n]+)\*\*.*?_Original:\s*#{Regexp.escape(word)}_/) do
-        lemmas[word.downcase] = Regexp.last_match(1)
-      end
-    end
-
-    lemmas.empty? ? nil : lemmas
+    entries.each { |key, entry| lemmas[key] = entry[:lemma] }
+    lemmas
   end
 
-  def linkify_vocab_words(html, vocab_lemmas)
+  def parse_vocab_entries(vocab_body)
+    entries = {}
+
+    vocab_body.each_line do |line|
+      line = line.strip
+      next unless line.start_with?("- **")
+      next unless line =~ /\A- \*\*(.+?)\*\*\s*\(([^)]+)\)\s*(?:—\s*(.+))?\z/
+
+      lemma = Regexp.last_match(1)
+      pos = Regexp.last_match(2)
+      rest = Regexp.last_match(3) || ""
+
+      original = nil
+      if rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
+        rest = Regexp.last_match(1).strip
+        original = Regexp.last_match(2).strip
+      end
+
+      entry = { lemma: lemma, pos: pos, definition: rest, original: original }
+      entries[lemma.downcase] = entry
+      entries[original.downcase] = entry if original
+    end
+
+    entries.empty? ? nil : entries
+  end
+
+  def linkify_vocab_words(html, vocab_entries)
     html.gsub(/\*\*([^*]+)\*\*/) do
       word = Regexp.last_match(1)
-      lemma = vocab_lemmas[word.downcase] || word.downcase
+      entry = vocab_entries[word.downcase]
+      lemma = entry ? entry[:lemma] : word.downcase
       anchor = vocab_anchor(lemma)
-      "<a href=\"##{anchor}\" class=\"vocab-word\">#{word}</a>"
+
+      tip = if entry
+        head = "<strong>#{escape_html(entry[:lemma])}</strong> <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
+        body = escape_html(entry[:definition]) unless entry[:definition].empty?
+        "<span class=\"vocab-tip\">#{head}#{body ? "<span class=\"vocab-tip-def\">#{body}</span>" : ""}</span>"
+      end
+
+      "<a href=\"##{anchor}\" class=\"vocab-word\">#{word}#{tip}</a>"
     end
   end
 
