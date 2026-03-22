@@ -6,6 +6,7 @@ require "set"
 require_relative "loggable"
 require_relative "retryable"
 require_relative "usage_logger"
+require_relative "tell/espeak"
 
 class VocabularyAnnotator
   include Loggable
@@ -44,6 +45,7 @@ class VocabularyAnnotator
     end
 
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
+    add_ipa(entries, language)
     marked_body = mark_words(text, entries)
     vocabulary_md = build_vocabulary_section(entries)
 
@@ -80,7 +82,25 @@ class VocabularyAnnotator
     end
   end
 
+  def add_ipa(entries, language)
+    if Tell::Espeak.supports?(language)
+      entries.each do |entry|
+        ipa = Tell::Espeak.ipa(entry[:lemma], lang: language)
+        entry[:ipa] = ipa if ipa
+      end
+    else
+      # LLM fallback: use pronunciation field from API response
+      entries.each do |entry|
+        entry[:ipa] = entry[:pronunciation] if entry[:pronunciation]
+      end
+    end
+  end
+
   def system_prompt(language, cutoff)
+    ipa_line = unless Tell::Espeak.supports?(language)
+      "\n      - pronunciation: IPA transcription of the lemma (e.g. /word/)"
+    end
+
     <<~PROMPT
       Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
       For each word, provide:
@@ -89,7 +109,7 @@ class VocabularyAnnotator
       - level: CEFR level (A1/A2/B1/B2/C1/C2)
       - pos: part of speech (noun, verb, adj, adv, etc.)
       - translation: English translation (concise, context-appropriate)
-      - definition: brief dictionary-style definition in English (1 sentence)
+      - definition: brief dictionary-style definition in English (1 sentence)#{ipa_line}
 
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
@@ -149,7 +169,9 @@ class VocabularyAnnotator
 
       lines << "**#{level}**"
       grouped[level].each do |entry|
-        line = "- **#{entry[:lemma]}** (#{entry[:pos]})"
+        line = "- **#{entry[:lemma]}**"
+        line += " #{entry[:ipa]}" if entry[:ipa]
+        line += " (#{entry[:pos]})"
         line += " — #{entry[:translation]}" if entry[:translation]
         line += ". #{entry[:definition]}" if entry[:definition]
         # Show original form if different from lemma

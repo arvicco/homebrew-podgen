@@ -94,7 +94,9 @@ module TranscriptRenderer
       anchor = vocab_anchor(lemma)
 
       tip = if entry
-        head = "<strong>#{escape_html(entry[:lemma])}</strong> <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
+        head = "<strong>#{escape_html(entry[:lemma])}</strong>"
+        head += " <span class=\"ipa\">#{escape_html(entry[:ipa])}</span>" if entry[:ipa]
+        head += " <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
         defn = escape_html(entry[:definition]) unless entry[:definition].empty?
         "<span class=\"vocab-tip\">#{head}#{defn ? "<span class=\"vocab-tip-def\">#{defn}</span>" : ""}</span>"
       end
@@ -125,7 +127,10 @@ module TranscriptRenderer
         next unless entry
 
         anchor = vocab_anchor(entry[:lemma])
-        dt = "<dt id=\"#{anchor}\"><strong>#{escape_html(entry[:lemma])}</strong> <span class=\"pos\">(#{escape_html(entry[:pos])})</span></dt>"
+        dt_parts = "<strong>#{escape_html(entry[:lemma])}</strong>"
+        dt_parts += " <span class=\"ipa\">#{escape_html(entry[:ipa])}</span>" if entry[:ipa]
+        dt_parts += " <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
+        dt = "<dt id=\"#{anchor}\">#{dt_parts}</dt>"
         dd_parts = []
         dd_parts << escape_html(entry[:definition]) unless entry[:definition].empty?
         dd_parts << "<span class=\"original\">#{escape_html(entry[:original])}</span>" if entry[:original]
@@ -142,11 +147,12 @@ module TranscriptRenderer
   private
 
   def parse_vocab_line(line)
-    return unless line =~ /\A- \*\*(.+?)\*\*\s*\(([^)]+)\)\s*(?:—\s*(.+))?\z/
+    return unless line =~ /\A- \*\*(.+?)\*\*\s*(?:(\/[^\/]+\/)\s*)?\(([^)]+)\)\s*(?:—\s*(.+))?\z/
 
     lemma = Regexp.last_match(1)
-    pos = Regexp.last_match(2)
-    rest = Regexp.last_match(3) || ""
+    ipa = Regexp.last_match(2)
+    pos = Regexp.last_match(3)
+    rest = Regexp.last_match(4) || ""
 
     original = nil
     if rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
@@ -154,6 +160,6 @@ module TranscriptRenderer
       original = Regexp.last_match(2).strip
     end
 
-    { lemma: lemma, pos: pos, definition: rest, original: original }
+    { lemma: lemma, ipa: ipa, pos: pos, definition: rest, original: original }
   end
 end

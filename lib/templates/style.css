@@ -89,6 +89,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
   border: 6px solid transparent; border-top-color: var(--border);
 }
+.vocab-tip .ipa { color: var(--fg-muted); font-weight: normal; font-size: 0.8rem; }
 .vocab-tip .pos { color: var(--fg-muted); font-weight: normal; font-size: 0.8rem; }
 .vocab-tip-def { display: block; margin-top: 0.25rem; color: var(--fg-muted); }
 .vocab-word:hover .vocab-tip { display: block; }
@@ -98,6 +99,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .vocabulary h3 { font-size: 0.95rem; color: var(--fg-muted); margin: 1.25rem 0 0.5rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .vocabulary dl { margin: 0; }
 .vocabulary dt { font-size: 1rem; margin-top: 0.5rem; }
+.vocabulary dt .ipa { color: var(--fg-muted); font-weight: normal; font-size: 0.875rem; }
 .vocabulary dt .pos { color: var(--fg-muted); font-weight: normal; font-size: 0.875rem; }
 .vocabulary dd { margin-left: 0; padding-left: 1rem; color: var(--fg-muted); font-size: 0.9rem; margin-bottom: 0.25rem; }
 .vocabulary dd .original { font-style: italic; }
