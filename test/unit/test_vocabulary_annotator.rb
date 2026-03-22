@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "vocabulary_annotator"
+require "tell/espeak"
 
 class TestVocabularyAnnotator < Minitest::Test
   def setup
@@ -93,6 +94,67 @@ class TestVocabularyAnnotator < Minitest::Test
     result = @annotator.send(:build_vocabulary_section, entries)
 
     refute_includes result, "_Original:"
+  end
+
+  # --- IPA pronunciation ---
+
+  def test_build_vocabulary_section_includes_espeak_ipa
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org.", ipa: "/zaˈʋɔːt/" }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries)
+    assert_includes result, "**zavod** /zaˈʋɔːt/ (n.)"
+  end
+
+  def test_build_vocabulary_section_omits_ipa_when_nil
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries)
+    assert_includes result, "**zavod** (n.)"
+    refute_includes result, "//"
+  end
+
+  def test_annotate_adds_espeak_ipa_for_supported_language
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, true) do
+        Tell::Espeak.stub(:ipa, "/zaˈʋɔːt/") do
+          _marked, vocab = @annotator.annotate("zavod", language: "sl", cutoff: "B1")
+          assert_includes vocab, "/zaˈʋɔːt/"
+        end
+      end
+    end
+  end
+
+  def test_annotate_uses_llm_ipa_when_espeak_unsupported
+    entries = [
+      { word: "猫", lemma: "猫", level: "B2", pos: "n.", translation: "cat", definition: "A feline.", pronunciation: "/maʊ/" }
+    ]
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate("猫", language: "zh", cutoff: "B1")
+        assert_includes vocab, "/maʊ/"
+      end
+    end
+  end
+
+  def test_annotate_espeak_failure_falls_back_gracefully
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, true) do
+        Tell::Espeak.stub(:ipa, nil) do
+          _marked, vocab = @annotator.annotate("zavod", language: "sl", cutoff: "B1")
+          # Should still generate vocab, just without IPA
+          assert_includes vocab, "**zavod** (n.)"
+          refute_includes vocab, "//"
+        end
+      end
+    end
   end
 
   # --- valid_entry? ---

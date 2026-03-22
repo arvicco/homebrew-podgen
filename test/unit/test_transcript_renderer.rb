@@ -214,6 +214,33 @@ class TestTranscriptRenderer < Minitest::Test
     assert_nil @r.parse_vocab_entries("")
   end
 
+  # --- parse_vocab_entries with IPA ---
+
+  def test_parse_vocab_entries_with_ipa
+    vocab = <<~VOCAB
+
+      **B2**
+      - **zavod** /zaˈʋɔːt/ (n.) — institute. An organization.
+    VOCAB
+
+    result = @r.parse_vocab_entries(vocab)
+    entry = result["zavod"]
+    assert_equal "zavod", entry[:lemma]
+    assert_equal "/zaˈʋɔːt/", entry[:ipa]
+    assert_equal "n.", entry[:pos]
+  end
+
+  def test_parse_vocab_entries_without_ipa
+    vocab = <<~VOCAB
+
+      **B2**
+      - **zavod** (n.) — institute. An organization.
+    VOCAB
+
+    result = @r.parse_vocab_entries(vocab)
+    assert_nil result["zavod"][:ipa]
+  end
+
   # --- linkify_vocab_words with tooltips ---
 
   def test_linkify_vocab_words_includes_tooltip_span
@@ -235,6 +262,18 @@ class TestTranscriptRenderer < Minitest::Test
     result = @r.linkify_vocab_words("A **beseda** here.", entries)
     assert_includes result, '<span class="vocab-tip">'
     refute_includes result, "vocab-tip-def"
+  end
+
+  def test_linkify_vocab_words_tooltip_includes_ipa
+    entries = { "zavod" => { lemma: "zavod", pos: "n.", definition: "institute", ipa: "/zaˈʋɔːt/" } }
+    result = @r.linkify_vocab_words("The **zavod** is here.", entries)
+    assert_includes result, '<span class="ipa">/zaˈʋɔːt/</span>'
+  end
+
+  def test_linkify_vocab_words_tooltip_omits_ipa_when_nil
+    entries = { "zavod" => { lemma: "zavod", pos: "n.", definition: "institute", ipa: nil } }
+    result = @r.linkify_vocab_words("The **zavod** is here.", entries)
+    refute_includes result, "ipa"
   end
 
   def test_linkify_vocab_words_tooltip_escapes_html
@@ -285,6 +324,18 @@ class TestTranscriptRenderer < Minitest::Test
     html = @r.render_vocabulary_html(vocab)
     assert_includes html, '<span class="original">razglasil</span>'
     assert_includes html, "to announce"
+  end
+
+  def test_render_vocabulary_html_with_ipa
+    vocab = <<~VOCAB
+
+      **B2**
+      - **zavod** /zaˈʋɔːt/ (n.) — institute
+    VOCAB
+
+    html = @r.render_vocabulary_html(vocab)
+    assert_includes html, '<span class="ipa">/zaˈʋɔːt/</span>'
+    assert_includes html, "<strong>zavod</strong>"
   end
 
   def test_render_vocabulary_html_multiple_levels
