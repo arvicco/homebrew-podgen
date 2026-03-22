@@ -5,6 +5,7 @@ require "date"
 require "time"
 require "yaml"
 require "fileutils"
+require "digest"
 require_relative "loggable"
 require_relative "language_names"
 require_relative "audio_assembler"
@@ -63,6 +64,7 @@ class SiteGenerator
     src = File.join(TEMPLATES_DIR, "style.css")
     dst = File.join(@output_dir, "style.css")
     FileUtils.cp(src, dst)
+    @css_hash = Digest::MD5.file(dst).hexdigest[0, 8]
 
     if @site_css_path
       FileUtils.cp(@site_css_path, File.join(@output_dir, "custom.css"))
@@ -82,7 +84,7 @@ class SiteGenerator
 
     # Depth for CSS/audio path resolution
     is_primary = lang_code == primary_language
-    css_path = is_primary ? "style.css" : "../style.css"
+    css_path = is_primary ? css_versioned("style.css") : css_versioned("../style.css")
 
     lang_nav = build_lang_nav(lang_code)
 
@@ -122,7 +124,7 @@ class SiteGenerator
       ep_html = render_layout(
         lang: lang_code,
         page_title: "#{ep[:title]} — #{@config.title}",
-        css_path: is_primary ? "../style.css" : "../../style.css",
+        css_path: is_primary ? css_versioned("../style.css") : css_versioned("../../style.css"),
         languages: build_lang_nav_episode(lang_code, ep),
         feed_url: feed_url(lang_code),
         content: render_template("episode.erb",
@@ -332,6 +334,10 @@ class SiteGenerator
     b = binding
     locals.each { |k, v| b.local_variable_set(k, v) }
     template.result(b)
+  end
+
+  def css_versioned(path)
+    @css_hash ? "#{path}?v=#{@css_hash}" : path
   end
 
   def render_layout(lang:, page_title:, css_path:, languages:, feed_url:, content:)

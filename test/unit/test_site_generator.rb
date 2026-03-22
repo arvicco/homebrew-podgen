@@ -405,6 +405,23 @@ class TestSiteGenerator < Minitest::Test
     assert_includes index, "favicon.ico"
   end
 
+  # --- CSS cache-busting ---
+
+  def test_generate_adds_css_version_hash
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Test" }])
+
+    gen = build_generator
+    gen.generate
+
+    site_dir = File.join(@podcast_dir, "site")
+    index = File.read(File.join(site_dir, "index.html"))
+    assert_match(/style\.css\?v=[0-9a-f]{8}/, index)
+
+    episode = File.read(Dir.glob(File.join(site_dir, "episodes", "*.html")).first)
+    assert_match(/style\.css\?v=[0-9a-f]{8}/, episode)
+  end
+
   # --- vocabulary section ---
 
   def test_parse_transcript_html_renders_vocabulary_section
