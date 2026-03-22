@@ -387,6 +387,26 @@ class TestSiteGenerator < Minitest::Test
     assert_includes index, "custom.css"
   end
 
+  def test_generate_custom_css_gets_own_hash
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Test" }])
+
+    custom_css = File.join(@dir, "site.css")
+    File.write(custom_css, ".custom { color: red; }")
+
+    gen = build_generator(site_css_path: custom_css)
+    gen.generate
+
+    site_dir = File.join(@podcast_dir, "site")
+    index = File.read(File.join(site_dir, "index.html"))
+    # custom.css hash should differ from style.css hash (different content)
+    style_match = index.match(/style\.css\?v=([0-9a-f]{8})/)
+    custom_match = index.match(/custom\.css\?v=([0-9a-f]{8})/)
+    assert style_match, "Expected style.css with version hash"
+    assert custom_match, "Expected custom.css with version hash"
+    refute_equal style_match[1], custom_match[1], "Hashes should differ for different files"
+  end
+
   def test_generate_copies_favicon
     create_mp3("mypod-2026-01-15.mp3")
     write_history([{ "date" => "2026-01-15", "title" => "Test" }])
