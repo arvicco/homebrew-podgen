@@ -247,6 +247,8 @@ module PodgenCLI
         cover_dest = File.join(@config.episodes_dir, "#{@base_name}_cover#{ext}")
         FileUtils.cp(cover_source, cover_dest)
         logger.log("Episode cover saved: #{cover_dest}")
+      else
+        logger.log("No episode cover generated (no image source resolved)")
       end
     end
 
@@ -473,6 +475,10 @@ module PodgenCLI
       elsif @config.cover_generation_enabled?
         generate_cover_image(title) || @youtube_thumbnail
       else
+        bi = @config.cover_base_image
+        if bi && !File.exist?(bi)
+          logger.log("Warning: base_image configured but not found: #{bi}")
+        end
         @youtube_thumbnail
       end
     end
@@ -481,7 +487,14 @@ module PodgenCLI
     # Returns the generated image path, or nil on failure.
     def generate_cover_image(title, base_image = nil)
       base_image ||= @config.cover_base_image
-      return nil unless base_image && File.exist?(base_image)
+      unless base_image
+        logger.log("Warning: No base_image configured for cover generation")
+        return nil
+      end
+      unless File.exist?(base_image)
+        logger.log("Warning: base_image not found: #{base_image}")
+        return nil
+      end
 
       cover_path = File.join(Dir.tmpdir, "podgen_cover_#{Process.pid}.jpg")
       @temp_files << cover_path

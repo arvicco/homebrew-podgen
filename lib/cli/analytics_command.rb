@@ -206,8 +206,8 @@ module PodgenCLI
 
             const headers = new Headers();
             object.writeHttpMetadata(headers);
+            headers.delete("content-range");
             headers.set("etag", object.httpEtag);
-            headers.set("cache-control", "public, max-age=86400");
             headers.set("accept-ranges", "bytes");
 
             const ext = path.split(".").pop();
@@ -224,16 +224,25 @@ module PodgenCLI
             };
             if (types[ext]) headers.set("content-type", types[ext]);
 
+            // Short cache for feeds so podcast apps get fresh content
+            if (ext === "xml") {
+              headers.set("cache-control", "public, max-age=300");
+            } else {
+              headers.set("cache-control", "public, max-age=86400");
+            }
+
             headers.set("access-control-allow-origin", "*");
 
-            if (object.range) {
+            if (hasRange && object.range) {
               const rangeStart = object.range.offset;
               const rangeEnd = rangeStart + object.range.length - 1;
               headers.set("content-range", `bytes ${rangeStart}-${rangeEnd}/${object.size}`);
+              headers.set("content-length", String(object.range.length));
               return new Response(object.body, { status: 206, headers });
             }
 
-            return new Response(object.body, { headers });
+            headers.set("content-length", String(object.size));
+            return new Response(object.body, { status: 200, headers });
           },
         };
       JS

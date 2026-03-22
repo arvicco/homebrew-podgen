@@ -20,7 +20,10 @@ module PodgenCLI
     "add"       => ["Add a priority link for next episode", "cli/add_command",         "AddCommand"],
     "links"     => ["List or manage queued priority links", "cli/links_command",       "LinksCommand"],
     "vocab"     => ["Manage known vocabulary words",        "cli/vocab_command",       "VocabCommand"],
-    "exclude"   => ["Exclude URLs from future episodes",    "cli/exclude_command",     "ExcludeCommand"]
+    "exclude"   => ["Exclude URLs from future episodes",    "cli/exclude_command",     "ExcludeCommand"],
+    "cover"     => ["Generate episode cover image",          "cli/cover_command",       "CoverCommand"],
+    "fork"      => ["Fork podcast into a new namespace",    "cli/fork_command",        "ForkCommand"],
+    "unpublish" => ["Remove podcast from Cloudflare R2",    "cli/unpublish_command",   "UnpublishCommand"]
   }.freeze
 
   def self.run(argv)
@@ -48,6 +51,9 @@ module PodgenCLI
       opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"
       opts.separator "  vocab <add|remove|list> <podcast>    Manage known vocabulary words"
       opts.separator "  exclude <podcast> <url> [url...]     Exclude URLs from future episodes"
+      opts.separator "  cover <podcast> <title> [--opts]    Generate episode cover image"
+      opts.separator "  fork <old> <new>                   Fork podcast into a new namespace"
+      opts.separator "  unpublish <podcast>                Remove podcast from Cloudflare R2"
       opts.separator ""
       opts.separator "Pipelines (configured via ## Type in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"

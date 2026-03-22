@@ -57,6 +57,18 @@ class TestLingQAgent < Minitest::Test
     assert_equal "", result
   end
 
+  def test_format_text_strips_bold_markers
+    agent = LingQAgent.new
+    result = agent.send(:format_text, "Imela je **puščico**.")
+    assert_equal "Imela je puščico.", result
+  end
+
+  def test_format_text_strips_bold_preserves_punctuation
+    agent = LingQAgent.new
+    result = agent.send(:format_text, "Na **robu** mesta. Imela je **dragocenosti**.")
+    assert_equal "Na robu mesta. Imela je dragocenosti.", result
+  end
+
   # --- upload body construction ---
 
   def test_upload_builds_correct_body_with_required_fields
