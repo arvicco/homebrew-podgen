@@ -29,6 +29,7 @@ module PodgenCLI
       @history = history
       @today = today
       @temp_files = []
+      @warnings = []
       @youtube_captions = nil
       @episode_source = EpisodeSource.new(config: config, history: history, logger: logger)
     end
@@ -54,7 +55,7 @@ module PodgenCLI
       record_history
 
       log_completion
-      0
+      @warnings.any? ? 2 : 0
     rescue => e
       logger.error("#{e.class}: #{e.message}")
       logger.error(e.backtrace.first(5).join("\n"))
@@ -298,6 +299,7 @@ module PodgenCLI
     rescue => e
       logger.log("Warning: Vocabulary annotation failed: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
+      @warnings << "Vocabulary annotation failed (no vocabulary section)"
       logger.phase_end("Vocabulary") rescue nil
     end
 
@@ -316,8 +318,19 @@ module PodgenCLI
     def log_completion
       total_time = (Time.now - @pipeline_start).round(2)
       logger.log("Total pipeline time: #{total_time}s")
-      logger.log("\u2713 Episode ready: #{@output_path}")
-      puts "\u2713 Episode ready: #{@output_path}" unless @options[:verbosity] == :quiet
+
+      if @warnings.any?
+        msg = "\u26A0 Episode ready (with warnings): #{@output_path}"
+        logger.log(msg)
+        puts msg unless @options[:verbosity] == :quiet
+        @warnings.each do |w|
+          logger.log("  - #{w}")
+          puts "  - #{w}" unless @options[:verbosity] == :quiet
+        end
+      else
+        logger.log("\u2713 Episode ready: #{@output_path}")
+        puts "\u2713 Episode ready: #{@output_path}" unless @options[:verbosity] == :quiet
+      end
     end
 
     # --- Helpers ---
@@ -341,6 +354,7 @@ module PodgenCLI
         @comparison_errors = result[:errors]
         @reconciled_text = result[:reconciled]
         @groq_words = result[:all]["groq"]&.dig(:words)
+        @warnings << "Transcript reconciliation failed (using raw primary engine output)" unless @reconciled_text
         result[:primary]
       else
         # Single engine — use cleaned text if available
@@ -363,6 +377,7 @@ module PodgenCLI
       end
     rescue => e
       logger.log("Warning: Description processing failed: #{e.message} (non-fatal, keeping original)")
+      @warnings << "Description cleanup failed (using original)"
     end
 
     def save_transcript(episode, transcript, base_name)
@@ -443,6 +458,7 @@ module PodgenCLI
     rescue => e
       logger.log("Warning: LingQ upload failed: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
+      @warnings << "LingQ upload failed"
     end
 
     def record_lingq_upload(collection, base_name, lesson_id)
