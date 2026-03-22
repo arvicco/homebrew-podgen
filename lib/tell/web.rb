@@ -8,6 +8,7 @@ require_relative "glosser"
 require_relative "hints"
 require_relative "tts"
 require_relative "engine"
+require_relative "engine_pool"
 
 module Tell
   class Web < Sinatra::Base
@@ -37,6 +38,7 @@ module Tell
     configure do
       set :rate_limiter, RateLimiter.new(ENV.fetch("TELL_WEB_RATE_LIMIT", 30))
       set :auth_token, ENV["TELL_WEB_TOKEN"]
+      set :engine_pool, EnginePool.new
     end
 
     helpers do
@@ -117,9 +119,19 @@ module Tell
               when :female then config.voice_female
               end
 
-      # Build Engine with SSE callbacks
+      # Build Engine with SSE callbacks, reusing cached glossers/translator
       mutex = Mutex.new
-      engine = Engine.new(config, callbacks: build_sse_callbacks(out, mutex))
+      pool = settings.engine_pool
+      translator = pool.translator(
+        engines: config.translation_engines,
+        api_keys: config.engine_api_keys,
+        timeout: config.translation_timeout
+      )
+      engine = Engine.new(config,
+        translator: translator,
+        glosser_pool: pool,
+        callbacks: build_sse_callbacks(out, mutex)
+      )
 
       # --- Translation phase (skip for addon-only requests) ---
       speak_text = clean_text

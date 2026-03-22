@@ -24,6 +24,7 @@ class TestTellWeb < Minitest::Test
   def setup
     Tell::Web.set :auth_token, nil
     Tell::Web.set :rate_limiter, Tell::Web::RateLimiter.new(9999)
+    Tell::Web.set :engine_pool, Tell::EnginePool.new
   end
 
   # --- /systems endpoint ---
