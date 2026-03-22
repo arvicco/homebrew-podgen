@@ -175,7 +175,7 @@ module PodgenCLI
 
     # Find the history entry matching a date and suffix index.
     def find_history_entry(entries, date, suffix_index)
-      matches = entries.select { |e| e["date"] == date }
+      matches = entries.select { |e| e["date"].to_s == date }
       matches[suffix_index]
     end
 
