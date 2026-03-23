@@ -205,6 +205,12 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_includes result, "cognates"
   end
 
+  def test_build_filter_lines_similar_multiple_languages
+    result = @annotator.send(:build_filter_lines, { similar: "Russian, English" })
+    assert_includes result, "Russian, English"
+    assert_includes result, "cognates"
+  end
+
   def test_build_filter_lines_custom_filter
     result = @annotator.send(:build_filter_lines, { filter: "Skip food words" })
     assert_includes result, "Skip food words"
