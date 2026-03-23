@@ -14,6 +14,11 @@ module PodgenCLI
     include TranscriptRenderer
 
     def initialize(args, options)
+      require "optparse"
+      OptionParser.new do |opts|
+        opts.on("--missing-only", "Only annotate transcripts without existing vocabulary") { @missing_only = true }
+      end.parse!(args)
+
       @podcast_name = args.shift
       @episode_id = args.shift
       @options = options
@@ -56,8 +61,15 @@ module PodgenCLI
 
       puts "Re-annotating #{transcripts.length} transcript(s) (#{language}, #{cutoff}+ cutoff)"
 
+      processed = 0
       transcripts.each do |path|
         basename = File.basename(path, "_transcript.md")
+
+        if @missing_only && File.read(path).include?("## Vocabulary")
+          puts "  #{basename} (skipped, has vocabulary)" if @options[:verbosity] == :verbose
+          next
+        end
+
         if @dry_run
           puts "  [dry-run] #{basename}"
           next
@@ -65,11 +77,14 @@ module PodgenCLI
 
         puts "  #{basename}..."
         process_transcript(path, annotator, language, cutoff, known_lemmas, logger)
+        processed += 1
       end
 
-      unless @dry_run
+      if !@dry_run && processed > 0
         puts "Regenerating site..."
         SiteGenerator.new(config: @config, clean: true).generate
+      elsif processed == 0 && !@dry_run
+        puts "No transcripts needed annotation"
       end
 
       0

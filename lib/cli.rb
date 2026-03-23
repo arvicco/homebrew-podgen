@@ -51,7 +51,7 @@ module PodgenCLI
       opts.separator "  add <podcast> <url> [--note ...]     Queue a priority link for next episode"
       opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"
       opts.separator "  vocab <add|remove|list> <podcast>    Manage known vocabulary words"
-      opts.separator "  revocab <podcast> [episode]         Re-annotate vocabulary on transcripts"
+      opts.separator "  revocab <podcast> [episode] [--missing-only]  Re-annotate vocabulary"
       opts.separator "  exclude <podcast> <url> [url...]     Exclude URLs from future episodes"
       opts.separator "  cover <podcast> <title> [--opts]    Generate episode cover image"
       opts.separator "  fork <old> <new>                   Fork podcast into a new namespace"
