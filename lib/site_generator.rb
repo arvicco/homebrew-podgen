@@ -164,7 +164,7 @@ class SiteGenerator
     # Find transcript or script
     transcript_path = find_transcript(basename)
 
-    title = @title_map[filename] || extract_title_from_file(transcript_path) || "#{@config.title} — #{date.strftime('%B %d, %Y')}"
+    title = extract_title_from_file(transcript_path) || @title_map[filename] || "#{@config.title} — #{date.strftime('%B %d, %Y')}"
 
     {
       filename: filename,

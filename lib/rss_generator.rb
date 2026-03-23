@@ -127,7 +127,7 @@ class RssGenerator
 
     episodes.each do |ep|
       item = channel.add_element("item")
-      ep_title = @title_map[ep[:filename]]
+      ep_title = extract_title_from_episode(ep[:filename]) || @title_map[ep[:filename]]
       title = ep_title || "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
       add_text(item, "title", title)
       pub_time = @timestamp_map[ep[:filename]]
@@ -169,6 +169,18 @@ class RssGenerator
 
   def strip_markdown_links(text)
     text.gsub(/\[([^\]]+)\]\([^)]+\)/, '\1')
+  end
+
+  def extract_title_from_episode(filename)
+    basename = File.basename(filename, ".mp3")
+    %w[_transcript.md _script.md].each do |suffix|
+      path = File.join(@episodes_dir, "#{basename}#{suffix}")
+      next unless File.exist?(path)
+      first_line = File.foreach(path).first
+      title = first_line&.strip&.sub(/^#\s+/, "")
+      return title if title && !title.empty?
+    end
+    nil
   end
 
   def add_text(parent, name, text)
