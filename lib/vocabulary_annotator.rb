@@ -154,11 +154,19 @@ class VocabularyAnnotator
     PROMPT
   end
 
+  FREQUENCY_PROMPTS = {
+    "common" => "Include all words regardless of frequency, including common everyday words.",
+    "uncommon" => "Skip the most common high-frequency words. Include moderately uncommon words and above.",
+    "rare" => "Only include rare or low-frequency words. Skip common everyday words even if they meet the CEFR level threshold.",
+    "literary" => "Only include literary, formal, or elevated-register words. Skip colloquial and everyday vocabulary.",
+    "archaic" => "Only include archaic, obsolete, or very rarely used words that most native speakers would not use in modern speech."
+  }.freeze
+
   def build_filter_lines(filters)
     lines = []
 
-    if filters[:frequency] == "rare"
-      lines << "Only include rare or low-frequency words. Skip common everyday words even if they meet the CEFR level threshold."
+    if (prompt = FREQUENCY_PROMPTS[filters[:frequency]])
+      lines << prompt
     end
 
     if filters[:similar]

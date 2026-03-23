@@ -183,6 +183,22 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_includes result, "low-frequency"
   end
 
+  def test_build_filter_lines_frequency_literary
+    result = @annotator.send(:build_filter_lines, { frequency: "literary" })
+    assert_includes result, "literary"
+    assert_includes result, "formal"
+  end
+
+  def test_build_filter_lines_frequency_archaic
+    result = @annotator.send(:build_filter_lines, { frequency: "archaic" })
+    assert_includes result, "archaic"
+  end
+
+  def test_build_filter_lines_frequency_uncommon
+    result = @annotator.send(:build_filter_lines, { frequency: "uncommon" })
+    assert_includes result, "uncommon"
+  end
+
   def test_build_filter_lines_similar_language
     result = @annotator.send(:build_filter_lines, { similar: "Russian" })
     assert_includes result, "Russian"
