@@ -285,7 +285,7 @@ class GuidelinesParser
       when "max"
         { max: value.to_i } if value.to_i > 0
       when "frequency"
-        { frequency: value } if value == "rare"
+        { frequency: value } if %w[common uncommon rare literary archaic].include?(value)
       when "similar"
         { similar: value }
       when "filter"
