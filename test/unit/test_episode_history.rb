@@ -193,6 +193,39 @@ class TestEpisodeHistory < Minitest::Test
     assert_equal "mypod-2026-03-01a", entries[0]["basename"]
   end
 
+  # --- excluded URLs merging ---
+
+  def test_all_urls_includes_excluded_urls
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: ["https://a.com"])
+    excluded_path = File.join(@tmpdir, "excluded_urls.yml")
+    File.write(excluded_path, ["https://b.com"].to_yaml)
+
+    history = EpisodeHistory.new(@history_path, excluded_urls_path: excluded_path)
+    urls = history.all_urls
+
+    assert_includes urls, "https://a.com"
+    assert_includes urls, "https://b.com"
+  end
+
+  def test_recent_urls_includes_excluded_urls
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: ["https://a.com"])
+    excluded_path = File.join(@tmpdir, "excluded_urls.yml")
+    File.write(excluded_path, ["https://b.com"].to_yaml)
+
+    history = EpisodeHistory.new(@history_path, excluded_urls_path: excluded_path)
+    urls = history.recent_urls
+
+    assert_includes urls, "https://a.com"
+    assert_includes urls, "https://b.com"
+  end
+
+  def test_all_urls_works_without_excluded_path
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: ["https://a.com"])
+
+    urls = @history.all_urls
+    assert_includes urls, "https://a.com"
+  end
+
   def test_record_omits_nil_basename
     @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
 
