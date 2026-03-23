@@ -37,15 +37,21 @@ module HistoryMaps
 
     by_date.each do |date, date_entries|
       date_entries.each_with_index do |entry, idx|
-        suffix = SUFFIXES[idx] || idx.to_s
-        filename = "#{podcast_name}-#{date}#{suffix}.mp3"
+        basename = if entry["basename"]
+          entry["basename"]
+        else
+          suffix = SUFFIXES[idx] || idx.to_s
+          "#{podcast_name}-#{date}#{suffix}"
+        end
+
+        filename = "#{basename}.mp3"
         title_map[filename] = entry["title"] if entry["title"]
         timestamp_map[filename] = entry["timestamp"] if entry["timestamp"]
         duration_map[filename] = entry["duration"] if entry["duration"]
 
         non_english.each do |code|
-          lang_filename = "#{podcast_name}-#{date}#{suffix}-#{code}.mp3"
-          lang_script = File.join(episodes_dir, "#{podcast_name}-#{date}#{suffix}-#{code}_script.md")
+          lang_filename = "#{basename}-#{code}.mp3"
+          lang_script = File.join(episodes_dir, "#{basename}-#{code}_script.md")
           if File.exist?(lang_script)
             translated_title = File.read(lang_script)[/^# (.+)$/, 1]
             title_map[lang_filename] = translated_title if translated_title

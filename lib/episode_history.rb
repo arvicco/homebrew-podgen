@@ -71,7 +71,18 @@ class EpisodeHistory
 
   # Append a new episode entry.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
-  def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil)
+  # Remove a specific entry by basename. Returns the removed entry, or nil if not found.
+  def remove_by_basename!(basename)
+    entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
+    idx = entries.index { |e| e["basename"] == basename }
+    return nil unless idx
+
+    removed = entries.delete_at(idx)
+    write_entries!(entries)
+    removed
+  end
+
+  def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil, basename: nil)
     entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
     entry = {
       "date" => date.to_s,
@@ -81,6 +92,7 @@ class EpisodeHistory
     }
     entry["duration"] = duration if duration
     entry["timestamp"] = timestamp if timestamp
+    entry["basename"] = basename if basename
 
     entries << entry
     write_entries!(entries)
