@@ -83,7 +83,7 @@ class TestRevocabCommand < Minitest::Test
     VOCAB
 
     stub_annotator("marked body", "## Vocabulary\n\n**B2**\n- **new** (n.) — new word") do |cmd, annotator, logger|
-      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, logger)
+      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, nil, {}, logger)
     end
 
     content = File.read(path)
@@ -100,7 +100,7 @@ class TestRevocabCommand < Minitest::Test
       body: "Some text.")
 
     stub_annotator("annotated text", "") do |cmd, annotator, logger|
-      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, logger)
+      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, nil, {}, logger)
     end
 
     content = File.read(path)
@@ -115,7 +115,7 @@ class TestRevocabCommand < Minitest::Test
 
     logger = stub_logger
     stub_annotator("x", "") do |cmd, annotator, _|
-      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, logger)
+      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, nil, {}, logger)
     end
 
     # File unchanged
@@ -224,7 +224,8 @@ class TestRevocabCommand < Minitest::Test
 
   def build_stub_config
     Struct.new(:podcast_dir, :episodes_dir, :transcription_language,
-               :vocabulary_level, :history_path, :title, :description,
+               :vocabulary_level, :vocabulary_max, :vocabulary_filters,
+               :history_path, :title, :description,
                :author, :languages, :base_url, :site_config, :type,
                keyword_init: true)
       .new(
@@ -232,6 +233,8 @@ class TestRevocabCommand < Minitest::Test
         episodes_dir: @episodes_dir,
         transcription_language: "sl",
         vocabulary_level: "B2",
+        vocabulary_max: nil,
+        vocabulary_filters: {},
         history_path: File.join(@tmpdir, "history.yml"),
         title: "Test", description: nil, author: "Test",
         languages: ["sl"], base_url: nil, site_config: {},

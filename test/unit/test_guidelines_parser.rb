@@ -523,6 +523,44 @@ class TestGuidelinesParser < Minitest::Test
     assert_nil parser.vocabulary_config
   end
 
+  def test_parses_vocabulary_full_config
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+      - max: 15
+      - frequency: rare
+      - similar: Russian
+      - filter: Skip animal names
+    MD
+
+    config = parser.vocabulary_config
+    assert_equal "B2", config[:level]
+    assert_equal 15, config[:max]
+    assert_equal "rare", config[:frequency]
+    assert_equal "Russian", config[:similar]
+    assert_equal "Skip animal names", config[:filter]
+  end
+
+  def test_vocabulary_max_rejects_zero
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+      - max: 0
+    MD
+
+    refute parser.vocabulary_config.key?(:max)
+  end
+
+  def test_vocabulary_frequency_rejects_invalid
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+      - frequency: sometimes
+    MD
+
+    refute parser.vocabulary_config.key?(:frequency)
+  end
+
   # --- text accessor ---
 
   def test_text_returns_comment_stripped_guidelines

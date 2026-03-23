@@ -173,6 +173,16 @@ class PodcastConfig
     parser.vocabulary_config&.dig(:level)
   end
 
+  def vocabulary_max
+    parser.vocabulary_config&.dig(:max)
+  end
+
+  def vocabulary_filters
+    config = parser.vocabulary_config
+    return {} unless config
+    config.slice(:frequency, :similar, :filter).compact
+  end
+
   def links_enabled?
     !!links_config&.dig(:show)
   end

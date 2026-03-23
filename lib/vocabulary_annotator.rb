@@ -24,14 +24,14 @@ class VocabularyAnnotator
   # Returns [marked_body, vocabulary_md]
   # marked_body: transcript with first occurrence of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
-  def annotate(text, language:, cutoff:, known_lemmas: Set.new)
+  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {})
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
     end
 
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff)")
-    entries = classify_words(text, language, cutoff)
+    entries = classify_words(text, language, cutoff, filters)
     unless known_lemmas.empty?
       before = entries.length
       entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) }
@@ -44,6 +44,13 @@ class VocabularyAnnotator
       return [text, ""]
     end
 
+    if max && entries.length > max
+      # Keep hardest words (highest CEFR level first, then alphabetical)
+      entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), e[:lemma].to_s.downcase] }
+      entries = entries.first(max)
+      log("Capped to #{max} entries (keeping hardest)")
+    end
+
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
     add_ipa(entries, language)
     marked_body = mark_words(text, entries)
@@ -54,13 +61,13 @@ class VocabularyAnnotator
 
   private
 
-  def classify_words(text, language, cutoff)
+  def classify_words(text, language, cutoff, filters = {})
     with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
           max_tokens: 16384,
-          system: system_prompt(language, cutoff),
+          system: system_prompt(language, cutoff, filters),
           messages: [
             { role: "user", content: text }
           ]
@@ -122,10 +129,12 @@ class VocabularyAnnotator
     nil
   end
 
-  def system_prompt(language, cutoff)
+  def system_prompt(language, cutoff, filters = {})
     ipa_line = unless Tell::Espeak.supports?(language)
       "\n      - pronunciation: IPA transcription of the lemma (e.g. /word/)"
     end
+
+    filter_lines = build_filter_lines(filters)
 
     <<~PROMPT
       Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
@@ -139,9 +148,26 @@ class VocabularyAnnotator
 
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
-      If a word appears in multiple forms, include the most representative occurrence.
+      If a word appears in multiple forms, include the most representative occurrence.#{filter_lines}
       Return ONLY the JSON array, no other text.
     PROMPT
+  end
+
+  def build_filter_lines(filters)
+    lines = []
+
+    if filters[:frequency] == "rare"
+      lines << "Only include rare or low-frequency words. Skip common everyday words even if they meet the CEFR level threshold."
+    end
+
+    if filters[:similar]
+      lang = filters[:similar]
+      lines << "Skip words that a #{lang} speaker would easily recognize due to shared roots, cognates, or similar form and meaning between #{lang} and the text language."
+    end
+
+    lines << filters[:filter] if filters[:filter]
+
+    lines.empty? ? "" : "\n      " + lines.join("\n      ")
   end
 
   def valid_entry?(entry, cutoff)

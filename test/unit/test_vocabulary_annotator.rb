@@ -157,6 +157,57 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # --- max cap ---
+
+  def test_annotate_max_caps_entries_keeping_hardest
+    entries = [
+      { word: "easy", lemma: "easy", level: "B2", pos: "adj", translation: "easy", definition: "Not hard." },
+      { word: "hard", lemma: "hard", level: "C2", pos: "adj", translation: "hard", definition: "Difficult." },
+      { word: "medium", lemma: "medium", level: "C1", pos: "adj", translation: "medium", definition: "In between." }
+    ]
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate("easy hard medium", language: "sl", cutoff: "B2", max: 2)
+        assert_includes vocab, "hard"
+        assert_includes vocab, "medium"
+        refute_includes vocab, "**easy**"
+      end
+    end
+  end
+
+  # --- filter lines ---
+
+  def test_build_filter_lines_frequency_rare
+    result = @annotator.send(:build_filter_lines, { frequency: "rare" })
+    assert_includes result, "rare"
+    assert_includes result, "low-frequency"
+  end
+
+  def test_build_filter_lines_similar_language
+    result = @annotator.send(:build_filter_lines, { similar: "Russian" })
+    assert_includes result, "Russian"
+    assert_includes result, "cognates"
+  end
+
+  def test_build_filter_lines_custom_filter
+    result = @annotator.send(:build_filter_lines, { filter: "Skip food words" })
+    assert_includes result, "Skip food words"
+  end
+
+  def test_build_filter_lines_empty_when_no_filters
+    result = @annotator.send(:build_filter_lines, {})
+    assert_equal "", result
+  end
+
+  def test_build_filter_lines_combined
+    result = @annotator.send(:build_filter_lines, {
+      frequency: "rare", similar: "Russian", filter: "Focus on verbs"
+    })
+    assert_includes result, "rare"
+    assert_includes result, "Russian"
+    assert_includes result, "Focus on verbs"
+  end
+
   # --- salvage_truncated_json ---
 
   def test_salvage_truncated_json_recovers_complete_entries
