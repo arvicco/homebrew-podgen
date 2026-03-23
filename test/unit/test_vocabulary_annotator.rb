@@ -30,23 +30,32 @@ class TestVocabularyAnnotator < Minitest::Test
   # --- mark_words ---
 
   def test_mark_words_bolds_all_occurrences
-    entries = [{ word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To make known publicly." }]
+    entries = [{ word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", words: ["razglasil"] }]
     result = @annotator.send(:mark_words, "On je razglasil novico. Potem je razglasil še drugo.", entries)
 
     assert_includes result, "**razglasil**"
     assert_equal 2, result.scan("**razglasil**").length
   end
 
-  def test_mark_words_bolds_both_word_and_lemma_forms
-    entries = [{ word: "balo", lemma: "bala", level: "B2", pos: "noun", translation: "dowry", definition: "Bride's goods." }]
+  def test_mark_words_bolds_all_known_forms
+    entries = [{ word: "balo", lemma: "bala", level: "B2", pos: "noun", words: ["balo"] }]
     result = @annotator.send(:mark_words, "To je bala za carsko nevesto. Vzeli so balo.", entries)
 
     assert_includes result, "**bala**"
     assert_includes result, "**balo**"
   end
 
+  def test_mark_words_bolds_merged_forms
+    entries = [{ word: "skomignil", lemma: "skomigniti", level: "C1", pos: "verb",
+                 words: ["skomignil", "skomignila"] }]
+    result = @annotator.send(:mark_words, "On je skomignil. Ona je skomignila.", entries)
+
+    assert_includes result, "**skomignil**"
+    assert_includes result, "**skomignila**"
+  end
+
   def test_mark_words_case_insensitive
-    entries = [{ word: "Zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An organization." }]
+    entries = [{ word: "Zavod", lemma: "zavod", level: "B2", pos: "n.", words: ["Zavod"] }]
     result = @annotator.send(:mark_words, "Zavod je odprt. Pridi v zavod.", entries)
 
     assert_includes result, "**Zavod**"
@@ -54,8 +63,46 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_equal 2, result.scan(/\*\*[Zz]avod\*\*/).length
   end
 
+  # --- dedup_by_lemma ---
+
+  def test_dedup_by_lemma_merges_same_lemma
+    entries = [
+      { word: "skomignil", lemma: "skomigniti", level: "C1", pos: "verb", translation: "shrugged", definition: "To raise shoulders." },
+      { word: "skomignila", lemma: "skomigniti", level: "C1", pos: "verb", translation: "shrugged", definition: "To raise shoulders." }
+    ]
+    result = @annotator.send(:dedup_by_lemma, entries)
+
+    assert_equal 1, result.length
+    assert_equal "skomigniti", result[0][:lemma]
+    assert_includes result[0][:words], "skomignil"
+    assert_includes result[0][:words], "skomignila"
+  end
+
+  def test_dedup_by_lemma_keeps_distinct_lemmas
+    entries = [
+      { word: "skomignil", lemma: "skomigniti", level: "C1", pos: "verb", translation: "shrugged", definition: "A." },
+      { word: "balo", lemma: "bala", level: "B2", pos: "noun", translation: "dowry", definition: "B." }
+    ]
+    result = @annotator.send(:dedup_by_lemma, entries)
+
+    assert_equal 2, result.length
+  end
+
+  def test_build_vocabulary_section_lists_multiple_forms
+    entries = [
+      { word: "skomignil", lemma: "skomigniti", level: "C1", pos: "verb",
+        words: ["skomignil", "skomignila"],
+        translation: "shrugged", definition: "To raise shoulders." }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries)
+
+    assert_includes result, "*skomignil, skomignila*"
+    # Only one entry, not two
+    assert_equal 1, result.scan("**skomigniti**").length
+  end
+
   def test_mark_words_does_not_double_bold
-    entries = [{ word: "test", lemma: "test", level: "B1", pos: "n.", translation: "test", definition: "A test." }]
+    entries = [{ word: "test", lemma: "test", level: "B1", pos: "n.", words: ["test"] }]
     result = @annotator.send(:mark_words, "This is a **test** already.", entries)
 
     # Should not create ***test*** — the already-bolded word should be left alone

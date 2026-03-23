@@ -32,6 +32,7 @@ class VocabularyAnnotator
 
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff)")
     entries = classify_words(text, language, cutoff, filters)
+    entries = dedup_by_lemma(entries)
     unless known_lemmas.empty?
       before = entries.length
       entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) }
@@ -189,12 +190,28 @@ class VocabularyAnnotator
     entry_idx >= cutoff_idx
   end
 
+  # Merge entries with the same lemma, collecting all distinct word forms.
+  # Keeps the first entry's metadata (level, pos, translation, definition).
+  def dedup_by_lemma(entries)
+    by_lemma = {}
+    entries.each do |entry|
+      key = entry[:lemma].to_s.downcase
+      if by_lemma[key]
+        existing = by_lemma[key]
+        existing[:words] << entry[:word] unless existing[:words].any? { |w| w.downcase == entry[:word].downcase }
+      else
+        by_lemma[key] = entry.merge(words: [entry[:word]])
+      end
+    end
+    by_lemma.values
+  end
+
   def mark_words(text, entries)
     marked = text.dup
 
     entries.each do |entry|
-      # Mark all occurrences of both the word form and the lemma
-      forms = [entry[:word], entry[:lemma]].compact.uniq(&:downcase)
+      # Mark all occurrences of all known forms + the lemma
+      forms = ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
       forms.each do |form|
         pattern = /(?<!\*)\b(#{Regexp.escape(form)})\b(?!\*)/i
         marked.gsub!(pattern, '**\1**')
@@ -212,7 +229,9 @@ class VocabularyAnnotator
       line = "- **#{entry[:lemma]}**"
       line += " #{entry[:ipa]}" if entry[:ipa]
       line += " (#{entry[:level]} #{entry[:pos]})"
-      line += " *#{entry[:word]}*" if entry[:word].downcase != entry[:lemma].downcase
+      # Show word forms that differ from lemma
+      diff_forms = (entry[:words] || [entry[:word]]).reject { |w| w.downcase == entry[:lemma].downcase }
+      line += " *#{diff_forms.join(', ')}*" unless diff_forms.empty?
       line += " — #{entry[:translation]}" if entry[:translation]
       line += ". #{entry[:definition]}" if entry[:definition]
       lines << line

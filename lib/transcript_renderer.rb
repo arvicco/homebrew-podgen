@@ -80,7 +80,11 @@ module TranscriptRenderer
       next unless entry
 
       entries[entry[:lemma].downcase] = entry
-      entries[entry[:original].downcase] = entry if entry[:original]
+      if entry[:original]
+        entry[:original].split(/,\s*/).each do |form|
+          entries[form.strip.downcase] = entry
+        end
+      end
     end
 
     entries.empty? ? nil : entries
