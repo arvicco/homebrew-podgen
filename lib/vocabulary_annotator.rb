@@ -170,8 +170,8 @@ class VocabularyAnnotator
     end
 
     if filters[:similar]
-      lang = filters[:similar]
-      lines << "Skip words that a #{lang} speaker would easily recognize due to shared roots, cognates, or similar form and meaning between #{lang} and the text language."
+      langs = filters[:similar]
+      lines << "Skip words that a speaker of #{langs} would easily recognize due to shared roots, cognates, or similar form and meaning with the text language."
     end
 
     lines << filters[:filter] if filters[:filter]
