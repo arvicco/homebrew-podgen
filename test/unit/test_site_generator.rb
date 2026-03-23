@@ -53,25 +53,46 @@ class TestSiteGenerator < Minitest::Test
 
   # --- build_episode ---
 
-  def test_build_episode_uses_history_title
-    create_mp3("mypod-2026-01-15.mp3")
-    write_history([{ "date" => "2026-01-15", "title" => "My Title", "duration" => 120.0 }])
-
-    gen = build_generator
-    ep = gen.send(:build_episode, File.join(@episodes_dir, "mypod-2026-01-15.mp3"), "en")
-
-    assert_equal "My Title", ep[:title]
-    assert_in_delta 120.0, ep[:duration]
-  end
-
-  def test_build_episode_falls_back_to_transcript_title
+  def test_build_episode_prefers_transcript_title_over_history
     create_mp3("mypod-2026-01-15.mp3")
     File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"), "# Transcript Title\n\n## Transcript\n\nBody.")
+    write_history([{ "date" => "2026-01-15", "title" => "History Title", "duration" => 120.0 }])
 
     gen = build_generator
     ep = gen.send(:build_episode, File.join(@episodes_dir, "mypod-2026-01-15.mp3"), "en")
 
     assert_equal "Transcript Title", ep[:title]
+    assert_in_delta 120.0, ep[:duration]
+  end
+
+  def test_build_episode_falls_back_to_history_title
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "History Title" }])
+
+    gen = build_generator
+    ep = gen.send(:build_episode, File.join(@episodes_dir, "mypod-2026-01-15.mp3"), "en")
+
+    assert_equal "History Title", ep[:title]
+  end
+
+  def test_build_episode_correct_title_with_scrapped_episodes
+    # History has 3 entries for same date, but middle episode was scrapped (no MP3)
+    create_mp3("mypod-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"), "# First\n\n## Transcript\n\nBody.")
+    # mypod-2026-01-15a.mp3 was scrapped — no file
+    create_mp3("mypod-2026-01-15b.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15b_transcript.md"), "# Third\n\n## Transcript\n\nBody.")
+    write_history([
+      { "date" => "2026-01-15", "title" => "First" },
+      { "date" => "2026-01-15", "title" => "Second (scrapped)" },
+      { "date" => "2026-01-15", "title" => "Third" }
+    ])
+
+    gen = build_generator
+    ep_b = gen.send(:build_episode, File.join(@episodes_dir, "mypod-2026-01-15b.mp3"), "en")
+
+    # Must get title from transcript, not from history index (which would give "Third" for index 2 = suffix "b")
+    assert_equal "Third", ep_b[:title]
   end
 
   def test_build_episode_falls_back_to_date_title

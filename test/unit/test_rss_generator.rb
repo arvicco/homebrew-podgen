@@ -403,6 +403,73 @@ class TestRssGenerator < Minitest::Test
     assert_includes xml, "<title>Custom Title</title>"
   end
 
+  def test_generate_prefers_transcript_title_over_history
+    create_mp3("test-2026-01-15.mp3", 1000)
+    history_path = File.join(@dir, "history.yml")
+    File.write(history_path, [
+      { "date" => "2026-01-15", "title" => "History Title" }
+    ].to_yaml)
+
+    podcast_dir = File.join(@dir, "test")
+    ep_dir = File.join(podcast_dir, "episodes")
+    FileUtils.mkdir_p(ep_dir)
+    FileUtils.cp(File.join(@episodes_dir, "test-2026-01-15.mp3"), ep_dir)
+    File.write(File.join(ep_dir, "test-2026-01-15_transcript.md"), "# Transcript Title\n\n## Transcript\n\nBody.")
+
+    feed = File.join(@dir, "title_feed.xml")
+    gen = RssGenerator.new(
+      episodes_dir: ep_dir,
+      feed_path: feed,
+      title: "My Pod",
+      language: "en",
+      base_url: "https://example.com",
+      history_path: history_path
+    )
+    gen.generate
+
+    xml = File.read(feed)
+    assert_includes xml, "<title>Transcript Title</title>"
+    refute_includes xml, "History Title"
+  end
+
+  def test_generate_correct_title_with_scrapped_episodes
+    # 3 history entries, middle episode scrapped
+    create_mp3("test-2026-01-15.mp3", 1000)
+    create_mp3("test-2026-01-15b.mp3", 1000)
+
+    history_path = File.join(@dir, "history.yml")
+    File.write(history_path, [
+      { "date" => "2026-01-15", "title" => "First" },
+      { "date" => "2026-01-15", "title" => "Second (scrapped)" },
+      { "date" => "2026-01-15", "title" => "Third" }
+    ].to_yaml)
+
+    podcast_dir = File.join(@dir, "test")
+    ep_dir = File.join(podcast_dir, "episodes")
+    FileUtils.mkdir_p(ep_dir)
+    FileUtils.cp(File.join(@episodes_dir, "test-2026-01-15.mp3"), ep_dir)
+    FileUtils.cp(File.join(@episodes_dir, "test-2026-01-15b.mp3"), ep_dir)
+    File.write(File.join(ep_dir, "test-2026-01-15_transcript.md"), "# First\n\n## Transcript\n\nBody.")
+    File.write(File.join(ep_dir, "test-2026-01-15b_transcript.md"), "# Third\n\n## Transcript\n\nBody.")
+
+    feed = File.join(@dir, "scrap_feed.xml")
+    gen = RssGenerator.new(
+      episodes_dir: ep_dir,
+      feed_path: feed,
+      title: "My Pod",
+      language: "en",
+      base_url: "https://example.com",
+      history_path: history_path
+    )
+    gen.generate
+
+    xml = File.read(feed)
+    # test-2026-01-15b.mp3 should get "Third" from transcript, not "Third" from history index 2
+    # (which maps to suffix "b" correctly here, but would break if "a" was scrapped instead)
+    assert_includes xml, "<title>Third</title>"
+    refute_includes xml, "Second (scrapped)"
+  end
+
   def test_generate_description_in_channel
     create_mp3("test-2026-01-15.mp3", 1000)
     gen = RssGenerator.new(
