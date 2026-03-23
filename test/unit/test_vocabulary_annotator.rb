@@ -37,6 +37,14 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_equal 2, result.scan("**razglasil**").length
   end
 
+  def test_mark_words_bolds_both_word_and_lemma_forms
+    entries = [{ word: "balo", lemma: "bala", level: "B2", pos: "noun", translation: "dowry", definition: "Bride's goods." }]
+    result = @annotator.send(:mark_words, "To je bala za carsko nevesto. Vzeli so balo.", entries)
+
+    assert_includes result, "**bala**"
+    assert_includes result, "**balo**"
+  end
+
   def test_mark_words_case_insensitive
     entries = [{ word: "Zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An organization." }]
     result = @annotator.send(:mark_words, "Zavod je odprt. Pridi v zavod.", entries)

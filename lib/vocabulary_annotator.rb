@@ -193,10 +193,12 @@ class VocabularyAnnotator
     marked = text.dup
 
     entries.each do |entry|
-      word = entry[:word]
-      # Mark all occurrences at word boundaries, case-insensitive
-      pattern = /(?<!\*)\b(#{Regexp.escape(word)})\b(?!\*)/i
-      marked.gsub!(pattern, '**\1**')
+      # Mark all occurrences of both the word form and the lemma
+      forms = [entry[:word], entry[:lemma]].compact.uniq(&:downcase)
+      forms.each do |form|
+        pattern = /(?<!\*)\b(#{Regexp.escape(form)})\b(?!\*)/i
+        marked.gsub!(pattern, '**\1**')
+      end
     end
 
     marked
