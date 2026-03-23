@@ -59,8 +59,6 @@ class KnownVocabulary
 
     data = YAML.load_file(@path)
     data.is_a?(Hash) ? data : {}
-  rescue => _e
-    {}
   end
 
   def save(data)
