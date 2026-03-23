@@ -157,6 +157,33 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # --- salvage_truncated_json ---
+
+  def test_salvage_truncated_json_recovers_complete_entries
+    truncated = '[{"word":"one","lemma":"one","level":"B2","pos":"n."},{"word":"two","lemma":"tw'
+    result = @annotator.send(:salvage_truncated_json, truncated)
+    assert result
+    parsed = JSON.parse(result, symbolize_names: true)
+    assert_equal 1, parsed.length
+    assert_equal "one", parsed[0][:word]
+  end
+
+  def test_salvage_truncated_json_with_code_fence
+    truncated = "```json\n[{\"word\":\"a\",\"lemma\":\"a\",\"level\":\"B2\"},{\"word\":\"b\",\"lem"
+    result = @annotator.send(:salvage_truncated_json, truncated)
+    assert result
+    parsed = JSON.parse(result, symbolize_names: true)
+    assert_equal 1, parsed.length
+  end
+
+  def test_salvage_truncated_json_returns_nil_for_no_bracket
+    assert_nil @annotator.send(:salvage_truncated_json, "no json here")
+  end
+
+  def test_salvage_truncated_json_returns_nil_for_no_complete_object
+    assert_nil @annotator.send(:salvage_truncated_json, '[{"word":"incomplete')
+  end
+
   # --- system_prompt IPA conditional ---
 
   def test_system_prompt_includes_pronunciation_when_espeak_unsupported
