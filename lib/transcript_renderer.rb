@@ -97,6 +97,7 @@ module TranscriptRenderer
         head = "<strong>#{escape_html(entry[:lemma])}</strong>"
         head += " <span class=\"ipa\">#{escape_html(entry[:ipa])}</span>" if entry[:ipa]
         head += " <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
+        head += " <span class=\"original\">#{escape_html(entry[:original])}</span>" if entry[:original]
         defn = escape_html(entry[:definition]) unless entry[:definition].empty?
         "<span class=\"vocab-tip\">#{head}#{defn ? "<span class=\"vocab-tip-def\">#{defn}</span>" : ""}</span>"
       end
@@ -110,36 +111,26 @@ module TranscriptRenderer
   end
 
   def render_vocabulary_html(vocab_body)
-    lines = ["<div class=\"vocabulary\">", "<h2>Vocabulary</h2>"]
-    current_level = nil
+    lines = ["<div class=\"vocabulary\">", "<h2>Vocabulary</h2>", "<dl>"]
 
     vocab_body.each_line do |line|
       line = line.strip
       next if line.empty?
+      next if line.match?(/\A\*\*[A-Z]\d\*\*\z/) # skip old-format level headers
 
-      if line.match?(/\A\*\*[A-Z]\d\*\*\z/)
-        lines << "</dl>" if current_level
-        current_level = line.gsub("**", "")
-        lines << "<h3>#{escape_html(current_level)}</h3>"
-        lines << "<dl>"
-      elsif line.start_with?("- **") && current_level
-        entry = parse_vocab_line(line)
-        next unless entry
+      entry = parse_vocab_line(line)
+      next unless entry
 
-        anchor = vocab_anchor(entry[:lemma])
-        dt_parts = "<strong>#{escape_html(entry[:lemma])}</strong>"
-        dt_parts += " <span class=\"ipa\">#{escape_html(entry[:ipa])}</span>" if entry[:ipa]
-        dt_parts += " <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
-        dt = "<dt id=\"#{anchor}\">#{dt_parts}</dt>"
-        dd_parts = []
-        dd_parts << escape_html(entry[:definition]) unless entry[:definition].empty?
-        dd_parts << "<span class=\"original\">#{escape_html(entry[:original])}</span>" if entry[:original]
-        lines << dt
-        lines << "<dd>#{dd_parts.join(' ')}</dd>"
-      end
+      anchor = vocab_anchor(entry[:lemma])
+      dt_parts = "<strong>#{escape_html(entry[:lemma])}</strong>"
+      dt_parts += " <span class=\"ipa\">#{escape_html(entry[:ipa])}</span>" if entry[:ipa]
+      dt_parts += " <span class=\"pos\">(#{escape_html(entry[:pos])})</span>"
+      dt_parts += " <span class=\"original\">#{escape_html(entry[:original])}</span>" if entry[:original]
+      lines << "<dt id=\"#{anchor}\">#{dt_parts}</dt>"
+      lines << "<dd>#{escape_html(entry[:definition])}</dd>" unless entry[:definition].empty?
     end
 
-    lines << "</dl>" if current_level
+    lines << "</dl>"
     lines << "</div>"
     lines.join("\n")
   end
@@ -147,15 +138,16 @@ module TranscriptRenderer
   private
 
   def parse_vocab_line(line)
-    return unless line =~ /\A- \*\*(.+?)\*\*\s*(?:(\/[^\/]+\/)\s*)?\(([^)]+)\)\s*(?:—\s*(.+))?\z/
+    return unless line =~ /\A- \*\*(.+?)\*\*\s*(?:(\/[^\/]+\/)\s*)?\(([^)]+)\)\s*(?:\*([^*]+)\*\s*)?(?:—\s*(.+))?\z/
 
     lemma = Regexp.last_match(1)
     ipa = Regexp.last_match(2)
     pos = Regexp.last_match(3)
-    rest = Regexp.last_match(4) || ""
+    original = Regexp.last_match(4)
+    rest = Regexp.last_match(5) || ""
 
-    original = nil
-    if rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
+    # Backward compat: old format used _Original: word_ at end of definition
+    if original.nil? && rest =~ /(.+?)\s*_Original:\s*(.+?)_\s*\z/
       rest = Regexp.last_match(1).strip
       original = Regexp.last_match(2).strip
     end

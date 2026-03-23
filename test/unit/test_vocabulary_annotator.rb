@@ -57,7 +57,7 @@ class TestVocabularyAnnotator < Minitest::Test
 
   # --- build_vocabulary_section ---
 
-  def test_build_vocabulary_section_sorts_by_level_then_alpha
+  def test_build_vocabulary_section_alphabetical
     entries = [
       { word: "oddaja", lemma: "oddaja", level: "B2", pos: "n.f.", translation: "broadcast", definition: "A radio or TV show." },
       { word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To declare publicly." },
@@ -65,15 +65,24 @@ class TestVocabularyAnnotator < Minitest::Test
     ]
     result = @annotator.send(:build_vocabulary_section, entries)
 
-    # C1 should come before B2
-    c1_pos = result.index("**C1**")
-    b2_pos = result.index("**B2**")
-    assert c1_pos < b2_pos, "C1 should appear before B2"
+    # Flat alphabetical list, no level headers
+    refute_includes result, "**C1**\n"
+    refute_includes result, "**B2**\n"
 
-    # Within B2, oddaja should come before zavod (alphabetical)
     oddaja_pos = result.index("oddaja")
+    razglasiti_pos = result.index("razglasiti")
     zavod_pos = result.index("zavod")
-    assert oddaja_pos < zavod_pos, "oddaja should appear before zavod"
+    assert oddaja_pos < razglasiti_pos, "oddaja before razglasiti"
+    assert razglasiti_pos < zavod_pos, "razglasiti before zavod"
+  end
+
+  def test_build_vocabulary_section_level_in_pos
+    entries = [
+      { word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To declare publicly." }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries)
+
+    assert_includes result, "(C1 v.)"
   end
 
   def test_build_vocabulary_section_includes_original_when_different
@@ -82,9 +91,9 @@ class TestVocabularyAnnotator < Minitest::Test
     ]
     result = @annotator.send(:build_vocabulary_section, entries)
 
-    assert_includes result, "## Vocabulary"
     assert_includes result, "**razglasiti**"
-    assert_includes result, "_Original: razglasil_"
+    assert_includes result, "*razglasil*"
+    refute_includes result, "_Original:"
   end
 
   def test_build_vocabulary_section_omits_original_when_same
@@ -93,7 +102,8 @@ class TestVocabularyAnnotator < Minitest::Test
     ]
     result = @annotator.send(:build_vocabulary_section, entries)
 
-    refute_includes result, "_Original:"
+    # No standalone *original* marker (word == lemma)
+    refute_match(/\)\s+\*zavod\*/, result)
   end
 
   # --- IPA pronunciation ---
@@ -103,7 +113,7 @@ class TestVocabularyAnnotator < Minitest::Test
       { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org.", ipa: "/zaˈʋɔːt/" }
     ]
     result = @annotator.send(:build_vocabulary_section, entries)
-    assert_includes result, "**zavod** /zaˈʋɔːt/ (n.)"
+    assert_includes result, "**zavod** /zaˈʋɔːt/ (B2 n.)"
   end
 
   def test_build_vocabulary_section_omits_ipa_when_nil
@@ -111,7 +121,7 @@ class TestVocabularyAnnotator < Minitest::Test
       { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
     ]
     result = @annotator.send(:build_vocabulary_section, entries)
-    assert_includes result, "**zavod** (n.)"
+    assert_includes result, "**zavod** (B2 n.)"
     refute_includes result, "//"
   end
 
@@ -150,7 +160,7 @@ class TestVocabularyAnnotator < Minitest::Test
         Tell::Espeak.stub(:ipa, nil) do
           _marked, vocab = @annotator.annotate("zavod", language: "sl", cutoff: "B1")
           # Should still generate vocab, just without IPA
-          assert_includes vocab, "**zavod** (n.)"
+          assert_includes vocab, "**zavod** (B2 n.)"
           refute_includes vocab, "//"
         end
       end
