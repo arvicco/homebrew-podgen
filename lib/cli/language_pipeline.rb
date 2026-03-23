@@ -286,7 +286,9 @@ module PodgenCLI
         body,
         language: @config.transcription_language,
         cutoff: @config.vocabulary_level,
-        known_lemmas: known_lemmas
+        known_lemmas: known_lemmas,
+        max: @config.vocabulary_max,
+        filters: @config.vocabulary_filters
       )
 
       # Rewrite transcript file with marked words + vocabulary appendix

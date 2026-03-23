@@ -282,6 +282,14 @@ class GuidelinesParser
       when "level"
         level = value.upcase
         { level: level } if %w[A1 A2 B1 B2 C1 C2].include?(level)
+      when "max"
+        { max: value.to_i } if value.to_i > 0
+      when "frequency"
+        { frequency: value } if %w[rare all].include?(value)
+      when "similar"
+        { similar: value }
+      when "filter"
+        { filter: value }
       end
     end
     return nil if config.nil? || config.empty?

@@ -50,6 +50,8 @@ module PodgenCLI
 
       language = @config.transcription_language
       cutoff = @config.vocabulary_level
+      vocab_max = @config.vocabulary_max
+      vocab_filters = @config.vocabulary_filters
       known = KnownVocabulary.for_config(@config)
       known_lemmas = known.lemma_set(language)
 
@@ -76,7 +78,7 @@ module PodgenCLI
         end
 
         puts "  #{basename}..."
-        process_transcript(path, annotator, language, cutoff, known_lemmas, logger)
+        process_transcript(path, annotator, language, cutoff, known_lemmas, vocab_max, vocab_filters, logger)
         processed += 1
       end
 
@@ -113,7 +115,7 @@ module PodgenCLI
       end
     end
 
-    def process_transcript(path, annotator, language, cutoff, known_lemmas, logger)
+    def process_transcript(path, annotator, language, cutoff, known_lemmas, vocab_max, vocab_filters, logger)
       text = File.read(path)
 
       # Split into header (title + description) and body
@@ -137,7 +139,9 @@ module PodgenCLI
         body,
         language: language,
         cutoff: cutoff,
-        known_lemmas: known_lemmas
+        known_lemmas: known_lemmas,
+        max: vocab_max,
+        filters: vocab_filters
       )
 
       # Rewrite transcript file
