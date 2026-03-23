@@ -60,7 +60,7 @@ module PodgenCLI
       # Load history and find matching entry
       history = EpisodeHistory.new(config.history_path)
       entries = File.exist?(config.history_path) ? (YAML.load_file(config.history_path) || []) : []
-      matching_entry = find_history_entry(entries, date, suffix_index)
+      matching_entry = find_history_entry(entries, target_base) || find_history_entry_by_date(entries, date, suffix_index)
 
       # Display what will be removed
       label = @episode_id ? "Episode '#{target_base}'" : "Last episode"
@@ -98,9 +98,9 @@ module PodgenCLI
         File.delete(f)
       end
 
-      # Remove history entry (atomic write)
+      # Remove history entry (atomic write) — prefer basename match, fall back to positional
       removed = if @episode_id
-        history.remove_by_date!(date, suffix_index)
+        history.remove_by_basename!(target_base) || history.remove_by_date!(date, suffix_index)
       else
         history.remove_last!
       end
@@ -173,8 +173,13 @@ module PodgenCLI
       [latest, date, suffix_index]
     end
 
-    # Find the history entry matching a date and suffix index.
-    def find_history_entry(entries, date, suffix_index)
+    # Find history entry by basename (preferred — survives scrapping).
+    def find_history_entry(entries, basename)
+      entries.find { |e| e["basename"] == basename }
+    end
+
+    # Fall back to positional index for old entries without basename.
+    def find_history_entry_by_date(entries, date, suffix_index)
       matches = entries.select { |e| e["date"].to_s == date }
       matches[suffix_index]
     end

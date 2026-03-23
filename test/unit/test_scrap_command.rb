@@ -62,7 +62,19 @@ class TestScrapCommand < Minitest::Test
 
   # --- find_history_entry ---
 
-  def test_find_history_entry_returns_correct_entry
+  def test_find_history_entry_by_basename
+    entries = [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "pod-2026-03-01" },
+      { "date" => "2026-03-01", "title" => "Second", "basename" => "pod-2026-03-01a" }
+    ]
+    cmd = build_command(stub_config)
+
+    assert_equal "First", cmd.send(:find_history_entry, entries, "pod-2026-03-01")["title"]
+    assert_equal "Second", cmd.send(:find_history_entry, entries, "pod-2026-03-01a")["title"]
+    assert_nil cmd.send(:find_history_entry, entries, "pod-2026-03-99")
+  end
+
+  def test_find_history_entry_by_date_fallback
     entries = [
       { "date" => "2026-03-01", "title" => "First" },
       { "date" => "2026-03-01", "title" => "Second" },
@@ -70,10 +82,10 @@ class TestScrapCommand < Minitest::Test
     ]
     cmd = build_command(stub_config)
 
-    assert_equal "First", cmd.send(:find_history_entry, entries, "2026-03-01", 0)["title"]
-    assert_equal "Second", cmd.send(:find_history_entry, entries, "2026-03-01", 1)["title"]
-    assert_equal "Third", cmd.send(:find_history_entry, entries, "2026-03-02", 0)["title"]
-    assert_nil cmd.send(:find_history_entry, entries, "2026-03-05", 0)
+    assert_equal "First", cmd.send(:find_history_entry_by_date, entries, "2026-03-01", 0)["title"]
+    assert_equal "Second", cmd.send(:find_history_entry_by_date, entries, "2026-03-01", 1)["title"]
+    assert_equal "Third", cmd.send(:find_history_entry_by_date, entries, "2026-03-02", 0)["title"]
+    assert_nil cmd.send(:find_history_entry_by_date, entries, "2026-03-05", 0)
   end
 
   # --- remove_lingq_tracking ---

@@ -183,6 +183,43 @@ class TestEpisodeHistory < Minitest::Test
     assert_equal ts, entries[0]["timestamp"]
   end
 
+  # --- basename support ---
+
+  def test_record_stores_basename
+    @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [],
+                     basename: "mypod-2026-03-01a")
+
+    entries = YAML.load_file(@history_path)
+    assert_equal "mypod-2026-03-01a", entries[0]["basename"]
+  end
+
+  def test_record_omits_nil_basename
+    @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
+
+    entries = YAML.load_file(@history_path)
+    refute entries[0].key?("basename")
+  end
+
+  def test_remove_by_basename_finds_and_removes
+    @history.record!(date: "2026-03-01", title: "Ep A", topics: [], urls: [], basename: "pod-2026-03-01")
+    @history.record!(date: "2026-03-01", title: "Ep B", topics: [], urls: [], basename: "pod-2026-03-01a")
+    @history.record!(date: "2026-03-01", title: "Ep C", topics: [], urls: [], basename: "pod-2026-03-01b")
+
+    removed = @history.remove_by_basename!("pod-2026-03-01a")
+    assert_equal "Ep B", removed["title"]
+
+    entries = YAML.load_file(@history_path)
+    assert_equal 2, entries.length
+    assert_equal "Ep A", entries[0]["title"]
+    assert_equal "Ep C", entries[1]["title"]
+  end
+
+  def test_remove_by_basename_returns_nil_when_not_found
+    @history.record!(date: "2026-03-01", title: "Ep A", topics: [], urls: [], basename: "pod-2026-03-01")
+
+    assert_nil @history.remove_by_basename!("pod-2026-03-99")
+  end
+
   def test_record_omits_nil_duration_and_timestamp
     @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
 

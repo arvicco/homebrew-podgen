@@ -170,6 +170,73 @@ class TestHistoryMaps < Minitest::Test
     refute title.key?("test_pod-2026-03-01-en.mp3")
   end
 
+  # --- Basename-based mapping ---
+
+  def test_build_uses_basename_when_present
+    history = [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "test_pod-2026-03-01" },
+      { "date" => "2026-03-01", "title" => "Second", "basename" => "test_pod-2026-03-01a" }
+    ]
+    path = write_history(history)
+
+    title, _, _ = HistoryMaps.build(
+      history_path: path, podcast_name: "test_pod", episodes_dir: @episodes_dir
+    )
+
+    assert_equal "First", title["test_pod-2026-03-01.mp3"]
+    assert_equal "Second", title["test_pod-2026-03-01a.mp3"]
+  end
+
+  def test_build_correct_after_middle_entry_scrapped
+    # Entry "b" was scrapped from history, but "c" file still exists on disk
+    history = [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "test_pod-2026-03-01" },
+      { "date" => "2026-03-01", "title" => "Third", "basename" => "test_pod-2026-03-01b" }
+    ]
+    path = write_history(history)
+
+    title, _, _ = HistoryMaps.build(
+      history_path: path, podcast_name: "test_pod", episodes_dir: @episodes_dir
+    )
+
+    assert_equal "First", title["test_pod-2026-03-01.mp3"]
+    # Must use basename "b", not positional index "a"
+    assert_equal "Third", title["test_pod-2026-03-01b.mp3"]
+    refute title.key?("test_pod-2026-03-01a.mp3")
+  end
+
+  def test_build_falls_back_to_positional_without_basename
+    # Old-format entries without basename field
+    history = [
+      { "date" => "2026-03-01", "title" => "First" },
+      { "date" => "2026-03-01", "title" => "Second" }
+    ]
+    path = write_history(history)
+
+    title, _, _ = HistoryMaps.build(
+      history_path: path, podcast_name: "test_pod", episodes_dir: @episodes_dir
+    )
+
+    assert_equal "First", title["test_pod-2026-03-01.mp3"]
+    assert_equal "Second", title["test_pod-2026-03-01a.mp3"]
+  end
+
+  def test_build_basename_with_languages
+    history = [
+      { "date" => "2026-03-01", "title" => "Episode", "basename" => "test_pod-2026-03-01b", "duration" => 300 }
+    ]
+    path = write_history(history)
+
+    title, _, duration = HistoryMaps.build(
+      history_path: path, podcast_name: "test_pod",
+      episodes_dir: @episodes_dir, languages: ["es"]
+    )
+
+    assert_equal "Episode", title["test_pod-2026-03-01b.mp3"]
+    assert_equal "Episode", title["test_pod-2026-03-01b-es.mp3"]
+    assert_equal 300, duration["test_pod-2026-03-01b-es.mp3"]
+  end
+
   # --- Optional fields ---
 
   def test_missing_optional_fields_omitted
