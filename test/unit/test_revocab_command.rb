@@ -137,6 +137,30 @@ class TestRevocabCommand < Minitest::Test
     assert_equal original, File.read(path)
   end
 
+  # --- --missing-only ---
+
+  def test_missing_only_skips_transcripts_with_vocabulary
+    write_transcript("testpod-2026-03-10", body: "Has vocab.", vocab: "**B2**\n- **word** (n.) — thing")
+    write_transcript("testpod-2026-03-11", body: "No vocab here.")
+
+    cmd = build_command_verbose("testpod", nil, dry_run: true, missing_only: true)
+
+    output = capture_io { stub_run_setup(cmd) { cmd.run } }.first
+    refute_includes output, "2026-03-10"
+    assert_includes output, "2026-03-11"
+  end
+
+  def test_missing_only_false_processes_all
+    write_transcript("testpod-2026-03-10", body: "Has vocab.", vocab: "**B2**\n- **word** (n.) — thing")
+    write_transcript("testpod-2026-03-11", body: "No vocab here.")
+
+    cmd = build_command_verbose("testpod", nil, dry_run: true)
+
+    output = capture_io { stub_run_setup(cmd) { cmd.run } }.first
+    assert_includes output, "2026-03-10"
+    assert_includes output, "2026-03-11"
+  end
+
   # --- missing config ---
 
   def test_run_fails_without_vocabulary_level
@@ -176,10 +200,23 @@ class TestRevocabCommand < Minitest::Test
     path
   end
 
-  def build_command(podcast = "testpod", episode_id = nil, dry_run: false)
-    args = [podcast]
+  def build_command(podcast = "testpod", episode_id = nil, dry_run: false, missing_only: false)
+    args = []
+    args << "--missing-only" if missing_only
+    args << podcast
     args << episode_id if episode_id
     opts = { dry_run: dry_run, verbosity: :quiet }
+    cmd = PodgenCLI::RevocabCommand.new(args, opts)
+    cmd.instance_variable_set(:@config, build_stub_config)
+    cmd
+  end
+
+  def build_command_verbose(podcast = "testpod", episode_id = nil, dry_run: false, missing_only: false)
+    args = []
+    args << "--missing-only" if missing_only
+    args << podcast
+    args << episode_id if episode_id
+    opts = { dry_run: dry_run, verbosity: :normal }
     cmd = PodgenCLI::RevocabCommand.new(args, opts)
     cmd.instance_variable_set(:@config, build_stub_config)
     cmd
