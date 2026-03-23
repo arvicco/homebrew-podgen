@@ -112,6 +112,12 @@ class TestKnownVocabulary < Minitest::Test
 
   # --- for_config ---
 
+  def test_load_raises_on_broken_yaml
+    File.write(@path, "---\nsl:\n- good\n- broken: yaml: here\n")
+
+    assert_raises(Psych::SyntaxError) { @kv.lemmas("sl") }
+  end
+
   def test_for_config_builds_path_from_podcast_dir
     config = Struct.new(:podcast_dir).new(@tmpdir)
     kv = KnownVocabulary.for_config(config)
