@@ -29,22 +29,21 @@ class TestVocabularyAnnotator < Minitest::Test
 
   # --- mark_words ---
 
-  def test_mark_words_bolds_first_occurrence
+  def test_mark_words_bolds_all_occurrences
     entries = [{ word: "razglasil", lemma: "razglasiti", level: "C1", pos: "v.", translation: "to announce", definition: "To make known publicly." }]
     result = @annotator.send(:mark_words, "On je razglasil novico. Potem je razglasil še drugo.", entries)
 
     assert_includes result, "**razglasil**"
-    # Should only bold the first occurrence
-    assert_equal 1, result.scan("**razglasil**").length
+    assert_equal 2, result.scan("**razglasil**").length
   end
 
   def test_mark_words_case_insensitive
     entries = [{ word: "Zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An organization." }]
     result = @annotator.send(:mark_words, "Zavod je odprt. Pridi v zavod.", entries)
 
-    # Should bold the first occurrence (capital Z)
     assert_includes result, "**Zavod**"
-    assert_equal 1, result.scan(/\*\*[Zz]avod\*\*/).length
+    assert_includes result, "**zavod**"
+    assert_equal 2, result.scan(/\*\*[Zz]avod\*\*/).length
   end
 
   def test_mark_words_does_not_double_bold
