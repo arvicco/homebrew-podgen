@@ -33,6 +33,7 @@ class VocabularyAnnotator
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff)")
     entries = classify_words(text, language, cutoff, filters)
     entries = dedup_by_lemma(entries)
+    entries = dedup_by_family(entries)
     unless known_lemmas.empty?
       before = entries.length
       entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) }
@@ -146,7 +147,8 @@ class VocabularyAnnotator
       - level: CEFR level (A1/A2/B1/B2/C1/C2)
       - pos: part of speech (noun, verb, adj, adv, etc.)
       - translation: English translation of the LEMMA (not the inflected form)
-      - definition: brief dictionary-style definition of the LEMMA in English (1 sentence)#{ipa_line}
+      - definition: brief dictionary-style definition of the LEMMA in English (1 sentence)
+      - family: the root word of the word family this lemma belongs to (the simplest/most fundamental lemma that related words derive from). Words sharing the same root AND similar meaning should have the same family tag. Words with the same root but unrelated meanings get different family tags#{ipa_line}
 
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
@@ -172,7 +174,7 @@ class VocabularyAnnotator
 
     if filters[:similar]
       langs = filters[:similar]
-      lines << "Skip words that a speaker of #{langs} would easily recognize due to shared roots, cognates, or similar form and meaning with the text language."
+      lines << "Skip words that a speaker of #{langs} would easily recognize. Compare phonetically and etymologically across writing systems (e.g. Latin/Cyrillic/etc.) — words with the same root and meaning in #{langs} must be excluded even if the scripts differ. Think about how each word sounds, not how it looks (e.g. 'klokotanje'='клокотание', 'pritajiti se'='притаиться')."
     end
 
     lines << filters[:filter] if filters[:filter]
@@ -204,6 +206,34 @@ class VocabularyAnnotator
       end
     end
     by_lemma.values
+  end
+
+  # Merge entries sharing the same word family (same root + similar meaning).
+  # Prefers the entry whose lemma matches the family tag (the root word).
+  # Entries without a family field pass through unchanged.
+  def dedup_by_family(entries)
+    with_family, without_family = entries.partition { |e| e[:family] }
+    by_family = {}
+
+    with_family.each do |entry|
+      key = entry[:family].to_s.downcase
+      if by_family[key]
+        existing = by_family[key]
+        # Merge word forms
+        (entry[:words] || [entry[:word]]).each do |w|
+          existing[:words] << w unless existing[:words].any? { |ew| ew.downcase == w.downcase }
+        end
+        # If this entry's lemma matches the family tag, prefer its metadata
+        if entry[:lemma].to_s.downcase == key && existing[:lemma].to_s.downcase != key
+          old_words = existing[:words]
+          by_family[key] = entry.merge(words: old_words)
+        end
+      else
+        by_family[key] = entry.merge(words: entry[:words] || [entry[:word]])
+      end
+    end
+
+    by_family.values + without_family
   end
 
   def mark_words(text, entries)

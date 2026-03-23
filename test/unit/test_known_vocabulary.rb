@@ -113,9 +113,11 @@ class TestKnownVocabulary < Minitest::Test
   # --- for_config ---
 
   def test_load_raises_on_broken_yaml
-    File.write(@path, "---\nsl:\n- good\n- broken: yaml: here\n")
+    File.write(@path, "---\nsl:\n- good\n-broken\n")
 
-    assert_raises(Psych::SyntaxError) { @kv.lemmas("sl") }
+    err = assert_raises(RuntimeError) { @kv.lemmas("sl") }
+    assert_includes err.message, "YAML syntax error"
+    assert_includes err.message, @path
   end
 
   def test_for_config_builds_path_from_podcast_dir
