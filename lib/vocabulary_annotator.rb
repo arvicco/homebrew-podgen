@@ -145,8 +145,8 @@ class VocabularyAnnotator
       - lemma: dictionary form (infinitive for verbs, nominative singular masculine for adjectives, nominative singular for nouns)
       - level: CEFR level (A1/A2/B1/B2/C1/C2)
       - pos: part of speech (noun, verb, adj, adv, etc.)
-      - translation: English translation (concise, context-appropriate)
-      - definition: brief dictionary-style definition in English (1 sentence)#{ipa_line}
+      - translation: English translation of the LEMMA (not the inflected form)
+      - definition: brief dictionary-style definition of the LEMMA in English (1 sentence)#{ipa_line}
 
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
