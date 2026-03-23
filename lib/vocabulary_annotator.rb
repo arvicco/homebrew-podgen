@@ -59,7 +59,7 @@ class VocabularyAnnotator
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
-          max_tokens: 8192,
+          max_tokens: 16384,
           system: system_prompt(language, cutoff),
           messages: [
             { role: "user", content: text }
@@ -72,6 +72,13 @@ class VocabularyAnnotator
       raw = message.content.first.text.strip
       # Extract JSON array from response (may be wrapped in ```json ... ```)
       json_str = raw[/\[.*\]/m]
+
+      # When response is truncated (max_tokens), salvage partial JSON
+      if json_str.nil? && message.stop_reason == "max_tokens"
+        json_str = salvage_truncated_json(raw)
+        log("Salvaged partial JSON from truncated response") if json_str
+      end
+
       return [] unless json_str
 
       entries = JSON.parse(json_str, symbolize_names: true)
@@ -94,6 +101,25 @@ class VocabularyAnnotator
         entry[:ipa] = entry[:pronunciation] if entry[:pronunciation]
       end
     end
+  end
+
+  # Attempt to recover entries from a truncated JSON response.
+  # Finds the last complete object (ending with }) and closes the array.
+  def salvage_truncated_json(raw)
+    # Find the opening bracket
+    start = raw.index("[")
+    return nil unless start
+
+    # Find the last complete JSON object (ends with "}")
+    last_brace = raw.rindex("}")
+    return nil unless last_brace && last_brace > start
+
+    json_str = raw[start..last_brace] + "]"
+    # Verify it parses
+    JSON.parse(json_str)
+    json_str
+  rescue JSON::ParserError
+    nil
   end
 
   def system_prompt(language, cutoff)
