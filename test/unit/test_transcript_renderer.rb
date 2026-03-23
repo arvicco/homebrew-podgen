@@ -236,6 +236,19 @@ class TestTranscriptRenderer < Minitest::Test
     assert_equal "razglasiti", result["razglasil"][:lemma]
   end
 
+  def test_parse_vocab_entries_with_multiple_original_forms
+    vocab = <<~VOCAB
+
+      - **skomigniti** (C1 verb) *skomignil, skomignila* — shrugged
+    VOCAB
+
+    result = @r.parse_vocab_entries(vocab)
+    # Both forms map to the same entry
+    assert_equal "skomigniti", result["skomignil"][:lemma]
+    assert_equal "skomigniti", result["skomignila"][:lemma]
+    assert_equal "skomignil, skomignila", result["skomigniti"][:original]
+  end
+
   def test_parse_vocab_entries_old_format_still_works
     vocab = <<~VOCAB
 
