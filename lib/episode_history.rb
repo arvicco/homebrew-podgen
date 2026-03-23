@@ -8,8 +8,9 @@ require_relative "atomic_writer"
 class EpisodeHistory
   LOOKBACK_DAYS = 7
 
-  def initialize(history_path)
+  def initialize(history_path, excluded_urls_path: nil)
     @path = history_path
+    @excluded_urls_path = excluded_urls_path
   end
 
   # Returns all episode hashes
@@ -25,14 +26,24 @@ class EpisodeHistory
     all_episodes.select { |e| e["date"] >= cutoff }
   end
 
-  # Returns Set of all URLs from recent episodes
+  # Returns Set of all URLs from recent episodes + excluded URLs
   def recent_urls
-    recent_episodes.flat_map { |e| e["urls"] || [] }.to_set
+    urls = recent_episodes.flat_map { |e| e["urls"] || [] }.to_set
+    urls.merge(excluded_urls)
   end
 
-  # Returns Set of all URLs ever recorded (for language pipeline dedup)
+  # Returns Set of all URLs ever recorded + excluded URLs
   def all_urls
-    all_episodes.flat_map { |e| e["urls"] || [] }.to_set
+    urls = all_episodes.flat_map { |e| e["urls"] || [] }.to_set
+    urls.merge(excluded_urls)
+  end
+
+  # Returns array of excluded URLs from the separate file
+  def excluded_urls
+    return [] unless @excluded_urls_path && File.exist?(@excluded_urls_path)
+
+    data = YAML.load_file(@excluded_urls_path)
+    data.is_a?(Array) ? data : []
   end
 
   # Returns formatted string of recent topics for the topic agent prompt

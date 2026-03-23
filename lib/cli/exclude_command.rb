@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
-require "date"
+require "yaml"
 
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "url_cleaner")
+require_relative File.join(root, "lib", "atomic_writer")
 
 module PodgenCLI
   class ExcludeCommand
@@ -28,12 +29,12 @@ module PodgenCLI
       end
 
       config = PodcastConfig.new(@podcast_name)
-      history = EpisodeHistory.new(config.history_path)
+      history = EpisodeHistory.new(config.history_path, excluded_urls_path: config.excluded_urls_path)
 
       # Clean tracking params
       cleaned = @urls.map { |u| UrlCleaner.clean(u) }
 
-      # Check for duplicates against existing history
+      # Check for duplicates against existing history + excluded URLs
       existing = history.all_urls
       new_urls = cleaned.reject { |u| existing.include?(u) }
       dupes = cleaned.length - new_urls.length
@@ -43,12 +44,11 @@ module PodgenCLI
         return 0
       end
 
-      history.record!(
-        date: Date.today,
-        title: "(excluded)",
-        topics: [],
-        urls: new_urls
-      )
+      # Append to excluded_urls.yml (separate from history)
+      excluded_path = config.excluded_urls_path
+      current = File.exist?(excluded_path) ? (YAML.load_file(excluded_path) || []) : []
+      current.concat(new_urls)
+      AtomicWriter.write_yaml(excluded_path, current)
 
       puts "Excluded #{new_urls.length} URL(s) for '#{@podcast_name}'."
       puts "  #{dupes} already excluded." if dupes > 0
