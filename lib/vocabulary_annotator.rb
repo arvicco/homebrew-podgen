@@ -190,26 +190,13 @@ class VocabularyAnnotator
   end
 
   def mark_words(text, entries)
-    # Build a set of words to mark (case-insensitive matching)
-    word_map = {}
-    entries.each do |entry|
-      word_map[entry[:word].downcase] = true
-    end
-
     marked = text.dup
-    marked_words = {}
 
-    # Mark first occurrence of each word (word-boundary match)
     entries.each do |entry|
       word = entry[:word]
-      next if marked_words[word.downcase]
-
-      # Match the word at word boundaries, case-insensitive, first occurrence only
+      # Mark all occurrences at word boundaries, case-insensitive
       pattern = /(?<!\*)\b(#{Regexp.escape(word)})\b(?!\*)/i
-      if marked.match?(pattern)
-        marked.sub!(pattern, '**\1**')
-        marked_words[word.downcase] = true
-      end
+      marked.gsub!(pattern, '**\1**')
     end
 
     marked
