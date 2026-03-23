@@ -59,6 +59,8 @@ class KnownVocabulary
 
     data = YAML.load_file(@path)
     data.is_a?(Hash) ? data : {}
+  rescue Psych::SyntaxError => e
+    raise "YAML syntax error in #{@path}: #{e.message.sub(/\A\(.*?\):\s*/, '')}"
   end
 
   def save(data)
