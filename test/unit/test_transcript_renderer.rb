@@ -95,14 +95,14 @@ class TestTranscriptRenderer < Minitest::Test
   # --- parse_vocab_lemmas ---
 
   def test_parse_vocab_lemmas_extracts_bold_words
-    vocab = "\n- **razglasiti** (v.) — to announce\n- **beseda** (n.) — word\n"
+    vocab = "\n- **razglasiti** (C1 v.) — to announce\n- **beseda** (B2 n.) — word\n"
     result = @r.parse_vocab_lemmas(vocab)
     assert_equal "razglasiti", result["razglasiti"]
     assert_equal "beseda", result["beseda"]
   end
 
   def test_parse_vocab_lemmas_maps_originals_to_lemma
-    vocab = "\n- **razglasiti** (v.) — to announce _Original: razglasil_\n"
+    vocab = "\n- **razglasiti** (C1 v.) *razglasil* — to announce\n"
     result = @r.parse_vocab_lemmas(vocab)
     assert_equal "razglasiti", result["razglasil"]
   end
@@ -112,20 +112,20 @@ class TestTranscriptRenderer < Minitest::Test
   end
 
   def test_parse_vocab_lemmas_case_insensitive_keys
-    vocab = "\n- **Beseda** (n.) — word\n"
+    vocab = "\n- **Beseda** (B2 n.) — word\n"
     result = @r.parse_vocab_lemmas(vocab)
     assert_equal "Beseda", result["beseda"]
   end
 
   def test_parse_vocab_lemmas_diacritics_in_lemma
-    vocab = "\n- **krošnja** (noun) — canopy _Original: krošnjo_\n"
+    vocab = "\n- **krošnja** (B2 noun) *krošnjo* — canopy\n"
     result = @r.parse_vocab_lemmas(vocab)
     assert_equal "krošnja", result["krošnja"]
     assert_equal "krošnja", result["krošnjo"]
   end
 
   def test_parse_vocab_lemmas_multi_word_lemma
-    vocab = "\n- **prepletati se** (verb) — to intertwine _Original: prepletala_\n"
+    vocab = "\n- **prepletati se** (C1 verb) *prepletala* — to intertwine\n"
     result = @r.parse_vocab_lemmas(vocab)
     assert_equal "prepletati se", result["prepletati se"]
     assert_equal "prepletati se", result["prepletala"]
@@ -184,30 +184,15 @@ class TestTranscriptRenderer < Minitest::Test
   def test_parse_vocab_entries_returns_structured_data
     vocab = <<~VOCAB
 
-      **B1**
-      - **beseda** (n.) — word. a unit of language
+      - **beseda** (B1 n.) — word. a unit of language
     VOCAB
 
     result = @r.parse_vocab_entries(vocab)
     entry = result["beseda"]
     assert_equal "beseda", entry[:lemma]
-    assert_equal "n.", entry[:pos]
+    assert_equal "B1 n.", entry[:pos]
     assert_equal "word. a unit of language", entry[:definition]
     assert_nil entry[:original]
-  end
-
-  def test_parse_vocab_entries_with_original
-    vocab = <<~VOCAB
-
-      **C1**
-      - **razglasiti** (v.) — to announce _Original: razglasil_
-    VOCAB
-
-    result = @r.parse_vocab_entries(vocab)
-    assert_equal "razglasiti", result["razglasiti"][:lemma]
-    assert_equal "to announce", result["razglasiti"][:definition]
-    # Original form maps to same entry
-    assert_equal "razglasiti", result["razglasil"][:lemma]
   end
 
   def test_parse_vocab_entries_returns_nil_for_empty
@@ -219,26 +204,48 @@ class TestTranscriptRenderer < Minitest::Test
   def test_parse_vocab_entries_with_ipa
     vocab = <<~VOCAB
 
-      **B2**
-      - **zavod** /zaˈʋɔːt/ (n.) — institute. An organization.
+      - **zavod** /zaˈʋɔːt/ (B2 n.) — institute. An organization.
     VOCAB
 
     result = @r.parse_vocab_entries(vocab)
     entry = result["zavod"]
     assert_equal "zavod", entry[:lemma]
     assert_equal "/zaˈʋɔːt/", entry[:ipa]
-    assert_equal "n.", entry[:pos]
+    assert_equal "B2 n.", entry[:pos]
   end
 
   def test_parse_vocab_entries_without_ipa
     vocab = <<~VOCAB
 
-      **B2**
-      - **zavod** (n.) — institute. An organization.
+      - **zavod** (B2 n.) — institute. An organization.
     VOCAB
 
     result = @r.parse_vocab_entries(vocab)
     assert_nil result["zavod"][:ipa]
+  end
+
+  def test_parse_vocab_entries_with_original
+    vocab = <<~VOCAB
+
+      - **razglasiti** (C1 v.) *razglasil* — to announce
+    VOCAB
+
+    result = @r.parse_vocab_entries(vocab)
+    assert_equal "razglasiti", result["razglasiti"][:lemma]
+    assert_equal "razglasil", result["razglasiti"][:original]
+    assert_equal "razglasiti", result["razglasil"][:lemma]
+  end
+
+  def test_parse_vocab_entries_old_format_still_works
+    vocab = <<~VOCAB
+
+      **C1**
+      - **razglasiti** (v.) — to announce _Original: razglasil_
+    VOCAB
+
+    result = @r.parse_vocab_entries(vocab)
+    assert_equal "razglasiti", result["razglasiti"][:lemma]
+    assert_equal "razglasil", result["razglasiti"][:original]
   end
 
   # --- linkify_vocab_words with tooltips ---
@@ -287,38 +294,35 @@ class TestTranscriptRenderer < Minitest::Test
   def test_render_vocabulary_html_basic_structure
     vocab = <<~VOCAB
 
-      **B1**
-      - **beseda** (n.) — word. a unit of language
+      - **beseda** (B1 n.) — word. a unit of language
     VOCAB
 
     html = @r.render_vocabulary_html(vocab)
     assert_includes html, '<div class="vocabulary">'
     assert_includes html, "<h2>Vocabulary</h2>"
-    assert_includes html, "<h3>B1</h3>"
     assert_includes html, "<dl>"
     assert_includes html, "</dl>"
     assert_includes html, "</div>"
+    refute_includes html, "<h3>"
   end
 
   def test_render_vocabulary_html_entry_content
     vocab = <<~VOCAB
 
-      **A2**
-      - **beseda** (n.) — word. a unit of language
+      - **beseda** (A2 n.) — word. a unit of language
     VOCAB
 
     html = @r.render_vocabulary_html(vocab)
     assert_includes html, 'id="vocab-beseda"'
     assert_includes html, "<strong>beseda</strong>"
-    assert_includes html, '<span class="pos">(n.)</span>'
+    assert_includes html, '<span class="pos">(A2 n.)</span>'
     assert_includes html, "word. a unit of language"
   end
 
   def test_render_vocabulary_html_with_original
     vocab = <<~VOCAB
 
-      **C1**
-      - **razglasiti** (v.) — to announce _Original: razglasil_
+      - **razglasiti** (C1 v.) *razglasil* — to announce
     VOCAB
 
     html = @r.render_vocabulary_html(vocab)
@@ -329,8 +333,7 @@ class TestTranscriptRenderer < Minitest::Test
   def test_render_vocabulary_html_with_ipa
     vocab = <<~VOCAB
 
-      **B2**
-      - **zavod** /zaˈʋɔːt/ (n.) — institute
+      - **zavod** /zaˈʋɔːt/ (B2 n.) — institute
     VOCAB
 
     html = @r.render_vocabulary_html(vocab)
@@ -338,18 +341,15 @@ class TestTranscriptRenderer < Minitest::Test
     assert_includes html, "<strong>zavod</strong>"
   end
 
-  def test_render_vocabulary_html_multiple_levels
+  def test_render_vocabulary_html_flat_alphabetical
     vocab = <<~VOCAB
 
-      **A2**
-      - **ena** (num.) — one
-      **B1**
-      - **dve** (num.) — two
+      - **dve** (B1 num.) — two
+      - **ena** (A2 num.) — one
     VOCAB
 
     html = @r.render_vocabulary_html(vocab)
-    assert_includes html, "<h3>A2</h3>"
-    assert_includes html, "<h3>B1</h3>"
+    refute_includes html, "<h3>"
     assert_includes html, "ena"
     assert_includes html, "dve"
   end
@@ -382,14 +382,14 @@ class TestTranscriptRenderer < Minitest::Test
   end
 
   def test_render_body_html_with_vocab_true_links_words
-    body = "He **razglasil** it.\n\n## Vocabulary\n\n**C1**\n- **razglasiti** (v.) — to announce _Original: razglasil_"
+    body = "He **razglasil** it.\n\n## Vocabulary\n\n- **razglasiti** (C1 v.) *razglasil* — to announce"
     html = @r.render_body_html(body, vocab: true)
     assert_includes html, 'class="vocab-word"'
     assert_includes html, '<div class="vocabulary">'
   end
 
   def test_render_body_html_with_vocab_false_strips_vocab
-    body = "He **razglasil** it.\n\n## Vocabulary\n\n**C1**\n- **razglasiti** (v.) — to announce"
+    body = "He **razglasil** it.\n\n## Vocabulary\n\n- **razglasiti** (C1 v.) — to announce"
     html = @r.render_body_html(body, vocab: false)
     refute_includes html, "Vocabulary"
     refute_includes html, "vocab-word"
@@ -406,14 +406,14 @@ class TestTranscriptRenderer < Minitest::Test
   end
 
   def test_render_body_html_diacritics_link_matches_anchor
-    body = "Videli so **krošnjo** drevesa.\n\n## Vocabulary\n\n**B2**\n- **krošnja** (noun) — canopy _Original: krošnjo_"
+    body = "Videli so **krošnjo** drevesa.\n\n## Vocabulary\n\n- **krošnja** (B2 noun) *krošnjo* — canopy"
     html = @r.render_body_html(body, vocab: true)
     assert_includes html, 'href="#vocab-krošnja"'
     assert_includes html, 'id="vocab-krošnja"'
   end
 
   def test_render_body_html_multi_word_lemma_link_matches_anchor
-    body = "Barve so se **prepletale** med sabo.\n\n## Vocabulary\n\n**C1**\n- **prepletati se** (verb) — to intertwine _Original: prepletale_"
+    body = "Barve so se **prepletale** med sabo.\n\n## Vocabulary\n\n- **prepletati se** (C1 verb) *prepletale* — to intertwine"
     html = @r.render_body_html(body, vocab: true)
     assert_includes html, 'href="#vocab-prepletati-se"'
     assert_includes html, 'id="vocab-prepletati-se"'

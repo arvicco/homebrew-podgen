@@ -455,17 +455,16 @@ class TestSiteGenerator < Minitest::Test
 
       ## Vocabulary
 
-      **C1**
-      - **razglasiti** (v.) — to announce, proclaim. To declare publicly. _Original: razglasil_
+      - **razglasiti** (C1 v.) *razglasil* — to announce, proclaim. To declare publicly.
     MD
 
     gen = build_generator
     html = gen.send(:parse_transcript_html, path)
 
-    # Vocabulary section rendered
+    # Vocabulary section rendered as flat list
     assert_includes html, '<div class="vocabulary">'
     assert_includes html, "<h2>Vocabulary</h2>"
-    assert_includes html, "<h3>C1</h3>"
+    refute_includes html, "<h3>"
     assert_includes html, "razglasiti"
     assert_includes html, "<dl>"
 

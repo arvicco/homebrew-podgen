@@ -216,32 +216,17 @@ class VocabularyAnnotator
   end
 
   def build_vocabulary_section(entries)
-    # Sort by CEFR level (hardest first), then alphabetically by lemma
-    sorted = entries.sort_by do |e|
-      [-CEFR_LEVELS.index(e[:level]), e[:lemma].to_s.downcase]
-    end
-
-    # Group by level
-    grouped = sorted.group_by { |e| e[:level] }
+    sorted = entries.sort_by { |e| e[:lemma].to_s.downcase }
 
     lines = ["## Vocabulary", ""]
-    CEFR_LEVELS.reverse_each do |level|
-      next unless grouped[level]
-
-      lines << "**#{level}**"
-      grouped[level].each do |entry|
-        line = "- **#{entry[:lemma]}**"
-        line += " #{entry[:ipa]}" if entry[:ipa]
-        line += " (#{entry[:pos]})"
-        line += " — #{entry[:translation]}" if entry[:translation]
-        line += ". #{entry[:definition]}" if entry[:definition]
-        # Show original form if different from lemma
-        if entry[:word].downcase != entry[:lemma].downcase
-          line += " _Original: #{entry[:word]}_"
-        end
-        lines << line
-      end
-      lines << ""
+    sorted.each do |entry|
+      line = "- **#{entry[:lemma]}**"
+      line += " #{entry[:ipa]}" if entry[:ipa]
+      line += " (#{entry[:level]} #{entry[:pos]})"
+      line += " *#{entry[:word]}*" if entry[:word].downcase != entry[:lemma].downcase
+      line += " — #{entry[:translation]}" if entry[:translation]
+      line += ". #{entry[:definition]}" if entry[:definition]
+      lines << line
     end
 
     lines.join("\n").strip
