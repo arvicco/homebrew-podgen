@@ -44,6 +44,7 @@ class VocabularyAnnotator
       return [text, ""]
     end
 
+    # Cap after known-word filtering so max applies to the final set
     if max && entries.length > max
       # Keep hardest words (highest CEFR level first, then alphabetical)
       entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), e[:lemma].to_s.downcase] }
