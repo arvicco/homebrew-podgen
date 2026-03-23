@@ -78,7 +78,8 @@ module PodgenCLI
         end
 
         puts "  #{basename}..."
-        process_transcript(path, annotator, language, cutoff, known_lemmas, vocab_max, vocab_filters, logger)
+        process_transcript(path, annotator: annotator, language: language, cutoff: cutoff,
+                          known_lemmas: known_lemmas, max: vocab_max, filters: vocab_filters, logger: logger)
         processed += 1
       end
 
@@ -115,7 +116,7 @@ module PodgenCLI
       end
     end
 
-    def process_transcript(path, annotator, language, cutoff, known_lemmas, vocab_max, vocab_filters, logger)
+    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:)
       text = File.read(path)
 
       # Split into header (title + description) and body
@@ -140,8 +141,8 @@ module PodgenCLI
         language: language,
         cutoff: cutoff,
         known_lemmas: known_lemmas,
-        max: vocab_max,
-        filters: vocab_filters
+        max: max,
+        filters: filters
       )
 
       # Rewrite transcript file

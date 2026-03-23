@@ -83,7 +83,8 @@ class TestRevocabCommand < Minitest::Test
     VOCAB
 
     stub_annotator("marked body", "## Vocabulary\n\n**B2**\n- **new** (n.) — new word") do |cmd, annotator, logger|
-      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, nil, {}, logger)
+      cmd.send(:process_transcript, path, annotator: annotator, language: "sl", cutoff: "B2",
+                   known_lemmas: Set.new, max: nil, filters: {}, logger: logger)
     end
 
     content = File.read(path)
@@ -100,7 +101,8 @@ class TestRevocabCommand < Minitest::Test
       body: "Some text.")
 
     stub_annotator("annotated text", "") do |cmd, annotator, logger|
-      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, nil, {}, logger)
+      cmd.send(:process_transcript, path, annotator: annotator, language: "sl", cutoff: "B2",
+                   known_lemmas: Set.new, max: nil, filters: {}, logger: logger)
     end
 
     content = File.read(path)
@@ -115,7 +117,8 @@ class TestRevocabCommand < Minitest::Test
 
     logger = stub_logger
     stub_annotator("x", "") do |cmd, annotator, _|
-      cmd.send(:process_transcript, path, annotator, "sl", "B2", Set.new, nil, {}, logger)
+      cmd.send(:process_transcript, path, annotator: annotator, language: "sl", cutoff: "B2",
+                   known_lemmas: Set.new, max: nil, filters: {}, logger: logger)
     end
 
     # File unchanged
