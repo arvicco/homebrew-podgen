@@ -80,8 +80,6 @@ class EpisodeHistory
     removed
   end
 
-  # Append a new episode entry.
-  # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   # Remove a specific entry by basename. Returns the removed entry, or nil if not found.
   def remove_by_basename!(basename)
     entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
@@ -93,6 +91,8 @@ class EpisodeHistory
     removed
   end
 
+  # Append a new episode entry.
+  # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil, basename: nil)
     entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
     entry = {
