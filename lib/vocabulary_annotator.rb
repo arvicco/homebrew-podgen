@@ -6,7 +6,9 @@ require "set"
 require_relative "loggable"
 require_relative "retryable"
 require_relative "usage_logger"
+require "did_you_mean"
 require_relative "tell/espeak"
+require_relative "tell/icu_phonetic"
 
 class VocabularyAnnotator
   include Loggable
@@ -34,6 +36,15 @@ class VocabularyAnnotator
     entries = classify_words(text, language, cutoff, filters)
     entries = dedup_by_lemma(entries)
     entries = dedup_by_family(entries)
+
+    if filters[:similar]
+      similar_langs = filters[:similar].split(/,\s*/)
+      before = entries.length
+      entries = filter_cognates(entries, similar_langs)
+      filtered_cognates = before - entries.length
+      log("Filtered #{filtered_cognates} cognates") if filtered_cognates > 0
+    end
+
     unless known_lemmas.empty?
       before = entries.length
       entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) }
@@ -114,17 +125,19 @@ class VocabularyAnnotator
       log_api_usage("Vocabulary classified", message, elapsed)
 
       raw = message.content.first.text.strip
-      # Extract JSON array from response (may be wrapped in ```json ... ```)
-      json_str = raw[/\[.*\]/m]
 
-      # When response is truncated (max_tokens), salvage partial JSON
-      if json_str.nil? && message.stop_reason == "max_tokens"
+      # When response is truncated, go straight to salvage — the regex often
+      # matches garbage brackets in preamble text, bypassing recovery.
+      if message.stop_reason == "max_tokens"
         json_str = salvage_truncated_json(raw)
         if json_str
           log("Salvaged partial JSON from truncated response")
         else
           log("WARNING: Response truncated at max_tokens and salvage failed")
         end
+      else
+        # Extract JSON array from response (may be wrapped in ```json ... ```)
+        json_str = raw[/\[.*\]/m]
       end
 
       return [] unless json_str
@@ -152,23 +165,32 @@ class VocabularyAnnotator
   end
 
   # Attempt to recover entries from a truncated JSON response.
-  # Iterates backward through } positions to find the last one that produces
-  # valid JSON (skipping } chars that appear inside string values).
+  # Tries each [ position (there may be brackets in preamble text) paired with
+  # each } position backward, until a valid JSON array is found.
   def salvage_truncated_json(raw)
-    start = raw.index("[")
-    return nil unless start
+    # Collect all [ positions
+    starts = []
+    idx = 0
+    while (found = raw.index("[", idx))
+      starts << found
+      idx = found + 1
+    end
+    return nil if starts.empty?
 
-    pos = raw.length
-    while pos > start
-      pos = raw.rindex("}", pos - 1)
-      break unless pos && pos > start
+    # Try each [ (last first — the real JSON array is likely near the end)
+    starts.reverse_each do |start|
+      pos = raw.length
+      while pos > start
+        pos = raw.rindex("}", pos - 1)
+        break unless pos && pos > start
 
-      begin
-        candidate = raw[start..pos] + "]"
-        parsed = JSON.parse(candidate)
-        return candidate if parsed.is_a?(Array) && !parsed.empty?
-      rescue JSON::ParserError
-        next
+        begin
+          candidate = raw[start..pos] + "]"
+          parsed = JSON.parse(candidate)
+          return candidate if parsed.is_a?(Array) && !parsed.empty?
+        rescue JSON::ParserError
+          next
+        end
       end
     end
     nil
@@ -181,6 +203,13 @@ class VocabularyAnnotator
 
     filter_lines = build_filter_lines(filters)
 
+    similar_line = if filters[:similar]
+      langs = filters[:similar].split(/,\s*/).reject { |l| l.casecmp("english").zero? }
+      unless langs.empty?
+        "\n      - similar_translations: object mapping language name to translation of the lemma in that language (e.g. {\"Russian\": \"слово\"}). Include: #{langs.join(', ')}"
+      end
+    end
+
     <<~PROMPT
       Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
       For each word, provide:
@@ -190,7 +219,7 @@ class VocabularyAnnotator
       - pos: part of speech (noun, verb, adj, adv, etc.)
       - translation: English translation of the LEMMA (not the inflected form)
       - definition: brief dictionary-style definition of the LEMMA in English (1 sentence)
-      - family: the root word of the word family this lemma belongs to (the simplest/most fundamental lemma that related words derive from). Words sharing the same root AND similar meaning should have the same family tag. Words with the same root but unrelated meanings get different family tags#{ipa_line}
+      - family: the root word of the word family this lemma belongs to (the simplest/most fundamental lemma that related words derive from). Words sharing the same root AND similar meaning should have the same family tag. Words with the same root but unrelated meanings get different family tags#{ipa_line}#{similar_line}
 
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
@@ -214,10 +243,7 @@ class VocabularyAnnotator
       lines << prompt
     end
 
-    if filters[:similar]
-      langs = filters[:similar]
-      lines << "Skip words that a speaker of #{langs} would easily recognize. Compare phonetically and etymologically across writing systems (e.g. Latin/Cyrillic/etc.) — words with the same root and meaning in #{langs} must be excluded even if the scripts differ. Think about how each word sounds, not how it looks (e.g. 'klokotanje'='клокотание', 'pritajiti se'='притаиться')."
-    end
+    # similar-language filtering is handled by code-level filter_cognates, not prompt
 
     lines << filters[:filter] if filters[:filter]
 
@@ -276,6 +302,77 @@ class VocabularyAnnotator
     end
 
     by_family.values + without_family
+  end
+
+  # Deterministic cognate filter: compare lemma against translations in similar
+  # languages using transliteration + Levenshtein distance.
+  def filter_cognates(entries, similar_langs)
+    return entries if similar_langs.empty?
+
+    entries.reject do |entry|
+      similar_langs.any? { |lang| cognate_in_language?(entry, lang) }
+    end
+  end
+
+  def cognate_in_language?(entry, lang)
+    lemma_ascii = normalize_for_comparison(entry[:lemma].to_s)
+
+    if lang.casecmp("english").zero?
+      translation = entry[:translation].to_s
+      translation.split(/[,;\/]\s*/).any? do |word|
+        word = word.strip.sub(/\Ato /, "")
+        cognate?(lemma_ascii, normalize_for_comparison(word))
+      end
+    else
+      translations = entry[:similar_translations]
+      return false unless translations.is_a?(Hash)
+
+      word = translations[lang] || translations[lang.to_sym]
+      return false unless word
+
+      cognate?(lemma_ascii, normalize_for_comparison(word.to_s))
+    end
+  end
+
+  def cognate?(a, b)
+    return false if a.empty? || b.empty?
+
+    max_len = [a.length, b.length].max
+    distance = DidYouMean::Levenshtein.distance(a, b)
+    ratio = 1.0 - (distance.to_f / max_len)
+
+    if max_len <= 3
+      ratio >= 1.0
+    elsif max_len == 4
+      ratio >= 0.75
+    else
+      ratio >= 0.5
+    end
+  end
+
+  def normalize_for_comparison(text)
+    text = text.strip.downcase
+    return "" if text.empty?
+
+    if defined?(Tell::IcuPhonetic) && Tell::IcuPhonetic.available?
+      if text.match?(/\p{Cyrillic}/)
+        result = icu_transliterate(text, "Cyrillic-Latin; Latin-ASCII")
+        return result if result
+      end
+      result = icu_transliterate(text, "Latin-ASCII")
+      return result if result
+    end
+
+    text.unicode_normalize(:nfkd).gsub(/\p{M}/, "").tr("đ", "d").tr("ł", "l")
+  end
+
+  def icu_transliterate(text, tid)
+    require "ffi-icu"
+    t = ICU::Transliteration::Transliterator.new(tid)
+    result = t.transliterate(text).downcase
+    result.empty? ? nil : result
+  rescue LoadError, ICU::Error
+    nil
   end
 
   def mark_words(text, entries)

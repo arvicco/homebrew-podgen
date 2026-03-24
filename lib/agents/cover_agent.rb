@@ -54,8 +54,8 @@ class CoverAgent
 
   # Renders text to a transparent PNG via SVG + rsvg-convert.
   def render_text_to_png(text, output_path, opts)
-    lines = wrap_text(text, opts[:text_width], opts[:font_size])
-    svg = build_svg(lines, opts)
+    lines, font_size = fit_text(text, opts)
+    svg = build_svg(lines, opts.merge(font_size: font_size))
 
     svg_path = output_path.sub(/\.png$/, ".svg")
     File.write(svg_path, svg)
@@ -84,6 +84,23 @@ class CoverAgent
 
     unless status.success?
       raise "ImageMagick composite failed: #{stderr.strip}"
+    end
+  end
+
+  # Auto-shrinks font size until wrapped text fits within text_height.
+  # Returns [lines, font_size].
+  def fit_text(text, opts)
+    font_size = opts[:font_size]
+    min_size = (font_size * 0.4).round  # don't shrink below 40% of original
+
+    loop do
+      lines = wrap_text(text, opts[:text_width], font_size)
+      line_spacing = (font_size * 1.15).round
+      total_height = font_size + (lines.length - 1) * line_spacing
+
+      return [lines, font_size] if total_height <= opts[:text_height] || font_size <= min_size
+
+      font_size -= 10
     end
   end
 

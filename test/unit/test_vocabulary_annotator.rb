@@ -233,6 +233,83 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_equal 2, result.length
   end
 
+  # --- filter_cognates ---
+
+  def test_filter_cognates_removes_english_cognate
+    entries = [
+      { lemma: "profesor", translation: "professor", level: "B1", pos: "noun" },
+      { lemma: "prepričati", translation: "to convince", level: "C1", pos: "verb" }
+    ]
+    result = @annotator.send(:filter_cognates, entries, ["English"])
+    assert_equal 1, result.length
+    assert_equal "prepričati", result[0][:lemma]
+  end
+
+  def test_filter_cognates_removes_russian_cognate_via_translation
+    entries = [
+      { lemma: "študentka", similar_translations: { "Russian" => "студентка" }, level: "B1", pos: "noun", translation: "student" },
+      { lemma: "prepričati", similar_translations: { "Russian" => "убедить" }, level: "C1", pos: "verb", translation: "to convince" }
+    ]
+    result = @annotator.send(:filter_cognates, entries, ["Russian"])
+    assert_equal 1, result.length
+    assert_equal "prepričati", result[0][:lemma]
+  end
+
+  def test_filter_cognates_removes_when_any_similar_language_matches
+    entries = [
+      { lemma: "soldat", translation: "soldier", similar_translations: { "Russian" => "солдат" }, level: "B1", pos: "noun" }
+    ]
+    result = @annotator.send(:filter_cognates, entries, ["Russian", "English"])
+    assert_equal 0, result.length
+  end
+
+  def test_filter_cognates_keeps_short_non_identical_words
+    # "dan" (Slovenian: day) vs "day" (English) — too short, must be identical to filter
+    entries = [
+      { lemma: "dan", translation: "day", level: "A1", pos: "noun" }
+    ]
+    result = @annotator.send(:filter_cognates, entries, ["English"])
+    assert_equal 1, result.length
+  end
+
+  def test_filter_cognates_removes_short_identical_words
+    # "gol" (Slovenian) vs "гол" (Russian) — identical after transliteration
+    entries = [
+      { lemma: "gol", translation: "goal", similar_translations: { "Russian" => "гол" }, level: "B1", pos: "noun" }
+    ]
+    result = @annotator.send(:filter_cognates, entries, ["Russian"])
+    assert_equal 0, result.length
+  end
+
+  def test_cognate_detects_similar_long_words
+    assert @annotator.send(:cognate?, "klokotanje", "klokotanie")
+  end
+
+  def test_cognate_rejects_dissimilar_words
+    refute @annotator.send(:cognate?, "prepricati", "ubediti")
+  end
+
+  def test_cognate_short_word_requires_exact_match
+    refute @annotator.send(:cognate?, "dan", "day")
+    assert @annotator.send(:cognate?, "gol", "gol")
+  end
+
+  def test_filter_cognates_noop_when_no_similar_languages
+    entries = [
+      { lemma: "profesor", translation: "professor", level: "B1", pos: "noun" }
+    ]
+    result = @annotator.send(:filter_cognates, entries, [])
+    assert_equal 1, result.length
+  end
+
+  def test_filter_cognates_handles_multi_word_translation
+    entries = [
+      { lemma: "soldat", translation: "soldier, fighter", level: "B1", pos: "noun" }
+    ]
+    result = @annotator.send(:filter_cognates, entries, ["English"])
+    assert_equal 0, result.length
+  end
+
   # --- IPA pronunciation ---
 
   def test_build_vocabulary_section_includes_espeak_ipa
@@ -336,17 +413,10 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_includes result, "uncommon"
   end
 
-  def test_build_filter_lines_similar_language
+  def test_build_filter_lines_no_similar_language_prompt
+    # similar filter is handled by code-level filter_cognates, not prompt
     result = @annotator.send(:build_filter_lines, { similar: "Russian" })
-    assert_includes result, "Russian"
-    assert_includes result, "phonetically"
-    assert_includes result, "writing systems"
-  end
-
-  def test_build_filter_lines_similar_multiple_languages
-    result = @annotator.send(:build_filter_lines, { similar: "Russian, English" })
-    assert_includes result, "Russian, English"
-    assert_includes result, "phonetically"
+    assert_equal "", result
   end
 
   def test_build_filter_lines_custom_filter
@@ -364,8 +434,9 @@ class TestVocabularyAnnotator < Minitest::Test
       frequency: "rare", similar: "Russian", filter: "Focus on verbs"
     })
     assert_includes result, "rare"
-    assert_includes result, "Russian"
     assert_includes result, "Focus on verbs"
+    # similar is NOT in prompt — handled by code-level filter
+    refute_includes result, "Russian"
   end
 
   # --- salvage_truncated_json ---
@@ -385,6 +456,33 @@ class TestVocabularyAnnotator < Minitest::Test
     assert result
     parsed = JSON.parse(result, symbolize_names: true)
     assert_equal 1, parsed.length
+  end
+
+  def test_classify_single_salvages_when_regex_matches_preamble_brackets
+    # Simulates: LLM writes preamble with [A1/A2/B1/B2/C1/C2] before the JSON array,
+    # then the response is truncated at max_tokens. The regex /\[.*\]/m matches the
+    # preamble brackets, not the JSON. Salvage must still recover the real entries.
+    truncated_response = <<~RAW
+      Here are the words at level [A1/A2/B1/B2/C1/C2] or above:
+
+      ```json
+      [{"word":"razglasil","lemma":"razglasiti","level":"C1","pos":"verb","translation":"to announce","definition":"To declare publicly.","family":"razglasiti"},{"word":"trunc
+    RAW
+
+    text_block = Struct.new(:type, :text).new("text", truncated_response)
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens)
+      .new(100, 16384, 0, 0)
+    message = Struct.new(:content, :stop_reason, :model, :usage)
+      .new([text_block], "max_tokens", "test", usage)
+
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_| message }
+    client = @annotator.instance_variable_get(:@client)
+    client.stub(:messages, fake_messages) do
+      entries = @annotator.send(:classify_single, "some text", "sl", "B1")
+      assert_equal 1, entries.length, "Expected salvage to recover 1 entry from truncated response with preamble brackets"
+      assert_equal "razglasiti", entries[0][:lemma]
+    end
   end
 
   def test_salvage_truncated_json_returns_nil_for_no_bracket

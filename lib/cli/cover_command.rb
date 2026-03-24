@@ -14,9 +14,11 @@ module PodgenCLI
     def initialize(args, options)
       @options = options
       @output_path = nil
+      @missing_only = false
       @overrides = {}
 
       OptionParser.new do |opts|
+        opts.on("--missing-only", "Only generate covers for episodes without one") { @missing_only = true }
         opts.on("--base-image PATH", "Override base image") { |v| @overrides[:base_image] = v }
         opts.on("--output PATH", "Output file path") { |v| @output_path = v }
         opts.on("--font NAME", "Override font family") { |v| @overrides[:font] = v }
@@ -28,45 +30,42 @@ module PodgenCLI
       end.parse!(args)
 
       @podcast_name = args.shift
-      @title = args.join(" ") # remaining args are the title
+      # Second arg: episode id (date pattern) or manual title
+      second = args.first
+      if second && second.match?(/\d{4}-\d{2}-\d{2}/)
+        @episode_id = args.shift
+        @title = nil
+      else
+        @episode_id = nil
+        @title = args.join(" ")
+      end
+      @dry_run = options[:dry_run] || false
     end
 
     def run
       code = require_podcast!("cover")
       return code if code
 
-      if @title.to_s.strip.empty?
-        $stderr.puts "Usage: podgen cover <podcast> <title> [options]"
-        $stderr.puts
-        $stderr.puts "Options:"
-        $stderr.puts "  --base-image PATH   Override base image"
-        $stderr.puts "  --output PATH       Output file path (default: cover_preview.jpg)"
-        $stderr.puts "  --font NAME         Override font family"
-        $stderr.puts "  --font-color COLOR  Override font color (e.g. #2B3A67)"
-        $stderr.puts "  --font-size N       Override font size in pixels"
-        $stderr.puts "  --gravity POS       Override gravity (Center, South, etc.)"
-        $stderr.puts "  --x-offset N        Override horizontal offset"
-        $stderr.puts "  --y-offset N        Override vertical offset"
-        return 2
-      end
-
       config = load_config!
 
-      # Resolve base image: CLI override > config
-      base_image = @overrides.delete(:base_image) || config.cover_base_image
-      unless base_image && File.exist?(base_image)
-        $stderr.puts "No base_image available for cover generation."
-        $stderr.puts "  Configure in guidelines.md under ## Image, or pass --base-image PATH"
-        return 1
+      # Manual title mode: podgen cover <podcast> My Custom Title
+      if @title && !@title.empty?
+        return run_manual_title(config)
       end
 
-      # Merge config options with CLI overrides
-      cover_opts = config.cover_options.merge(@overrides)
+      # Episode mode (single or batch)
+      return run_episode_mode(config)
+    end
+
+    private
+
+    def run_manual_title(config)
+      base_image, cover_opts = resolve_cover_config(config)
+      return 1 unless base_image
 
       output = @output_path || "cover_preview.jpg"
 
-      agent = CoverAgent.new
-      agent.generate(
+      CoverAgent.new.generate(
         title: @title,
         base_image: base_image,
         output_path: output,
@@ -78,6 +77,79 @@ module PodgenCLI
     rescue => e
       $stderr.puts "Cover generation failed: #{e.message}"
       1
+    end
+
+    def run_episode_mode(config)
+      episodes = resolve_episodes(config)
+      if episodes.empty?
+        $stderr.puts "No episodes found#{@episode_id ? " matching '#{@episode_id}'" : ""}"
+        return 1
+      end
+
+      base_image, cover_opts = resolve_cover_config(config)
+      return 1 unless base_image
+
+      agent = CoverAgent.new
+      puts "Generating covers for #{episodes.length} episode(s)"
+
+      processed = 0
+      episodes.each do |ep|
+        if @dry_run
+          puts "  [dry-run] #{ep[:basename]}: #{ep[:title]}"
+          next
+        end
+
+        puts "  #{ep[:basename]}..."
+        agent.generate(
+          title: ep[:title],
+          base_image: base_image,
+          output_path: ep[:output],
+          options: cover_opts
+        )
+        processed += 1
+      end
+
+      puts "Generated #{processed} cover(s)" unless @dry_run
+      0
+    rescue => e
+      $stderr.puts "Cover generation failed: #{e.message}"
+      1
+    end
+
+    def resolve_episodes(config)
+      dir = config.episodes_dir
+      pattern = if @episode_id
+        File.join(dir, "*#{@episode_id}_transcript.md")
+      else
+        File.join(dir, "*_transcript.md")
+      end
+
+      Dir.glob(pattern).sort.filter_map do |path|
+        basename = File.basename(path, "_transcript.md")
+
+        if @missing_only && !Dir.glob(File.join(dir, "#{basename}_cover.*")).empty?
+          next
+        end
+
+        first_line = File.foreach(path).first
+        title = first_line&.strip&.sub(/^#\s+/, "")
+        next unless title && !title.empty?
+
+        output = File.join(dir, "#{basename}_cover.jpg")
+        { basename: basename, title: title, output: output }
+      end
+    end
+
+    def resolve_cover_config(config)
+      base_image = @overrides.delete(:base_image) || config.cover_base_image
+      unless base_image && File.exist?(base_image)
+        $stderr.puts "No base_image available for cover generation."
+        $stderr.puts "  Configure in guidelines.md under ## Image, or pass --base-image PATH"
+        return nil
+      end
+
+      cover_opts = config.cover_options.merge(@overrides)
+      [base_image, cover_opts]
     end
   end
 end
