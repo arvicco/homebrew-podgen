@@ -531,6 +531,99 @@ class TestSiteGenerator < Minitest::Test
     refute_includes index, "<style>"
   end
 
+  # --- episode cover ---
+
+  def test_episode_page_shows_cover_when_present
+    create_mp3("mypod-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"), "# Ep\n\n## Transcript\n\nText.")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_cover.jpg"), "fake image data")
+    write_history([{ "date" => "2026-01-15", "title" => "Ep" }])
+
+    gen = build_generator
+    gen.generate
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    assert_includes page, 'class="episode-cover"'
+    assert_includes page, 'src="mypod-2026-01-15_cover.jpg"'
+
+    # Cover file copied to site
+    assert File.exist?(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15_cover.jpg"))
+  end
+
+  def test_episode_page_no_cover_when_absent
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Ep" }])
+
+    gen = build_generator
+    gen.generate
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    refute_includes page, "episode-cover"
+  end
+
+  # --- vocabulary link ---
+
+  def test_episode_page_shows_vocab_link_when_vocabulary_present
+    create_mp3("mypod-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"),
+      "# Ep\n\n## Transcript\n\nHe **razglasil** it.\n\n## Vocabulary\n\n- **razglasiti** (C1 v.) *razglasil* — to announce")
+    write_history([{ "date" => "2026-01-15", "title" => "Ep" }])
+
+    gen = build_generator
+    gen.generate
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    assert_includes page, 'href="#vocabulary"'
+    assert_includes page, "Vocabulary"
+  end
+
+  def test_episode_page_no_vocab_link_when_no_vocabulary
+    create_mp3("mypod-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"), "# Ep\n\n## Transcript\n\nPlain text.")
+    write_history([{ "date" => "2026-01-15", "title" => "Ep" }])
+
+    gen = build_generator
+    gen.generate
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    refute_includes page, 'href="#vocabulary"'
+  end
+
+  # --- find_episode_cover ---
+
+  def test_find_episode_cover_returns_path_when_exists
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_cover.jpg"), "img")
+    gen = build_generator
+    result = gen.send(:find_episode_cover, "mypod-2026-01-15")
+    assert_includes result, "mypod-2026-01-15_cover.jpg"
+  end
+
+  def test_find_episode_cover_returns_nil_when_missing
+    gen = build_generator
+    assert_nil gen.send(:find_episode_cover, "mypod-2026-01-15")
+  end
+
+  # --- transcript_has_vocabulary? ---
+
+  def test_transcript_has_vocabulary_true
+    path = File.join(@episodes_dir, "test.md")
+    File.write(path, "# Title\n\n## Transcript\n\nText.\n\n## Vocabulary\n\n- word")
+    gen = build_generator
+    assert gen.send(:transcript_has_vocabulary?, path)
+  end
+
+  def test_transcript_has_vocabulary_false
+    path = File.join(@episodes_dir, "test.md")
+    File.write(path, "# Title\n\n## Transcript\n\nText only.")
+    gen = build_generator
+    refute gen.send(:transcript_has_vocabulary?, path)
+  end
+
+  def test_transcript_has_vocabulary_nil_path
+    gen = build_generator
+    refute gen.send(:transcript_has_vocabulary?, nil)
+  end
+
   # --- find_transcript ---
 
   def test_find_transcript_prefers_transcript_md
