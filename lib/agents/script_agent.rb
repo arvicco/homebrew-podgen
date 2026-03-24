@@ -99,6 +99,8 @@ class ScriptAgent
 
       Write naturally as spoken word — no stage directions, no timestamps, no markdown.
       Each segment's text should be the exact words the host will speak aloud.
+      Use numeric digits for numbers, prices, percentages, and quantities ($67,500, 10 GW,
+      22%, 1,031 BTC). TTS handles digits correctly — do NOT spell them out as words.
 
       In the sources field, list every article or source you actually referenced in the
       script. Each source needs a short descriptive title (5-8 words max, like a headline)

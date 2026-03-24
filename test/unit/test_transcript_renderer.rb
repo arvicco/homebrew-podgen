@@ -311,7 +311,7 @@ class TestTranscriptRenderer < Minitest::Test
     VOCAB
 
     html = @r.render_vocabulary_html(vocab)
-    assert_includes html, '<div class="vocabulary">'
+    assert_includes html, '<div class="vocabulary" id="vocabulary">'
     assert_includes html, "<h2>Vocabulary</h2>"
     assert_includes html, "<dl>"
     assert_includes html, "</dl>"
@@ -398,7 +398,7 @@ class TestTranscriptRenderer < Minitest::Test
     body = "He **razglasil** it.\n\n## Vocabulary\n\n- **razglasiti** (C1 v.) *razglasil* — to announce"
     html = @r.render_body_html(body, vocab: true)
     assert_includes html, 'class="vocab-word"'
-    assert_includes html, '<div class="vocabulary">'
+    assert_includes html, '<div class="vocabulary" id="vocabulary">'
   end
 
   def test_render_body_html_with_vocab_false_strips_vocab

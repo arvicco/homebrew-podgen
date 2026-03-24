@@ -83,6 +83,7 @@ module PodgenCLI
         "feed-*.xml",
         "site/*.html",
         "site/**/*.html",
+        "site/**/*_cover.*",
         "site/style.css",
         "site/custom.css",
         "site/favicon.*"

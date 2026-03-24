@@ -123,6 +123,15 @@ class SiteGenerator
     # Render episode pages
     episodes.each do |ep|
       page_name = "#{ep[:basename]}.html"
+
+      # Copy episode cover to site if present
+      ep_cover_url = nil
+      if ep[:cover_file]
+        cover_name = File.basename(ep[:cover_file])
+        FileUtils.cp(ep[:cover_file], File.join(episodes_html_dir, cover_name))
+        ep_cover_url = cover_name
+      end
+
       ep_html = render_layout(
         lang: lang_code,
         page_title: "#{ep[:title]} — #{@config.title}",
@@ -136,7 +145,9 @@ class SiteGenerator
           audio_url: audio_url_from_episode_page(ep[:filename], is_primary),
           transcript_html: parse_transcript_html(ep[:transcript_path]),
           index_path: is_primary ? "../index.html" : "../../#{lang_code}/index.html",
-          site_config: @site_config
+          site_config: @site_config,
+          episode_cover_url: ep_cover_url,
+          has_vocabulary: ep[:has_vocabulary]
         )
       )
       File.write(File.join(episodes_html_dir, page_name), ep_html)
@@ -172,7 +183,9 @@ class SiteGenerator
       date: date,
       title: title,
       duration: @duration_map[filename],
-      transcript_path: transcript_path
+      transcript_path: transcript_path,
+      cover_file: find_episode_cover(basename),
+      has_vocabulary: transcript_has_vocabulary?(transcript_path)
     }
   end
 
@@ -182,6 +195,16 @@ class SiteGenerator
       return path if File.exist?(path)
     end
     nil
+  end
+
+  def find_episode_cover(basename)
+    Dir.glob(File.join(@episodes_dir, "#{basename}_cover.*")).first
+  end
+
+  def transcript_has_vocabulary?(path)
+    return false unless path && File.exist?(path)
+
+    File.foreach(path).any? { |line| line.include?("## Vocabulary") }
   end
 
   def extract_title_from_file(path)

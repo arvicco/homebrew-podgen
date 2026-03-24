@@ -64,7 +64,41 @@ class VocabularyAnnotator
 
   private
 
+  # Split threshold: texts longer than this (in chars) get chunked to avoid
+  # hitting max_tokens on the response. ~4000 chars ≈ ~1000 tokens input.
+  CHUNK_THRESHOLD = 4000
+
   def classify_words(text, language, cutoff, filters = {})
+    if text.length > CHUNK_THRESHOLD
+      return classify_chunked(text, language, cutoff, filters)
+    end
+
+    classify_single(text, language, cutoff, filters)
+  end
+
+  def classify_chunked(text, language, cutoff, filters)
+    chunks = split_into_chunks(text)
+    return classify_single(text, language, cutoff, filters) if chunks.length < 2
+
+    log("Splitting into #{chunks.length} chunks for classification")
+    threads = chunks.map do |chunk|
+      Thread.new { classify_single(chunk, language, cutoff, filters) }
+    end
+    threads.flat_map(&:value)
+  end
+
+  def split_into_chunks(text)
+    paragraphs = text.split(/\n{2,}/)
+    return [text] if paragraphs.length < 2
+
+    mid = paragraphs.length / 2
+    [
+      paragraphs[0...mid].join("\n\n"),
+      paragraphs[mid..].join("\n\n")
+    ]
+  end
+
+  def classify_single(text, language, cutoff, filters = {})
     with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
       message, elapsed = measure_time do
         @client.messages.create(
@@ -86,7 +120,11 @@ class VocabularyAnnotator
       # When response is truncated (max_tokens), salvage partial JSON
       if json_str.nil? && message.stop_reason == "max_tokens"
         json_str = salvage_truncated_json(raw)
-        log("Salvaged partial JSON from truncated response") if json_str
+        if json_str
+          log("Salvaged partial JSON from truncated response")
+        else
+          log("WARNING: Response truncated at max_tokens and salvage failed")
+        end
       end
 
       return [] unless json_str
@@ -114,21 +152,25 @@ class VocabularyAnnotator
   end
 
   # Attempt to recover entries from a truncated JSON response.
-  # Finds the last complete object (ending with }) and closes the array.
+  # Iterates backward through } positions to find the last one that produces
+  # valid JSON (skipping } chars that appear inside string values).
   def salvage_truncated_json(raw)
-    # Find the opening bracket
     start = raw.index("[")
     return nil unless start
 
-    # Find the last complete JSON object (ends with "}")
-    last_brace = raw.rindex("}")
-    return nil unless last_brace && last_brace > start
+    pos = raw.length
+    while pos > start
+      pos = raw.rindex("}", pos - 1)
+      break unless pos && pos > start
 
-    json_str = raw[start..last_brace] + "]"
-    # Verify it parses
-    JSON.parse(json_str)
-    json_str
-  rescue JSON::ParserError
+      begin
+        candidate = raw[start..pos] + "]"
+        parsed = JSON.parse(candidate)
+        return candidate if parsed.is_a?(Array) && !parsed.empty?
+      rescue JSON::ParserError
+        next
+      end
+    end
     nil
   end
 
