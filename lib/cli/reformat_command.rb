@@ -37,7 +37,8 @@ module PodgenCLI
       end
 
       language = @config.transcription_language
-      @reconciler ||= Transcription::Reconciler.new(language: language, logger: build_logger)
+      logger = build_logger
+      @reconciler ||= Transcription::Reconciler.new(language: language, logger: logger)
 
       puts "Reformatting #{transcripts.length} transcript(s) (#{language})"
 
@@ -51,7 +52,7 @@ module PodgenCLI
         end
 
         puts "  #{basename}..."
-        process_transcript(path, logger: build_logger)
+        process_transcript(path, logger: logger)
         processed += 1
       end
 

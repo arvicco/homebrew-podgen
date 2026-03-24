@@ -141,14 +141,14 @@ module PodgenCLI
     end
 
     def resolve_cover_config(config)
-      base_image = @overrides.delete(:base_image) || config.cover_base_image
+      base_image = @overrides[:base_image] || config.cover_base_image
       unless base_image && File.exist?(base_image)
         $stderr.puts "No base_image available for cover generation."
         $stderr.puts "  Configure in guidelines.md under ## Image, or pass --base-image PATH"
         return nil
       end
 
-      cover_opts = config.cover_options.merge(@overrides)
+      cover_opts = config.cover_options.merge(@overrides.except(:base_image))
       [base_image, cover_opts]
     end
   end
