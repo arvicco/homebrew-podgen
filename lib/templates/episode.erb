@@ -1,8 +1,15 @@
 <a class="back-link" href="<%= index_path %>">&larr; All episodes</a>
 <div class="episode-header">
-  <h1><%= episode_title %></h1>
-  <div class="meta"><%= episode_date %><% if episode_duration && site_config.fetch(:show_duration, true) %> &middot; <%= episode_duration %><% end %></div>
-  <audio controls preload="metadata" src="<%= audio_url %>"></audio>
+  <div class="header-row">
+<% if episode_cover_url %>
+    <img class="episode-cover" src="<%= episode_cover_url %>" alt="<%= episode_title %>">
+<% end %>
+    <div class="header-text">
+      <h1><%= episode_title %></h1>
+      <div class="meta"><%= episode_date %><% if episode_duration && site_config.fetch(:show_duration, true) %> &middot; <%= episode_duration %><% end %><% if has_vocabulary %> &middot; <a class="vocab-link" href="#vocabulary">&#x1F4D6; Vocabulary</a><% end %></div>
+      <audio controls preload="metadata" src="<%= audio_url %>"></audio>
+    </div>
+  </div>
 </div>
 <% if transcript_html && site_config.fetch(:show_transcript, true) %>
 <div class="transcript">

@@ -115,7 +115,7 @@ module TranscriptRenderer
   end
 
   def render_vocabulary_html(vocab_body)
-    lines = ["<div class=\"vocabulary\">", "<h2>Vocabulary</h2>", "<dl>"]
+    lines = ["<div class=\"vocabulary\" id=\"vocabulary\">", "<h2>Vocabulary</h2>", "<dl>"]
 
     vocab_body.each_line do |line|
       line = line.strip

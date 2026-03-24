@@ -395,6 +395,47 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_nil @annotator.send(:salvage_truncated_json, '[{"word":"incomplete')
   end
 
+  def test_salvage_truncated_json_skips_brace_inside_truncated_string
+    # Truncation lands after a } inside a string value of the INCOMPLETE entry.
+    # The salvage must skip that } and find the real object delimiter.
+    truncated = '[{"word":"a","lemma":"a","level":"B2","pos":"n."},{"word":"b","definition":"has {braces} trun'
+    result = @annotator.send(:salvage_truncated_json, truncated)
+    assert result
+    parsed = JSON.parse(result, symbolize_names: true)
+    assert_equal 1, parsed.length
+    assert_equal "a", parsed[0][:word]
+  end
+
+  # --- split_into_chunks ---
+
+  def test_split_into_chunks_splits_at_paragraph_boundary
+    text = "Para one.\n\nPara two.\n\nPara three.\n\nPara four."
+    chunks = @annotator.send(:split_into_chunks, text)
+
+    assert_equal 2, chunks.length
+    assert_includes chunks[0], "Para one."
+    assert_includes chunks[0], "Para two."
+    assert_includes chunks[1], "Para three."
+    assert_includes chunks[1], "Para four."
+  end
+
+  def test_split_into_chunks_handles_odd_paragraph_count
+    text = "One.\n\nTwo.\n\nThree."
+    chunks = @annotator.send(:split_into_chunks, text)
+
+    assert_equal 2, chunks.length
+    assert_includes chunks[0], "One."
+    assert_includes chunks[1], "Two."
+    assert_includes chunks[1], "Three."
+  end
+
+  def test_split_into_chunks_single_paragraph_returns_one_chunk
+    text = "Just one paragraph with no breaks."
+    chunks = @annotator.send(:split_into_chunks, text)
+
+    assert_equal 1, chunks.length
+  end
+
   # --- system_prompt IPA conditional ---
 
   def test_system_prompt_includes_pronunciation_when_espeak_unsupported

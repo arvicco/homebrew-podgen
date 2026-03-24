@@ -483,7 +483,7 @@ class TestSiteGenerator < Minitest::Test
     html = gen.send(:parse_transcript_html, path)
 
     # Vocabulary section rendered as flat list
-    assert_includes html, '<div class="vocabulary">'
+    assert_includes html, '<div class="vocabulary" id="vocabulary">'
     assert_includes html, "<h2>Vocabulary</h2>"
     refute_includes html, "<h3>"
     assert_includes html, "razglasiti"
