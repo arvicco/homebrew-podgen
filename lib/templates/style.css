@@ -67,7 +67,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .episode-header h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
 .episode-header .meta { color: var(--fg-muted); font-size: 0.9rem; margin-bottom: 1rem; }
 .episode-header audio { width: 100%; margin-bottom: 1rem; }
-.episode-cover { width: 160px; height: 160px; border-radius: var(--radius); object-fit: cover; flex-shrink: 0; }
+.episode-cover { width: 220px; height: auto; border-radius: var(--radius); flex-shrink: 0; }
 .vocab-link { text-decoration: none; white-space: nowrap; }
 .vocab-link:hover { text-decoration: underline; }
 

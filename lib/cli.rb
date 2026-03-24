@@ -21,6 +21,7 @@ module PodgenCLI
     "links"     => ["List or manage queued priority links", "cli/links_command",       "LinksCommand"],
     "vocab"     => ["Manage known vocabulary words",        "cli/vocab_command",       "VocabCommand"],
     "revocab"   => ["Re-annotate vocabulary on transcripts", "cli/revocab_command",     "RevocabCommand"],
+    "reformat"  => ["Reformat transcripts with paragraph breaks", "cli/reformat_command",    "ReformatCommand"],
     "exclude"   => ["Exclude URLs from future episodes",    "cli/exclude_command",     "ExcludeCommand"],
     "cover"     => ["Generate episode cover image",          "cli/cover_command",       "CoverCommand"],
     "fork"      => ["Fork podcast into a new namespace",    "cli/fork_command",        "ForkCommand"],
@@ -52,8 +53,9 @@ module PodgenCLI
       opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"
       opts.separator "  vocab <add|remove|list> <podcast>    Manage known vocabulary words"
       opts.separator "  revocab <podcast> [episode] [--missing-only]  Re-annotate vocabulary"
+      opts.separator "  reformat <podcast> [episode]         Reformat transcripts (paragraph breaks, cleanup)"
       opts.separator "  exclude <podcast> <url> [url...]     Exclude URLs from future episodes"
-      opts.separator "  cover <podcast> <title> [--opts]    Generate episode cover image"
+      opts.separator "  cover <podcast> <title|episode-id>   Generate episode cover image"
       opts.separator "  fork <old> <new>                   Fork podcast into a new namespace"
       opts.separator "  unpublish <podcast>                Remove podcast from Cloudflare R2"
       opts.separator ""

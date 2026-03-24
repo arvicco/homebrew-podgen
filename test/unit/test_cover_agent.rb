@@ -68,6 +68,32 @@ class TestCoverAgent < Minitest::Test
     assert_match(/tspan.*dy="\d+".*LINE3/, svg)
   end
 
+  # --- fit_text ---
+
+  def test_fit_text_shrinks_font_for_long_title
+    agent = agent_class.allocate
+    opts = { font_size: 220, text_width: 1400, text_height: 560 }
+    lines, font_size = agent.send(:fit_text, "KAKO JE KMETIČ OBEDOVAL Z GRAŠČAKOM", opts)
+
+    # All words must be present
+    assert_equal "KAKO JE KMETIČ OBEDOVAL Z GRAŠČAKOM", lines.join(" ")
+    # Font must have been reduced from 220
+    assert font_size < 220, "Font should shrink to fit: got #{font_size}"
+    # Must actually fit in text_height
+    line_spacing = (font_size * 1.15).round
+    total_height = font_size + (lines.length - 1) * line_spacing
+    assert total_height <= 560, "Text height #{total_height} exceeds 560"
+  end
+
+  def test_fit_text_keeps_font_when_short_title
+    agent = agent_class.allocate
+    opts = { font_size: 220, text_width: 1400, text_height: 560 }
+    lines, font_size = agent.send(:fit_text, "SHORT", opts)
+
+    assert_equal 220, font_size
+    assert_equal 1, lines.length
+  end
+
   # --- DEFAULTS ---
 
   def test_defaults_frozen

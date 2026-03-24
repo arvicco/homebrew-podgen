@@ -17,6 +17,7 @@
 3. Run exploratory read-only commands (grep, logs, traces) to gather evidence
 4. Present a diagnosis with your reasoning and a proposed fix plan
 5. Wait for explicit approval before making any code changes
+6. Write regression test before implementing any fix
 
 **Never implement a fix speculatively.** "This might help" changes are not allowed.
 If you are unsure about the root cause, say so and ask a clarifying question instead of guessing with code.
@@ -58,6 +59,7 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 - Episode MP3 filtering via `EpisodeFiltering` module (shared across rss_generator, site_generator, validate, stats, scrap)
 - Transcript HTML via `TranscriptRenderer` module (shared by RssGenerator and SiteGenerator). RSS passes `vocab: false` (strips vocabulary, removes bold markers); site uses default `vocab: true` (linked words + rendered definitions)
 - Known vocabulary via `KnownVocabulary` class — per-language lemma lists in `known_vocabulary.yml`, managed by `podgen vocab` CLI, filtered in `VocabularyAnnotator` before marking/rendering
+- Cognate filtering via deterministic code post-filter in `VocabularyAnnotator#filter_cognates` — ICU transliteration (`Cyrillic-Latin; Latin-ASCII`) + Levenshtein distance with length-adaptive thresholds. Prompt-based filtering is unreliable for exclusion tasks; code handles it instead. The LLM provides `similar_translations` field for cross-script comparison
 - URL cleaning via `UrlCleaner` module (strips tracking params like utm_*, fbclid, gclid)
 - Paths: `File.join` + `__dir__`-relative, `require_relative` throughout
 - Atomic writes (temp + rename) for history/cache
