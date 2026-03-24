@@ -281,6 +281,32 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_equal 0, result.length
   end
 
+  # --- normalize_for_comparison ---
+
+  def test_normalize_ascii_passthrough
+    assert_equal "hello", @annotator.send(:normalize_for_comparison, "hello")
+  end
+
+  def test_normalize_strips_diacritics
+    result = @annotator.send(:normalize_for_comparison, "študentka")
+    assert_equal "studentka", result
+  end
+
+  def test_normalize_cyrillic_to_latin
+    result = @annotator.send(:normalize_for_comparison, "студентка")
+    assert_equal "studentka", result
+  end
+
+  def test_normalize_downcases
+    assert_equal "hello", @annotator.send(:normalize_for_comparison, "HELLO")
+  end
+
+  def test_normalize_empty_string
+    assert_equal "", @annotator.send(:normalize_for_comparison, "")
+  end
+
+  # --- cognate? ---
+
   def test_cognate_detects_similar_long_words
     assert @annotator.send(:cognate?, "klokotanje", "klokotanie")
   end

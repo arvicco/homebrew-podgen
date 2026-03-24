@@ -68,8 +68,8 @@ ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription
 podgen looks for its project directory (`podcasts/`, `.env`, `output/`) in this order:
 
 1. **Current directory** — if CWD contains a `podcasts/` folder
-2. `**$PODGEN_HOME`** — if the environment variable is set
-3. `**~/.podgen**` — default for Homebrew installs
+2. **`$PODGEN_HOME`** — if the environment variable is set
+3. **`~/.podgen`** — default for Homebrew installs
 4. **Code location** — fallback for git clone usage
 
 ## Usage
@@ -227,8 +227,8 @@ Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` + `<name>-YYYY-MM-DD_t
 mkdir -p podcasts/my_podcast
 ```
 
-1. Add `podcasts/my_podcast/guidelines.md` with your format, tone, and topic preferences (see `podcasts/ruby_world/guidelines.md` for an example).
-2. Add `podcasts/my_podcast/queue.yml` with fallback topics:
+2. Add `podcasts/my_podcast/guidelines.md` with your format, tone, and topic preferences (see `podcasts/ruby_world/guidelines.md` for an example).
+3. Add `podcasts/my_podcast/queue.yml` with fallback topics:
 
 ```yaml
 topics:
@@ -236,7 +236,7 @@ topics:
   - Ruby on Rails ecosystem updates
 ```
 
-1. Optionally add per-podcast voice/model overrides in `podcasts/my_podcast/.env`.
+4. Optionally add per-podcast voice/model overrides in `podcasts/my_podcast/.env`.
 
 ## Customizing
 
@@ -449,7 +449,7 @@ Outro music auto-detection trims trailing music/silence by mapping reconciled tr
 
 1. **CLI flag**: `--autotrim`
 2. **Per-feed config**: `autotrim: true` inline with the RSS URL
-3. `**## Audio` section**: `- autotrim: true`
+3. **`## Audio` section**: `- autotrim: true`
 
 ```markdown
 ## Sources
@@ -488,7 +488,7 @@ podgen generate lahko_noc --file episode.mp3 --title "Custom Title"
 | `--base-image PATH` | Base image for title-overlay cover generation                                 |
 
 
-The rest of the pipeline (transcription, outro trimming, assembly, LingQ upload) works identically. The file's name and size are recorded in history for dedup (resurvives file moves). Re-running the same `--file` command exits with a warning if already processed; use `--force` to re-process.
+The rest of the pipeline (transcription, outro trimming, assembly, LingQ upload) works identically. The file's name and size are recorded in history for dedup (survives file moves). Re-running the same `--file` command exits with a warning if already processed; use `--force` to re-process.
 
 #### YouTube video import
 
@@ -683,7 +683,7 @@ Language pipeline transcripts can be automatically annotated with vocabulary ent
 - `level`: CEFR cutoff — words **at or above** this level are annotated. Valid values: A1, A2, B1, B2, C1, C2.
 - `max`: Maximum number of vocabulary entries per episode. Keeps the hardest words (highest CEFR level first).
 - `frequency`: Frequency preset — `common`, `uncommon`, `rare`, `literary`, or `archaic`. Controls whether everyday vs. rare words are included.
-- `similar`: Comma-separated list of languages the learner already knows. Words that are cognates in any of these languages are **filtered out deterministically** using transliteration + Levenshtein distance (e.g. Slovenian "profesor" ≈ English "professor" ≈ Russian "профессор" → excluded). Works across writing systems (Latin/Cyrillic/Greek).
+- `similar`: Comma-separated list of languages the learner already knows. Words that are cognates in any of these languages are **filtered out deterministically** using transliteration + Levenshtein distance (e.g. Slovenian "profesor" ≈ English "professor" ≈ Russian "профессор" → excluded). Works across writing systems (Latin/Cyrillic).
 - `filter`: Free-form custom instruction passed to the LLM (e.g. "Skip words related to food").
 
 When enabled, after the transcript is saved the pipeline sends the transcript text to Claude, which classifies words by CEFR level, identifies dictionary forms (lemmas), and generates translations and definitions. The result is:
@@ -802,8 +802,8 @@ R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
 R2_BUCKET=podgen
 ```
 
-1. Set `base_url` in `podcasts/<name>/guidelines.md`
-2. Set up the analytics Worker: `podgen analytics setup`
+3. Set `base_url` in `podcasts/<name>/guidelines.md`
+4. Set up the analytics Worker: `podgen analytics setup`
 
 ### Publishing
 
