@@ -24,6 +24,7 @@ module PodgenCLI
       @dry_run = options[:dry_run] || false
       @local_file = options[:file]
       @youtube_url = options[:url]
+      @rss_filter = options[:rss]
       @file_title = options[:title]
       @logger = logger
       @history = history
@@ -159,7 +160,7 @@ module PodgenCLI
 
     def acquire_rss
       logger.phase_start("Fetch Episode")
-      @episode = @episode_source.fetch_next(force: @options[:force])
+      @episode = @episode_source.fetch_next(force: @options[:force], rss_filter: @rss_filter)
       unless @episode
         logger.error("No new episodes found in RSS feeds")
         return 1

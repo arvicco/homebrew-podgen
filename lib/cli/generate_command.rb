@@ -32,6 +32,7 @@ module PodgenCLI
       OptionParser.new do |opts|
         opts.on("--file PATH", "Local audio file (language pipeline)") { |f| @options[:file] = f }
         opts.on("--url URL", "YouTube video URL (language pipeline)") { |u| @options[:url] = u }
+        opts.on("--rss URL", "RSS feed: URL or substring of configured feed") { |u| @options[:rss] = u }
         opts.on("--title TEXT", "Episode title (with --file or --url)") { |t| @options[:title] = t }
         opts.on("--skip-intro N", "--skip N", String, "Seconds or min:sec to skip from start") { |n| @options[:skip] = TimeValue.parse(n) }
         opts.on("--cut-outro N", "--cut N", String, "Seconds or min:sec to cut from end (min:sec = absolute)") { |n| @options[:cut] = TimeValue.parse(n) }

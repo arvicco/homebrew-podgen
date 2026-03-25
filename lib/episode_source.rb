@@ -57,13 +57,14 @@ class EpisodeSource
     true
   end
 
-  def fetch_next(force: false)
+  def fetch_next(force: false, rss_filter: nil)
     rss_feeds = @config.sources["rss"]
     unless rss_feeds.is_a?(Array) && rss_feeds.any?
       raise "Language pipeline requires RSS sources in guidelines.md (## Sources → - rss:)"
     end
 
-    source = RSSSource.new(feeds: rss_feeds, logger: @logger)
+    feeds = resolve_feeds(rss_feeds, rss_filter)
+    source = RSSSource.new(feeds: feeds, logger: @logger)
     exclude = force ? Set.new : @history.all_urls
     episodes = source.fetch_episodes(exclude_urls: exclude)
 
@@ -74,6 +75,24 @@ class EpisodeSource
 
     log("Found #{episodes.length} episodes with audio enclosures")
     episodes.first
+  end
+
+  # Resolves which feeds to use given an optional rss_filter.
+  # - nil: use all configured feeds
+  # - substring match: use only matching configured feed(s)
+  # - no match: treat as ad-hoc URL
+  def resolve_feeds(configured_feeds, rss_filter)
+    return configured_feeds if rss_filter.nil?
+
+    matched = configured_feeds.select do |feed|
+      url = feed.is_a?(Hash) ? feed[:url] : feed
+      url.downcase.include?(rss_filter.downcase)
+    end
+
+    return matched unless matched.empty?
+
+    log("No configured feed matches '#{rss_filter}' — using as ad-hoc URL")
+    [rss_filter]
   end
 
   def download_audio(url)
