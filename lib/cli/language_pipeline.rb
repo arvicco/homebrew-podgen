@@ -2,6 +2,7 @@
 
 require "tmpdir"
 require "fileutils"
+require "uri"
 
 root = File.expand_path("../..", __dir__)
 
