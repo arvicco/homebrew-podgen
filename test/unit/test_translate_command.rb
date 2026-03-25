@@ -145,6 +145,21 @@ class TestTranslateCommand < Minitest::Test
     assert_includes content, "Bienvenidos."
   end
 
+  def test_save_script_creates_parent_directory
+    cmd = build_command
+    script = {
+      title: "Test Title",
+      segments: [{ name: "Intro", text: "Hello." }]
+    }
+    nested = File.join(@tmpdir, "new_subdir", "deep")
+    path = File.join(nested, "output_script.md")
+
+    cmd.send(:save_script, script, path)
+
+    assert File.exist?(path)
+    assert_includes File.read(path), "# Test Title"
+  end
+
   def test_parse_save_roundtrip
     original = {
       title: "Round Trip",

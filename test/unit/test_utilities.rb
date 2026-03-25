@@ -119,6 +119,22 @@ class TestUtilities < Minitest::Test
     assert_includes content, "END Unknown (0s)"
   end
 
+  def test_logger_verbose_shows_stdout
+    require "logger"
+    log_path = File.join(@tmpdir, "test.log")
+    logger = PodcastAgent::Logger.new(log_path: log_path, verbosity: :verbose)
+
+    out, = capture_io { logger.log("verbose msg") }
+    assert_includes out, "verbose msg"
+  end
+
+  def test_logger_default_path_without_log_path
+    require "logger"
+    logger = PodcastAgent::Logger.new(verbosity: :quiet)
+
+    assert_match(%r{logs/runs/\d{4}-\d{2}-\d{2}\.log$}, logger.log_file_path)
+  end
+
   # --- Loggable ---
 
   def test_loggable_with_logger
@@ -167,6 +183,14 @@ class TestUtilities < Minitest::Test
     obj.send(:log, "nested")
 
     assert_includes received, "[InnerClass]"
+  end
+
+  def test_loggable_anonymous_class_does_not_raise
+    require "loggable"
+
+    obj = Class.new { include Loggable }.new
+    out, = capture_io { obj.send(:log, "anon test") }
+    assert_includes out, "anon test"
   end
 
   def test_loggable_without_logger_falls_back_to_puts
@@ -252,6 +276,30 @@ class TestUtilities < Minitest::Test
     assert received.any? { |l| l.include?("Test completed in 1.23s") }
     assert received.any? { |l| l.include?("Input: 500") && l.include?("Output: 100") }
     refute received.any? { |l| l.include?("Cache") }
+  end
+
+  def test_usage_logger_includes_stop_reason
+    require "loggable"
+    require "usage_logger"
+
+    received = []
+    logger_stub = Object.new
+    logger_stub.define_singleton_method(:log) { |msg| received << msg }
+
+    klass = Class.new do
+      include Loggable
+      include UsageLogger
+    end
+    obj = klass.new
+    obj.instance_variable_set(:@logger, logger_stub)
+
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens)
+      .new(100, 50, 0, 0)
+    message = Struct.new(:usage, :stop_reason).new(usage, "max_tokens")
+
+    obj.send(:log_api_usage, "Truncated", message, 2.0)
+
+    assert received.any? { |l| l.include?("max_tokens") }
   end
 
   def test_usage_logger_logs_cache_when_present
