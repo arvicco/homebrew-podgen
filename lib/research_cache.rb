@@ -19,7 +19,12 @@ class ResearchCache
     return nil unless File.exist?(path)
     return nil if (Time.now - File.mtime(path)) > TTL_SECONDS
 
-    YamlLoader.load(path, default: nil)
+    data = YamlLoader.load(path, default: nil)
+    if data.nil? && File.exist?(path)
+      # Corrupted cache file — clean up
+      File.delete(path) rescue nil
+    end
+    data
   end
 
   # Writes results to cache using atomic write (temp + rename).

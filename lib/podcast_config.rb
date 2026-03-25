@@ -200,7 +200,7 @@ class PodcastConfig
   end
 
   def queue_topics
-    YamlLoader.load(@queue_path, default: {})["topics"]
+    YamlLoader.load(@queue_path, default: {}, raise_on_error: true)["topics"]
   end
 
   def ensure_directories!
