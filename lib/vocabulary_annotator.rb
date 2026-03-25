@@ -24,7 +24,7 @@ class VocabularyAnnotator
   end
 
   # Returns [marked_body, vocabulary_md]
-  # marked_body: transcript with first occurrence of vocab words bolded
+  # marked_body: transcript with all occurrences of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
   def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {})
     cutoff = cutoff.upcase
