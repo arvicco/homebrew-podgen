@@ -127,8 +127,16 @@ module PodgenCLI
         $stderr.puts "Error: --url is only supported for language pipeline podcasts (type: language)"
         return 1
       end
+      if @options[:rss] && @config.type != "language"
+        $stderr.puts "Error: --rss is only supported for language pipeline podcasts (type: language)"
+        return 1
+      end
       if @options[:file] && @options[:url]
         $stderr.puts "Error: --file and --url are mutually exclusive"
+        return 1
+      end
+      if @options[:rss] && (@options[:file] || @options[:url])
+        $stderr.puts "Error: --rss is mutually exclusive with --file and --url"
         return 1
       end
 
