@@ -46,6 +46,14 @@ class TestResearchCache < Minitest::Test
     assert_nil @cache.get("exa", @topics)
   end
 
+  def test_corrupted_cache_file_is_deleted
+    path = cache_file_path("exa", @topics)
+    File.write(path, "{{not: valid: yaml: [[[")
+
+    @cache.get("exa", @topics)
+    refute File.exist?(path), "Corrupted cache file should be deleted"
+  end
+
   def test_atomic_write_no_temp_file_left
     @cache.set("exa", @topics, @results)
 
