@@ -142,6 +142,12 @@ module PodgenCLI
         $stderr.puts "Error: --rss is mutually exclusive with --file and --url"
         return 1
       end
+      %w[skip cut autotrim].each do |flag|
+        if @options[flag.to_sym] && @options[:"no_#{flag}"]
+          $stderr.puts "Error: --#{flag} and --no-#{flag} are mutually exclusive"
+          return 1
+        end
+      end
 
       nil
     end

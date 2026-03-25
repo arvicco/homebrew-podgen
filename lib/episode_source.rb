@@ -88,7 +88,7 @@ class EpisodeSource
   # Resolves which feeds to use given an optional rss_filter.
   # - nil: use all configured feeds
   # - substring match: use only matching configured feed(s)
-  # - no match: treat as ad-hoc URL
+  # - no match: raises RuntimeError
   def resolve_feeds(configured_feeds, rss_filter)
     return configured_feeds if rss_filter.nil?
 
