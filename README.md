@@ -103,6 +103,11 @@ ruby bin/podgen <command> [options]
 | `podgen add <podcast> <url>`        | Queue a priority link for next episode (`--note "..."`)                                                                                                                                                                |
 | `podgen links <podcast>`            | List or manage queued priority links (`--remove URL`, `--clear`)                                                                                                                                                       |
 | `podgen vocab <sub> <podcast>`      | Manage known vocabulary words (`add`, `remove`, `list`; `--lang`)                                                                                                                                                      |
+| `podgen revocab <podcast> [episode]`| Re-annotate vocabulary on transcripts (`--missing-only`, `--dry-run`)                                                                                                                                                  |
+| `podgen reformat <podcast> [episode]`| Reformat transcripts with paragraph breaks and cleanup (`--dry-run`)                                                                                                                                                  |
+| `podgen cover <podcast> [episode]`  | Generate episode cover images (`--missing-only`, `--dry-run`, or manual: `podgen cover <podcast> <title>`)                                                                                                             |
+| `podgen fork <old> <new>`           | Fork podcast into a new namespace                                                                                                                                                                                      |
+| `podgen unpublish <podcast>`        | Remove podcast from Cloudflare R2                                                                                                                                                                                      |
 | `podgen test <name>`                | Run a standalone test (research, hn, rss, tts, etc.)                                                                                                                                                                   |
 | `podgen schedule <podcast>`         | Install a daily launchd scheduler                                                                                                                                                                                      |
 
@@ -688,7 +693,7 @@ Language pipeline transcripts can be automatically annotated with vocabulary ent
 
 When enabled, after the transcript is saved the pipeline sends the transcript text to Claude, which classifies words by CEFR level, identifies dictionary forms (lemmas), and generates translations and definitions. The result is:
 
-1. **Marked words** in the transcript — all occurrences of each vocabulary word are wrapped in `**bold`**
+1. **Marked words** in the transcript — all occurrences of each vocabulary word are wrapped in `**bold**`
 2. **Vocabulary section** appended to the transcript file — flat alphabetical list with lemma, IPA pronunciation, CEFR level, part of speech, translation, and definition
 
 On the generated **site**, bold vocabulary words become hoverable links with tooltip bubbles showing the vocabulary entry (IPA, part of speech, definition). The vocabulary section renders as a definition list with anchored entries. Episode pages show a 📖 Vocabulary link in the header when vocabulary is present.
@@ -867,6 +872,12 @@ podgen/
 │   │   ├── add_command.rb    # Queue a priority link for next episode
 │   │   ├── links_command.rb  # List/manage queued priority links
 │   │   ├── vocab_command.rb  # Manage known vocabulary words
+│   │   ├── revocab_command.rb # Re-annotate vocabulary on transcripts
+│   │   ├── reformat_command.rb # Reformat transcripts (paragraph breaks, cleanup)
+│   │   ├── exclude_command.rb # Exclude URLs from future episodes
+│   │   ├── cover_command.rb  # Generate episode cover images
+│   │   ├── fork_command.rb   # Fork podcast into a new namespace
+│   │   ├── unpublish_command.rb # Remove podcast from Cloudflare R2
 │   │   ├── test_command.rb   # Run test scripts
 │   │   └── schedule_command.rb # Install launchd scheduler
 │   ├── time_value.rb          # TimeValue: seconds or min:sec with absolute? flag
