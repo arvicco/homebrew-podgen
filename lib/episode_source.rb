@@ -77,6 +77,14 @@ class EpisodeSource
     episodes.first
   end
 
+  def download_audio(url)
+    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}.mp3")
+    HttpDownloader.new(logger: @logger).download(url, path)
+    path
+  end
+
+  private
+
   # Resolves which feeds to use given an optional rss_filter.
   # - nil: use all configured feeds
   # - substring match: use only matching configured feed(s)
@@ -93,11 +101,5 @@ class EpisodeSource
 
     log("No configured feed matches '#{rss_filter}' — using as ad-hoc URL")
     [rss_filter]
-  end
-
-  def download_audio(url)
-    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}.mp3")
-    HttpDownloader.new(logger: @logger).download(url, path)
-    path
   end
 end
