@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "yaml"
 require_relative "base_validator"
+require_relative "../yaml_loader"
 
 module Validators
   class GuidelinesValidator < BaseValidator
@@ -35,7 +35,7 @@ module Validators
 
       if @config.type == "news" && File.exist?(@config.queue_path)
         begin
-          data = YAML.load_file(@config.queue_path)
+          data = YamlLoader.load(@config.queue_path, default: nil, raise_on_error: true)
           unless data.is_a?(Hash) && data["topics"].is_a?(Array)
             @warnings << "Guidelines: queue.yml has unexpected format"
           end

@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 require "optparse"
-require "yaml"
 require "date"
 
 root = File.expand_path("../..", __dir__)
 
+require_relative File.join(root, "lib", "format_helper")
+require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_filtering")
@@ -260,13 +261,11 @@ module PodgenCLI
         end
 
         # History stats
-        if File.exist?(config.history_path)
-          entries = YAML.load_file(config.history_path) rescue nil
-          if entries.is_a?(Array)
-            topics = entries.flat_map { |e| e["topics"] || [] }.uniq
-            puts
-            puts "  History:    #{entries.length} entries, #{topics.length} unique topics"
-          end
+        entries = YamlLoader.load(config.history_path, default: nil)
+        if entries.is_a?(Array)
+          topics = entries.flat_map { |e| e["topics"] || [] }.uniq
+          puts
+          puts "  History:    #{entries.length} entries, #{topics.length} unique topics"
         end
       end
 
@@ -358,9 +357,7 @@ module PodgenCLI
     SUFFIXES = [""] + ("a".."z").to_a
 
     def build_duration_map(config)
-      return {} unless File.exist?(config.history_path)
-
-      entries = YAML.load_file(config.history_path) rescue nil
+      entries = YamlLoader.load(config.history_path, default: nil)
       return {} unless entries.is_a?(Array)
 
       podcast_name = File.basename(File.dirname(config.episodes_dir))
@@ -467,21 +464,11 @@ module PodgenCLI
     end
 
     def format_duration_short(seconds)
-      mins = (seconds / 60).to_i
-      secs = (seconds % 60).to_i
-      format("%d:%02d", mins, secs)
+      FormatHelper.format_duration_mmss(seconds)
     end
 
     def format_size(bytes)
-      if bytes >= 1_000_000_000
-        format("%.1f GB", bytes / 1_000_000_000.0)
-      elsif bytes >= 1_000_000
-        format("%d MB", (bytes / 1_000_000.0).round)
-      elsif bytes >= 1_000
-        format("%d KB", (bytes / 1_000.0).round)
-      else
-        "#{bytes} B"
-      end
+      FormatHelper.format_size(bytes, mb_precision: 0)
     end
 
     def truncate(str, max)

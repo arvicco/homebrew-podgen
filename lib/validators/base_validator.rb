@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../format_helper"
+
 module Validators
   class BaseValidator
     def initialize(config)
@@ -21,19 +23,11 @@ module Validators
     end
 
     def format_size(bytes)
-      self.class.format_size(bytes)
+      FormatHelper.format_size(bytes)
     end
 
     def self.format_size(bytes)
-      if bytes >= 1_000_000_000
-        format("%.1f GB", bytes / 1_000_000_000.0)
-      elsif bytes >= 1_000_000
-        format("%.1f MB", bytes / 1_000_000.0)
-      elsif bytes >= 1_000
-        format("%d KB", (bytes / 1_000.0).round)
-      else
-        "#{bytes} B"
-      end
+      FormatHelper.format_size(bytes)
     end
   end
 end

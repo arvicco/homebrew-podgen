@@ -7,6 +7,7 @@ require "fileutils"
 require "yaml"
 require "open3"
 require_relative "loggable"
+require_relative "format_helper"
 require_relative "audio_assembler"
 require_relative "episode_filtering"
 require_relative "transcript_renderer"
@@ -192,8 +193,6 @@ class RssGenerator
   # Duration from history, falling back to ffprobe, then 192kbps estimate
   def format_duration(ep)
     seconds = @duration_map[ep[:filename]] || AudioAssembler.probe_duration(ep[:path]) || ep[:size] / (192_000.0 / 8)
-    minutes = (seconds / 60).to_i
-    secs = (seconds % 60).to_i
-    format("%d:%02d", minutes, secs)
+    FormatHelper.format_duration_mmss(seconds)
   end
 end

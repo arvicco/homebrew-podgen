@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "yaml"
 require "date"
 require "net/http"
 require "uri"
 require_relative "atomic_writer"
+require_relative "yaml_loader"
 
 # Manages priority links for news podcasts.
 # Links are stored in podcasts/<name>/links.yml and consumed on successful generation.
@@ -15,12 +15,7 @@ class PriorityLinks
 
   # Returns array of link hashes: [{ "url" => ..., "added" => ..., "note" => ... }]
   def all
-    return [] unless File.exist?(@path)
-
-    entries = YAML.load_file(@path)
-    entries.is_a?(Array) ? entries : []
-  rescue => _e
-    []
+    YamlLoader.load(@path, default: [])
   end
 
   def empty?

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require "yaml"
 require "set"
 require_relative "atomic_writer"
+require_relative "yaml_loader"
 
 # Manages per-language known vocabulary words for a podcast.
 # Words stored as downcased lemmas so all derivatives are automatically excluded.
@@ -55,12 +55,7 @@ class KnownVocabulary
   private
 
   def load
-    return {} unless File.exist?(@path)
-
-    data = YAML.load_file(@path)
-    data.is_a?(Hash) ? data : {}
-  rescue Psych::SyntaxError => e
-    raise "YAML syntax error in #{@path}: #{e.message.sub(/\A\(.*?\):\s*/, '')}"
+    YamlLoader.load(@path, default: {}, raise_on_error: true)
   end
 
   def save(data)

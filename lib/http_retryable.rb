@@ -15,7 +15,10 @@ module HttpRetryable
 
   class RetriableError < StandardError; end
 
-  HTTP_EXCEPTIONS = [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET].freeze
+  HTTP_EXCEPTIONS = [
+    RetriableError, Net::OpenTimeout, Net::ReadTimeout,
+    Errno::ECONNRESET, Errno::EPIPE, Errno::ECONNREFUSED, SocketError
+  ].freeze
 
   # Parses an HTTP error response body, extracting a human-readable message.
   # Handles ElevenLabs (detail), Google (error), and LingQ (detail/message) formats.

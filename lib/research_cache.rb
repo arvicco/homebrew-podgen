@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 require "digest"
-require "yaml"
 require "fileutils"
 require_relative "atomic_writer"
+require_relative "yaml_loader"
 
 class ResearchCache
   TTL_SECONDS = 24 * 3600 # 24 hours
@@ -19,11 +19,7 @@ class ResearchCache
     return nil unless File.exist?(path)
     return nil if (Time.now - File.mtime(path)) > TTL_SECONDS
 
-    YAML.load_file(path)
-  rescue => e
-    # Corrupted cache file — treat as miss
-    File.delete(path) if File.exist?(path)
-    nil
+    YamlLoader.load(path, default: nil)
   end
 
   # Writes results to cache using atomic write (temp + rename).

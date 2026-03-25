@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "yaml"
+require_relative "../yaml_loader"
 require_relative "colors"
 
 module Tell
@@ -182,7 +182,7 @@ module Tell
         MSG
       end
 
-      YAML.load_file(CONFIG_PATH) || {}
+      YamlLoader.load(CONFIG_PATH, default: {}, raise_on_error: true)
     end
 
     def validate!(data)

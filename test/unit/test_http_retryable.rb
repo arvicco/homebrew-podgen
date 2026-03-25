@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "net/http"
 require "http_retryable"
 require "json"
 
@@ -87,6 +88,45 @@ class TestHttpRetryable < Minitest::Test
     end
 
     assert_includes err.message, "MyAPI failed after 2 attempts"
+  end
+
+  def test_http_retries_retries_on_epipe
+    attempts = 0
+    result = @host.send(:with_http_retries, "Test", max: 2) do
+      attempts += 1
+      raise Errno::EPIPE, "broken pipe" if attempts < 2
+      "ok"
+    end
+    assert_equal "ok", result
+    assert_equal 2, attempts
+  end
+
+  def test_http_retries_retries_on_econnrefused
+    attempts = 0
+    result = @host.send(:with_http_retries, "Test", max: 2) do
+      attempts += 1
+      raise Errno::ECONNREFUSED, "connection refused" if attempts < 2
+      "ok"
+    end
+    assert_equal "ok", result
+    assert_equal 2, attempts
+  end
+
+  def test_http_retries_retries_on_socket_error
+    attempts = 0
+    result = @host.send(:with_http_retries, "Test", max: 2) do
+      attempts += 1
+      raise SocketError, "getaddrinfo: Name or service not known" if attempts < 2
+      "ok"
+    end
+    assert_equal "ok", result
+    assert_equal 2, attempts
+  end
+
+  def test_http_exceptions_includes_network_errors
+    assert_includes HttpRetryable::HTTP_EXCEPTIONS, Errno::EPIPE
+    assert_includes HttpRetryable::HTTP_EXCEPTIONS, Errno::ECONNREFUSED
+    assert_includes HttpRetryable::HTTP_EXCEPTIONS, SocketError
   end
 
   def test_http_retries_does_not_catch_unrelated_errors

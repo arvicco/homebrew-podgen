@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-require "yaml"
 require "date"
 require "set"
 require_relative "atomic_writer"
+require_relative "yaml_loader"
 
 class EpisodeHistory
   LOOKBACK_DAYS = 7
@@ -15,9 +15,7 @@ class EpisodeHistory
 
   # Returns all episode hashes
   def all_episodes
-    return [] unless File.exist?(@path)
-
-    YAML.load_file(@path) || []
+    YamlLoader.load(@path, default: [])
   end
 
   # Returns array of recent episode hashes (within lookback window)
@@ -40,10 +38,8 @@ class EpisodeHistory
 
   # Returns array of excluded URLs from the separate file
   def excluded_urls
-    return [] unless @excluded_urls_path && File.exist?(@excluded_urls_path)
-
-    data = YAML.load_file(@excluded_urls_path)
-    data.is_a?(Array) ? data : []
+    return [] unless @excluded_urls_path
+    YamlLoader.load(@excluded_urls_path, default: [])
   end
 
   # Returns formatted string of recent topics for the topic agent prompt
@@ -57,7 +53,7 @@ class EpisodeHistory
   # Remove the last entry and return it (or nil if empty).
   # Uses atomic write (temp file + rename) to prevent corruption.
   def remove_last!
-    entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
+    entries = YamlLoader.load(@path, default: [])
     return nil if entries.empty?
 
     removed = entries.pop
@@ -68,7 +64,7 @@ class EpisodeHistory
   # Remove a specific entry by date and suffix index (0-based position among
   # entries sharing that date). Returns the removed entry, or nil if not found.
   def remove_by_date!(date, suffix_index)
-    entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
+    entries = YamlLoader.load(@path, default: [])
 
     # Find all entries with this date, in order
     matches = entries.each_with_index.select { |e, _| e["date"] == date.to_s }
@@ -82,7 +78,7 @@ class EpisodeHistory
 
   # Remove a specific entry by basename. Returns the removed entry, or nil if not found.
   def remove_by_basename!(basename)
-    entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
+    entries = YamlLoader.load(@path, default: [])
     idx = entries.index { |e| e["basename"] == basename }
     return nil unless idx
 
@@ -94,7 +90,7 @@ class EpisodeHistory
   # Append a new episode entry.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil, basename: nil)
-    entries = File.exist?(@path) ? (YAML.load_file(@path) || []) : []
+    entries = YamlLoader.load(@path, default: [])
     entry = {
       "date" => date.to_s,
       "title" => title,

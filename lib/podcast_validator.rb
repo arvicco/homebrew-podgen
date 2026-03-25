@@ -84,6 +84,6 @@ class PodcastValidator
   def check_orphans          = merge_result(Validators::OrphansValidator.new(@config).validate)
 
   def format_size(bytes)
-    Validators::BaseValidator.format_size(bytes)
+    FormatHelper.format_size(bytes)
   end
 end
