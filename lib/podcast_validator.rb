@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "format_helper"
 require_relative "validators/base_validator"
 require_relative "validators/guidelines_validator"
 require_relative "validators/episodes_validator"
