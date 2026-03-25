@@ -2,16 +2,19 @@
 
 require_relative "detector"
 require_relative "translator"
+require_relative "translation_service"
 require_relative "glosser"
 require_relative "espeak"
 require_relative "icu_phonetic"
 require_relative "kana"
+require_relative "japanese_brackets"
 
 module Tell
   class Engine
+    include JapaneseBrackets
     def initialize(config, translator: nil, glossers: nil, glosser_pool: nil, callbacks: {})
       @config = config
-      @translator_instance = translator
+      @translation = TranslationService.new(config, translator: translator)
       @glossers = glossers || {}
       @callbacks = callbacks
       @ja_hiragana_cache = {}
@@ -28,41 +31,15 @@ module Tell
     # --- Individual operations (return structured results) ---
 
     def resolve_source(text, translate_from, target_lang = nil)
-      target = target_lang || @config.target_language
-      return translate_from unless translate_from == "auto"
-
-      detected = Detector.detect(text)
-      if detected.nil? && Detector.has_characteristic_chars?(text, target)
-        target
-      else
-        detected
-      end
+      @translation.resolve_source(text, translate_from, target_lang)
     end
 
     def forward_translate(text, from:, to:, hints: nil)
-      translation = translator.translate(text, from: from, to: to, hints: hints)
-
-      if translation.strip.downcase == text.strip.downcase
-        { type: :same_text, text: text, lang: to }
-      elsif Detector.explanation?(text, translation)
-        { type: :explanation, text: translation, lang: to }
-      else
-        { type: :translation, text: translation, lang: to }
-      end
-    rescue => e
-      { type: :error, error: e, lang: to }
+      @translation.forward_translate(text, from: from, to: to, hints: hints)
     end
 
     def reverse_translate(text, from:, to:)
-      translation = translator.translate(text, from: from, to: to)
-
-      if translation.strip.downcase == text.strip.downcase
-        { type: :same_text, text: text, lang: to }
-      else
-        { type: :translation, text: translation, lang: to }
-      end
-    rescue => e
-      { type: :error, error: e, lang: to }
+      @translation.reverse_translate(text, from: from, to: to)
     end
 
     def run_gloss(mode, text, from:, to:, system: nil, phonetic_ref: nil)
@@ -257,94 +234,7 @@ module Tell
       @ja_hiragana_cache.clear
     end
 
-    # --- Bracket correction (public for testing) ---
-
-    # Character-level alignment of phonetic readings to gloss brackets.
-    # Unlike Glosser.correct_readings (which requires 1:1 word count),
-    # this handles different word segmentations by consuming the flat
-    # hiragana string character-by-character, guided by bracket lengths.
-    def align_bracket_readings(gloss, hiragana)
-      flat = hiragana.delete("・").scan(/[\u3040-\u309F\u30A0-\u30FF]/).join
-      pos = 0
-
-      gloss.gsub(Glosser::GLOSS_WORD_RE) do |match|
-        next match unless match.include?("[")
-
-        word = match[/(?:\*\S+?\*)?(\S+?)\[/, 1]
-        current = match[/\[([^\]]+)\]/, 1]
-        len = current.length
-
-        if pos + len <= flat.length
-          reading = flat[pos, len]
-          pos += len
-          # Hiragana-only words are self-reading — keep original bracket,
-          # don't overwrite with potentially wrong PH (AI may change word form).
-          # Particle corrections (は→わ) are handled by fix_particle_readings.
-          if word&.match?(HIRAGANA_RE)
-            match
-          else
-            match.sub(/\[[^\]]+\]/, "[#{reading}]")
-          end
-        else
-          match
-        end
-      end
-    end
-
-    # Fix Japanese particle pronunciation in bracket readings.
-    # は→わ and へ→え when the grammar annotation marks the word as a particle.
-    # Catches standalone は and compounds like では, には, とは.
-    def fix_particle_readings(gloss)
-      gloss.gsub(Glosser::GLOSS_WORD_RE) do |match|
-        next match unless match.include?("[") && match.include?("part")
-
-        match
-          .sub(/\[([^\]]*?)は([^\]]*)\]/) { "[#{$1}わ#{$2}]" }
-          .sub(/\[([^\]]*?)へ([^\]]*)\]/) { "[#{$1}え#{$2}]" }
-      end
-    end
-
-    # Remove [reading] brackets where the reading is identical to the word —
-    # they add no information. Applies to any language.
-    def strip_redundant_brackets(gloss)
-      gloss.gsub(Glosser::GLOSS_WORD_RE) do |match|
-        next match unless match.include?("[")
-
-        m = match.match(/(?:\*\S+?\*)?(\S+?)\[([^\]]+)\]/)
-        next match unless m
-
-        m[1] == m[2] ? match.sub("[#{m[2]}]", "") : match
-      end
-    end
-
-    def ensure_all_brackets(gloss)
-      gloss.gsub(Glosser::GLOSS_WORD_RE) do |match|
-        next match if match.include?("[")
-
-        m = match.match(/(?:\*\S+?\*)?(\S+?)\(/)
-        next match unless m
-
-        word = m[1]
-        next match unless word.match?(HIRAGANA_RE)
-
-        match.sub("(", "[#{word}](")
-      end
-    end
-
-    def build_gloss_bracket_cache(gloss)
-      readings = gloss.scan(/\[([^\]]+)\]/).flatten
-      return nil if readings.empty?
-
-      cache = { "hiragana" => readings }
-      cache["hepburn"] = readings.map { |r| Kana.to_romaji(r, system: "hepburn") }
-      cache["kunrei"] = readings.map { |r| Kana.to_romaji(r, system: "kunrei") }
-      cache["ipa"] = readings.map { |r| Kana.to_romaji(r, system: "ipa") }
-      cache
-    end
-
     private
-
-    HIRAGANA_RE = /\A[\u3040-\u309F]+\z/
 
     # --- Japanese phonetic pipeline ---
 
@@ -379,13 +269,6 @@ module Tell
       sisters["kunrei"] = kana_words_to_romaji(hiragana, "kunrei")
       sisters["ipa"] = kana_words_to_romaji(hiragana, "ipa")
       sisters
-    end
-
-    # Convert [hiragana] bracket readings to another phonetic system.
-    def convert_gloss_brackets(gloss, system)
-      gloss.gsub(/\[([^\]]+)\]/) do
-        "[#{Kana.to_romaji($1, system: system)}]"
-      end
     end
 
     # --- Deterministic phonetic ---
@@ -489,13 +372,6 @@ module Tell
         raise "Gloss requires ANTHROPIC_API_KEY" unless key
         @glossers[model_id] = Glosser.new(key, model: model_id)
       end
-    end
-
-    def translator
-      @translator_instance ||= Tell.build_translator_chain(
-        @config.translation_engines, @config.engine_api_keys,
-        timeout: @config.translation_timeout
-      )
     end
 
     def emit(event, **data)

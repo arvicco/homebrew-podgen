@@ -30,116 +30,24 @@ class TestTellEngine < Minitest::Test
     @callbacks = build_test_callbacks
   end
 
-  # ===== resolve_source =====
+  # ===== Translation (delegates to TranslationService — full tests in test_tell_translation_service.rb) =====
 
-  def test_resolve_source_explicit_lang_returns_it
+  def test_resolve_source_delegates
     engine = build_engine
     assert_equal "en", engine.resolve_source("hello", "en")
   end
 
-  def test_resolve_source_auto_uses_detector
-    engine = build_engine
-    Tell::Detector.stub(:detect, "fr") do
-      assert_equal "fr", engine.resolve_source("bonjour le monde", "auto")
-    end
-  end
-
-  def test_resolve_source_auto_nil_detect_with_characteristic_chars
-    engine = build_engine
-    Tell::Detector.stub(:detect, nil) do
-      Tell::Detector.stub(:has_characteristic_chars?, true) do
-        assert_equal "sl", engine.resolve_source("Desetnica", "auto")
-      end
-    end
-  end
-
-  def test_resolve_source_auto_nil_detect_no_chars
-    engine = build_engine
-    Tell::Detector.stub(:detect, nil) do
-      Tell::Detector.stub(:has_characteristic_chars?, false) do
-        assert_nil engine.resolve_source("xyz", "auto")
-      end
-    end
-  end
-
-  def test_resolve_source_explicit_target_lang_override
-    engine = build_engine
-    Tell::Detector.stub(:detect, nil) do
-      Tell::Detector.stub(:has_characteristic_chars?, true) do
-        assert_equal "ja", engine.resolve_source("テスト", "auto", "ja")
-      end
-    end
-  end
-
-  # ===== forward_translate =====
-
-  def test_forward_translate_success
+  def test_forward_translate_delegates
     @translator.forward_result = "dober dan"
     engine = build_engine
     result = engine.forward_translate("good morning", from: "en", to: "sl")
     assert_equal :translation, result[:type]
-    assert_equal "dober dan", result[:text]
-    assert_equal "sl", result[:lang]
   end
 
-  def test_forward_translate_same_text
-    engine = build_engine
-    result = engine.forward_translate("hello", from: "en", to: "sl")
-    assert_equal :same_text, result[:type]
-    assert_equal "hello", result[:text]
-  end
-
-  def test_forward_translate_explanation
-    @translator.forward_result = "This is a very long explanation that is much longer than the original"
-    engine = build_engine
-    result = engine.forward_translate("hi", from: "en", to: "sl")
-    assert_equal :explanation, result[:type]
-  end
-
-  def test_forward_translate_error
-    @translator.forward_error = RuntimeError.new("API timeout")
-    engine = build_engine
-    result = engine.forward_translate("hello", from: "en", to: "sl")
-    assert_equal :error, result[:type]
-    assert_equal "API timeout", result[:error].message
-  end
-
-  def test_forward_translate_passes_hints
-    @translator.forward_result = "dober dan"
-    engine = build_engine
-    hints = Tell::Hints.parse("good morning /pm")
-    engine.forward_translate("good morning", from: "en", to: "sl", hints: hints)
-    assert_equal :polite, @translator.forward_hints.last.formality
-  end
-
-  def test_forward_translate_case_insensitive_same_text
-    @translator.forward_result = "Hello"
-    engine = build_engine
-    result = engine.forward_translate("hello", from: "en", to: "sl")
-    assert_equal :same_text, result[:type]
-  end
-
-  # ===== reverse_translate =====
-
-  def test_reverse_translate_success
+  def test_reverse_translate_delegates
     engine = build_engine
     result = engine.reverse_translate("dober dan", from: "sl", to: "en")
     assert_equal :translation, result[:type]
-    assert_equal "back_translation", result[:text]
-  end
-
-  def test_reverse_translate_same_text
-    # Mock returns input as-is when it matches
-    engine = build_engine
-    result = engine.reverse_translate("back_translation", from: "sl", to: "en")
-    assert_equal :same_text, result[:type]
-  end
-
-  def test_reverse_translate_error
-    @translator.forward_error = RuntimeError.new("timeout")
-    engine = build_engine
-    result = engine.reverse_translate("dober dan", from: "sl", to: "en")
-    assert_equal :error, result[:type]
   end
 
   # ===== run_gloss =====
@@ -497,197 +405,13 @@ class TestTellEngine < Minitest::Test
     assert_equal 2, @glosser.phonetic_calls.size
   end
 
-  # ===== fix_particle_readings =====
+  # ===== Bracket utilities (full tests in test_tell_japanese_brackets.rb) =====
 
-  def test_fix_particle_ha_standalone
+  def test_bracket_methods_available_via_mixin
     engine = build_engine
-    gloss = "は[は](part.top)TOP"
-    assert_equal "は[わ](part.top)TOP", engine.fix_particle_readings(gloss)
-  end
-
-  def test_fix_particle_dewa_compound
-    engine = build_engine
-    gloss = "では[では](part.cop.top)COP.TOP"
-    assert_equal "では[でわ](part.cop.top)COP.TOP", engine.fix_particle_readings(gloss)
-  end
-
-  def test_fix_particle_niwa_compound
-    engine = build_engine
-    gloss = "には[には](part)in.TOP"
-    assert_equal "には[にわ](part)in.TOP", engine.fix_particle_readings(gloss)
-  end
-
-  def test_fix_particle_he_directional
-    engine = build_engine
-    gloss = "へ[へ](part)to"
-    assert_equal "へ[え](part)to", engine.fix_particle_readings(gloss)
-  end
-
-  def test_fix_particle_skips_non_particle
-    engine = build_engine
-    # は in a verb reading should NOT be changed
-    gloss = "話[はなし](n.sg)story"
-    assert_equal gloss, engine.fix_particle_readings(gloss)
-  end
-
-  def test_fix_particle_skips_already_correct
-    engine = build_engine
-    gloss = "は[わ](part.top)TOP"
-    assert_equal gloss, engine.fix_particle_readings(gloss)
-  end
-
-  # ===== strip_redundant_brackets =====
-
-  def test_strip_redundant_brackets_removes_identical
-    engine = build_engine
-    gloss = "ただ[ただ](adv)merely の[の](part)GEN"
-    result = engine.strip_redundant_brackets(gloss)
-    assert_equal "ただ(adv)merely の(part)GEN", result
-  end
-
-  def test_strip_redundant_brackets_keeps_different
-    engine = build_engine
-    gloss = "は[わ](part)TOP お別れ[おわかれ](n)farewell"
-    result = engine.strip_redundant_brackets(gloss)
-    assert_equal gloss, result
-  end
-
-  def test_strip_redundant_brackets_mixed
-    engine = build_engine
-    gloss = "これ[これ](pron)this は[わ](part)TOP 番組[ばんぐみ](n)program"
-    result = engine.strip_redundant_brackets(gloss)
-    assert_equal "これ(pron)this は[わ](part)TOP 番組[ばんぐみ](n)program", result
-  end
-
-  def test_strip_redundant_brackets_latin_script
-    engine = build_engine
-    gloss = "hello[hello](n)hi world[wɜːrld](n)world"
-    result = engine.strip_redundant_brackets(gloss)
-    assert_equal "hello(n)hi world[wɜːrld](n)world", result
-  end
-
-  # ===== align_bracket_readings =====
-
-  def test_align_preserves_hiragana_consumes_ph_position
-    engine = build_engine
-    # は is hiragana → preserved, but PH position still advances
-    gloss = "これ[これ](pron.sg)this は[は](part)TOP 天気[てんき](n)weather"
-    result = engine.align_bracket_readings(gloss, "これ・わ・てんき")
-    assert_includes result, "これ[これ]"  # hiragana preserved
-    assert_includes result, "は[は]"       # hiragana preserved (particle fix later)
-    assert_includes result, "天気[てんき]" # kanji gets PH reading
-  end
-
-  def test_align_handles_different_segmentation
-    engine = build_engine
-    # PH has "ただの" as one word, gloss splits into ただ + の — both hiragana, preserved
-    gloss = "ただ[ただ](adv) の[の](part) 番組[ばんぐみ](n)"
-    result = engine.align_bracket_readings(gloss, "ただの・ばんぐみ")
-    assert_includes result, "ただ[ただ]"
-    assert_includes result, "の[の]"
-    assert_includes result, "番組[ばんぐみ]"
-  end
-
-  def test_align_kanji_readings_correct_with_hiragana_gaps
-    engine = build_engine
-    # Hiragana words are skipped, kanji words get PH readings
-    gloss = "お別れ[おわかれ](n) で[で](part) は[は](part) ありません[ありません](v)"
-    result = engine.align_bracket_readings(gloss, "おわかれ・でわ・ありません")
-    assert_includes result, "お別れ[おわかれ]"  # kanji, PH applied
-    assert_includes result, "で[で]"             # hiragana preserved
-    assert_includes result, "は[は]"             # hiragana preserved
-    assert_includes result, "ありません[ありません]" # hiragana preserved
-  end
-
-  def test_align_preserves_hiragana_words_from_ai_rewrite
-    engine = build_engine
-    # PH AI changed くださる→ください, but the word text is correct
-    gloss = "お願い[おねがい](n) くださる[くださる](v)"
-    result = engine.align_bracket_readings(gloss, "おねがい・ください")
-    # Kanji reading updated from PH
-    assert_includes result, "お願い[おねがい]"
-    # Hiragana word preserved — not overwritten with AI's ください
-    assert_includes result, "くださる[くださる]"
-    refute_includes result, "[ください]"
-  end
-
-  def test_align_replaces_kanji_readings_but_not_hiragana
-    engine = build_engine
-    gloss = "今日[きょう](n) は[は](part) いい[いい](adj) 天気[てんき](n)"
-    result = engine.align_bracket_readings(gloss, "きょう・わ・いい・てんき")
-    # Kanji words get PH readings
-    assert_includes result, "今日[きょう]"
-    assert_includes result, "天気[てんき]"
-    # Hiragana words keep original (particle fix happens later)
-    assert_includes result, "は[は]"
-    assert_includes result, "いい[いい]"
-  end
-
-  def test_align_out_of_bounds_keeps_original
-    engine = build_engine
-    gloss = "これ[これ](pron) は[は](part) 長い[ながい](adj)"
-    result = engine.align_bracket_readings(gloss, "これ・わ")
-    assert_includes result, "は[は]"        # hiragana preserved
-    assert_includes result, "長い[ながい]"  # out of bounds — kept
-  end
-
-  # ===== ensure_all_brackets =====
-
-  def test_ensure_all_brackets_inserts_for_hiragana_words
-    engine = build_engine
-    gloss = "今日[きょう](today) は(part)TOP こと(n.sg)thing"
-    result = engine.ensure_all_brackets(gloss)
-    assert_equal "今日[きょう](today) は[は](part)TOP こと[こと](n.sg)thing", result
-  end
-
-  def test_ensure_all_brackets_skips_kanji_words
-    engine = build_engine
-    gloss = "今日(today) 元気(healthy)"
-    result = engine.ensure_all_brackets(gloss)
-    assert_equal "今日(today) 元気(healthy)", result
-  end
-
-  def test_ensure_all_brackets_preserves_existing_brackets
-    engine = build_engine
-    gloss = "今日[きょう](today) は[わ](part)"
-    result = engine.ensure_all_brackets(gloss)
-    assert_equal gloss, result
-  end
-
-  def test_ensure_all_brackets_handles_correction_markers
-    engine = build_engine
-    gloss = "*わたし*わたくし(pron.1p) は(part)TOP"
-    result = engine.ensure_all_brackets(gloss)
-    # は should get brackets
-    assert_includes result, "は[は](part)"
-  end
-
-  # ===== build_gloss_bracket_cache =====
-
-  def test_build_gloss_bracket_cache_extracts_and_converts
-    engine = build_engine
-    gloss = "今日[きょう](today) は[わ](topic) 元気[げんき](healthy)"
-    result = engine.build_gloss_bracket_cache(gloss)
-    assert_equal %w[きょう わ げんき], result["hiragana"]
-    assert_equal 3, result["hepburn"].size
-    assert_equal 3, result["kunrei"].size
-    assert_equal 3, result["ipa"].size
-    # IPA via Kana module — always present, no eSpeak dependency
-    assert result["ipa"].all? { |r| !r.nil? && !r.empty? }
-  end
-
-  def test_build_gloss_bracket_cache_returns_nil_without_brackets
-    engine = build_engine
-    result = engine.build_gloss_bracket_cache("今日(today) です(copula)")
-    assert_nil result
-  end
-
-  def test_build_gloss_bracket_cache_ipa_uses_kana_not_espeak
-    engine = build_engine
-    gloss = "食[た]べ(v.inf)"
-    result = engine.build_gloss_bracket_cache(gloss)
-    # Kana IPA for た = ta
-    assert_equal ["ta"], result["ipa"]
+    assert engine.respond_to?(:strip_redundant_brackets)
+    assert engine.respond_to?(:fix_particle_readings)
+    assert engine.respond_to?(:align_bracket_readings)
   end
 
   # ===== kana_words_to_romaji (via compute_phonetic) =====
