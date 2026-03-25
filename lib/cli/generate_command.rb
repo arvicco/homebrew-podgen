@@ -57,6 +57,8 @@ module PodgenCLI
         @logger.log("Podcast Agent started for '#{@podcast_name}'#{@dry_run ? ' (DRY RUN)' : ''}")
         @pipeline_start = Time.now
 
+        verify_ffmpeg!(@logger) unless @dry_run
+
         return run_language_pipeline if @config.type == "language"
 
         @logger.log("Pipeline type: news")
@@ -112,8 +114,6 @@ module PodgenCLI
         @logger.error("Missing guidelines: #{@config.guidelines_path}")
         return 1
       end
-
-      verify_ffmpeg!(@logger) unless @dry_run
 
       @guidelines = @config.guidelines
       @logger.log("Loaded guidelines (#{@guidelines.length} chars)")
@@ -219,7 +219,7 @@ module PodgenCLI
           sources: [
             { title: "Example source for #{topics.first}", url: "https://example.com/#{topics.first.to_s.downcase.gsub(/\s+/, '-')}" }
           ]
-        }.tap { @logger.log("[dry-run] Synthetic script generated: \"Dry Run Episode — #{@today}\"") }
+        }.tap { |s| @logger.log("[dry-run] Synthetic script generated: \"#{s[:title]}\"") }
       else
         script_agent = ScriptAgent.new(
           guidelines: @guidelines,

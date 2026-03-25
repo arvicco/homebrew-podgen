@@ -1322,7 +1322,7 @@ Tell loads `.env` from the code root and `~/.env`. Available variables:
 | `DEEPL_AUTH_KEY`         | DeepL translation                                       |
 | `ANTHROPIC_API_KEY`      | Claude translation + glossing                           |
 | `OPENAI_API_KEY`         | OpenAI translation                                      |
-| `CLAUDE_MODEL`           | Claude model for translation (default: claude-opus-4-6) |
+| `CLAUDE_MODEL`           | Claude model for translation (default: claude-sonnet-4-6) |
 | `OPENAI_TRANSLATE_MODEL` | OpenAI model for translation (default: gpt-4o-mini)     |
 | `TELL_TRANSLATE_TIMEOUT` | Per-engine timeout in seconds (default: 8)              |
 | `TELL_GLOSS_MODEL`       | Override gloss_model config                             |
