@@ -38,6 +38,9 @@ module PodgenCLI
         opts.on("--cut-outro N", "--cut N", String, "Seconds or min:sec to cut from end (min:sec = absolute)") { |n| @options[:cut] = TimeValue.parse(n) }
         opts.on("--snip INTERVALS", String, "Remove interior segments (e.g. 1:20-2:30,3:40+33)") { |s| @options[:snip] = SnipInterval.parse(s) }
         opts.on("--autotrim", "Enable outro auto-detection via word timestamps") { @options[:autotrim] = true }
+        opts.on("--no-autotrim", "Disable autotrim even if configured") { @options[:no_autotrim] = true }
+        opts.on("--no-skip", "Disable skip even if configured") { @options[:no_skip] = true }
+        opts.on("--no-cut", "Disable cut even if configured") { @options[:no_cut] = true }
         opts.on("--force", "Process even if already in history (skip dedup check)") { @options[:force] = true }
         opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }
         opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| @options[:base_image] = p }

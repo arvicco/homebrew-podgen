@@ -99,7 +99,7 @@ class TestEpisodeSource < Minitest::Test
     assert_raises(RuntimeError) { s.fetch_next }
   end
 
-  # --- fetch_next with rss_filter ---
+  # --- resolve_feeds ---
 
   def test_resolve_feeds_substring_matches_configured_feed
     feeds = [
@@ -128,12 +128,11 @@ class TestEpisodeSource < Minitest::Test
     assert_equal 1, matched.length
   end
 
-  def test_resolve_feeds_no_match_uses_adhoc_url
+  def test_resolve_feeds_no_match_raises_error
     feeds = ["https://podcast.rtvslo.si/lahko_noc"]
     s = source(rss_feeds: feeds)
-    matched = s.send(:resolve_feeds, feeds, "https://brand-new.com/feed.xml")
-    assert_equal 1, matched.length
-    assert_equal "https://brand-new.com/feed.xml", matched.first
+    err = assert_raises(RuntimeError) { s.send(:resolve_feeds, feeds, "nonexistent") }
+    assert_includes err.message, "No configured RSS feed matches"
   end
 
   def test_resolve_feeds_nil_uses_all_feeds
@@ -141,6 +140,61 @@ class TestEpisodeSource < Minitest::Test
     s = source(rss_feeds: feeds)
     matched = s.send(:resolve_feeds, feeds, nil)
     assert_equal feeds, matched
+  end
+
+  def test_resolve_feeds_matches_tag
+    feeds = [
+      { url: "https://anchor.fm/s/7ad18ac4/podcast/rss", tag: "babi" },
+      { url: "https://anchor.fm/s/54a7b1e8/podcast/rss", tag: "nisem" }
+    ]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, "babi")
+    assert_equal 1, matched.length
+    assert_equal "https://anchor.fm/s/7ad18ac4/podcast/rss", matched.first[:url]
+  end
+
+  def test_resolve_feeds_tag_case_insensitive
+    feeds = [{ url: "https://anchor.fm/s/7ad18ac4/podcast/rss", tag: "Babi Bere" }]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, "babi")
+    assert_equal 1, matched.length
+  end
+
+  # --- RSS episode image extraction ---
+
+  def test_parse_feed_episodes_extracts_image_url
+    xml = <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+        <channel>
+          <item>
+            <title>With Image</title>
+            <enclosure url="http://example.com/ep.mp3" type="audio/mpeg" length="1000"/>
+            <itunes:image href="http://example.com/cover.jpg"/>
+          </item>
+        </channel>
+      </rss>
+    XML
+    rss = RSSSource.new(feeds: [], logger: nil)
+    episodes = rss.send(:parse_feed_episodes, xml)
+    assert_equal "http://example.com/cover.jpg", episodes.first[:image_url]
+  end
+
+  def test_parse_feed_episodes_omits_image_url_when_absent
+    xml = <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+        <channel>
+          <item>
+            <title>No Image</title>
+            <enclosure url="http://example.com/ep.mp3" type="audio/mpeg" length="1000"/>
+          </item>
+        </channel>
+      </rss>
+    XML
+    rss = RSSSource.new(feeds: [], logger: nil)
+    episodes = rss.send(:parse_feed_episodes, xml)
+    refute episodes.first.key?(:image_url)
   end
 
   def setup

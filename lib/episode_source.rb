@@ -92,14 +92,17 @@ class EpisodeSource
   def resolve_feeds(configured_feeds, rss_filter)
     return configured_feeds if rss_filter.nil?
 
+    filter = rss_filter.downcase
     matched = configured_feeds.select do |feed|
-      url = feed.is_a?(Hash) ? feed[:url] : feed
-      url.downcase.include?(rss_filter.downcase)
+      if feed.is_a?(Hash)
+        feed[:url].downcase.include?(filter) || feed[:tag]&.downcase&.include?(filter)
+      else
+        feed.downcase.include?(filter)
+      end
     end
 
-    return matched unless matched.empty?
+    raise "No configured RSS feed matches '#{rss_filter}'" if matched.empty?
 
-    log("No configured feed matches '#{rss_filter}' — using as ad-hoc URL")
-    [rss_filter]
+    matched
   end
 end

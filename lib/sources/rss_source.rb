@@ -214,13 +214,17 @@ class RSSSource
       description = strip_html(item.description.to_s).strip
       link = item.link.to_s.strip
 
-      {
+      image_url = item.respond_to?(:itunes_image) && item.itunes_image ? item.itunes_image.href.to_s.strip : nil
+
+      ep = {
         title: title,
         description: description,
         audio_url: enclosure.url.to_s.strip,
         pub_date: pub_time,
         link: link
       }
+      ep[:image_url] = image_url if image_url && !image_url.empty?
+      ep
     end
   rescue RSS::Error, RSS::NotWellFormedError => e
     log("RSS parse error: #{e.message}")

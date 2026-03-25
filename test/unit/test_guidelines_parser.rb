@@ -288,6 +288,19 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal true, entry[:autotrim]
   end
 
+  def test_parses_rss_with_tag
+    parser = build_parser(<<~MD)
+      ## Sources
+      - rss:
+        - https://anchor.fm/s/7ad18ac4/podcast/rss tag: babi skip: 30
+    MD
+
+    entry = parser.sources["rss"][0]
+    assert_equal "https://anchor.fm/s/7ad18ac4/podcast/rss", entry[:url]
+    assert_equal "babi", entry[:tag]
+    assert_equal 30.0, entry[:skip]
+  end
+
   def test_sources_defaults_to_exa
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_equal({ "exa" => true }, parser.sources)
