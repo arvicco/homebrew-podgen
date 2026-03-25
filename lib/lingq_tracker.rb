@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "yaml"
 require_relative "atomic_writer"
+require_relative "yaml_loader"
 
 # Tracks LingQ lesson uploads to prevent duplicate uploads.
 # Shared by LanguagePipeline (record during generate) and PublishCommand (check before upload).
@@ -19,14 +19,8 @@ class LingqTracker
 
   # Load tracking data. Returns Hash of collection → { basename → lesson_id }.
   def load
-    return {} unless File.exist?(@path)
-
-    data = YAML.load_file(@path)
-    return {} unless data.is_a?(Hash)
-
+    data = YamlLoader.load(@path, default: {})
     data.transform_keys(&:to_s).transform_values { |v| v.is_a?(Hash) ? v.transform_keys(&:to_s) : v }
-  rescue => _e
-    {}
   end
 
   # Save tracking data atomically.

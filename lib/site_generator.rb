@@ -7,6 +7,7 @@ require "yaml"
 require "fileutils"
 require "digest"
 require_relative "loggable"
+require_relative "format_helper"
 require_relative "language_names"
 require_relative "audio_assembler"
 require_relative "episode_filtering"
@@ -346,9 +347,7 @@ class SiteGenerator
   # --- Duration formatting ---
 
   def format_duration(seconds)
-    minutes = (seconds / 60).to_i
-    secs = (seconds % 60).to_i
-    format("%d:%02d", minutes, secs)
+    FormatHelper.format_duration_mmss(seconds)
   end
 
   # --- ERB rendering ---

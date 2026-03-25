@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require "yaml"
 require "fileutils"
 
 root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
+require_relative File.join(root, "lib", "yaml_loader")
 
 module PodgenCLI
   class ForkCommand
@@ -64,8 +64,8 @@ module PodgenCLI
       # 4. Copy and rename LingQ tracking
       old_tracking = File.join(old_output_dir, "lingq_uploads.yml")
       if File.exist?(old_tracking)
-        data = YAML.load_file(old_tracking)
-        if data.is_a?(Hash)
+        data = YamlLoader.load(old_tracking, default: {})
+        if data.is_a?(Hash) && !data.empty?
           renamed = data.transform_values do |entries|
             next entries unless entries.is_a?(Hash)
             entries.transform_keys { |k| k.sub(/\A#{Regexp.escape(@podcast_name)}/, @new_name) }

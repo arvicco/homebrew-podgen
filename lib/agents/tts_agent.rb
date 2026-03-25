@@ -11,6 +11,7 @@ require "tmpdir"
 require_relative "../loggable"
 require_relative "../retryable"
 require_relative "../http_retryable"
+require_relative "../yaml_loader"
 require_relative "../audio_assembler"
 require_relative "../text_splitter"
 
@@ -88,7 +89,7 @@ class TTSAgent
     body[:previous_request_ids] = previous_request_ids unless previous_request_ids.empty?
     body[:pronunciation_dictionary_locators] = @pronunciation_locators unless @pronunciation_locators.empty?
 
-    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
+    with_retries(max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
       response = HTTParty.post(
         url,
         headers: {
@@ -173,7 +174,7 @@ class TTSAgent
   def upload_pronunciation_dictionary(pls_path)
     name = "podgen_#{File.basename(pls_path, '.pls')}_#{Time.now.strftime('%Y%m%d%H%M%S')}"
 
-    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
+    with_retries(max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
       response = HTTParty.post(
         "#{DICT_API_URL}/add-from-file",
         headers: { "xi-api-key" => @api_key },
@@ -198,14 +199,10 @@ class TTSAgent
   end
 
   def load_dict_cache(path)
-    return nil unless File.exist?(path)
-
-    data = YAML.load_file(path)
+    data = YamlLoader.load(path, default: nil)
     return nil unless data.is_a?(Hash) && data["dictionary_id"] && data["version_id"] && data["file_sha256"]
 
     { dictionary_id: data["dictionary_id"], version_id: data["version_id"], file_sha256: data["file_sha256"] }
-  rescue => _e
-    nil
   end
 
   def save_dict_cache(path, dictionary_id, version_id, file_sha)

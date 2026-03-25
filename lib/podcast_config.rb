@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "date"
+require_relative "yaml_loader"
 require_relative "time_value"
 require_relative "episode_filtering"
 require_relative "guidelines_parser"
@@ -199,7 +200,7 @@ class PodcastConfig
   end
 
   def queue_topics
-    YAML.load_file(@queue_path)["topics"]
+    YamlLoader.load(@queue_path, default: {})["topics"]
   end
 
   def ensure_directories!

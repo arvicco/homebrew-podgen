@@ -67,7 +67,7 @@ class LingQAgent
   end
 
   def post_with_retry(url, body)
-    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
+    with_retries(max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
       response = HTTParty.post(
         url,
         headers: { "Authorization" => "Token #{@api_key}" },
@@ -91,7 +91,7 @@ class LingQAgent
     url = "#{BASE_URL}/v3/#{language}/lessons/#{lesson_id}/timestamps/"
     log("Requesting timestamp generation for lesson #{lesson_id}")
 
-    with_retries(max: MAX_RETRIES, on: [RetriableError, Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNRESET]) do
+    with_retries(max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
       response = HTTParty.post(
         url,
         headers: {

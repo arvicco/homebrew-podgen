@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "yaml"
+require_relative "yaml_loader"
 
 # Builds filename → title/timestamp/duration maps from history.yml.
 # Shared by RssGenerator and SiteGenerator.
@@ -19,7 +19,7 @@ module HistoryMaps
     empty = [{}, {}, {}]
     return empty unless history_path && File.exist?(history_path)
 
-    entries = YAML.load_file(history_path) rescue nil
+    entries = YamlLoader.load(history_path, default: nil)
     return empty unless entries.is_a?(Array)
 
     by_date = {}

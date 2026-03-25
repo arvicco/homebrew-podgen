@@ -1,13 +1,12 @@
 # frozen_string_literal: true
 
-require "yaml"
-
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "atomic_writer")
+require_relative File.join(root, "lib", "yaml_loader")
 
 module PodgenCLI
   class ExcludeCommand
@@ -46,7 +45,7 @@ module PodgenCLI
 
       # Append to excluded_urls.yml (separate from history)
       excluded_path = config.excluded_urls_path
-      current = File.exist?(excluded_path) ? (YAML.load_file(excluded_path) || []) : []
+      current = YamlLoader.load(excluded_path, default: [])
       current.concat(new_urls)
       AtomicWriter.write_yaml(excluded_path, current)
 

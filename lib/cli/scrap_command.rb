@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
-require "yaml"
-
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "episode_filtering")
 require_relative File.join(root, "lib", "lingq_tracker")
 
@@ -59,7 +58,7 @@ module PodgenCLI
 
       # Load history and find matching entry
       history = EpisodeHistory.new(config.history_path)
-      entries = File.exist?(config.history_path) ? (YAML.load_file(config.history_path) || []) : []
+      entries = YamlLoader.load(config.history_path, default: [])
       matching_entry = find_history_entry(entries, target_base) || find_history_entry_by_date(entries, date, suffix_index)
 
       # Display what will be removed
