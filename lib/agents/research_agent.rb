@@ -28,11 +28,12 @@ class ResearchAgent
 
   # Input: array of topic strings
   # Output: array of { topic:, findings: [{ title:, url:, summary: }] }
-  def research(topics)
+  def research(topics, exclude_urls: nil)
+    effective_excludes = exclude_urls ? (@exclude_urls | exclude_urls) : @exclude_urls
     topics.map do |topic|
       log("Researching: #{topic}")
       start = Time.now
-      findings = search_topic(topic)
+      findings = search_topic(topic, effective_excludes)
       elapsed = (Time.now - start).round(2)
       log("Found #{findings.length} results for '#{topic}' (#{elapsed}s)")
       { topic: topic, findings: findings }
@@ -41,7 +42,7 @@ class ResearchAgent
 
   private
 
-  def search_topic(topic)
+  def search_topic(topic, exclude_urls = @exclude_urls)
     results = search_with_retry(
       topic,
       num_results: @results_per_topic,
@@ -59,9 +60,9 @@ class ResearchAgent
       }
     end
 
-    if @exclude_urls.any?
+    if exclude_urls.any?
       before = all.length
-      all.reject! { |r| @exclude_urls.include?(r[:url]) }
+      all.reject! { |r| exclude_urls.include?(r[:url]) }
       filtered = before - all.length
       log("Filtered #{filtered} previously-used URL(s) for '#{topic}'") if filtered > 0
     end

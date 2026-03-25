@@ -54,12 +54,7 @@ class SourceManager
             end
           end
 
-          accepts_keywords = src.method(:research).parameters.any? { |type, _| type == :key || type == :keyreq }
-          results = if accepts_keywords
-            src.research(topics, exclude_urls: @exclude_urls)
-          else
-            src.research(topics)
-          end
+          results = src.research(topics, exclude_urls: @exclude_urls)
 
           # Normalize keys to symbols
           results = results.map { |r| normalize_result(r) }

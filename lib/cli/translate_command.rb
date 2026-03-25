@@ -192,6 +192,7 @@ module PodgenCLI
     end
 
     def save_script(script, path)
+      FileUtils.mkdir_p(File.dirname(path))
       File.open(path, "w") do |f|
         f.puts "# #{script[:title]}"
         f.puts

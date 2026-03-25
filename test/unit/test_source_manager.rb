@@ -150,7 +150,7 @@ class TestSourceManager < Minitest::Test
       @error = error
     end
 
-    def research(_topics)
+    def research(_topics, exclude_urls: Set.new)
       raise @error if @error
       @results
     end
