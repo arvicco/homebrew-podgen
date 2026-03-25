@@ -99,6 +99,50 @@ class TestEpisodeSource < Minitest::Test
     assert_raises(RuntimeError) { s.fetch_next }
   end
 
+  # --- fetch_next with rss_filter ---
+
+  def test_fetch_next_with_rss_filter_substring_matches_configured_feed
+    feeds = [
+      { url: "https://podcast.rtvslo.si/lahko_noc", skip: 38.0, autotrim: true },
+      "https://other.com/feed.xml"
+    ]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, "rtvslo")
+    assert_equal 1, matched.length
+    assert_equal "https://podcast.rtvslo.si/lahko_noc", matched.first[:url]
+    assert_equal 38.0, matched.first[:skip]
+  end
+
+  def test_fetch_next_with_rss_filter_substring_matches_plain_url_feed
+    feeds = ["https://podcast.rtvslo.si/lahko_noc", "https://other.com/feed.xml"]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, "rtvslo")
+    assert_equal 1, matched.length
+    assert_equal "https://podcast.rtvslo.si/lahko_noc", matched.first
+  end
+
+  def test_fetch_next_with_rss_filter_case_insensitive
+    feeds = [{ url: "https://Podcast.RTVSLO.si/lahko_noc", skip: 10.0 }]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, "rtvslo")
+    assert_equal 1, matched.length
+  end
+
+  def test_fetch_next_with_rss_filter_no_match_uses_adhoc_url
+    feeds = ["https://podcast.rtvslo.si/lahko_noc"]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, "https://brand-new.com/feed.xml")
+    assert_equal 1, matched.length
+    assert_equal "https://brand-new.com/feed.xml", matched.first
+  end
+
+  def test_fetch_next_with_rss_filter_nil_uses_all_feeds
+    feeds = ["https://a.com/feed", "https://b.com/feed"]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, nil)
+    assert_equal feeds, matched
+  end
+
   def setup
     @tmpdir = Dir.mktmpdir("episode_source_test")
   end
