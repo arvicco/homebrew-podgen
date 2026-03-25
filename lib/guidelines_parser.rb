@@ -379,6 +379,7 @@ class GuidelinesParser
       when "autotrim" then options[:autotrim] = true
       when "base_image" then options[:base_image] = resolve_path(v)
       when "image" then options[:image] = v
+      when "tag" then options[:tag] = v
       end
     end
 

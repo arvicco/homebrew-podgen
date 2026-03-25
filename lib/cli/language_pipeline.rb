@@ -171,6 +171,7 @@ module PodgenCLI
       @current_episode_feed_base_image = @episode.delete(:base_image)
       feed_image = @episode.delete(:image)
       @current_episode_image_none = (feed_image == "none")
+      episode_image_url = @episode.delete(:image_url)
       logger.phase_end("Fetch Episode")
 
       if @dry_run
@@ -182,6 +183,10 @@ module PodgenCLI
       @source_audio_path = @episode_source.download_audio(@episode[:audio_url])
       @temp_files << @source_audio_path
       logger.log("Downloaded source audio: #{(File.size(@source_audio_path) / (1024.0 * 1024)).round(2)} MB")
+
+      if episode_image_url
+        @rss_episode_image = download_episode_image(episode_image_url)
+      end
       logger.phase_end("Download Audio")
 
       nil
@@ -191,8 +196,8 @@ module PodgenCLI
       assembler = AudioAssembler.new(logger: logger)
       @trimmer = AudioTrimmer.new(assembler: assembler, logger: logger)
 
-      skip = @options[:skip] || @episode[:skip] || @config.skip
-      cut = @options[:cut] || @episode[:cut] || @config.cut
+      skip = @options[:no_skip] ? nil : (@options[:skip] || @episode[:skip] || @config.skip)
+      cut = @options[:no_cut] ? nil : (@options[:cut] || @episode[:cut] || @config.cut)
       snip = @options[:snip]
       @source_audio_path = @trimmer.apply_trim(@source_audio_path, skip: skip, cut: cut, snip: snip)
     end
@@ -205,7 +210,7 @@ module PodgenCLI
     end
 
     def trim_outro
-      autotrim = @options[:autotrim] || @episode[:autotrim] || @config.autotrim
+      autotrim = @options[:no_autotrim] ? false : (@options[:autotrim] || @episode[:autotrim] || @config.autotrim)
       if autotrim && @reconciled_text && @groq_words&.any?
         logger.phase_start("Trim Outro")
         tails_dir = File.join(File.dirname(@config.episodes_dir), "tails")
@@ -475,10 +480,11 @@ module PodgenCLI
     # 2. --image thumb → YouTube thumbnail
     # 3. Per-feed image: none → YouTube thumbnail fallback
     # 4. --base-image PATH → title overlay on file
-    # 5. Per-feed base_image: PATH → title overlay on file
-    # 6. ## Image base_image: PATH → title overlay on file (via cover_generation_enabled?)
-    # 7. YouTube thumbnail → fallback
-    # 8. nil → no cover
+    # 5. RSS episode image → downloaded from feed
+    # 6. Per-feed base_image: PATH → title overlay on file
+    # 7. ## Image base_image: PATH → title overlay on file (via cover_generation_enabled?)
+    # 8. YouTube thumbnail → fallback
+    # 9. nil → no cover
     def resolve_episode_cover(title)
       if @options[:image]
         if @options[:image] == "thumb"
@@ -490,6 +496,8 @@ module PodgenCLI
         @youtube_thumbnail
       elsif @options[:base_image]
         generate_cover_image(title, File.expand_path(@options[:base_image])) || @youtube_thumbnail
+      elsif @rss_episode_image
+        @rss_episode_image
       elsif @current_episode_feed_base_image
         generate_cover_image(title, @current_episode_feed_base_image) || @youtube_thumbnail
       elsif @config.cover_generation_enabled?
@@ -501,6 +509,19 @@ module PodgenCLI
         end
         @youtube_thumbnail
       end
+    end
+
+    def download_episode_image(url)
+      ext = File.extname(URI.parse(url).path)[0..4] rescue ".jpg"
+      ext = ".jpg" if ext.empty?
+      path = File.join(Dir.tmpdir, "podgen_rss_cover_#{Process.pid}#{ext}")
+      HttpDownloader.new(logger: logger).download(url, path)
+      @temp_files << path
+      logger.log("Downloaded episode image: #{(File.size(path) / 1024.0).round(1)} KB")
+      path
+    rescue => e
+      logger.log("Warning: Failed to download episode image: #{e.message}")
+      nil
     end
 
     # Generates a per-episode cover image with the title overlaid on the base image.

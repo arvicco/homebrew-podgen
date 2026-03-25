@@ -29,6 +29,7 @@ StubConfig = Struct.new(
   :cover_base_image, :cover_options, :cover_generation_enabled,
   :lingq_config, :lingq_enabled, :transcription_language,
   :transcription_engines, :target_language,
+  :skip, :cut, :autotrim,
   keyword_init: true
 ) do
   def cover_generation_enabled? = cover_generation_enabled
@@ -187,6 +188,49 @@ class TestLanguagePipeline < Minitest::Test
     pipeline = build_pipeline
     result = pipeline.send(:resolve_episode_cover, "Title")
     assert_nil result
+  end
+
+  def test_resolve_cover_uses_rss_episode_image
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
+
+    result = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal "/tmp/rss_cover.jpg", result
+  end
+
+  def test_resolve_cover_rss_image_beats_feed_base_image
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
+    pipeline.instance_variable_set(:@current_episode_feed_base_image, "/tmp/base.jpg")
+
+    result = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal "/tmp/rss_cover.jpg", result
+  end
+
+  def test_resolve_cover_base_image_option_beats_rss_image
+    base_path = File.join(@tmpdir, "base.png")
+    FileUtils.touch(base_path)
+
+    config = build_config(cover_base_image: base_path, cover_generation_enabled: true)
+    pipeline = build_pipeline(options: { base_image: base_path }, config: config)
+    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
+
+    result = pipeline.send(:resolve_episode_cover, "Title")
+    # --base-image triggers generate_cover_image, which needs a real image;
+    # it will fail on a touched file but fall through to youtube_thumbnail
+    # The point is it did NOT return the RSS image
+    refute_equal "/tmp/rss_cover.jpg", result
+  end
+
+  def test_resolve_cover_image_option_beats_rss_image
+    image_path = File.join(@tmpdir, "explicit.png")
+    FileUtils.touch(image_path)
+
+    pipeline = build_pipeline(options: { image: image_path })
+    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
+
+    result = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal File.expand_path(image_path), result
   end
 
   def test_resolve_cover_falls_through_to_youtube_thumbnail
@@ -416,12 +460,94 @@ class TestLanguagePipeline < Minitest::Test
     end
   end
 
+  # --- --no-skip / --no-cut / --no-autotrim ---
+
+  def test_no_skip_overrides_config_skip
+    config = build_config(skip: 38.0)
+    pipeline = build_pipeline(options: { no_skip: true }, config: config)
+    pipeline.instance_variable_set(:@episode, { skip: 10.0 })
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    called_with = {}
+    stub_trimmer(called_with) do
+      pipeline.send(:trim_source_audio)
+    end
+    assert_nil called_with[:skip]
+  end
+
+  def test_no_cut_overrides_config_cut
+    config = build_config(cut: 10.0)
+    pipeline = build_pipeline(options: { no_cut: true }, config: config)
+    pipeline.instance_variable_set(:@episode, { cut: 5.0 })
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    called_with = {}
+    stub_trimmer(called_with) do
+      pipeline.send(:trim_source_audio)
+    end
+    assert_nil called_with[:cut]
+  end
+
+  def test_no_autotrim_overrides_config_autotrim
+    config = build_config(autotrim: true)
+    pipeline = build_pipeline(options: { no_autotrim: true }, config: config)
+    pipeline.instance_variable_set(:@episode, { autotrim: true })
+    pipeline.instance_variable_set(:@reconciled_text, "some text")
+    pipeline.instance_variable_set(:@groq_words, [{ word: "text", end: 10.0 }])
+
+    pipeline.send(:trim_outro)
+
+    assert @logger.messages.any? { |m| m.include?("autotrim not enabled") }
+  end
+
+  def test_skip_applies_without_no_skip_flag
+    config = build_config(skip: 38.0)
+    pipeline = build_pipeline(config: config)
+    pipeline.instance_variable_set(:@episode, {})
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    called_with = {}
+    stub_trimmer(called_with) do
+      pipeline.send(:trim_source_audio)
+    end
+    assert_equal 38.0, called_with[:skip]
+  end
+
   private
 
-  def build_pipeline(options: {})
+  def build_config(**overrides)
+    StubConfig.new(
+      podcast_dir: @tmpdir,
+      episodes_dir: @episodes_dir,
+      history_path: File.join(@tmpdir, "history.yml"),
+      author: "Test Author",
+      cover_base_image: nil,
+      cover_options: {},
+      cover_generation_enabled: false,
+      lingq_config: nil,
+      lingq_enabled: false,
+      transcription_language: "sl",
+      **overrides
+    )
+  end
+
+  def stub_trimmer(called_with)
+    fake_trimmer = Object.new
+    fake_trimmer.define_singleton_method(:apply_trim) do |path, skip:, cut:, snip:|
+      called_with[:skip] = skip
+      called_with[:cut] = cut
+      called_with[:snip] = snip
+      path
+    end
+    AudioTrimmer.stub(:new, fake_trimmer) do
+      yield
+    end
+  end
+
+  def build_pipeline(options: {}, config: nil)
     opts = { verbosity: :quiet }.merge(options)
     PodgenCLI::LanguagePipeline.new(
-      config: @config,
+      config: config || @config,
       options: opts,
       logger: @logger,
       history: @history,
