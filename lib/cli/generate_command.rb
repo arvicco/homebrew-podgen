@@ -50,283 +50,313 @@ module PodgenCLI
     end
 
     def run
-      code = require_podcast!("generate")
+      code = setup_pipeline
       return code if code
 
-      config = load_config!
-      config.ensure_directories!
-
-      # --- Lockfile: prevent concurrent runs of the same podcast ---
-      lock_path = File.join(File.dirname(config.episodes_dir), "run.lock")
-      lock_file = File.open(lock_path, File::RDWR | File::CREAT, 0o644)
-      unless lock_file.flock(File::LOCK_EX | File::LOCK_NB)
-        $stderr.puts "Another instance is already running for '#{@podcast_name}' (lockfile: #{lock_path})"
-        lock_file.close
-        return 1
-      end
-
-      today = Date.today
-      logger = PodcastAgent::Logger.new(log_path: config.log_path(today), verbosity: @options[:verbosity])
-      history = EpisodeHistory.new(config.history_path, excluded_urls_path: config.excluded_urls_path)
-
       begin
-        logger.log("Podcast Agent started for '#{@podcast_name}'#{@dry_run ? ' (DRY RUN)' : ''}")
-        pipeline_start = Time.now
+        @logger.log("Podcast Agent started for '#{@podcast_name}'#{@dry_run ? ' (DRY RUN)' : ''}")
+        @pipeline_start = Time.now
 
-        # --- Verify prerequisites ---
-        unless File.exist?(config.guidelines_path)
-          logger.error("Missing guidelines: #{config.guidelines_path}")
-          return 1
-        end
+        return run_language_pipeline if @config.type == "language"
 
-        # --- Check ffmpeg availability (skip in dry-run) ---
-        unless @dry_run
-          verify_ffmpeg!(logger)
-        end
+        @logger.log("Pipeline type: news")
 
-        # --- Load config ---
-        guidelines = config.guidelines
-        logger.log("Loaded guidelines (#{guidelines.length} chars)")
-
-        # --- Validate --file and --url flags ---
-        if @options[:file] && config.type != "language"
-          $stderr.puts "Error: --file is only supported for language pipeline podcasts (type: language)"
-          return 1
-        end
-
-        if @options[:url] && config.type != "language"
-          $stderr.puts "Error: --url is only supported for language pipeline podcasts (type: language)"
-          return 1
-        end
-
-        if @options[:file] && @options[:url]
-          $stderr.puts "Error: --file and --url are mutually exclusive"
-          return 1
-        end
-
-        # --- Branch on pipeline type ---
-        if config.type == "language"
-          logger.log("Pipeline type: language")
-          pipeline = LanguagePipeline.new(config: config, options: @options, logger: logger, history: history, today: today)
-          return pipeline.run
-        end
-
-        logger.log("Pipeline type: news")
-
-        # --- Phase 0: Topic generation ---
-        logger.phase_start("Topics")
-        if @dry_run
-          topics = config.queue_topics
-          logger.log("[dry-run] Using queue.yml topics: #{topics.join(', ')}")
-        else
-          begin
-            topic_agent = TopicAgent.new(guidelines: guidelines, recent_topics: history.recent_topics_summary, logger: logger)
-            topics = topic_agent.generate
-            logger.log("Generated #{topics.length} topics from guidelines")
-          rescue => e
-            logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
-            topics = config.queue_topics
-            logger.log("Loaded #{topics.length} fallback topics: #{topics.join(', ')}")
-          end
-        end
-        logger.phase_end("Topics")
-
-        # --- Phase 1: Research (multi-source) ---
-        logger.phase_start("Research")
-        if @dry_run
-          research_data = topics.map do |topic|
-            {
-              topic: topic,
-              findings: [
-                { title: "Example article about #{topic}", url: "https://example.com/#{topic.downcase.gsub(/\s+/, '-')}", summary: "This is a stub finding for dry-run testing of '#{topic}'." }
-              ]
-            }
-          end
-          logger.log("[dry-run] Generated #{research_data.length} synthetic research topics")
-        else
-          cache_dir = File.join(File.dirname(config.episodes_dir), "research_cache")
-          source_manager = SourceManager.new(
-            source_config: config.sources,
-            exclude_urls: history.recent_urls,
-            logger: logger,
-            cache_dir: cache_dir
-          )
-          research_data = source_manager.research(topics)
-        end
-        total_findings = research_data.sum { |r| r[:findings].length }
-        logger.log("Research complete: #{total_findings} findings across #{research_data.length} topics")
-        logger.phase_end("Research")
-
-        # --- Priority links injection ---
-        priority_links = PriorityLinks.new(config.links_path)
-        priority_urls = []
-        unless priority_links.empty? || @dry_run
-          logger.phase_start("Priority Links")
-          logger.log("Fetching #{priority_links.count} priority link(s)...")
-          priority_findings = priority_links.fetch_all(logger: logger)
-          priority_urls = priority_findings.map { |f| f[:url] }
-
-          # Prepend as first topic so ScriptAgent sees them first
-          research_data.unshift({ topic: "Priority links", findings: priority_findings })
-          logger.log("Injected #{priority_findings.length} priority link(s) into research data")
-          logger.phase_end("Priority Links")
-        end
-
-        # --- Phase 2: Script generation ---
-        logger.phase_start("Script")
-        if @dry_run
-          script = {
-            title: "Dry Run Episode — #{today}",
-            segments: [
-              { name: "Opening", text: "Welcome to this dry-run episode. Today we explore #{topics.first}." },
-              { name: topics.first.to_s, text: "Here is segment one covering #{topics.first} in detail with synthetic content for testing purposes." },
-              { name: topics.last.to_s, text: "Here is segment two covering #{topics.last} with more synthetic content." },
-              { name: "Wrap-Up", text: "Thanks for listening to this dry-run episode. Until next time." }
-            ],
-            sources: [
-              { title: "Example source for #{topics.first}", url: "https://example.com/#{topics.first.to_s.downcase.gsub(/\s+/, '-')}" }
-            ]
-          }
-          logger.log("[dry-run] Synthetic script generated: \"#{script[:title]}\"")
-        else
-          script_agent = ScriptAgent.new(
-            guidelines: guidelines,
-            script_path: config.script_path(today),
-            logger: logger,
-            priority_urls: priority_urls,
-            links_config: config.links_enabled? ? config.links_config : nil
-          )
-          script = script_agent.generate(research_data)
-        end
-        logger.log("Script generated: \"#{script[:title]}\" (#{script[:segments].length} segments)")
-        logger.phase_end("Script")
-
-        # --- Phase 3: Per-language TTS + Assembly ---
-        languages = config.languages
-        logger.log("Target languages: #{languages.map { |l| l['code'] }.join(', ')}")
+        topics = generate_topics
+        research_data = research_topics(topics)
+        research_data, priority_urls = inject_priority_links(research_data)
+        script = generate_script(topics, research_data, priority_urls)
 
         if @dry_run
-          languages.each do |lang|
-            logger.log("[dry-run] Would synthesize + assemble for language: #{lang['code']}")
-          end
-          logger.log("[dry-run] Skipping history.record!")
-
-          total_time = (Time.now - pipeline_start).round(2)
-          logger.log("Total pipeline time: #{total_time}s")
-          summary = "[dry-run] Config validated, #{topics.length} topics, #{total_findings} stub findings, #{script[:segments].length} segments, #{languages.length} language(s) — no API calls made"
-          logger.log(summary)
-          puts summary unless @options[:verbosity] == :quiet
+          log_dry_run_summary(topics, research_data, script)
         else
-          # Compute basename ONCE before the loop — otherwise, after the English MP3
-          # is written to disk, episode_basename would see it and increment the suffix,
-          # causing non-English variants to get names like "name-2026-02-19a-it" instead
-          # of "name-2026-02-19-it".
-          base_name = config.episode_basename(today)
-
-          intro_path = File.join(config.podcast_dir, "intro.mp3")
-          outro_path = File.join(config.podcast_dir, "outro.mp3")
-          output_paths = []
-
-          languages.each do |lang|
-            lang_code = lang["code"]
-            voice_id = lang["voice_id"]
-            lang_basename = lang_code == "en" ? base_name : "#{base_name}-#{lang_code}"
-
-            begin
-              # --- Translation (skip for English) ---
-              if lang_code == "en"
-                lang_script = script
-              else
-                logger.phase_start("Translation (#{lang_code})")
-                translator = TranslationAgent.new(target_language: lang_code, logger: logger)
-                lang_script = translator.translate(script)
-                logger.phase_end("Translation (#{lang_code})")
-              end
-
-              # --- Save translated script for debugging ---
-              # Merge English sources into translated script (sources aren't translated)
-              lang_script_with_sources = lang_script.merge(sources: script[:sources])
-              # Restore per-segment sources from English script for inline link mode
-              script[:segments].each_with_index do |en_seg, i|
-                if en_seg[:sources]&.any? && lang_script_with_sources[:segments][i]
-                  lang_script_with_sources[:segments][i][:sources] = en_seg[:sources]
-                end
-              end
-              lang_script_path = File.join(config.episodes_dir, "#{lang_basename}_script.md")
-              save_script_debug(lang_script_with_sources, lang_script_path, logger,
-                                links_config: config.links_enabled? ? config.links_config : nil)
-
-              # --- TTS ---
-              logger.phase_start("TTS (#{lang_code})")
-              tts_agent = TTSAgent.new(logger: logger, voice_id_override: voice_id, pronunciation_pls_path: config.pronunciation_pls_path)
-              audio_paths = tts_agent.synthesize(lang_script[:segments])
-              logger.log("TTS complete (#{lang_code}): #{audio_paths.length} audio files")
-              logger.phase_end("TTS (#{lang_code})")
-
-              # --- Assembly ---
-              logger.phase_start("Assembly (#{lang_code})")
-              output_path = File.join(config.episodes_dir, "#{lang_basename}.mp3")
-
-              assembler = AudioAssembler.new(logger: logger)
-              assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path,
-                metadata: { title: lang_script[:title], artist: config.author })
-              logger.phase_end("Assembly (#{lang_code})")
-
-              # --- Cleanup TTS temp files ---
-              audio_paths.each { |p| File.delete(p) if File.exist?(p) }
-
-              output_paths << output_path
-              logger.log("\u2713 Episode ready (#{lang_code}): #{output_path}")
-              puts "\u2713 Episode ready (#{lang_code}): #{output_path}" unless @options[:verbosity] == :quiet
-
-            rescue => e
-              logger.error("Language #{lang_code} failed: #{e.class}: #{e.message}")
-              logger.error(e.backtrace.first(5).join("\n"))
-              $stderr.puts "\u2717 Language #{lang_code} failed: #{e.message}" unless @options[:verbosity] == :quiet
-            end
-          end
-
-          if output_paths.empty?
-            raise "All languages failed — no episodes produced"
-          end
-
-          # --- Record episode history for deduplication ---
-          history.record!(
-            date: today,
-            title: script[:title],
-            topics: research_data.map { |r| r[:topic] },
-            urls: research_data.flat_map { |r| r[:findings].map { |f| f[:url] } },
-            duration: AudioAssembler.probe_duration(output_paths.first),
-            timestamp: Time.now.iso8601,
-            basename: base_name
-          )
-          logger.log("Episode recorded in history: #{config.history_path}")
-
-          # --- Consume priority links ---
-          unless priority_urls.empty?
-            priority_links.consume!(priority_urls)
-            logger.log("#{priority_urls.length} priority link(s) consumed")
-          end
-
-          # --- Done ---
-          total_time = (Time.now - pipeline_start).round(2)
-          logger.log("Total pipeline time: #{total_time}s")
-          logger.log("\u2713 #{output_paths.length} episode(s) produced")
+          output_paths = produce_episodes(script, research_data)
+          finalize(output_paths, script, research_data, priority_urls)
         end
 
         0
       rescue => e
-        logger.error("#{e.class}: #{e.message}")
-        logger.error(e.backtrace.first(5).join("\n"))
+        @logger.error("#{e.class}: #{e.message}")
+        @logger.error(e.backtrace.first(5).join("\n"))
         $stderr.puts "\n\u2717 Pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
         1
       ensure
-        lock_file.flock(File::LOCK_UN)
-        lock_file.close
+        @lock_file.flock(File::LOCK_UN)
+        @lock_file.close
       end
     end
 
     private
+
+    # Returns exit code on failure, nil on success.
+    def setup_pipeline
+      code = require_podcast!("generate")
+      return code if code
+
+      @config = load_config!
+      @config.ensure_directories!
+
+      lock_path = File.join(File.dirname(@config.episodes_dir), "run.lock")
+      @lock_file = File.open(lock_path, File::RDWR | File::CREAT, 0o644)
+      unless @lock_file.flock(File::LOCK_EX | File::LOCK_NB)
+        $stderr.puts "Another instance is already running for '#{@podcast_name}' (lockfile: #{lock_path})"
+        @lock_file.close
+        return 1
+      end
+
+      @today = Date.today
+      @logger = PodcastAgent::Logger.new(log_path: @config.log_path(@today), verbosity: @options[:verbosity])
+      @history = EpisodeHistory.new(@config.history_path, excluded_urls_path: @config.excluded_urls_path)
+      @warnings = []
+
+      unless File.exist?(@config.guidelines_path)
+        @logger.error("Missing guidelines: #{@config.guidelines_path}")
+        return 1
+      end
+
+      verify_ffmpeg!(@logger) unless @dry_run
+
+      @guidelines = @config.guidelines
+      @logger.log("Loaded guidelines (#{@guidelines.length} chars)")
+
+      if @options[:file] && @config.type != "language"
+        $stderr.puts "Error: --file is only supported for language pipeline podcasts (type: language)"
+        return 1
+      end
+      if @options[:url] && @config.type != "language"
+        $stderr.puts "Error: --url is only supported for language pipeline podcasts (type: language)"
+        return 1
+      end
+      if @options[:file] && @options[:url]
+        $stderr.puts "Error: --file and --url are mutually exclusive"
+        return 1
+      end
+
+      nil
+    end
+
+    def run_language_pipeline
+      @logger.log("Pipeline type: language")
+      pipeline = LanguagePipeline.new(config: @config, options: @options, logger: @logger, history: @history, today: @today)
+      pipeline.run
+    end
+
+    def generate_topics
+      @logger.phase_start("Topics")
+      topics = if @dry_run
+        t = @config.queue_topics
+        @logger.log("[dry-run] Using queue.yml topics: #{t.join(', ')}")
+        t
+      else
+        begin
+          topic_agent = TopicAgent.new(guidelines: @guidelines, recent_topics: @history.recent_topics_summary, logger: @logger)
+          t = topic_agent.generate
+          @logger.log("Generated #{t.length} topics from guidelines")
+          t
+        rescue => e
+          @logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+          t = @config.queue_topics
+          @logger.log("Loaded #{t.length} fallback topics: #{t.join(', ')}")
+          t
+        end
+      end
+      @logger.phase_end("Topics")
+      topics
+    end
+
+    def research_topics(topics)
+      @logger.phase_start("Research")
+      research_data = if @dry_run
+        topics.map do |topic|
+          {
+            topic: topic,
+            findings: [
+              { title: "Example article about #{topic}", url: "https://example.com/#{topic.downcase.gsub(/\s+/, '-')}", summary: "This is a stub finding for dry-run testing of '#{topic}'." }
+            ]
+          }
+        end.tap { @logger.log("[dry-run] Generated #{topics.length} synthetic research topics") }
+      else
+        cache_dir = File.join(File.dirname(@config.episodes_dir), "research_cache")
+        source_manager = SourceManager.new(
+          source_config: @config.sources,
+          exclude_urls: @history.recent_urls,
+          logger: @logger,
+          cache_dir: cache_dir
+        )
+        source_manager.research(topics)
+      end
+      total_findings = research_data.sum { |r| r[:findings].length }
+      @logger.log("Research complete: #{total_findings} findings across #{research_data.length} topics")
+      @logger.phase_end("Research")
+      research_data
+    end
+
+    def inject_priority_links(research_data)
+      priority_links = PriorityLinks.new(@config.links_path)
+      priority_urls = []
+      unless priority_links.empty? || @dry_run
+        @logger.phase_start("Priority Links")
+        @logger.log("Fetching #{priority_links.count} priority link(s)...")
+        priority_findings = priority_links.fetch_all(logger: @logger)
+        priority_urls = priority_findings.map { |f| f[:url] }
+        research_data.unshift({ topic: "Priority links", findings: priority_findings })
+        @logger.log("Injected #{priority_findings.length} priority link(s) into research data")
+        @logger.phase_end("Priority Links")
+      end
+      [research_data, priority_urls]
+    end
+
+    def generate_script(topics, research_data, priority_urls)
+      @logger.phase_start("Script")
+      script = if @dry_run
+        {
+          title: "Dry Run Episode — #{@today}",
+          segments: [
+            { name: "Opening", text: "Welcome to this dry-run episode. Today we explore #{topics.first}." },
+            { name: topics.first.to_s, text: "Here is segment one covering #{topics.first} in detail with synthetic content for testing purposes." },
+            { name: topics.last.to_s, text: "Here is segment two covering #{topics.last} with more synthetic content." },
+            { name: "Wrap-Up", text: "Thanks for listening to this dry-run episode. Until next time." }
+          ],
+          sources: [
+            { title: "Example source for #{topics.first}", url: "https://example.com/#{topics.first.to_s.downcase.gsub(/\s+/, '-')}" }
+          ]
+        }.tap { @logger.log("[dry-run] Synthetic script generated: \"Dry Run Episode — #{@today}\"") }
+      else
+        script_agent = ScriptAgent.new(
+          guidelines: @guidelines,
+          script_path: @config.script_path(@today),
+          logger: @logger,
+          priority_urls: priority_urls,
+          links_config: @config.links_enabled? ? @config.links_config : nil
+        )
+        script_agent.generate(research_data)
+      end
+      @logger.log("Script generated: \"#{script[:title]}\" (#{script[:segments].length} segments)")
+      @logger.phase_end("Script")
+      script
+    end
+
+    def produce_episodes(script, research_data)
+      languages = @config.languages
+      @logger.log("Target languages: #{languages.map { |l| l['code'] }.join(', ')}")
+
+      # Compute basename ONCE before the loop — otherwise, after the English MP3
+      # is written to disk, episode_basename would see it and increment the suffix.
+      @base_name = @config.episode_basename(@today)
+      intro_path = File.join(@config.podcast_dir, "intro.mp3")
+      outro_path = File.join(@config.podcast_dir, "outro.mp3")
+      output_paths = []
+
+      languages.each do |lang|
+        lang_code = lang["code"]
+        begin
+          output_path = produce_single_language(script, lang, @base_name, intro_path, outro_path)
+          output_paths << output_path
+          @logger.log("\u2713 Episode ready (#{lang_code}): #{output_path}")
+          puts "\u2713 Episode ready (#{lang_code}): #{output_path}" unless @options[:verbosity] == :quiet
+        rescue => e
+          @logger.error("Language #{lang_code} failed: #{e.class}: #{e.message}")
+          @logger.error(e.backtrace.first(5).join("\n"))
+          msg = "Language #{lang_code} failed: #{e.message}"
+          @warnings << msg
+          $stderr.puts "\u2717 #{msg}" unless @options[:verbosity] == :quiet
+        end
+      end
+
+      raise "All languages failed — no episodes produced" if output_paths.empty?
+      output_paths
+    end
+
+    def produce_single_language(script, lang, base_name, intro_path, outro_path)
+      lang_code = lang["code"]
+      voice_id = lang["voice_id"]
+      lang_basename = lang_code == "en" ? base_name : "#{base_name}-#{lang_code}"
+
+      lang_script = if lang_code == "en"
+        script
+      else
+        @logger.phase_start("Translation (#{lang_code})")
+        translator = TranslationAgent.new(target_language: lang_code, logger: @logger)
+        translated = translator.translate(script)
+        @logger.phase_end("Translation (#{lang_code})")
+        translated
+      end
+
+      # Merge English sources into translated script (sources aren't translated)
+      lang_script_with_sources = lang_script.merge(sources: script[:sources])
+      script[:segments].each_with_index do |en_seg, i|
+        if en_seg[:sources]&.any? && lang_script_with_sources[:segments][i]
+          lang_script_with_sources[:segments][i][:sources] = en_seg[:sources]
+        end
+      end
+      lang_script_path = File.join(@config.episodes_dir, "#{lang_basename}_script.md")
+      save_script_debug(lang_script_with_sources, lang_script_path, @logger,
+                        links_config: @config.links_enabled? ? @config.links_config : nil)
+
+      @logger.phase_start("TTS (#{lang_code})")
+      tts_agent = TTSAgent.new(logger: @logger, voice_id_override: voice_id, pronunciation_pls_path: @config.pronunciation_pls_path)
+      audio_paths = tts_agent.synthesize(lang_script[:segments])
+      @logger.log("TTS complete (#{lang_code}): #{audio_paths.length} audio files")
+      @logger.phase_end("TTS (#{lang_code})")
+
+      @logger.phase_start("Assembly (#{lang_code})")
+      output_path = File.join(@config.episodes_dir, "#{lang_basename}.mp3")
+      assembler = AudioAssembler.new(logger: @logger)
+      assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path,
+        metadata: { title: lang_script[:title], artist: @config.author })
+      @logger.phase_end("Assembly (#{lang_code})")
+
+      audio_paths.each { |p| File.delete(p) if File.exist?(p) }
+      output_path
+    end
+
+    def finalize(output_paths, script, research_data, priority_urls)
+      @history.record!(
+        date: @today,
+        title: script[:title],
+        topics: research_data.map { |r| r[:topic] },
+        urls: research_data.flat_map { |r| r[:findings].map { |f| f[:url] } },
+        duration: AudioAssembler.probe_duration(output_paths.first),
+        timestamp: Time.now.iso8601,
+        basename: @base_name
+      )
+      @logger.log("Episode recorded in history: #{@config.history_path}")
+
+      unless priority_urls.empty?
+        priority_links = PriorityLinks.new(@config.links_path)
+        priority_links.consume!(priority_urls)
+        @logger.log("#{priority_urls.length} priority link(s) consumed")
+      end
+
+      total_time = (Time.now - @pipeline_start).round(2)
+      @logger.log("Total pipeline time: #{total_time}s")
+
+      if @warnings.any?
+        msg = "\u26A0 #{output_paths.length} episode(s) produced (with warnings)"
+        @logger.log(msg)
+        puts msg unless @options[:verbosity] == :quiet
+        @warnings.each do |w|
+          @logger.log("  - #{w}")
+          puts "  - #{w}" unless @options[:verbosity] == :quiet
+        end
+      else
+        @logger.log("\u2713 #{output_paths.length} episode(s) produced")
+      end
+    end
+
+    def log_dry_run_summary(topics, research_data, script)
+      languages = @config.languages
+      languages.each do |lang|
+        @logger.log("[dry-run] Would synthesize + assemble for language: #{lang['code']}")
+      end
+      @logger.log("[dry-run] Skipping history.record!")
+
+      total_findings = research_data.sum { |r| r[:findings].length }
+      total_time = (Time.now - @pipeline_start).round(2)
+      @logger.log("Total pipeline time: #{total_time}s")
+      summary = "[dry-run] Config validated, #{topics.length} topics, #{total_findings} stub findings, #{script[:segments].length} segments, #{languages.length} language(s) — no API calls made"
+      @logger.log(summary)
+      puts summary unless @options[:verbosity] == :quiet
+    end
 
     def verify_ffmpeg!(logger)
       require "open3"
