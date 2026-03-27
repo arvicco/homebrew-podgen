@@ -256,6 +256,7 @@ class GuidelinesParser
   def parse_lingq_section
     config = parse_kv_section("LingQ") do |key, value|
       case key
+      when "token"       then { token: value }
       when "collection"  then { collection: value.to_i }
       when "level"       then { level: value.to_i }
       when "tags"        then { tags: value.split(",").map(&:strip) }

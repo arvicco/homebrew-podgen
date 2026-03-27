@@ -162,7 +162,7 @@ module PodgenCLI
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "lingq_agent")
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "cover_agent")
 
-      agent = LingQAgent.new
+      agent = LingQAgent.new(api_key: @config.lingq_config&.[](:token))
       language = @config.transcription_language
 
       pending.each do |ep|

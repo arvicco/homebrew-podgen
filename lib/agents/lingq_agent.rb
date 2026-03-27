@@ -14,9 +14,9 @@ class LingQAgent
   BASE_URL = "https://www.lingq.com/api"
   MAX_RETRIES = 3
 
-  def initialize(logger: nil)
+  def initialize(logger: nil, api_key: nil)
     @logger = logger
-    @api_key = ENV.fetch("LINGQ_API_KEY") { raise "LINGQ_API_KEY environment variable is not set" }
+    @api_key = api_key || ENV.fetch("LINGQ_API_KEY") { raise "LINGQ_API_KEY not set (use ## LingQ token: or LINGQ_API_KEY env var)" }
   end
 
   # Upload a lesson to LingQ.

@@ -128,7 +128,14 @@ class TestEpisodeSource < Minitest::Test
     assert_equal 1, matched.length
   end
 
-  def test_resolve_feeds_no_match_raises_error
+  def test_resolve_feeds_no_match_url_uses_adhoc
+    feeds = ["https://podcast.rtvslo.si/lahko_noc"]
+    s = source(rss_feeds: feeds)
+    matched = s.send(:resolve_feeds, feeds, "https://other.com/feed.xml")
+    assert_equal ["https://other.com/feed.xml"], matched
+  end
+
+  def test_resolve_feeds_no_match_non_url_raises_error
     feeds = ["https://podcast.rtvslo.si/lahko_noc"]
     s = source(rss_feeds: feeds)
     err = assert_raises(RuntimeError) { s.send(:resolve_feeds, feeds, "nonexistent") }

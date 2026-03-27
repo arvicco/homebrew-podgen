@@ -191,7 +191,8 @@ class PodcastConfig
 
   def lingq_enabled?
     config = lingq_config
-    config && config[:collection] && ENV["LINGQ_API_KEY"] && !ENV["LINGQ_API_KEY"].empty?
+    has_key = config&.[](:token) || (ENV["LINGQ_API_KEY"] && !ENV["LINGQ_API_KEY"].empty?)
+    config && config[:collection] && has_key
   end
 
   def cover_generation_enabled?

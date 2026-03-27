@@ -5,6 +5,7 @@ require "date"
 require "time"
 require "yaml"
 require "fileutils"
+require "open3"
 require "digest"
 require_relative "loggable"
 require_relative "format_helper"
@@ -94,12 +95,14 @@ class SiteGenerator
     # Build episode list data
     episode_list = episodes.map do |ep|
       page_name = "#{ep[:basename]}.html"
+      thumb_url = ep[:cover_file] ? "episodes/#{File.basename(ep[:cover_file])}" : nil
       {
         title: ep[:title],
         date: ep[:date].strftime("%B %d, %Y"),
         duration: ep[:duration] ? format_duration(ep[:duration]) : nil,
         audio_url: audio_url(ep[:filename], is_primary),
-        page_path: "episodes/#{page_name}"
+        page_path: "episodes/#{page_name}",
+        thumb_url: thumb_url
       }
     end
 
@@ -127,10 +130,12 @@ class SiteGenerator
 
       # Copy episode cover to site if present
       ep_cover_url = nil
+      ep_cover_wide = false
       if ep[:cover_file]
         cover_name = File.basename(ep[:cover_file])
         FileUtils.cp(ep[:cover_file], File.join(episodes_html_dir, cover_name))
         ep_cover_url = cover_name
+        ep_cover_wide = wide_image?(ep[:cover_file])
       end
 
       ep_html = render_layout(
@@ -148,6 +153,7 @@ class SiteGenerator
           index_path: is_primary ? "../index.html" : "../../#{lang_code}/index.html",
           site_config: @site_config,
           episode_cover_url: ep_cover_url,
+          episode_cover_wide: ep_cover_wide,
           has_vocabulary: ep[:has_vocabulary]
         )
       )
@@ -200,6 +206,18 @@ class SiteGenerator
 
   def find_episode_cover(basename)
     Dir.glob(File.join(@episodes_dir, "#{basename}_cover.*")).first
+  end
+
+  def wide_image?(path)
+    out, _, status = Open3.capture3("magick", "identify", "-format", "%wx%h", path)
+    return false unless status.success?
+
+    w, h = out.strip.split("x").map(&:to_f)
+    return false if h == 0
+
+    w / h > 1.15
+  rescue StandardError
+    false
   end
 
   def transcript_has_vocabulary?(path)

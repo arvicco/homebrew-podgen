@@ -40,11 +40,14 @@ module PodgenCLI
         opts.on("--autotrim", "Enable outro auto-detection via word timestamps") { @options[:autotrim] = true }
         opts.on("--no-autotrim", "Disable autotrim even if configured") { @options[:no_autotrim] = true }
         opts.on("--no-skip", "Disable skip even if configured") { @options[:no_skip] = true }
+        opts.on("--ask-skip", "Download audio, play it, then prompt for skip value") { @options[:ask_skip] = true }
         opts.on("--no-cut", "Disable cut even if configured") { @options[:no_cut] = true }
+        opts.on("--skip-episode", "Exclude the newest episode and process the next one") { @options[:skip_episode] = true }
         opts.on("--force", "Process even if already in history (skip dedup check)") { @options[:force] = true }
         opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }
         opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| @options[:base_image] = p }
         opts.on("--lingq", "Enable LingQ upload during generation") { @options[:lingq] = true }
+        opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") { |d| @options[:date] = Date.parse(d) }
         opts.on("--dry-run", "Validate config, skip API calls") { @options[:dry_run] = true }
       end.parse!(args)
 
@@ -109,7 +112,17 @@ module PodgenCLI
         return 1
       end
 
-      @today = Date.today
+      @today = @options[:date] || Date.today
+      if @options[:date] && !@options[:force]
+        date_str = @today.strftime("%Y-%m-%d")
+        existing = Dir.glob(File.join(@config.episodes_dir, "#{@config.name}-#{date_str}*.mp3"))
+          .reject { |f| File.basename(f).include?("_concat") }
+        unless existing.empty?
+          $stderr.puts "Error: episode already exists for #{date_str}: #{File.basename(existing.first)}"
+          $stderr.puts "Use --force to generate anyway (will create a suffixed episode)"
+          return 1
+        end
+      end
       @logger = PodcastAgent::Logger.new(log_path: @config.log_path(@today), verbosity: @options[:verbosity])
       @history = EpisodeHistory.new(@config.history_path, excluded_urls_path: @config.excluded_urls_path)
       @warnings = []

@@ -34,6 +34,7 @@ module PodgenCLI
       @warnings = []
       @youtube_captions = nil
       @episode_source = EpisodeSource.new(config: config, history: history, logger: logger)
+      @staging_dir = File.join(File.dirname(config.episodes_dir), "episodes_staged")
     end
 
     def run
@@ -46,6 +47,7 @@ module PodgenCLI
       code = acquire_episode
       return code if code
 
+      setup_staging
       trim_source_audio
       transcribe
       clean_or_generate_description(@episode, @reconciled_text || @transcription_result[:text])
@@ -53,8 +55,8 @@ module PodgenCLI
       assemble_episode
       save_transcript_and_cover
       annotate_vocabulary if @config.vocabulary_level
+      commit_episode
       upload_to_lingq(@episode, @reconciled_text || @transcript, @output_path, @base_name) if @options[:lingq]
-      record_history
 
       log_completion
       0
@@ -65,11 +67,36 @@ module PodgenCLI
       1
     ensure
       cleanup_temp_files
+      cleanup_staging
     end
 
     private
 
     attr_reader :logger
+
+    def setup_staging
+      FileUtils.rm_rf(@staging_dir)
+      FileUtils.mkdir_p(@staging_dir)
+    end
+
+    # Moves all staged files to episodes/ and writes history atomically.
+    def commit_episode
+      logger.phase_start("Commit")
+      staged_files = Dir.glob(File.join(@staging_dir, "*"))
+      staged_files.each do |src|
+        dest = File.join(@config.episodes_dir, File.basename(src))
+        FileUtils.mv(src, dest)
+      end
+      @output_path = File.join(@config.episodes_dir, "#{@base_name}.mp3")
+      record_history
+      logger.log("Committed #{staged_files.length} file(s) to #{@config.episodes_dir}")
+      logger.phase_end("Commit")
+    end
+
+    # Removes staging dir if it still exists (on failure or after commit).
+    def cleanup_staging
+      FileUtils.rm_rf(@staging_dir) if @staging_dir && Dir.exist?(@staging_dir)
+    end
 
     # Validates --image option early. Returns exit code on error, nil on success.
     def validate_image_options
@@ -161,7 +188,7 @@ module PodgenCLI
 
     def acquire_rss
       logger.phase_start("Fetch Episode")
-      @episode = @episode_source.fetch_next(force: @options[:force], rss_filter: @rss_filter)
+      @episode = @episode_source.fetch_next(force: @options[:force], rss_filter: @rss_filter, skip_episode: @options[:skip_episode])
       unless @episode
         logger.error("No new episodes found in RSS feeds")
         return 1
@@ -197,10 +224,28 @@ module PodgenCLI
       assembler = AudioAssembler.new(logger: logger)
       @trimmer = AudioTrimmer.new(assembler: assembler, logger: logger)
 
-      skip = @options[:no_skip] ? nil : (@options[:skip] || @episode[:skip] || @config.skip)
+      skip = if @options[:no_skip]
+        nil
+      elsif @options[:ask_skip]
+        ask_skip_interactive
+      else
+        @options[:skip] || @episode[:skip] || @config.skip
+      end
       cut = @options[:no_cut] ? nil : (@options[:cut] || @episode[:cut] || @config.cut)
       snip = @options[:snip]
       @source_audio_path = @trimmer.apply_trim(@source_audio_path, skip: skip, cut: cut, snip: snip)
+    end
+
+    def ask_skip_interactive
+      duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
+      $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
+      $stderr.puts "Opening audio for preview..."
+      system("open", @source_audio_path)
+      $stderr.print "Enter skip seconds (or min:sec), blank to skip nothing: "
+      input = $stdin.gets&.strip
+      return nil if input.nil? || input.empty?
+
+      TimeValue.parse(input)
     end
 
     def transcribe
@@ -234,7 +279,7 @@ module PodgenCLI
       @transcript = @reconciled_text || @transcription_result[:text]
 
       logger.phase_start("Assembly")
-      @output_path = File.join(@config.episodes_dir, "#{@base_name}.mp3")
+      @output_path = File.join(@staging_dir, "#{@base_name}.mp3")
 
       intro_music_path = File.join(@config.podcast_dir, "intro.mp3")
       outro_music_path = File.join(@config.podcast_dir, "outro.mp3")
@@ -252,7 +297,7 @@ module PodgenCLI
       cover_source = resolve_episode_cover(@episode[:title])
       if cover_source
         ext = File.extname(cover_source)
-        cover_dest = File.join(@config.episodes_dir, "#{@base_name}_cover#{ext}")
+        cover_dest = File.join(@staging_dir, "#{@base_name}_cover#{ext}")
         FileUtils.cp(cover_source, cover_dest)
         logger.log("Episode cover saved: #{cover_dest}")
       else
@@ -262,7 +307,7 @@ module PodgenCLI
 
     def annotate_vocabulary
       logger.phase_start("Vocabulary")
-      transcript_path = File.join(@config.episodes_dir, "#{@base_name}_transcript.md")
+      transcript_path = File.join(@staging_dir, "#{@base_name}_transcript.md")
       text = File.read(transcript_path)
 
       # Extract just the transcript body (after ## Transcript)
@@ -364,7 +409,7 @@ module PodgenCLI
         @comparison_errors = result[:errors]
         @reconciled_text = result[:reconciled]
         @groq_words = result[:all]["groq"]&.dig(:words)
-        @warnings << "Transcript reconciliation failed (using raw primary engine output)" unless @reconciled_text
+        raise "Transcript reconciliation failed — episode not committed" unless @reconciled_text
         result[:primary]
       else
         # Single engine — use cleaned text if available
@@ -393,7 +438,7 @@ module PodgenCLI
     def save_transcript(episode, transcript, base_name)
       # Use reconciled text as primary if available (multi-engine mode)
       primary_text = @reconciled_text || transcript
-      transcript_path = File.join(@config.episodes_dir, "#{base_name}_transcript.md")
+      transcript_path = File.join(@staging_dir, "#{base_name}_transcript.md")
       write_transcript_file(transcript_path, episode, primary_text)
       if @reconciled_text
         logger.log("Reconciled transcript saved to #{transcript_path}")
@@ -405,7 +450,7 @@ module PodgenCLI
       return unless @comparison_results&.any? && @options[:verbosity] == :verbose
 
       @comparison_results.each do |code, result|
-        engine_path = File.join(@config.episodes_dir, "#{base_name}_transcript_#{code}.md")
+        engine_path = File.join(@staging_dir, "#{base_name}_transcript_#{code}.md")
         write_transcript_file(engine_path, episode, result[:text])
         logger.log("Comparison transcript (#{code}) saved to #{engine_path}")
       end
@@ -445,7 +490,7 @@ module PodgenCLI
 
       image_path = resolve_episode_cover(episode[:title])
 
-      agent = LingQAgent.new(logger: logger)
+      agent = LingQAgent.new(logger: logger, api_key: @config.lingq_config&.[](:token))
       lesson_id = agent.upload(
         title: episode[:title],
         text: transcript,

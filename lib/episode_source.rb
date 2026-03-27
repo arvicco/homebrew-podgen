@@ -57,7 +57,7 @@ class EpisodeSource
     true
   end
 
-  def fetch_next(force: false, rss_filter: nil)
+  def fetch_next(force: false, rss_filter: nil, skip_episode: false)
     rss_feeds = @config.sources["rss"]
     unless rss_feeds.is_a?(Array) && rss_feeds.any?
       raise "Language pipeline requires RSS sources in guidelines.md (## Sources → - rss:)"
@@ -74,7 +74,29 @@ class EpisodeSource
     end
 
     log("Found #{episodes.length} episodes with audio enclosures")
+
+    if skip_episode
+      skipped = episodes.first
+      log("Skipping episode: \"#{skipped[:title]}\" (#{skipped[:audio_url]})")
+      exclude_url!(skipped[:audio_url])
+      episodes.shift
+      return nil if episodes.empty?
+    end
+
     episodes.first
+  end
+
+  def exclude_url!(url)
+    require_relative "atomic_writer"
+    require_relative "yaml_loader"
+    path = @config.respond_to?(:excluded_urls_path) ? @config.excluded_urls_path : nil
+    return unless path
+
+    current = YamlLoader.load(path, default: [])
+    unless current.include?(url)
+      current << url
+      AtomicWriter.write_yaml(path, current)
+    end
   end
 
   def download_audio(url)
@@ -88,7 +110,8 @@ class EpisodeSource
   # Resolves which feeds to use given an optional rss_filter.
   # - nil: use all configured feeds
   # - substring match: use only matching configured feed(s)
-  # - no match: raises RuntimeError
+  # - no match + looks like URL: warn and use as ad-hoc feed
+  # - no match + not a URL: raises RuntimeError (likely a typo)
   def resolve_feeds(configured_feeds, rss_filter)
     return configured_feeds if rss_filter.nil?
 
@@ -101,8 +124,13 @@ class EpisodeSource
       end
     end
 
-    raise "No configured RSS feed matches '#{rss_filter}'" if matched.empty?
+    return matched unless matched.empty?
 
-    matched
+    if rss_filter.match?(%r{\Ahttps?://})
+      log("No configured feed matches '#{rss_filter}' — using as ad-hoc URL")
+      [rss_filter]
+    else
+      raise "No configured RSS feed matches '#{rss_filter}'"
+    end
   end
 end

@@ -353,7 +353,7 @@ class TestLanguagePipeline < Minitest::Test
     assert_includes warnings.first, "Description cleanup failed (API error)"
   end
 
-  def test_reconciliation_failure_adds_warning
+  def test_reconciliation_failure_raises_error
     config = StubConfig.new(
       podcast_dir: @tmpdir, episodes_dir: @episodes_dir,
       history_path: File.join(@tmpdir, "history.yml"),
@@ -365,19 +365,18 @@ class TestLanguagePipeline < Minitest::Test
     pipeline = build_pipeline
     pipeline.instance_variable_set(:@config, config)
 
-    # Stub EngineManager to return multi-engine result with reconciliation failure
     fake_manager = Object.new
     fake_manager.define_singleton_method(:transcribe) do |*, **|
       { all: { "open" => { text: "raw" }, "groq" => { text: "raw" } },
         errors: {}, reconciled: nil, primary: { text: "raw" } }
     end
 
-    Transcription::EngineManager.stub(:new, fake_manager) do
-      pipeline.send(:transcribe_audio, "/fake/audio.mp3")
+    err = assert_raises(RuntimeError) do
+      Transcription::EngineManager.stub(:new, fake_manager) do
+        pipeline.send(:transcribe_audio, "/fake/audio.mp3")
+      end
     end
-
-    warnings = pipeline.instance_variable_get(:@warnings)
-    assert warnings.any? { |w| w.include?("reconciliation failed") }
+    assert_includes err.message, "reconciliation failed"
   end
 
   def test_log_completion_with_warnings_shows_warning_marker
