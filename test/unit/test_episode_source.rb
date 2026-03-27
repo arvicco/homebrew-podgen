@@ -204,6 +204,34 @@ class TestEpisodeSource < Minitest::Test
     refute episodes.first.key?(:image_url)
   end
 
+  # --- exclude_url! ---
+
+  def test_exclude_url_writes_to_file
+    path = File.join(@tmpdir, "excluded_urls.yml")
+    s = source_with_excluded(rss_feeds: ["https://a.com/feed"], excluded_path: path)
+    s.send(:exclude_url!, "http://example.com/ep.mp3")
+
+    data = YAML.load_file(path)
+    assert_includes data, "http://example.com/ep.mp3"
+  end
+
+  def test_exclude_url_does_not_duplicate
+    path = File.join(@tmpdir, "excluded_urls.yml")
+    File.write(path, ["http://example.com/ep.mp3"].to_yaml)
+
+    s = source_with_excluded(rss_feeds: ["https://a.com/feed"], excluded_path: path)
+    s.send(:exclude_url!, "http://example.com/ep.mp3")
+
+    data = YAML.load_file(path)
+    assert_equal 1, data.count("http://example.com/ep.mp3")
+  end
+
+  def test_exclude_url_noop_without_path
+    s = source(rss_feeds: ["https://a.com/feed"])
+    # Should not raise
+    s.send(:exclude_url!, "http://example.com/ep.mp3")
+  end
+
   def setup
     @tmpdir = Dir.mktmpdir("episode_source_test")
   end
@@ -217,6 +245,13 @@ class TestEpisodeSource < Minitest::Test
   def source(known_urls: [], rss_feeds: nil)
     sources = rss_feeds.nil? ? {} : { "rss" => rss_feeds }
     config = Struct.new(:sources).new(sources)
+    history = Struct.new(:all_urls).new(Set.new(known_urls))
+    EpisodeSource.new(config: config, history: history)
+  end
+
+  def source_with_excluded(known_urls: [], rss_feeds: nil, excluded_path: nil)
+    sources = rss_feeds.nil? ? {} : { "rss" => rss_feeds }
+    config = Struct.new(:sources, :excluded_urls_path).new(sources, excluded_path)
     history = Struct.new(:all_urls).new(Set.new(known_urls))
     EpisodeSource.new(config: config, history: history)
   end

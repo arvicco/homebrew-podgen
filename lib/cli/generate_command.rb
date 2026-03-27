@@ -161,6 +161,14 @@ module PodgenCLI
           return 1
         end
       end
+      if @options[:ask_skip] && (@options[:skip] || @options[:no_skip])
+        $stderr.puts "Error: --ask-skip is mutually exclusive with --skip and --no-skip"
+        return 1
+      end
+      if @options[:skip_episode] && (@options[:file] || @options[:url])
+        $stderr.puts "Error: --skip-episode is only supported for RSS mode"
+        return 1
+      end
 
       nil
     end

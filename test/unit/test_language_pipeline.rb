@@ -512,6 +512,63 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal 38.0, called_with[:skip]
   end
 
+  # --- staged output lifecycle ---
+
+  def test_setup_staging_creates_directory
+    pipeline = build_pipeline
+    staging = pipeline.instance_variable_get(:@staging_dir)
+
+    pipeline.send(:setup_staging)
+    assert Dir.exist?(staging)
+  ensure
+    FileUtils.rm_rf(staging)
+  end
+
+  def test_setup_staging_clears_prior_contents
+    pipeline = build_pipeline
+    staging = pipeline.instance_variable_get(:@staging_dir)
+    FileUtils.mkdir_p(staging)
+    File.write(File.join(staging, "leftover.mp3"), "old")
+
+    pipeline.send(:setup_staging)
+    assert Dir.exist?(staging)
+    assert_empty Dir.glob(File.join(staging, "*"))
+  ensure
+    FileUtils.rm_rf(staging)
+  end
+
+  def test_commit_episode_moves_files_to_episodes
+    pipeline = build_pipeline
+    staging = pipeline.instance_variable_get(:@staging_dir)
+    FileUtils.mkdir_p(staging)
+    pipeline.instance_variable_set(:@base_name, "test-2026-03-10")
+    pipeline.instance_variable_set(:@episode, { title: "Test", audio_url: "http://test.mp3" })
+    pipeline.instance_variable_set(:@today, Date.new(2026, 3, 10))
+    pipeline.instance_variable_set(:@history, EpisodeHistory.new(File.join(@tmpdir, "history.yml")))
+
+    # Create staged files
+    File.write(File.join(staging, "test-2026-03-10.mp3"), "audio")
+    File.write(File.join(staging, "test-2026-03-10_transcript.md"), "text")
+
+    pipeline.send(:commit_episode)
+
+    assert File.exist?(File.join(@episodes_dir, "test-2026-03-10.mp3"))
+    assert File.exist?(File.join(@episodes_dir, "test-2026-03-10_transcript.md"))
+    assert_equal File.join(@episodes_dir, "test-2026-03-10.mp3"), pipeline.instance_variable_get(:@output_path)
+  ensure
+    FileUtils.rm_rf(staging)
+  end
+
+  def test_cleanup_staging_removes_directory
+    pipeline = build_pipeline
+    staging = pipeline.instance_variable_get(:@staging_dir)
+    FileUtils.mkdir_p(staging)
+    File.write(File.join(staging, "orphan.mp3"), "data")
+
+    pipeline.send(:cleanup_staging)
+    refute Dir.exist?(staging)
+  end
+
   private
 
   def build_config(**overrides)
