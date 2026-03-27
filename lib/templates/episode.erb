@@ -2,7 +2,9 @@
 <div class="episode-header">
   <div class="header-row">
 <% if episode_cover_url %>
-    <img class="episode-cover" src="<%= episode_cover_url %>" alt="<%= episode_title %>">
+    <div class="episode-cover-wrap<%= ' wide' if episode_cover_wide %>">
+      <img class="episode-cover" src="<%= episode_cover_url %>" alt="<%= episode_title %>">
+    </div>
 <% end %>
     <div class="header-text">
       <h1><%= episode_title %></h1>
