@@ -188,7 +188,7 @@ module PodgenCLI
 
     def acquire_rss
       logger.phase_start("Fetch Episode")
-      @episode = @episode_source.fetch_next(force: @options[:force], rss_filter: @rss_filter, skip_episode: @options[:skip_episode])
+      @episode = @episode_source.fetch_next(force: @options[:force], rss_filter: @rss_filter)
       unless @episode
         logger.error("No new episodes found in RSS feeds")
         return 1

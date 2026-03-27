@@ -42,7 +42,6 @@ module PodgenCLI
         opts.on("--no-skip", "Disable skip even if configured") { @options[:no_skip] = true }
         opts.on("--ask-skip", "Download audio, play it, then prompt for skip value") { @options[:ask_skip] = true }
         opts.on("--no-cut", "Disable cut even if configured") { @options[:no_cut] = true }
-        opts.on("--skip-episode", "Exclude the newest episode and process the next one") { @options[:skip_episode] = true }
         opts.on("--force", "Process even if already in history (skip dedup check)") { @options[:force] = true }
         opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }
         opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| @options[:base_image] = p }
@@ -165,11 +164,6 @@ module PodgenCLI
         $stderr.puts "Error: --ask-skip is mutually exclusive with --skip and --no-skip"
         return 1
       end
-      if @options[:skip_episode] && (@options[:file] || @options[:url])
-        $stderr.puts "Error: --skip-episode is only supported for RSS mode"
-        return 1
-      end
-
       nil
     end
 

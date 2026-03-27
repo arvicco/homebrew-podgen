@@ -2,11 +2,13 @@
 
 root = File.expand_path("../..", __dir__)
 
+require "optparse"
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "episode_filtering")
 require_relative File.join(root, "lib", "lingq_tracker")
+require_relative File.join(root, "lib", "atomic_writer")
 
 module PodgenCLI
   class ScrapCommand
@@ -15,6 +17,11 @@ module PodgenCLI
     SUFFIXES = [""] + ("a".."z").to_a
 
     def initialize(args, options)
+      @exclude = false
+      OptionParser.new do |opts|
+        opts.on("--exclude", "Also exclude episode URL from future processing") { @exclude = true }
+      end.parse!(args)
+
       first_arg = args.first
       if first_arg && (first_arg.include?("/") || File.exist?(first_arg))
         resolved = resolve_from_path(args.shift)
@@ -78,19 +85,31 @@ module PodgenCLI
       related_files.each { |f| puts "  #{File.basename(f)}" }
       puts
 
+      # Check if exclusion is available (language pipeline only)
+      is_language = config.type == "language"
+      episode_urls = matching_entry&.[]("urls") || []
+      can_exclude = is_language && episode_urls.any?
+
       if @dry_run
         puts "[dry-run] Would remove #{related_files.length} file(s) and history entry."
+        puts "[dry-run] Would also exclude #{episode_urls.length} URL(s)." if @exclude && can_exclude
         return 0
       end
 
-      # Confirm
-      $stdout.write "Proceed? [y/N] "
+      # Confirm — offer exclude option for language episodes
+      if can_exclude
+        $stdout.write "Proceed (x also excludes episode URL from future processing)? [y/N/x] "
+      else
+        $stdout.write "Proceed? [y/N] "
+      end
       $stdout.flush
       answer = $stdin.gets&.strip&.downcase
-      unless answer == "y"
+      unless %w[y x].include?(answer)
         puts "Aborted."
         return 0
       end
+
+      do_exclude = @exclude || answer == "x"
 
       # Delete files
       related_files.each do |f|
@@ -107,8 +126,14 @@ module PodgenCLI
       # Remove LingQ tracking entry for this episode
       remove_lingq_tracking(config, target_base)
 
+      # Exclude episode URLs from future processing
+      if do_exclude && can_exclude
+        exclude_episode_urls(config, episode_urls)
+      end
+
       title = removed ? "\"#{removed['title']}\"" : target_base
-      puts "\u2713 Scrapped #{related_files.length} file(s): #{title}"
+      suffix = do_exclude && can_exclude ? " (excluded)" : ""
+      puts "\u2713 Scrapped #{related_files.length} file(s): #{title}#{suffix}"
       0
     end
 
@@ -200,6 +225,17 @@ module PodgenCLI
 
     def remove_lingq_tracking(config, base_name)
       LingqTracker.for_config(config).remove(base_name)
+    end
+
+    def exclude_episode_urls(config, urls)
+      path = config.excluded_urls_path
+      current = YamlLoader.load(path, default: [])
+      added = urls.reject { |u| current.include?(u) }
+      return if added.empty?
+
+      current.concat(added)
+      AtomicWriter.write_yaml(path, current)
+      added.each { |u| puts "  Excluded: #{u}" }
     end
   end
 end
