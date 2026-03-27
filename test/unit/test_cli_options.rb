@@ -90,6 +90,56 @@ class TestCLIOptions < Minitest::Test
     assert_includes err, "invalid option"
   end
 
+  # ── Mutual exclusivity guards ───────────────────────────────────
+
+  def test_generate_rejects_ask_skip_with_skip
+    code, _, err = run_cli("generate", "test_pod", "--ask-skip", "--skip", "10")
+    assert_equal 1, code
+    assert_includes err, "--ask-skip is mutually exclusive"
+  end
+
+  def test_generate_rejects_ask_skip_with_no_skip
+    code, _, err = run_cli("generate", "test_pod", "--ask-skip", "--no-skip")
+    assert_equal 1, code
+    assert_includes err, "--ask-skip is mutually exclusive"
+  end
+
+  def test_generate_rejects_skip_episode_with_file
+    # Use a language-type podcast so --file type guard doesn't fire first
+    build_language_podcast(@tmpdir)
+    code, _, err = run_cli("generate", "lang_pod", "--skip-episode", "--file", "/tmp/x.mp3")
+    assert_equal 1, code
+    assert_includes err, "--skip-episode is only supported for RSS mode"
+  end
+
+  def test_generate_rejects_skip_episode_with_url
+    build_language_podcast(@tmpdir)
+    code, _, err = run_cli("generate", "lang_pod", "--skip-episode", "--url", "https://yt.com/v")
+    assert_equal 1, code
+    assert_includes err, "--skip-episode is only supported for RSS mode"
+  end
+
+  # ── --date duplicate episode guard ─────────────────────────────
+
+  def test_generate_date_rejects_existing_episode
+    # Create a fake episode mp3 for the target date
+    episodes_dir = File.join(@tmpdir, "output", "test_pod", "episodes")
+    File.write(File.join(episodes_dir, "test_pod-2026-01-15.mp3"), "fake")
+
+    code, _, err = run_cli("generate", "test_pod", "--date", "2026-01-15")
+    assert_equal 1, code
+    assert_includes err, "episode already exists for 2026-01-15"
+  end
+
+  def test_generate_date_allows_with_force
+    episodes_dir = File.join(@tmpdir, "output", "test_pod", "episodes")
+    File.write(File.join(episodes_dir, "test_pod-2026-01-15.mp3"), "fake")
+
+    # --force + --dry-run so it doesn't actually run the pipeline
+    code, _, err = run_cli("generate", "test_pod", "--date", "2026-01-15", "--force", "--dry-run")
+    refute_includes err, "episode already exists"
+  end
+
   # ── Valid options should be accepted ─────────────────────────────
 
   def test_generate_accepts_dry_run
@@ -258,6 +308,23 @@ class TestCLIOptions < Minitest::Test
   ensure
     $stdout = old_stdout
     $stderr = old_stderr
+  end
+
+  def build_language_podcast(dir)
+    pod = File.join(dir, "podcasts", "lang_pod")
+    out = File.join(dir, "output", "lang_pod", "episodes")
+    FileUtils.mkdir_p([pod, out])
+
+    File.write(File.join(pod, "guidelines.md"), <<~MD)
+      ## Podcast
+      - name: Lang Pod
+      - type: language
+
+      ## Audio
+      - language: it
+      - engine:
+        - open
+    MD
   end
 
   def build_test_podcast(dir)

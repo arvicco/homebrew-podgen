@@ -980,6 +980,79 @@ class TestPodcastConfig < Minitest::Test
     assert_equal "new", lc[:status]
   end
 
+  def test_lingq_enabled_with_config_token
+    write_guidelines(<<~MD)
+      ## Podcast
+      - name: My Show
+
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Topics
+      - News
+
+      ## LingQ
+      - collection: 12345
+      - token: sk-test-key
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert config.lingq_enabled?
+  end
+
+  def test_lingq_enabled_with_env_key
+    write_guidelines(<<~MD)
+      ## Podcast
+      - name: My Show
+
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Topics
+      - News
+
+      ## LingQ
+      - collection: 12345
+    MD
+
+    ENV["LINGQ_API_KEY"] = "test-key"
+    config = PodcastConfig.new("myshow")
+    assert config.lingq_enabled?
+  ensure
+    ENV.delete("LINGQ_API_KEY")
+  end
+
+  def test_lingq_not_enabled_without_token_or_env
+    write_guidelines(<<~MD)
+      ## Podcast
+      - name: My Show
+
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Topics
+      - News
+
+      ## LingQ
+      - collection: 12345
+    MD
+
+    original_key = ENV.delete("LINGQ_API_KEY")
+    config = PodcastConfig.new("myshow")
+    refute config.lingq_enabled?
+  ensure
+    ENV["LINGQ_API_KEY"] = original_key if original_key
+  end
+
   def test_lingq_nil_when_section_missing
     write_guidelines(<<~MD)
       ## Format

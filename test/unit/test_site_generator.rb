@@ -603,6 +603,34 @@ class TestSiteGenerator < Minitest::Test
     assert_nil gen.send(:find_episode_cover, "mypod-2026-01-15")
   end
 
+  # --- wide_image? ---
+
+  def test_wide_image_returns_true_for_landscape
+    gen = build_generator
+    img_path = File.join(@episodes_dir, "wide.jpg")
+    system("magick", "-size", "200x100", "xc:white", img_path)
+    assert gen.send(:wide_image?, img_path)
+  end
+
+  def test_wide_image_returns_false_for_square
+    gen = build_generator
+    img_path = File.join(@episodes_dir, "square.jpg")
+    system("magick", "-size", "100x100", "xc:white", img_path)
+    refute gen.send(:wide_image?, img_path)
+  end
+
+  def test_wide_image_returns_false_for_portrait
+    gen = build_generator
+    img_path = File.join(@episodes_dir, "tall.jpg")
+    system("magick", "-size", "100x200", "xc:white", img_path)
+    refute gen.send(:wide_image?, img_path)
+  end
+
+  def test_wide_image_returns_false_for_missing_file
+    gen = build_generator
+    refute gen.send(:wide_image?, "/nonexistent/image.jpg")
+  end
+
   # --- transcript_has_vocabulary? ---
 
   def test_transcript_has_vocabulary_true
