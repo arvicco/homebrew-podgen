@@ -321,6 +321,17 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal %w[podcast ruby], parser.lingq_config[:tags]
   end
 
+  def test_parses_lingq_token
+    parser = build_parser(<<~MD)
+      ## LingQ
+      - collection: 12345
+      - token: sk-test-key-123
+    MD
+
+    assert_equal "sk-test-key-123", parser.lingq_config[:token]
+    assert_equal 12345, parser.lingq_config[:collection]
+  end
+
   def test_lingq_config_nil_when_missing
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_nil parser.lingq_config

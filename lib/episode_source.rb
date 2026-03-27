@@ -86,6 +86,14 @@ class EpisodeSource
     episodes.first
   end
 
+  def download_audio(url)
+    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}.mp3")
+    HttpDownloader.new(logger: @logger).download(url, path)
+    path
+  end
+
+  private
+
   def exclude_url!(url)
     require_relative "atomic_writer"
     require_relative "yaml_loader"
@@ -98,14 +106,6 @@ class EpisodeSource
       AtomicWriter.write_yaml(path, current)
     end
   end
-
-  def download_audio(url)
-    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}.mp3")
-    HttpDownloader.new(logger: @logger).download(url, path)
-    path
-  end
-
-  private
 
   # Resolves which feeds to use given an optional rss_filter.
   # - nil: use all configured feeds
