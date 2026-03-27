@@ -1021,11 +1021,12 @@ class TestPodcastConfig < Minitest::Test
       - collection: 12345
     MD
 
+    original_key = ENV["LINGQ_API_KEY"]
     ENV["LINGQ_API_KEY"] = "test-key"
     config = PodcastConfig.new("myshow")
     assert config.lingq_enabled?
   ensure
-    ENV.delete("LINGQ_API_KEY")
+    original_key ? ENV["LINGQ_API_KEY"] = original_key : ENV.delete("LINGQ_API_KEY")
   end
 
   def test_lingq_not_enabled_without_token_or_env

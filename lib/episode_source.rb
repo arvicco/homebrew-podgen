@@ -57,7 +57,7 @@ class EpisodeSource
     true
   end
 
-  def fetch_next(force: false, rss_filter: nil, skip_episode: false)
+  def fetch_next(force: false, rss_filter: nil)
     rss_feeds = @config.sources["rss"]
     unless rss_feeds.is_a?(Array) && rss_feeds.any?
       raise "Language pipeline requires RSS sources in guidelines.md (## Sources → - rss:)"
@@ -74,15 +74,6 @@ class EpisodeSource
     end
 
     log("Found #{episodes.length} episodes with audio enclosures")
-
-    if skip_episode
-      skipped = episodes.first
-      log("Skipping episode: \"#{skipped[:title]}\" (#{skipped[:audio_url]})")
-      exclude_url!(skipped[:audio_url])
-      episodes.shift
-      return nil if episodes.empty?
-    end
-
     episodes.first
   end
 

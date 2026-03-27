@@ -104,21 +104,6 @@ class TestCLIOptions < Minitest::Test
     assert_includes err, "--ask-skip is mutually exclusive"
   end
 
-  def test_generate_rejects_skip_episode_with_file
-    # Use a language-type podcast so --file type guard doesn't fire first
-    build_language_podcast(@tmpdir)
-    code, _, err = run_cli("generate", "lang_pod", "--skip-episode", "--file", "/tmp/x.mp3")
-    assert_equal 1, code
-    assert_includes err, "--skip-episode is only supported for RSS mode"
-  end
-
-  def test_generate_rejects_skip_episode_with_url
-    build_language_podcast(@tmpdir)
-    code, _, err = run_cli("generate", "lang_pod", "--skip-episode", "--url", "https://yt.com/v")
-    assert_equal 1, code
-    assert_includes err, "--skip-episode is only supported for RSS mode"
-  end
-
   # ── --date duplicate episode guard ─────────────────────────────
 
   def test_generate_date_rejects_existing_episode
