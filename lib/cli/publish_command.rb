@@ -235,7 +235,6 @@ module PodgenCLI
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "video_generator")
 
       uploader = YouTubeUploader.new
-      uploader.authorize!
 
       pending.each do |ep|
         title, description, _transcript = parse_transcript(ep[:transcript_path])
