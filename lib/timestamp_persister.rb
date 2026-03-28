@@ -59,12 +59,21 @@ module TimestampPersister
   PREFERRED_ENGINES = %w[groq elab open].freeze
 
   def self.extract_segments(transcription_result, engine_codes:, comparison_results: nil)
-    # In comparison mode, pick the best engine's segments
+    # In comparison mode, pick the best engine's segments (or words→segments)
     if comparison_results
       PREFERRED_ENGINES.each do |code|
         next unless comparison_results[code]
         segs = comparison_results[code][:segments]
         return [segs, code] if segs && !segs.empty?
+      end
+      # Fallback: build segments from words if available
+      PREFERRED_ENGINES.each do |code|
+        next unless comparison_results[code]
+        words = comparison_results[code][:words]
+        if words && !words.empty?
+          segs = build_segments_from_words(words)
+          return [segs, code] unless segs.empty?
+        end
       end
     end
 
@@ -75,6 +84,44 @@ module TimestampPersister
       return [segs, engine]
     end
 
+    # Fallback: build segments from words
+    words = transcription_result[:words]
+    if words && !words.empty?
+      segs = build_segments_from_words(words)
+      return [segs, engine_codes.first] unless segs.empty?
+    end
+
     [nil, nil]
+  end
+
+  # Build sentence-level segments from word-level timestamps.
+  # Splits on sentence-ending punctuation (.!?).
+  def self.build_segments_from_words(words)
+    segments = []
+    current_words = []
+    current_start = nil
+
+    words.each do |w|
+      text = (w[:word] || w["word"]).to_s
+      word_start = (w[:start] || w["start"]).to_f
+      word_end = (w[:end] || w["end"]).to_f
+
+      current_start ||= word_start
+      current_words << text
+
+      if text.match?(/[.!?]\s*$/)
+        segments << { start: current_start, end: word_end, text: current_words.join(" ").strip }
+        current_words = []
+        current_start = nil
+      end
+    end
+
+    # Flush remaining words as final segment
+    unless current_words.empty?
+      last_end = (words.last[:end] || words.last["end"]).to_f
+      segments << { start: current_start, end: last_end, text: current_words.join(" ").strip }
+    end
+
+    segments
   end
 end
