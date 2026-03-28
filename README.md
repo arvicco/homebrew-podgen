@@ -533,9 +533,39 @@ Two ways to upload:
 1. **During generation**: `podgen generate lahko_noc --lingq` — uploads the newly generated episode
 2. **Bulk publish**: `podgen publish lahko_noc --lingq` — uploads all un-uploaded episodes from the episodes directory
 
-Both modes track uploads in `output/<podcast>/lingq_uploads.yml` (keyed by collection ID), so running publish after generate skips already-uploaded episodes. Switching `collection` in your config uploads to the new collection without losing previous tracking.
+Both modes track uploads in `output/<podcast>/uploads.yml` (keyed by platform and collection/playlist ID), so running publish after generate skips already-uploaded episodes. Switching `collection` in your config uploads to the new collection without losing previous tracking.
 
 Per-episode covers provided via `--image` are saved as `{base_name}_cover.{ext}` in the episodes directory. The publish command uses these per-episode covers when available, falling back to cover generation for episodes without one.
+
+### YouTube Publishing
+
+Publish episodes to YouTube as videos with synchronized subtitles.
+
+**Setup:**
+1. Create a Google Cloud project and enable the YouTube Data API v3
+2. Create OAuth2 credentials (Desktop app type)
+3. Set `YOUTUBE_CLIENT_ID` and `YOUTUBE_CLIENT_SECRET` in `.env`
+4. Add a `## YouTube` section to `guidelines.md`:
+
+```markdown
+## YouTube
+- playlist: PLxxxxxxxxx
+- privacy: unlisted
+- category: 27
+- tags: podcast, slovenian, language learning
+```
+
+**Usage:**
+
+1. **During generation**: `podgen generate lahko_noc --youtube` — uploads the newly generated episode
+2. **Bulk publish**: `podgen publish lahko_noc --youtube` — uploads all un-uploaded episodes
+
+Each episode produces:
+- `{basename}_timestamps.json` — segment-level timestamps from transcription
+- `{basename}.srt` — SRT subtitles synchronized with the audio
+- `{basename}.mp4` — video (cover image + audio, 1920x1080)
+
+Subtitles are uploaded as captions in the episode's language. Upload tracking is shared with LingQ in `uploads.yml`.
 
 ### Cover Image Configuration
 

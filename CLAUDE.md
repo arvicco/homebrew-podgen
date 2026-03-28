@@ -60,6 +60,7 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 - Transcript HTML via `TranscriptRenderer` module (shared by RssGenerator and SiteGenerator). RSS passes `vocab: false` (strips vocabulary, removes bold markers); site uses default `vocab: true` (linked words + rendered definitions)
 - Known vocabulary via `KnownVocabulary` class — per-language lemma lists in `known_vocabulary.yml`, managed by `podgen vocab` CLI, filtered in `VocabularyAnnotator` before marking/rendering
 - Cognate filtering via deterministic code post-filter in `VocabularyAnnotator#filter_cognates` — ICU transliteration (`Cyrillic-Latin; Latin-ASCII`) + Levenshtein distance with length-adaptive thresholds. Supports Latin and Cyrillic scripts. Prompt-based filtering is unreliable for exclusion tasks; code handles it instead. The LLM provides `similar_translations` field for cross-script comparison
+- Upload tracking via `UploadTracker` (unified `uploads.yml` — tracks LingQ collections and YouTube playlists). Replaces old `LingqTracker`/`lingq_uploads.yml`
 - URL cleaning via `UrlCleaner` module (strips tracking params like utm_*, fbclid, gclid)
 - Paths: `File.join` + `__dir__`-relative, `require_relative` throughout
 - Atomic writes (temp + rename) for history/cache
@@ -88,7 +89,7 @@ Ruby 3.2+, macOS. Dependencies: ffmpeg, yt-dlp, ImageMagick+librsvg, espeak-ng (
 
 Two pipelines + standalone tool:
 1. **News** (`type: news`): Research → Claude script (with source tracking) → ElevenLabs TTS → multi-language MP3s. Entry: `cli/generate_command.rb`. Optional `## Links` in guidelines controls source URL display: `position: bottom` (default, single section at end) or `position: inline` (per-segment), with configurable `title` and `max` limit.
-2. **Language** (`type: language`): RSS/YouTube/local MP3 → multi-engine STT → Claude reconciliation → trim → clean MP3 + transcript. Entry: `cli/language_pipeline.rb`
+2. **Language** (`type: language`): RSS/YouTube/local MP3 → multi-engine STT → Claude reconciliation → trim → clean MP3 + transcript. Entry: `cli/language_pipeline.rb`. Optional `--youtube` flag generates video (cover+audio MP4), SRT subtitles from transcription timestamps, and uploads to YouTube via Data API v3
 3. **Tell** (`lib/tell/`): Standalone TTS pronunciation CLI + Sinatra web UI with auto-translation and grammatical glossing
 
 Config per podcast in `podcasts/<name>/guidelines.md` (parsed by `GuidelinesParser`). See README.md for full user-facing documentation.

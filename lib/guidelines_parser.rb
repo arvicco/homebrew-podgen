@@ -34,6 +34,10 @@ class GuidelinesParser
     @lingq_config ||= parse_lingq_section
   end
 
+  def youtube_config
+    @youtube_config ||= parse_youtube_section
+  end
+
   def links_config
     @links_config ||= parse_links_section
   end
@@ -271,6 +275,19 @@ class GuidelinesParser
       when "text_y_offset" then { text_y_offset: value.to_i }
       when "accent"      then { accent: value }
       when "status"      then { status: value }
+      end
+    end
+    return nil if config.nil? || config.empty?
+    config
+  end
+
+  def parse_youtube_section
+    config = parse_kv_section("YouTube") do |key, value|
+      case key
+      when "playlist"  then { playlist: value }
+      when "privacy"   then { privacy: value } if %w[public unlisted private].include?(value)
+      when "category"  then { category: value }
+      when "tags"      then { tags: value.split(",").map(&:strip) }
       end
     end
     return nil if config.nil? || config.empty?

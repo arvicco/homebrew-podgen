@@ -1054,6 +1054,58 @@ class TestPodcastConfig < Minitest::Test
     ENV["LINGQ_API_KEY"] = original_key if original_key
   end
 
+  # --- youtube_config / youtube_enabled? ---
+
+  def test_youtube_config_parses_section
+    write_guidelines(<<~MD)
+      ## YouTube
+      - playlist: PLxxxxxxxxx
+      - privacy: unlisted
+      - category: 27
+      - tags: podcast, slovenian
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal "PLxxxxxxxxx", config.youtube_config[:playlist]
+    assert_equal "unlisted", config.youtube_config[:privacy]
+  end
+
+  def test_youtube_enabled_with_env_vars
+    write_guidelines("## YouTube\n- playlist: PLxxxxxxxxx")
+
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+
+    config = PodcastConfig.new("myshow")
+    assert config.youtube_enabled?
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+  end
+
+  def test_youtube_not_enabled_without_env_vars
+    write_guidelines("## YouTube\n- playlist: PLxxxxxxxxx")
+
+    original_id = ENV.delete("YOUTUBE_CLIENT_ID")
+    original_secret = ENV.delete("YOUTUBE_CLIENT_SECRET")
+
+    config = PodcastConfig.new("myshow")
+    refute config.youtube_enabled?
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id if original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret if original_secret
+  end
+
+  def test_youtube_nil_when_section_missing
+    write_guidelines("## Podcast\n- name: Test")
+
+    config = PodcastConfig.new("myshow")
+    assert_nil config.youtube_config
+    refute config.youtube_enabled?
+  end
+
   def test_lingq_nil_when_section_missing
     write_guidelines(<<~MD)
       ## Format

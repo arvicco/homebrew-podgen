@@ -189,6 +189,16 @@ class PodcastConfig
     !!links_config&.dig(:show)
   end
 
+  def youtube_config
+    parser.youtube_config
+  end
+
+  def youtube_enabled?
+    config = youtube_config
+    has_creds = [ENV["YOUTUBE_CLIENT_ID"], ENV["YOUTUBE_CLIENT_SECRET"]].all? { |v| v && !v.empty? }
+    config && has_creds
+  end
+
   def lingq_enabled?
     config = lingq_config
     has_key = config&.[](:token) || (ENV["LINGQ_API_KEY"] && !ENV["LINGQ_API_KEY"].empty?)

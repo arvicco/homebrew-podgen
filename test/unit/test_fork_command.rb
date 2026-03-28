@@ -37,9 +37,9 @@ class TestForkCommand < Minitest::Test
       { "date" => "2026-03-02", "title" => "Second", "topics" => ["BTC"], "urls" => ["https://b.com"] }
     ].to_yaml)
 
-    # LingQ tracking
-    File.write(File.join(@old_output_dir, "lingq_uploads.yml"), {
-      "12345" => { "#{@old_name}-2026-03-01" => 100 }
+    # Upload tracking (unified format)
+    File.write(File.join(@old_output_dir, "uploads.yml"), {
+      "lingq" => { "12345" => { "#{@old_name}-2026-03-01" => 100 } }
     }.to_yaml)
 
     ENV["PODGEN_ROOT"] = @tmpdir
@@ -109,13 +109,13 @@ class TestForkCommand < Minitest::Test
     assert_equal "First", entries.first["title"]
   end
 
-  def test_fork_copies_and_renames_lingq_tracking
+  def test_fork_copies_and_renames_upload_tracking
     capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
 
-    new_tracking = File.join(@tmpdir, "output", @new_name, "lingq_uploads.yml")
+    new_tracking = File.join(@tmpdir, "output", @new_name, "uploads.yml")
     data = YAML.load_file(new_tracking)
-    assert_equal 100, data["12345"]["#{@new_name}-2026-03-01"]
-    refute data["12345"].key?("#{@old_name}-2026-03-01")
+    assert_equal 100, data["lingq"]["12345"]["#{@new_name}-2026-03-01"]
+    refute data["lingq"]["12345"].key?("#{@old_name}-2026-03-01")
   end
 
   def test_fork_preserves_old_podcast

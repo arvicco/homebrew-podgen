@@ -24,4 +24,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency "rss"
   spec.add_dependency "base64"
   spec.add_dependency "deepl-rb"
+  spec.add_dependency "google-apis-youtube_v3", "~> 0.54"
+  spec.add_dependency "googleauth", "~> 1.11"
 end

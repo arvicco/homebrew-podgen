@@ -369,6 +369,33 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "private", c[:status]
   end
 
+  # --- youtube_config ---
+
+  def test_parses_youtube_section
+    parser = build_parser(<<~MD)
+      ## YouTube
+      - playlist: PLxxxxxxxxx
+      - privacy: unlisted
+      - category: 27
+      - tags: podcast, slovenian, language learning
+    MD
+    assert_equal "PLxxxxxxxxx", parser.youtube_config[:playlist]
+    assert_equal "unlisted", parser.youtube_config[:privacy]
+    assert_equal "27", parser.youtube_config[:category]
+    assert_equal ["podcast", "slovenian", "language learning"], parser.youtube_config[:tags]
+  end
+
+  def test_youtube_config_nil_when_missing
+    parser = build_parser("## Podcast\n- name: Test")
+    assert_nil parser.youtube_config
+  end
+
+  def test_youtube_config_rejects_invalid_privacy
+    parser = build_parser("## YouTube\n- privacy: secret\n- playlist: PLabc")
+    assert_equal "PLabc", parser.youtube_config[:playlist]
+    refute parser.youtube_config.key?(:privacy)
+  end
+
   # --- languages ---
 
   def test_languages_from_podcast_section

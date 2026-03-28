@@ -15,7 +15,10 @@ require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "agents", "description_agent")
 require_relative File.join(root, "lib", "youtube_downloader")
 require_relative File.join(root, "lib", "vocabulary_annotator")
-require_relative File.join(root, "lib", "lingq_tracker")
+require_relative File.join(root, "lib", "upload_tracker")
+require_relative File.join(root, "lib", "timestamp_persister")
+require_relative File.join(root, "lib", "subtitle_generator")
+require_relative File.join(root, "lib", "video_generator")
 
 module PodgenCLI
   class LanguagePipeline
@@ -53,10 +56,12 @@ module PodgenCLI
       clean_or_generate_description(@episode, @reconciled_text || @transcription_result[:text])
       trim_outro
       assemble_episode
+      persist_timestamps
       save_transcript_and_cover
       annotate_vocabulary if @config.vocabulary_level
       commit_episode
       upload_to_lingq(@episode, @reconciled_text || @transcript, @output_path, @base_name) if @options[:lingq]
+      upload_to_youtube if @options[:youtube]
 
       log_completion
       0
@@ -290,6 +295,33 @@ module PodgenCLI
       logger.phase_end("Assembly")
     end
 
+    def persist_timestamps
+      segments, engine = TimestampPersister.extract_segments(
+        @transcription_result,
+        engine_codes: @config.transcription_engines,
+        comparison_results: @comparison_results
+      )
+
+      unless segments
+        logger.log("No segment timestamps available — skipping timestamp persistence")
+        return
+      end
+
+      intro_path = File.join(@config.podcast_dir, "intro.mp3")
+      intro_duration = File.exist?(intro_path) ? AudioAssembler.probe_duration(intro_path).to_f : 0.0
+      source_duration = AudioAssembler.probe_duration(@source_audio_path)&.to_f
+
+      ts_path = File.join(@staging_dir, "#{@base_name}_timestamps.json")
+      TimestampPersister.persist(
+        segments: segments,
+        engine: engine,
+        intro_duration: intro_duration,
+        output_path: ts_path,
+        audio_duration: source_duration
+      )
+      logger.log("Timestamps saved: #{ts_path} (#{segments.length} segments, engine: #{engine}, intro: #{intro_duration.round(1)}s)")
+    end
+
     def save_transcript_and_cover
       save_transcript(@episode, @transcript, @base_name)
 
@@ -517,8 +549,76 @@ module PodgenCLI
     end
 
     def record_lingq_upload(collection, base_name, lesson_id)
-      LingqTracker.for_config(@config).record(collection, base_name, lesson_id)
+      UploadTracker.for_config(@config).record(:lingq, collection, base_name, lesson_id)
       logger.log("Recorded LingQ upload: #{base_name} → lesson #{lesson_id}")
+    end
+
+    def upload_to_youtube
+      unless @config.youtube_enabled?
+        logger.log("YouTube not configured — skipping upload")
+        return
+      end
+
+      if @dry_run
+        logger.log("[dry-run] Skipping YouTube upload")
+        return
+      end
+
+      logger.phase_start("YouTube Upload")
+      yt_config = @config.youtube_config
+      language = @config.transcription_language || "en"
+
+      # Generate SRT from timestamps
+      ts_path = File.join(@config.episodes_dir, "#{@base_name}_timestamps.json")
+      srt_path = File.join(@config.episodes_dir, "#{@base_name}.srt")
+      SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path)
+
+      # Generate video from cover + audio
+      cover_path = resolve_committed_cover
+      raise "No episode cover found for video generation" unless cover_path
+
+      video_path = File.join(@config.episodes_dir, "#{@base_name}.mp4")
+      VideoGenerator.new(logger: logger).generate(@output_path, cover_path, video_path)
+
+      # Upload to YouTube
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "youtube_uploader")
+      uploader = YouTubeUploader.new(logger: logger)
+      uploader.authorize!
+
+      video_id = uploader.upload_video(
+        video_path,
+        title: @episode[:title],
+        description: @episode[:description].to_s,
+        language: language,
+        privacy: yt_config[:privacy] || "unlisted",
+        category: yt_config[:category] || "27",
+        tags: yt_config[:tags] || []
+      )
+
+      # Upload captions if SRT exists
+      uploader.upload_captions(video_id, srt_path, language: language) if File.exist?(srt_path)
+
+      # Add to playlist if configured
+      uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
+
+      # Record upload
+      playlist = yt_config[:playlist] || "default"
+      UploadTracker.for_config(@config).record(:youtube, playlist, @base_name, video_id)
+      logger.log("Recorded YouTube upload: #{@base_name} → #{video_id}")
+
+      logger.phase_end("YouTube Upload")
+    rescue => e
+      logger.log("Warning: YouTube upload failed: #{e.message} (non-fatal, continuing)")
+      logger.log(e.backtrace.first(3).join("\n"))
+      @warnings << "YouTube upload failed (#{e.message})"
+    end
+
+    def resolve_committed_cover
+      %w[.jpg .png].each do |ext|
+        path = File.join(@config.episodes_dir, "#{@base_name}_cover#{ext}")
+        return path if File.exist?(path)
+      end
+      nil
     end
 
     # Resolves the episode cover image path using the priority chain:

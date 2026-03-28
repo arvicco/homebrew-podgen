@@ -128,39 +128,41 @@ class TestPublishCommand < Minitest::Test
     assert_empty cmd.send(:scan_episodes)
   end
 
-  # --- load_tracking / save_tracking ---
+  # --- upload_tracker ---
 
-  def test_load_tracking_missing_file
+  def test_upload_tracker_missing_file
     cmd = build_command
-    assert_equal({}, cmd.send(:load_tracking))
+    tracker = cmd.send(:upload_tracker)
+    assert_equal({}, tracker.load)
   end
 
-  def test_load_tracking_existing_file
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
-    File.write(tracking_path, { "123" => { "ep-a" => 1 } }.to_yaml)
+  def test_upload_tracker_existing_file
+    tracking_path = File.join(@tmpdir, "uploads.yml")
+    File.write(tracking_path, { "lingq" => { "123" => { "ep-a" => 1 } } }.to_yaml)
 
     cmd = build_command
-    data = cmd.send(:load_tracking)
-
-    assert_equal 1, data["123"]["ep-a"]
+    tracker = cmd.send(:upload_tracker)
+    assert_equal 1, tracker.entries_for(:lingq, "123")["ep-a"]
   end
 
-  def test_save_tracking_atomic_write
+  def test_upload_tracker_record_and_persist
     cmd = build_command
-    cmd.send(:save_tracking, { "456" => { "ep-b" => 2 } })
+    tracker = cmd.send(:upload_tracker)
+    tracker.record(:lingq, "456", "ep-b", 2)
 
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+    tracking_path = File.join(@tmpdir, "uploads.yml")
     assert File.exist?(tracking_path)
     data = YAML.load_file(tracking_path)
-    assert_equal 2, data["456"]["ep-b"]
+    assert_equal 2, data["lingq"]["456"]["ep-b"]
   end
 
-  def test_load_tracking_handles_non_hash
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+  def test_upload_tracker_handles_non_hash
+    tracking_path = File.join(@tmpdir, "uploads.yml")
     File.write(tracking_path, "just a string")
 
     cmd = build_command
-    assert_equal({}, cmd.send(:load_tracking))
+    tracker = cmd.send(:upload_tracker)
+    assert_equal({}, tracker.load)
   end
 
   # --- cleanup_cover ---
