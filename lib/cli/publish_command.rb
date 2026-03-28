@@ -276,6 +276,12 @@ module PodgenCLI
         upload_tracker.record(:youtube, playlist, ep[:base_name], video_id)
 
         puts "  ✓ #{ep[:base_name]} → https://youtu.be/#{video_id}" unless @options[:verbosity] == :quiet
+      rescue Google::Apis::ClientError => e
+        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
+        if e.message.include?("uploadLimitExceeded") || e.message.include?("quotaExceeded")
+          $stderr.puts "  YouTube quota exceeded — stopping batch. Retry after quota resets."
+          break
+        end
       rescue => e
         $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
       end
