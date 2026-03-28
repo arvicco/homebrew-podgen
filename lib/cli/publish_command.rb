@@ -400,7 +400,7 @@ module PodgenCLI
         target_language: @config.target_language
       )
       result = manager.transcribe(mp3_path)
-      segments = result[:segments]
+      segments, engine_code = TimestampPersister.extract_segments(result, engine_codes: [engine_code])
 
       if segments && !segments.empty?
         TimestampPersister.persist(
