@@ -22,6 +22,7 @@ module PodgenCLI
       OptionParser.new do |opts|
         opts.on("--lingq", "Publish to LingQ instead of R2") { @options[:lingq] = true }
         opts.on("--youtube", "Publish to YouTube") { @options[:youtube] = true }
+        opts.on("--force", "Re-upload even if already tracked") { @options[:force] = true }
         opts.on("--dry-run", "Show what would be published") { @options[:dry_run] = true }
       end.parse!(args)
       @podcast_name = args.shift
@@ -145,7 +146,7 @@ module PodgenCLI
       lc = @config.lingq_config
       collection = lc[:collection]
       episodes = scan_episodes
-      uploaded = upload_tracker.entries_for(:lingq, collection)
+      uploaded = @options[:force] ? {} : upload_tracker.entries_for(:lingq, collection)
 
       pending = episodes.reject { |ep| uploaded.key?(ep[:base_name]) }
 
@@ -212,7 +213,7 @@ module PodgenCLI
       language = @config.transcription_language || "en"
 
       episodes = scan_episodes
-      uploaded = upload_tracker.entries_for(:youtube, playlist)
+      uploaded = @options[:force] ? {} : upload_tracker.entries_for(:youtube, playlist)
       pending = episodes.reject { |ep| uploaded.key?(ep[:base_name]) }
 
       if pending.empty?
