@@ -29,10 +29,18 @@ class TestYouTubeUploader < Minitest::Test
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
   end
 
-  # --- upload_video metadata ---
+  # --- upload_video ---
 
-  def test_upload_video_requires_authorization
-    assert_raises(RuntimeError) { @uploader.upload_video("/tmp/test.mp4", title: "Test") }
+  def test_upload_video_without_service_triggers_authorize
+    original_id = ENV.delete("YOUTUBE_CLIENT_ID")
+    original_secret = ENV.delete("YOUTUBE_CLIENT_SECRET")
+
+    uploader = YouTubeUploader.new
+    # ensure_authorized! calls authorize! which fails without env vars
+    assert_raises(RuntimeError, /YOUTUBE_CLIENT_ID/) { uploader.upload_video("/tmp/test.mp4", title: "Test") }
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id if original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret if original_secret
   end
 
   # --- delete_video ---

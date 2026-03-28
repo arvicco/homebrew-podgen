@@ -182,4 +182,69 @@ class TestTimestampPersister < Minitest::Test
     assert_nil segments
     assert_nil engine
   end
+
+  # --- build_segments_from_words fallback ---
+
+  def test_extract_segments_builds_from_words_when_no_segments
+    result = {
+      segments: [],
+      words: [
+        { word: "Hello", start: 0.0, end: 0.5 },
+        { word: "world.", start: 0.5, end: 1.0 },
+        { word: "Second", start: 1.5, end: 2.0 },
+        { word: "sentence.", start: 2.0, end: 2.5 }
+      ]
+    }
+
+    segments, engine = TimestampPersister.extract_segments(result, engine_codes: ["groq"])
+
+    assert_equal 2, segments.length
+    assert_equal "Hello world.", segments[0][:text]
+    assert_in_delta 0.0, segments[0][:start]
+    assert_in_delta 1.0, segments[0][:end]
+    assert_equal "Second sentence.", segments[1][:text]
+    assert_equal "groq", engine
+  end
+
+  def test_extract_segments_builds_from_words_comparison_mode
+    comparison_results = {
+      "groq" => {
+        segments: [],
+        words: [
+          { word: "Ciao.", start: 0.0, end: 0.5 },
+          { word: "Mondo.", start: 0.5, end: 1.0 }
+        ]
+      }
+    }
+
+    segments, engine = TimestampPersister.extract_segments({}, engine_codes: ["groq"],
+      comparison_results: comparison_results)
+
+    assert_equal 2, segments.length
+    assert_equal "groq", engine
+  end
+
+  def test_build_segments_from_words_flushes_trailing_words
+    words = [
+      { word: "No", start: 0.0, end: 0.3 },
+      { word: "punctuation", start: 0.3, end: 0.8 }
+    ]
+
+    segments = TimestampPersister.build_segments_from_words(words)
+
+    assert_equal 1, segments.length
+    assert_equal "No punctuation", segments[0][:text]
+    assert_in_delta 0.8, segments[0][:end]
+  end
+
+  def test_build_segments_from_words_handles_string_keys
+    words = [
+      { "word" => "Hello.", "start" => 0.0, "end" => 0.5 }
+    ]
+
+    segments = TimestampPersister.build_segments_from_words(words)
+
+    assert_equal 1, segments.length
+    assert_equal "Hello.", segments[0][:text]
+  end
 end
