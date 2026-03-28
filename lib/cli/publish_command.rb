@@ -255,6 +255,7 @@ module PodgenCLI
             $stderr.puts "  ✗ #{ep[:base_name]} skipped: no cover image found"
             next
           end
+          puts "  generating video #{ep[:base_name]}..." unless @options[:verbosity] == :quiet
           VideoGenerator.new.generate(ep[:mp3_path], cover_path, video_path)
         end
 
