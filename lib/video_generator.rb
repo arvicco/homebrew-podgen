@@ -15,7 +15,7 @@ class VideoGenerator
     cmd = ffmpeg_command(image_path, audio_path, output_path)
     log("Generating video: #{output_path}")
 
-    stdout, stderr, status = Open3.capture3(*cmd)
+    _, stderr, status = Open3.capture3(*cmd)
     unless status.success?
       raise "ffmpeg video generation failed (exit #{status.exitstatus}): #{stderr.lines.last(3).join}"
     end

@@ -580,7 +580,7 @@ module PodgenCLI
       video_path = File.join(@config.episodes_dir, "#{@base_name}.mp4")
       VideoGenerator.new(logger: logger).generate(@output_path, cover_path, video_path)
 
-      # Upload to YouTube
+      # Upload to YouTube (lazy require to avoid loading google-apis gems unless needed)
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "youtube_uploader")
       uploader = YouTubeUploader.new(logger: logger)
       uploader.authorize!
@@ -614,11 +614,8 @@ module PodgenCLI
     end
 
     def resolve_committed_cover
-      %w[.jpg .png].each do |ext|
-        path = File.join(@config.episodes_dir, "#{@base_name}_cover#{ext}")
-        return path if File.exist?(path)
-      end
-      nil
+      covers = Dir.glob(File.join(@config.episodes_dir, "#{@base_name}_cover.*"))
+      covers.first
     end
 
     # Resolves the episode cover image path using the priority chain:
