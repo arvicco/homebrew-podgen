@@ -120,27 +120,27 @@ class TestLanguagePipeline < Minitest::Test
 
   def test_record_lingq_upload_creates_tracking_file
     pipeline = build_pipeline
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+    tracking_path = File.join(@tmpdir, "uploads.yml")
 
     pipeline.send(:record_lingq_upload, 12345, "test-2026-03-10", 999)
 
     assert File.exist?(tracking_path)
     data = YAML.load_file(tracking_path)
-    assert_equal 999, data["12345"]["test-2026-03-10"]
+    assert_equal 999, data["lingq"]["12345"]["test-2026-03-10"]
   end
 
   def test_record_lingq_upload_appends_to_existing
     pipeline = build_pipeline
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+    tracking_path = File.join(@tmpdir, "uploads.yml")
 
-    # Pre-populate
-    File.write(tracking_path, { "12345" => { "old-ep" => 100 } }.to_yaml)
+    # Pre-populate with unified format
+    File.write(tracking_path, { "lingq" => { "12345" => { "old-ep" => 100 } } }.to_yaml)
 
     pipeline.send(:record_lingq_upload, 12345, "new-ep", 200)
 
     data = YAML.load_file(tracking_path)
-    assert_equal 100, data["12345"]["old-ep"]
-    assert_equal 200, data["12345"]["new-ep"]
+    assert_equal 100, data["lingq"]["12345"]["old-ep"]
+    assert_equal 200, data["lingq"]["12345"]["new-ep"]
   end
 
   def test_record_lingq_upload_handles_separate_collections
@@ -149,10 +149,10 @@ class TestLanguagePipeline < Minitest::Test
     pipeline.send(:record_lingq_upload, 111, "ep-a", 1)
     pipeline.send(:record_lingq_upload, 222, "ep-b", 2)
 
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+    tracking_path = File.join(@tmpdir, "uploads.yml")
     data = YAML.load_file(tracking_path)
-    assert_equal 1, data["111"]["ep-a"]
-    assert_equal 2, data["222"]["ep-b"]
+    assert_equal 1, data["lingq"]["111"]["ep-a"]
+    assert_equal 2, data["lingq"]["222"]["ep-b"]
   end
 
   # --- resolve_episode_cover ---

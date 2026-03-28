@@ -46,6 +46,7 @@ module PodgenCLI
         opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }
         opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| @options[:base_image] = p }
         opts.on("--lingq", "Enable LingQ upload during generation") { @options[:lingq] = true }
+        opts.on("--youtube", "Enable YouTube upload during generation") { @options[:youtube] = true }
         opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") { |d| @options[:date] = Date.parse(d) }
         opts.on("--dry-run", "Validate config, skip API calls") { @options[:dry_run] = true }
       end.parse!(args)

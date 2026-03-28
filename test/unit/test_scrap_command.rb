@@ -88,67 +88,83 @@ class TestScrapCommand < Minitest::Test
     assert_nil cmd.send(:find_history_entry_by_date, entries, "2026-03-05", 0)
   end
 
-  # --- remove_lingq_tracking ---
+  # --- remove_upload_tracking ---
 
-  def test_remove_lingq_tracking_deletes_entry
-    tracking = { "123" => { "ep-a" => 1, "ep-b" => 2 } }
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+  def test_remove_upload_tracking_deletes_entry
+    tracking = { "lingq" => { "123" => { "ep-a" => 1, "ep-b" => 2 } } }
+    tracking_path = File.join(@tmpdir, "uploads.yml")
     File.write(tracking_path, tracking.to_yaml)
 
     config = stub_config
     cmd = build_command(config)
-    cmd.send(:remove_lingq_tracking, config, "ep-a")
+    cmd.send(:remove_upload_tracking, config, "ep-a")
 
     data = YAML.load_file(tracking_path)
-    refute data["123"].key?("ep-a")
-    assert_equal 2, data["123"]["ep-b"]
+    refute data["lingq"]["123"].key?("ep-a")
+    assert_equal 2, data["lingq"]["123"]["ep-b"]
   end
 
-  def test_remove_lingq_tracking_preserves_other_collections
+  def test_remove_upload_tracking_preserves_other_collections
     tracking = {
-      "123" => { "ep-a" => 1 },
-      "456" => { "ep-x" => 10 }
+      "lingq" => { "123" => { "ep-a" => 1 }, "456" => { "ep-x" => 10 } }
     }
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+    tracking_path = File.join(@tmpdir, "uploads.yml")
     File.write(tracking_path, tracking.to_yaml)
 
     config = stub_config
     cmd = build_command(config)
-    cmd.send(:remove_lingq_tracking, config, "ep-a")
+    cmd.send(:remove_upload_tracking, config, "ep-a")
 
     data = YAML.load_file(tracking_path)
-    assert_equal 10, data["456"]["ep-x"]
+    assert_equal 10, data["lingq"]["456"]["ep-x"]
   end
 
-  def test_remove_lingq_tracking_missing_file_no_error
+  def test_remove_upload_tracking_missing_file_no_error
     config = stub_config
     cmd = build_command(config)
     # Should not raise
-    cmd.send(:remove_lingq_tracking, config, "ep-a")
+    cmd.send(:remove_upload_tracking, config, "ep-a")
   end
 
-  def test_remove_lingq_tracking_no_matching_entry_no_rewrite
-    tracking = { "123" => { "ep-other" => 1 } }
-    tracking_path = File.join(@tmpdir, "lingq_uploads.yml")
+  def test_remove_upload_tracking_no_matching_entry_no_rewrite
+    tracking = { "lingq" => { "123" => { "ep-other" => 1 } } }
+    tracking_path = File.join(@tmpdir, "uploads.yml")
     File.write(tracking_path, tracking.to_yaml)
     original_mtime = File.mtime(tracking_path)
 
     config = stub_config
     cmd = build_command(config)
     sleep 0.01
-    cmd.send(:remove_lingq_tracking, config, "ep-missing")
+    cmd.send(:remove_upload_tracking, config, "ep-missing")
 
     # File should not be rewritten since no entry was removed
     assert_equal original_mtime, File.mtime(tracking_path)
   end
 
-  def test_remove_lingq_tracking_non_hash_file
-    File.write(File.join(@tmpdir, "lingq_uploads.yml"), "just a string")
+  def test_remove_upload_tracking_non_hash_file
+    File.write(File.join(@tmpdir, "uploads.yml"), "just a string")
 
     config = stub_config
     cmd = build_command(config)
     # Should not raise
-    cmd.send(:remove_lingq_tracking, config, "ep-a")
+    cmd.send(:remove_upload_tracking, config, "ep-a")
+  end
+
+  def test_remove_upload_tracking_removes_from_all_platforms
+    tracking = {
+      "lingq" => { "123" => { "ep-a" => 1 } },
+      "youtube" => { "PLabc" => { "ep-a" => "vid123" } }
+    }
+    tracking_path = File.join(@tmpdir, "uploads.yml")
+    File.write(tracking_path, tracking.to_yaml)
+
+    config = stub_config
+    cmd = build_command(config)
+    cmd.send(:remove_upload_tracking, config, "ep-a")
+
+    data = YAML.load_file(tracking_path)
+    refute data["lingq"]["123"].key?("ep-a")
+    refute data["youtube"]["PLabc"].key?("ep-a")
   end
 
   # --- resolve_from_path ---

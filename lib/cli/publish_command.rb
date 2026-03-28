@@ -10,7 +10,7 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
-require_relative File.join(root, "lib", "lingq_tracker")
+require_relative File.join(root, "lib", "upload_tracker")
 
 module PodgenCLI
   class PublishCommand
@@ -21,6 +21,7 @@ module PodgenCLI
       @options = options
       OptionParser.new do |opts|
         opts.on("--lingq", "Publish to LingQ instead of R2") { @options[:lingq] = true }
+        opts.on("--youtube", "Publish to YouTube") { @options[:youtube] = true }
         opts.on("--dry-run", "Show what would be published") { @options[:dry_run] = true }
       end.parse!(args)
       @podcast_name = args.shift
@@ -38,6 +39,8 @@ module PodgenCLI
 
       if @options[:lingq]
         publish_to_lingq
+      elsif @options[:youtube]
+        publish_to_youtube
       else
         publish_to_r2
       end
@@ -141,8 +144,7 @@ module PodgenCLI
       lc = @config.lingq_config
       collection = lc[:collection]
       episodes = scan_episodes
-      tracking = load_tracking
-      uploaded = tracking[collection.to_s] || {}
+      uploaded = upload_tracker.entries_for(:lingq, collection)
 
       pending = episodes.reject { |ep| uploaded.key?(ep[:base_name]) }
 
@@ -185,9 +187,7 @@ module PodgenCLI
           description: description
         )
 
-        uploaded[ep[:base_name]] = lesson_id
-        tracking[collection.to_s] = uploaded
-        save_tracking(tracking)
+        upload_tracker.record(:lingq, collection, ep[:base_name], lesson_id)
 
         puts "  ✓ #{ep[:base_name]} → lesson #{lesson_id}" unless @options[:verbosity] == :quiet
       rescue => e
@@ -195,6 +195,85 @@ module PodgenCLI
         # Continue with remaining episodes
       ensure
         cleanup_cover(image_path)
+      end
+
+      0
+    end
+
+    def publish_to_youtube
+      unless @config.youtube_enabled?
+        $stderr.puts "YouTube not configured. Add ## YouTube section to guidelines.md and set YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET."
+        return 2
+      end
+
+      yt_config = @config.youtube_config
+      playlist = yt_config[:playlist] || "default"
+      language = @config.transcription_language || "en"
+
+      episodes = scan_episodes
+      uploaded = upload_tracker.entries_for(:youtube, playlist)
+      pending = episodes.reject { |ep| uploaded.key?(ep[:base_name]) }
+
+      if pending.empty?
+        puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless @options[:verbosity] == :quiet
+        return 0
+      end
+
+      puts "#{pending.length} episode(s) to upload to YouTube" unless @options[:verbosity] == :quiet
+
+      if @options[:dry_run]
+        pending.each { |ep| puts "  would upload: #{ep[:base_name]}" } unless @options[:verbosity] == :quiet
+        puts "(dry run)" unless @options[:verbosity] == :quiet
+        return 0
+      end
+
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "youtube_uploader")
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_generator")
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "video_generator")
+
+      uploader = YouTubeUploader.new
+      uploader.authorize!
+
+      pending.each do |ep|
+        title, description, _transcript = parse_transcript(ep[:transcript_path])
+        episodes_dir = @config.episodes_dir
+
+        # Generate SRT if timestamps available
+        ts_path = File.join(episodes_dir, "#{ep[:base_name]}_timestamps.json")
+        srt_path = File.join(episodes_dir, "#{ep[:base_name]}.srt")
+        SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path) && !File.exist?(srt_path)
+
+        # Generate video if not already present
+        video_path = File.join(episodes_dir, "#{ep[:base_name]}.mp4")
+        unless File.exist?(video_path)
+          cover_path = find_episode_cover(ep[:base_name])
+          unless cover_path
+            $stderr.puts "  ✗ #{ep[:base_name]} skipped: no cover image found"
+            next
+          end
+          VideoGenerator.new.generate(ep[:mp3_path], cover_path, video_path)
+        end
+
+        puts "  uploading: #{ep[:base_name]} — \"#{title}\"" unless @options[:verbosity] == :quiet
+
+        video_id = uploader.upload_video(
+          video_path,
+          title: title,
+          description: description.to_s,
+          language: language,
+          privacy: yt_config[:privacy] || "unlisted",
+          category: yt_config[:category] || "27",
+          tags: yt_config[:tags] || []
+        )
+
+        uploader.upload_captions(video_id, srt_path, language: language) if File.exist?(srt_path)
+        uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
+
+        upload_tracker.record(:youtube, playlist, ep[:base_name], video_id)
+
+        puts "  ✓ #{ep[:base_name]} → https://youtu.be/#{video_id}" unless @options[:verbosity] == :quiet
+      rescue => e
+        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
       end
 
       0
@@ -282,16 +361,8 @@ module PodgenCLI
     rescue # rubocop:disable Lint/SuppressedException
     end
 
-    def lingq_tracker
-      @lingq_tracker ||= LingqTracker.for_config(@config)
-    end
-
-    def load_tracking
-      lingq_tracker.load
-    end
-
-    def save_tracking(tracking)
-      lingq_tracker.save(tracking)
+    def upload_tracker
+      @upload_tracker ||= UploadTracker.for_config(@config)
     end
 
     def rclone_available?

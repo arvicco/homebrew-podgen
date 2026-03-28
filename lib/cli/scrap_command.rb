@@ -7,7 +7,7 @@ require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "episode_filtering")
-require_relative File.join(root, "lib", "lingq_tracker")
+require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "atomic_writer")
 
 module PodgenCLI
@@ -124,7 +124,7 @@ module PodgenCLI
       end
 
       # Remove LingQ tracking entry for this episode
-      remove_lingq_tracking(config, target_base)
+      remove_upload_tracking(config, target_base)
 
       # Exclude episode URLs from future processing
       if do_exclude && can_exclude
@@ -223,8 +223,8 @@ module PodgenCLI
       [podcast_name, "#{date}#{suffix}"]
     end
 
-    def remove_lingq_tracking(config, base_name)
-      LingqTracker.for_config(config).remove(base_name)
+    def remove_upload_tracking(config, base_name)
+      UploadTracker.for_config(config).remove(base_name)
     end
 
     def exclude_episode_urls(config, urls)

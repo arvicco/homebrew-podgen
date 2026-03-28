@@ -16,6 +16,9 @@ gem "sinatra",   "~> 4.1"   # Web framework (for tell web UI)
 gem "rackup",    "~> 2.2"   # Rack server launcher (required by Sinatra 4+)
 gem "puma",      "~> 6.5"   # Threaded web server (SSE streaming for tell web)
 gem "ffi-icu",   "~> 0.5"   # ICU transliteration for Cyrillic/Greek/Korean romanization
+gem "google-apis-youtube_v3", "~> 0.54"  # YouTube Data API v3 (upload, captions)
+gem "googleauth", "~> 1.11"             # Google OAuth2 authentication
+gem "pstore",    "~> 0.1"               # Required by googleauth (removed from Ruby 4.0 defaults)
 
 group :test do
   gem "minitest",  "~> 5.25"

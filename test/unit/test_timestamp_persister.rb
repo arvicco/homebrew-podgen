@@ -1,0 +1,185 @@
+# frozen_string_literal: true
+
+require_relative "../test_helper"
+require "timestamp_persister"
+
+class TestTimestampPersister < Minitest::Test
+  def setup
+    @tmpdir = Dir.mktmpdir("podgen_timestamp_test")
+  end
+
+  def teardown
+    FileUtils.rm_rf(@tmpdir)
+  end
+
+  # --- persist ---
+
+  def test_persist_writes_json_file
+    output_path = File.join(@tmpdir, "ep-2026-03-01_timestamps.json")
+    segments = [
+      { start: 0.0, end: 4.2, text: "First sentence." },
+      { start: 4.2, end: 9.1, text: "Second sentence." }
+    ]
+
+    TimestampPersister.persist(segments: segments, engine: "groq", intro_duration: 0.0, output_path: output_path)
+
+    assert File.exist?(output_path)
+    data = JSON.parse(File.read(output_path))
+    assert_equal 1, data["version"]
+    assert_equal "groq", data["engine"]
+    assert_in_delta 0.0, data["intro_duration"]
+    assert_equal 2, data["segments"].length
+    assert_equal "First sentence.", data["segments"][0]["text"]
+  end
+
+  def test_persist_adjusts_timestamps_by_intro_duration
+    output_path = File.join(@tmpdir, "ep_timestamps.json")
+    segments = [
+      { start: 0.0, end: 4.2, text: "Hello." },
+      { start: 4.2, end: 9.1, text: "World." }
+    ]
+
+    TimestampPersister.persist(segments: segments, engine: "groq", intro_duration: 3.5, output_path: output_path)
+
+    data = JSON.parse(File.read(output_path))
+    assert_in_delta 3.5, data["segments"][0]["start"]
+    assert_in_delta 7.7, data["segments"][0]["end"]
+    assert_in_delta 7.7, data["segments"][1]["start"]
+    assert_in_delta 12.6, data["segments"][1]["end"]
+  end
+
+  def test_persist_clamps_segments_past_audio_duration
+    output_path = File.join(@tmpdir, "ep_timestamps.json")
+    segments = [
+      { start: 0.0, end: 5.0, text: "Kept." },
+      { start: 5.0, end: 10.0, text: "Straddling." },
+      { start: 10.0, end: 15.0, text: "Past end." }
+    ]
+
+    TimestampPersister.persist(segments: segments, engine: "groq", intro_duration: 0.0,
+      output_path: output_path, audio_duration: 8.0)
+
+    data = JSON.parse(File.read(output_path))
+    assert_equal 2, data["segments"].length
+    assert_equal "Kept.", data["segments"][0]["text"]
+    assert_equal "Straddling.", data["segments"][1]["text"]
+    assert_in_delta 8.0, data["segments"][1]["end"]
+  end
+
+  def test_persist_drops_segments_entirely_past_duration
+    output_path = File.join(@tmpdir, "ep_timestamps.json")
+    segments = [
+      { start: 0.0, end: 3.0, text: "Only this." },
+      { start: 10.0, end: 15.0, text: "Way past." }
+    ]
+
+    TimestampPersister.persist(segments: segments, engine: "groq", intro_duration: 0.0,
+      output_path: output_path, audio_duration: 5.0)
+
+    data = JSON.parse(File.read(output_path))
+    assert_equal 1, data["segments"].length
+  end
+
+  def test_persist_no_clamping_without_audio_duration
+    output_path = File.join(@tmpdir, "ep_timestamps.json")
+    segments = [
+      { start: 0.0, end: 100.0, text: "Long." }
+    ]
+
+    TimestampPersister.persist(segments: segments, engine: "groq", intro_duration: 0.0, output_path: output_path)
+
+    data = JSON.parse(File.read(output_path))
+    assert_equal 1, data["segments"].length
+  end
+
+  def test_persist_empty_segments
+    output_path = File.join(@tmpdir, "ep_timestamps.json")
+
+    TimestampPersister.persist(segments: [], engine: "open", intro_duration: 0.0, output_path: output_path)
+
+    data = JSON.parse(File.read(output_path))
+    assert_equal 0, data["segments"].length
+  end
+
+  def test_persist_handles_string_keys_in_segments
+    output_path = File.join(@tmpdir, "ep_timestamps.json")
+    segments = [
+      { "start" => 1.0, "end" => 2.0, "text" => "String keys." }
+    ]
+
+    TimestampPersister.persist(segments: segments, engine: "elab", intro_duration: 0.0, output_path: output_path)
+
+    data = JSON.parse(File.read(output_path))
+    assert_equal "String keys.", data["segments"][0]["text"]
+    assert_in_delta 1.0, data["segments"][0]["start"]
+  end
+
+  # --- load ---
+
+  def test_load_reads_back_persisted_data
+    output_path = File.join(@tmpdir, "ep_timestamps.json")
+    segments = [{ start: 0.0, end: 5.0, text: "Hello." }]
+    TimestampPersister.persist(segments: segments, engine: "groq", intro_duration: 2.0, output_path: output_path)
+
+    data = TimestampPersister.load(output_path)
+    assert_equal 1, data["version"]
+    assert_equal "groq", data["engine"]
+    assert_in_delta 2.0, data["intro_duration"]
+    assert_equal 1, data["segments"].length
+  end
+
+  def test_load_returns_nil_for_missing_file
+    assert_nil TimestampPersister.load(File.join(@tmpdir, "nonexistent.json"))
+  end
+
+  # --- extract_segments ---
+
+  def test_extract_segments_single_engine_with_segments
+    result = { segments: [{ start: 0.0, end: 5.0, text: "Hello." }] }
+    engine_codes = ["groq"]
+
+    segments, engine = TimestampPersister.extract_segments(result, engine_codes: engine_codes)
+
+    assert_equal 1, segments.length
+    assert_equal "groq", engine
+  end
+
+  def test_extract_segments_comparison_mode_prefers_groq
+    result = {
+      segments: [{ start: 0.0, end: 5.0, text: "Primary." }]
+    }
+    comparison_results = {
+      "groq" => { segments: [{ start: 0.0, end: 5.0, text: "Groq." }] },
+      "open" => { segments: [{ start: 0.0, end: 5.0, text: "OpenAI." }] }
+    }
+    engine_codes = ["open", "groq"]
+
+    segments, engine = TimestampPersister.extract_segments(result, engine_codes: engine_codes,
+      comparison_results: comparison_results)
+
+    assert_equal "Groq.", segments[0][:text]
+    assert_equal "groq", engine
+  end
+
+  def test_extract_segments_comparison_mode_falls_back_to_elab
+    comparison_results = {
+      "elab" => { segments: [{ start: 0.0, end: 5.0, text: "ElevenLabs." }] },
+      "open" => { segments: [{ start: 0.0, end: 5.0, text: "OpenAI." }] }
+    }
+    engine_codes = ["open", "elab"]
+
+    segments, engine = TimestampPersister.extract_segments({}, engine_codes: engine_codes,
+      comparison_results: comparison_results)
+
+    assert_equal "ElevenLabs.", segments[0][:text]
+    assert_equal "elab", engine
+  end
+
+  def test_extract_segments_returns_nil_when_no_segments
+    result = { text: "No segments here" }
+    segments, engine = TimestampPersister.extract_segments(result, engine_codes: ["open"])
+
+    assert_nil segments
+    assert_nil engine
+  end
+end

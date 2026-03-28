@@ -61,22 +61,21 @@ module PodgenCLI
         puts "History: copied"
       end
 
-      # 4. Copy and rename LingQ tracking
-      old_tracking = File.join(old_output_dir, "lingq_uploads.yml")
+      # 4. Copy and rename upload tracking
+      old_tracking = File.join(old_output_dir, "uploads.yml")
+      old_tracking = File.join(old_output_dir, "lingq_uploads.yml") unless File.exist?(old_tracking)
       if File.exist?(old_tracking)
         data = YamlLoader.load(old_tracking, default: {})
         if data.is_a?(Hash) && !data.empty?
-          renamed = data.transform_values do |entries|
-            next entries unless entries.is_a?(Hash)
-            entries.transform_keys { |k| k.sub(/\A#{Regexp.escape(@podcast_name)}/, @new_name) }
-          end
-          File.write(File.join(new_output_dir, "lingq_uploads.yml"), renamed.to_yaml)
-          puts "LingQ tracking: copied and renamed"
+          renamed = rename_tracking_basenames(data, @podcast_name, @new_name)
+          File.write(File.join(new_output_dir, "uploads.yml"), renamed.to_yaml)
+          puts "Upload tracking: copied and renamed"
         end
       end
 
       puts
       puts "Forked '#{@podcast_name}' → '#{@new_name}'"
+
       puts
       puts "Next steps:"
       puts "  1. Edit podcasts/#{@new_name}/guidelines.md — update Name, title, base_url"
@@ -85,6 +84,27 @@ module PodgenCLI
       puts "  4. podgen publish #{@new_name} — publish to R2"
       puts "  5. podgen unpublish #{@podcast_name} — remove old podcast from R2 (when ready)"
       0
+    end
+
+    private
+
+    # Rename basenames in tracking data (handles both legacy flat and unified nested format).
+    def rename_tracking_basenames(data, old_name, new_name)
+      data.transform_values do |value|
+        next value unless value.is_a?(Hash)
+        # Check if this is a nested platform hash (unified format) or a flat group hash (legacy)
+        sample = value.values.first
+        if sample.is_a?(Hash)
+          # Nested: platform → group → { basename → id }
+          value.transform_values do |entries|
+            next entries unless entries.is_a?(Hash)
+            entries.transform_keys { |k| k.sub(/\A#{Regexp.escape(old_name)}/, new_name) }
+          end
+        else
+          # Flat: group → { basename → id } (legacy lingq_uploads.yml)
+          value.transform_keys { |k| k.sub(/\A#{Regexp.escape(old_name)}/, new_name) }
+        end
+      end
     end
   end
 end
