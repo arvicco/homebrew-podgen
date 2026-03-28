@@ -401,6 +401,9 @@ module PodgenCLI
       else
         puts "  ⚠ #{base_name}: transcription returned no segments" unless @options[:verbosity] == :quiet
       end
+    rescue => e
+      # Non-fatal: video uploads proceed without subtitles
+      $stderr.puts "  ⚠ #{base_name}: retranscription failed (#{e.message}), uploading without subtitles"
     end
 
     # Pick the best transcription engine for timestamps.
