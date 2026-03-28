@@ -208,7 +208,57 @@ class TestPublishCommand < Minitest::Test
     assert_includes [true, false], result
   end
 
+  # --- pick_timestamp_engine ---
+
+  def test_pick_timestamp_engine_prefers_groq
+    cmd = build_command(transcription_engines: %w[open groq elab])
+    assert_equal "groq", cmd.send(:pick_timestamp_engine)
+  end
+
+  def test_pick_timestamp_engine_falls_back_to_elab
+    cmd = build_command(transcription_engines: %w[open elab])
+    assert_equal "elab", cmd.send(:pick_timestamp_engine)
+  end
+
+  def test_pick_timestamp_engine_falls_back_to_open
+    cmd = build_command(transcription_engines: %w[open])
+    assert_equal "open", cmd.send(:pick_timestamp_engine)
+  end
+
+  def test_pick_timestamp_engine_uses_first_when_unknown
+    cmd = build_command(transcription_engines: %w[custom])
+    assert_equal "custom", cmd.send(:pick_timestamp_engine)
+  end
+
+  # --- retranscribe_for_timestamps ---
+
+  def test_retranscribe_skips_when_no_language
+    cmd = build_command(transcription_language: nil)
+    ts_path = File.join(@episodes_dir, "ep_timestamps.json")
+
+    capture_io { cmd.send(:retranscribe_for_timestamps, "/tmp/fake.mp3", ts_path, "ep") }
+
+    refute File.exist?(ts_path)
+  end
+
+  def test_retranscribe_skips_when_no_engines
+    cmd = build_command(transcription_language: "sl", transcription_engines: [])
+    ts_path = File.join(@episodes_dir, "ep_timestamps.json")
+
+    capture_io { cmd.send(:retranscribe_for_timestamps, "/tmp/fake.mp3", ts_path, "ep") }
+
+    refute File.exist?(ts_path)
+  end
+
   private
+
+  StubPublishConfig = Struct.new(:episodes_dir, :name, :transcription_language,
+    :target_language, :transcription_engines, keyword_init: true) do
+    def initialize(episodes_dir:, name: "test", transcription_language: nil,
+                   target_language: nil, transcription_engines: %w[groq])
+      super
+    end
+  end
 
   def create_mp3(name)
     File.write(File.join(@episodes_dir, name), "x" * 1000)
@@ -220,12 +270,18 @@ class TestPublishCommand < Minitest::Test
     path
   end
 
-  StubPublishConfig = Struct.new(:episodes_dir, :name, keyword_init: true)
-
-  def build_command
+  def build_command(transcription_language: nil, transcription_engines: %w[groq],
+                    target_language: nil)
     cmd = PodgenCLI::PublishCommand.allocate
-    config = StubPublishConfig.new(episodes_dir: @episodes_dir, name: "test")
+    config = StubPublishConfig.new(
+      episodes_dir: @episodes_dir,
+      name: "test",
+      transcription_language: transcription_language,
+      target_language: target_language,
+      transcription_engines: transcription_engines
+    )
     cmd.instance_variable_set(:@config, config)
+    cmd.instance_variable_set(:@options, {})
     cmd
   end
 end

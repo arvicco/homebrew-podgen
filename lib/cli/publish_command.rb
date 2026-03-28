@@ -239,8 +239,9 @@ module PodgenCLI
         title, description, _transcript = parse_transcript(ep[:transcript_path])
         episodes_dir = @config.episodes_dir
 
-        # Generate SRT if timestamps available
+        # Generate timestamps via retranscription if missing, then SRT
         ts_path = File.join(episodes_dir, "#{ep[:base_name]}_timestamps.json")
+        retranscribe_for_timestamps(ep[:mp3_path], ts_path, ep[:base_name]) unless File.exist?(ts_path)
         srt_path = File.join(episodes_dir, "#{ep[:base_name]}.srt")
         SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path) && !File.exist?(srt_path)
 
@@ -360,6 +361,55 @@ module PodgenCLI
 
       File.delete(image_path) if File.exist?(image_path)
     rescue # rubocop:disable Lint/SuppressedException
+    end
+
+    # Retranscribe a final MP3 to generate timestamps for old episodes
+    # that were created before timestamp persistence was added.
+    def retranscribe_for_timestamps(mp3_path, ts_path, base_name)
+      language = @config.transcription_language
+      unless language
+        puts "  ⚠ #{base_name}: no transcription language configured, skipping subtitles" unless @options[:verbosity] == :quiet
+        return
+      end
+
+      engine_code = pick_timestamp_engine
+      unless engine_code
+        puts "  ⚠ #{base_name}: no transcription engine configured, skipping subtitles" unless @options[:verbosity] == :quiet
+        return
+      end
+
+      puts "  transcribing #{base_name} for subtitles (#{engine_code})..." unless @options[:verbosity] == :quiet
+
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "transcription", "engine_manager")
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "timestamp_persister")
+
+      manager = Transcription::EngineManager.new(
+        engine_codes: [engine_code],
+        language: language,
+        target_language: @config.target_language
+      )
+      result = manager.transcribe(mp3_path)
+      segments = result[:segments]
+
+      if segments && !segments.empty?
+        TimestampPersister.persist(
+          segments: segments,
+          engine: engine_code,
+          intro_duration: 0.0,
+          output_path: ts_path
+        )
+      else
+        puts "  ⚠ #{base_name}: transcription returned no segments" unless @options[:verbosity] == :quiet
+      end
+    end
+
+    # Pick the best transcription engine for timestamps.
+    # Groq has word-level, ElevenLabs has word-level, OpenAI has segment-level.
+    TIMESTAMP_ENGINE_PRIORITY = %w[groq elab open].freeze
+
+    def pick_timestamp_engine
+      configured = @config.transcription_engines
+      TIMESTAMP_ENGINE_PRIORITY.find { |e| configured.include?(e) } || configured.first
     end
 
     def upload_tracker
