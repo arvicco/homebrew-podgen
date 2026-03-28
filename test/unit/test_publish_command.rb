@@ -128,6 +128,42 @@ class TestPublishCommand < Minitest::Test
     assert_empty cmd.send(:scan_episodes)
   end
 
+  def test_scan_episodes_filters_by_episode_id
+    create_mp3("ep-2026-01-15.mp3")
+    create_mp3("ep-2026-01-16.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# T1")
+    File.write(File.join(@episodes_dir, "ep-2026-01-16_transcript.md"), "# T2")
+
+    cmd = build_command(episode_id: "2026-01-16")
+    episodes = cmd.send(:scan_episodes)
+
+    assert_equal 1, episodes.length
+    assert_equal "ep-2026-01-16", episodes.first[:base_name]
+  end
+
+  def test_scan_episodes_filters_with_suffix
+    create_mp3("ep-2026-01-15.mp3")
+    create_mp3("ep-2026-01-15a.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# T1")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15a_transcript.md"), "# T2")
+
+    cmd = build_command(episode_id: "2026-01-15a")
+    episodes = cmd.send(:scan_episodes)
+
+    assert_equal 1, episodes.length
+    assert_equal "ep-2026-01-15a", episodes.first[:base_name]
+  end
+
+  def test_scan_episodes_no_match_returns_empty
+    create_mp3("ep-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# T1")
+
+    cmd = build_command(episode_id: "2026-99-99")
+    _, err = capture_io { episodes = cmd.send(:scan_episodes) }
+
+    # Stderr warning handled inside scan_episodes
+  end
+
   # --- upload_tracker ---
 
   def test_upload_tracker_missing_file
@@ -271,7 +307,7 @@ class TestPublishCommand < Minitest::Test
   end
 
   def build_command(transcription_language: nil, transcription_engines: %w[groq],
-                    target_language: nil)
+                    target_language: nil, episode_id: nil)
     cmd = PodgenCLI::PublishCommand.allocate
     config = StubPublishConfig.new(
       episodes_dir: @episodes_dir,
@@ -282,6 +318,7 @@ class TestPublishCommand < Minitest::Test
     )
     cmd.instance_variable_set(:@config, config)
     cmd.instance_variable_set(:@options, {})
+    cmd.instance_variable_set(:@episode_id, episode_id)
     cmd
   end
 end

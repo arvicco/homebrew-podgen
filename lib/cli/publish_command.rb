@@ -25,6 +25,7 @@ module PodgenCLI
         opts.on("--dry-run", "Show what would be published") { @options[:dry_run] = true }
       end.parse!(args)
       @podcast_name = args.shift
+      @episode_id = args.shift # optional: e.g. "2026-03-31" or "2026-03-31b"
     end
 
     def run
@@ -283,11 +284,12 @@ module PodgenCLI
 
     # Scans episodes dir for mp3 files that have matching transcripts.
     # Returns array of { base_name:, mp3_path:, transcript_path: } sorted chronologically.
+    # When @episode_id is set, filters to matching episodes only.
     def scan_episodes
       episodes_dir = @config.episodes_dir
       return [] unless Dir.exist?(episodes_dir)
 
-      Dir.glob(File.join(episodes_dir, "*.mp3"))
+      all = Dir.glob(File.join(episodes_dir, "*.mp3"))
         .sort
         .filter_map do |mp3_path|
           base_name = File.basename(mp3_path, ".mp3")
@@ -296,6 +298,14 @@ module PodgenCLI
 
           { base_name: base_name, mp3_path: mp3_path, transcript_path: transcript_path }
         end
+
+      return all unless @episode_id
+
+      matched = all.select { |ep| ep[:base_name].end_with?(@episode_id) }
+      if matched.empty?
+        $stderr.puts "No episode found matching '#{@episode_id}'"
+      end
+      matched
     end
 
     # Parses a transcript markdown file.
