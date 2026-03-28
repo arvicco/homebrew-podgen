@@ -10,7 +10,7 @@ require "json"
 # Handles OAuth2 authentication with persistent token storage.
 class YouTubeUploader
   OOB_URI = "urn:ietf:wg:oauth:2.0:oob"
-  SCOPE = Google::Apis::YoutubeV3::AUTH_YOUTUBE
+  SCOPE = Google::Apis::YoutubeV3::AUTH_YOUTUBE_FORCE_SSL
   TOKEN_DIR = File.join(Dir.home, ".config", "podgen")
   TOKEN_FILE = File.join(TOKEN_DIR, "youtube_token.json")
 
