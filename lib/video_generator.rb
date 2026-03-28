@@ -29,9 +29,10 @@ class VideoGenerator
   def ffmpeg_command(image_path, audio_path, output_path)
     [
       "ffmpeg", "-y",
-      "-loop", "1", "-i", image_path,
+      "-loop", "1", "-framerate", "1", "-i", image_path,
       "-i", audio_path,
-      "-c:v", "libx264", "-tune", "stillimage", "-preset", "medium",
+      "-c:v", "libx264", "-tune", "stillimage", "-preset", "ultrafast",
+      "-r", "1",
       "-c:a", "aac", "-b:a", "192k",
       "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
       "-pix_fmt", "yuv420p",
