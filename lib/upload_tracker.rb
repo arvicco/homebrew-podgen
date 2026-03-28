@@ -28,7 +28,7 @@ class UploadTracker
   # Load tracking data. Returns Hash of platform → group → { basename → id }.
   # Migrates from legacy lingq_uploads.yml on first load if needed.
   def load
-    migrate_legacy_file
+    migrate_legacy_file unless @migrated
     data = YamlLoader.load(@path, default: {})
     normalize_keys(data)
   end
@@ -102,6 +102,7 @@ class UploadTracker
   # Migrate from legacy lingq_uploads.yml (flat: collection → { basename → id })
   # to unified uploads.yml (nested: lingq → collection → { basename → id }).
   def migrate_legacy_file
+    @migrated = true
     return if File.exist?(@path)
 
     legacy_path = File.join(File.dirname(@path), "lingq_uploads.yml")

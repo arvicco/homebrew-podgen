@@ -614,7 +614,7 @@ module PodgenCLI
     end
 
     def resolve_committed_cover
-      covers = Dir.glob(File.join(@config.episodes_dir, "#{@base_name}_cover.*"))
+      covers = Dir.glob(File.join(@config.episodes_dir, "#{@base_name}_cover.*")).sort
       covers.first
     end
 
