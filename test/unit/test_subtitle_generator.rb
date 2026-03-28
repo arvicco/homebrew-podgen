@@ -30,6 +30,12 @@ class TestSubtitleGenerator < Minitest::Test
     assert_equal "01:02:03,500", SubtitleGenerator.format_srt_time(3723.5)
   end
 
+  def test_format_srt_time_near_second_boundary_no_overflow
+    # 59.9999 should not produce "00:00:59,1000" (4-digit millis)
+    result = SubtitleGenerator.format_srt_time(59.9999)
+    assert_match(/\A\d{2}:\d{2}:\d{2},\d{3}\z/, result, "Must be exactly 3 millisecond digits")
+  end
+
   # --- generate_srt ---
 
   def test_generate_srt_basic

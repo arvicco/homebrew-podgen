@@ -37,10 +37,10 @@ module PodgenCLI
       regenerate_rss
       regenerate_site
 
-      if @options[:lingq]
-        publish_to_lingq
-      elsif @options[:youtube]
-        publish_to_youtube
+      if @options[:lingq] || @options[:youtube]
+        code = publish_to_lingq if @options[:lingq]
+        yt_code = publish_to_youtube if @options[:youtube]
+        code || yt_code || 0
       else
         publish_to_r2
       end
@@ -227,6 +227,7 @@ module PodgenCLI
         return 0
       end
 
+      # Lazy require to avoid loading google-apis gems unless YouTube is used
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "youtube_uploader")
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_generator")
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "video_generator")

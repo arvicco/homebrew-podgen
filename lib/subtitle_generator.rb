@@ -31,11 +31,12 @@ module SubtitleGenerator
 
   # Format seconds as SRT timestamp: HH:MM:SS,mmm
   def self.format_srt_time(seconds)
-    seconds = seconds.to_f
-    hours = (seconds / 3600).to_i
-    minutes = ((seconds % 3600) / 60).to_i
-    secs = (seconds % 60).to_i
-    millis = ((seconds % 1) * 1000).round
+    total_ms = (seconds.to_f * 1000).round
+    millis = total_ms % 1000
+    total_secs = total_ms / 1000
+    secs = total_secs % 60
+    minutes = (total_secs / 60) % 60
+    hours = total_secs / 3600
 
     format("%02d:%02d:%02d,%03d", hours, minutes, secs, millis)
   end
