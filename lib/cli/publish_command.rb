@@ -271,10 +271,11 @@ module PodgenCLI
           tags: yt_config[:tags] || []
         )
 
+        # Record immediately so a caption/playlist failure doesn't lose the video tracking
+        upload_tracker.record(:youtube, playlist, ep[:base_name], video_id)
+
         uploader.upload_captions(video_id, srt_path, language: language) if File.exist?(srt_path)
         uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
-
-        upload_tracker.record(:youtube, playlist, ep[:base_name], video_id)
 
         puts "  ✓ #{ep[:base_name]} → https://youtu.be/#{video_id}" unless @options[:verbosity] == :quiet
       rescue Google::Apis::ClientError => e

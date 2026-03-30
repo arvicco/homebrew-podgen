@@ -154,14 +154,30 @@ class TestPublishCommand < Minitest::Test
     assert_equal "ep-2026-01-15a", episodes.first[:base_name]
   end
 
-  def test_scan_episodes_no_match_returns_empty
+  def test_scan_episodes_no_match_returns_empty_with_warning
     create_mp3("ep-2026-01-15.mp3")
     File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# T1")
 
     cmd = build_command(episode_id: "2026-99-99")
-    _, err = capture_io { episodes = cmd.send(:scan_episodes) }
+    matched = nil
+    _, err = capture_io { matched = cmd.send(:scan_episodes) }
 
-    # Stderr warning handled inside scan_episodes
+    assert_empty matched
+    assert_includes err, "No episode found matching"
+  end
+
+  def test_scan_episodes_newest_reverses_order
+    create_mp3("ep-2026-01-15.mp3")
+    create_mp3("ep-2026-01-16.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# T1")
+    File.write(File.join(@episodes_dir, "ep-2026-01-16_transcript.md"), "# T2")
+
+    cmd = build_command
+    cmd.instance_variable_get(:@options)[:newest] = true
+    episodes = cmd.send(:scan_episodes)
+
+    assert_equal "ep-2026-01-16", episodes.first[:base_name]
+    assert_equal "ep-2026-01-15", episodes.last[:base_name]
   end
 
   # --- upload_tracker ---
