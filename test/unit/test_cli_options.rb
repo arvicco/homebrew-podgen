@@ -92,16 +92,35 @@ class TestCLIOptions < Minitest::Test
 
   # ── Mutual exclusivity guards ───────────────────────────────────
 
-  def test_generate_rejects_ask_skip_with_skip
-    code, _, err = run_cli("generate", "test_pod", "--ask-skip", "--skip", "10")
+  def test_generate_rejects_ask_trim_with_skip
+    code, _, err = run_cli("generate", "test_pod", "--ask-trim", "--skip", "10")
     assert_equal 1, code
-    assert_includes err, "--ask-skip is mutually exclusive"
+    assert_includes err, "--ask-trim is mutually exclusive"
   end
 
-  def test_generate_rejects_ask_skip_with_no_skip
-    code, _, err = run_cli("generate", "test_pod", "--ask-skip", "--no-skip")
+  def test_generate_rejects_ask_trim_with_no_skip
+    code, _, err = run_cli("generate", "test_pod", "--ask-trim", "--no-skip")
     assert_equal 1, code
-    assert_includes err, "--ask-skip is mutually exclusive"
+    assert_includes err, "--ask-trim is mutually exclusive"
+  end
+
+  def test_generate_rejects_ask_trim_with_cut
+    code, _, err = run_cli("generate", "test_pod", "--ask-trim", "--cut", "30")
+    assert_equal 1, code
+    assert_includes err, "--ask-trim is mutually exclusive"
+  end
+
+  def test_generate_rejects_ask_trim_with_no_cut
+    code, _, err = run_cli("generate", "test_pod", "--ask-trim", "--no-cut")
+    assert_equal 1, code
+    assert_includes err, "--ask-trim is mutually exclusive"
+  end
+
+  def test_generate_rejects_ask_skip_alias_with_skip
+    # --ask-skip is an alias for --ask-trim
+    code, _, err = run_cli("generate", "test_pod", "--ask-skip", "--skip", "10")
+    assert_equal 1, code
+    assert_includes err, "--ask-trim is mutually exclusive"
   end
 
   # ── --date duplicate episode guard ─────────────────────────────

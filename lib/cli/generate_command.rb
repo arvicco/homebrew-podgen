@@ -40,7 +40,7 @@ module PodgenCLI
         opts.on("--autotrim", "Enable outro auto-detection via word timestamps") { @options[:autotrim] = true }
         opts.on("--no-autotrim", "Disable autotrim even if configured") { @options[:no_autotrim] = true }
         opts.on("--no-skip", "Disable skip even if configured") { @options[:no_skip] = true }
-        opts.on("--ask-skip", "Download audio, play it, then prompt for skip value") { @options[:ask_skip] = true }
+        opts.on("--ask-trim", "--ask-skip", "Download audio, play it, then prompt for skip and cut values") { @options[:ask_trim] = true }
         opts.on("--no-cut", "Disable cut even if configured") { @options[:no_cut] = true }
         opts.on("--force", "Process even if already in history (skip dedup check)") { @options[:force] = true }
         opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }
@@ -161,8 +161,8 @@ module PodgenCLI
           return 1
         end
       end
-      if @options[:ask_skip] && (@options[:skip] || @options[:no_skip])
-        $stderr.puts "Error: --ask-skip is mutually exclusive with --skip and --no-skip"
+      if @options[:ask_trim] && (@options[:skip] || @options[:no_skip] || @options[:cut] || @options[:no_cut])
+        $stderr.puts "Error: --ask-trim is mutually exclusive with --skip/--no-skip/--cut/--no-cut"
         return 1
       end
       nil
