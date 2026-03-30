@@ -557,8 +557,27 @@ Publish episodes to YouTube as videos with synchronized subtitles.
 
 **Usage:**
 
-1. **During generation**: `podgen generate lahko_noc --youtube` — uploads the newly generated episode
-2. **Bulk publish**: `podgen publish lahko_noc --youtube` — uploads all un-uploaded episodes
+```bash
+# During generation — upload the newly generated episode
+podgen generate lahko_noc --youtube
+
+# Bulk publish — upload all un-uploaded episodes (oldest first)
+podgen publish lahko_noc --youtube
+
+# Newest first — prioritize recent episodes when quota is limited
+podgen publish lahko_noc --youtube --newest
+
+# Single episode
+podgen publish lahko_noc 2026-03-28 --youtube
+
+# Re-upload (bypass tracking)
+podgen publish lahko_noc 2026-03-28 --youtube --force
+
+# Combine with LingQ
+podgen publish lahko_noc --youtube --lingq
+```
+
+Old episodes without timestamps are automatically retranscribed (single-engine, best available) to generate subtitles. The YouTube daily quota allows ~5 video uploads; the batch stops on quota exhaustion and resumes where it left off on the next run.
 
 Each episode produces:
 - `{basename}_timestamps.json` — segment-level timestamps from transcription
