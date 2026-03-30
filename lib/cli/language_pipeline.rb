@@ -229,28 +229,31 @@ module PodgenCLI
       assembler = AudioAssembler.new(logger: logger)
       @trimmer = AudioTrimmer.new(assembler: assembler, logger: logger)
 
-      skip = if @options[:no_skip]
-        nil
-      elsif @options[:ask_skip]
-        ask_skip_interactive
+      if @options[:ask_trim]
+        skip, cut = ask_trim_interactive
       else
-        @options[:skip] || @episode[:skip] || @config.skip
+        skip = @options[:no_skip] ? nil : (@options[:skip] || @episode[:skip] || @config.skip)
+        cut = @options[:no_cut] ? nil : (@options[:cut] || @episode[:cut] || @config.cut)
       end
-      cut = @options[:no_cut] ? nil : (@options[:cut] || @episode[:cut] || @config.cut)
       snip = @options[:snip]
       @source_audio_path = @trimmer.apply_trim(@source_audio_path, skip: skip, cut: cut, snip: snip)
     end
 
-    def ask_skip_interactive
+    def ask_trim_interactive
       duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
       $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
       $stderr.puts "Opening audio for preview..."
       system("open", @source_audio_path)
-      $stderr.print "Enter skip seconds (or min:sec), blank to skip nothing: "
-      input = $stdin.gets&.strip
-      return nil if input.nil? || input.empty?
 
-      TimeValue.parse(input)
+      $stderr.print "Enter skip intro (seconds or min:sec), blank for none: "
+      skip_input = $stdin.gets&.strip
+      skip = skip_input.nil? || skip_input.empty? ? nil : TimeValue.parse(skip_input)
+
+      $stderr.print "Enter cut outro (seconds or min:sec), blank for none: "
+      cut_input = $stdin.gets&.strip
+      cut = cut_input.nil? || cut_input.empty? ? nil : TimeValue.parse(cut_input)
+
+      [skip, cut]
     end
 
     def transcribe
