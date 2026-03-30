@@ -23,6 +23,7 @@ module PodgenCLI
         opts.on("--lingq", "Publish to LingQ instead of R2") { @options[:lingq] = true }
         opts.on("--youtube", "Publish to YouTube") { @options[:youtube] = true }
         opts.on("--force", "Re-upload even if already tracked") { @options[:force] = true }
+        opts.on("--newest", "Publish newest episodes first") { @options[:newest] = true }
         opts.on("--dry-run", "Show what would be published") { @options[:dry_run] = true }
       end.parse!(args)
       @podcast_name = args.shift
@@ -305,6 +306,8 @@ module PodgenCLI
 
           { base_name: base_name, mp3_path: mp3_path, transcript_path: transcript_path }
         end
+
+      all.reverse! if @options[:newest]
 
       return all unless @episode_id
 
