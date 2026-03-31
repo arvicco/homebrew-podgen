@@ -16,9 +16,10 @@ jobs:
 
       - name: Update formula version and SHA256
         run: |
+          set -eo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
           URL="https://github.com/${{ github.repository }}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
-          SHA=$(curl -sL "$URL" | sha256sum | cut -d' ' -f1)
+          SHA=$(curl -sfL "$URL" | sha256sum | cut -d' ' -f1)
 
           sed -i "s|url \".*\"|url \"${URL}\"|" Formula/podgen.rb
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/podgen.rb
