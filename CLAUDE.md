@@ -80,8 +80,9 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 1. **Commit** changes as normal
 2. **Review** — spawn a worktree agent (`isolation: "worktree"`) running the `/cr` skill. The reviewer operates in a separate session with no shared context from the coding session. It is report-only — it never modifies code
 3. **Resolve** — the main session must address all BLOCKERs and WARNINGs flagged by the reviewer. After fixes, commit again and re-run review. **Repeat until the reviewer returns APPROVED or APPROVED WITH WARNINGS.** NITs are optional and do not block
-4. **Push** to origin — CI runs unit tests automatically (`.github/workflows/ci.yml`). Wait for green before releasing
-5. **Release** — create GitHub release via `gh release create`. Homebrew formula is auto-updated by CI (`.github/workflows/homebrew.yml`)
+4. **Push** to origin — CI runs unit tests automatically (`.github/workflows/ci.yml`)
+5. **Verify CI** — check CI status via `gh run list` or the GitHub MCP plugin. Do not proceed to release until CI is green. If CI fails, diagnose, fix, commit, and re-push
+6. **Release** — create GitHub release via `gh release create`. Homebrew formula is auto-updated by CI (`.github/workflows/homebrew.yml`)
 
 The review loop (steps 2–3) is mandatory unless the user explicitly says "CPR" or "skip review". Never skip it silently.
 
