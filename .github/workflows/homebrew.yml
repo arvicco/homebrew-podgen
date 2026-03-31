@@ -1,0 +1,35 @@
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Update formula version and SHA256
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          URL="https://github.com/${{ github.repository }}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          SHA=$(curl -sL "$URL" | sha256sum | cut -d' ' -f1)
+
+          sed -i "s|url \".*\"|url \"${URL}\"|" Formula/podgen.rb
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" Formula/podgen.rb
+
+          echo "Updated formula to v${VERSION} (sha256: ${SHA})"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/podgen.rb
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "Update Homebrew formula to ${GITHUB_REF_NAME}"
+          git push
