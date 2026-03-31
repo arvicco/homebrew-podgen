@@ -80,10 +80,14 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 1. **Commit** changes as normal
 2. **Review** — spawn a worktree agent (`isolation: "worktree"`) running the `/cr` skill. The reviewer operates in a separate session with no shared context from the coding session. It is report-only — it never modifies code
 3. **Resolve** — the main session must address all BLOCKERs and WARNINGs flagged by the reviewer. After fixes, commit again and re-run review. **Repeat until the reviewer returns APPROVED or APPROVED WITH WARNINGS.** NITs are optional and do not block
-4. **Push** to origin
-5. **Release** — GitHub release + Homebrew formula update
+4. **Push** to origin — CI runs unit tests automatically (`.github/workflows/ci.yml`). Wait for green before releasing
+5. **Release** — create GitHub release via `gh release create`. Homebrew formula is auto-updated by CI (`.github/workflows/homebrew.yml`)
 
 The review loop (steps 2–3) is mandatory unless the user explicitly says "CPR" or "skip review". Never skip it silently.
+
+### CI/CD
+- **CI** (`.github/workflows/ci.yml`): Runs `rake test:unit` on every push to master and on PRs
+- **CD** (`.github/workflows/homebrew.yml`): When a GitHub release is published, auto-computes the tarball SHA256 and updates `Formula/podgen.rb`
 
 ## Project Overview
 
