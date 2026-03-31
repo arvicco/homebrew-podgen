@@ -606,6 +606,7 @@ class TestSiteGenerator < Minitest::Test
   # --- wide_image? ---
 
   def test_wide_image_returns_true_for_landscape
+    skip_unless_command("magick")
     gen = build_generator
     img_path = File.join(@episodes_dir, "wide.jpg")
     system("magick", "-size", "200x100", "xc:white", img_path)
@@ -613,6 +614,7 @@ class TestSiteGenerator < Minitest::Test
   end
 
   def test_wide_image_returns_false_for_square
+    skip_unless_command("magick")
     gen = build_generator
     img_path = File.join(@episodes_dir, "square.jpg")
     system("magick", "-size", "100x100", "xc:white", img_path)
@@ -620,6 +622,7 @@ class TestSiteGenerator < Minitest::Test
   end
 
   def test_wide_image_returns_false_for_portrait
+    skip_unless_command("magick")
     gen = build_generator
     img_path = File.join(@episodes_dir, "tall.jpg")
     system("magick", "-size", "100x200", "xc:white", img_path)
