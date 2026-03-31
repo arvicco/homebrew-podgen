@@ -92,7 +92,7 @@ ruby bin/podgen <command> [options]
 | `podgen generate <podcast>`         | Run the full pipeline (news: research → script → TTS → assembly; language: RSS, `--file`, or `--url` → trim → transcribe → assembly)                                                                                   |
 | `podgen translate <podcast>`        | Translate existing episodes to new languages (`--last N`, `--lang xx`, `--dry-run`)                                                                                                                                    |
 | `podgen scrap <podcast> [episode]`  | Remove episode (MP3 + transcript + cover), history entry, and LingQ tracking. Omit episode for latest; specify as `YYYY-MM-DD` or `YYYY-MM-DD[a-z]` (e.g. `2026-03-31b`), or pass a full file path to any episode file |
-| `podgen exclude <podcast> <url>...` | Add URLs to history so they are skipped by future news research and language episode collection                                                                                                                        |
+| `podgen exclude <podcast> <url>...` | Add URLs to history so they are skipped by future news research and language episode collection. `--rss <filter> --ask [N]` fetches the next N unprocessed episodes (default 5) from the matching RSS feed and lets you pick which to exclude interactively |
 | `podgen rss <podcast>`              | Generate RSS feed from existing episodes                                                                                                                                                                               |
 | `podgen site <podcast>`             | Generate static HTML website (`--clean`, `--base-url URL`)                                                                                                                                                             |
 | `podgen publish <podcast>`          | Publish to Cloudflare R2 via rclone (`--lingq` for LingQ)                                                                                                                                                              |
@@ -152,6 +152,10 @@ podgen --dry-run scrap ruby_world
 # Exclude URLs from future episodes (news research + language RSS collection)
 podgen exclude ruby_world https://example.com/already-covered
 podgen exclude lahko_noc https://feed.example.com/ep1 https://feed.example.com/ep2
+
+# Interactively pick RSS episodes to exclude (language pipeline)
+podgen exclude lahko_noc --rss rtvslo --ask      # next 5 from feed matching "rtvslo"
+podgen exclude lahko_noc --rss rtvslo --ask 10   # next 10 from that feed
 
 # List all configured podcasts
 podgen list
