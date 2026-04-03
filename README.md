@@ -423,6 +423,17 @@ For `skip`, both formats mean "start playback from this point" — `skip: 80` an
 
 CLI flags `--skip N` / `--cut N` override per-feed values. `skip`/`cut` in `## Audio` is used as a fallback if neither CLI flag nor per-feed config is set.
 
+#### Interactive trimming
+
+`--ask-trim` downloads the audio, opens it for preview, then prompts for skip and cut values interactively. Mutually exclusive with `--skip`/`--no-skip`/`--cut`/`--no-cut`.
+
+```bash
+podgen generate lahko_noc --ask-trim
+podgen generate lahko_noc --file story.mp3 --ask-trim
+```
+
+At either prompt, type `x` to exclude the episode — this adds its source URL to the excluded list and stops processing (same as `podgen exclude`). Useful when you hear during preview that an episode isn't worth processing.
+
 #### Snip format
 
 The `--snip` flag removes arbitrary interior segments from the audio. All timestamps reference the original audio file (before skip/cut). Multiple intervals are comma-separated.
@@ -491,6 +502,7 @@ podgen generate lahko_noc --file episode.mp3 --title "Custom Title"
 | `--skip N|M:SS`     | Seconds or min:sec to skip from start (overrides config)                      |
 | `--cut N|M:SS`      | Seconds to cut from end, or min:sec to cut at timestamp (overrides config)    |
 | `--snip INTERVALS`  | Remove interior segments (see [Snip format](#snip-format) below)              |
+| `--ask-trim`        | Preview audio then prompt for skip/cut; type `x` to exclude episode           |
 | `--autotrim`        | Enable outro auto-detection via word timestamps                               |
 | `--force`           | Process even if already in history (skip dedup check)                         |
 | `--image PATH|last` | Per-episode cover image, or `last` for latest ~/Desktop screenshot            |
@@ -516,6 +528,7 @@ podgen generate lahko_noc --url "https://youtube.com/watch?v=abc123" --title "Cu
 | `--skip N|M:SS`           | Seconds or min:sec to skip from start (overrides config)                                          |
 | `--cut N|M:SS`            | Seconds to cut from end, or min:sec to cut at timestamp (overrides config)                        |
 | `--snip INTERVALS`        | Remove interior segments (see [Snip format](#snip-format) below)                                  |
+| `--ask-trim`              | Preview audio then prompt for skip/cut; type `x` to exclude episode                               |
 | `--autotrim`              | Enable outro auto-detection via word timestamps                                                   |
 | `--force`                 | Process even if already in history (skip dedup check)                                             |
 | `--image PATH|thumb|last` | Per-episode cover image, `thumb` for YouTube thumbnail, or `last` for latest ~/Desktop screenshot |

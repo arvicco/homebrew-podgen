@@ -7,6 +7,7 @@ require "fileutils"
 require "episode_history"
 require "agents/description_agent"
 require "cli/language_pipeline"
+require "time_value"
 
 # Minimal logger that captures messages without file I/O
 class StubLogger
@@ -25,7 +26,7 @@ end
 
 # Minimal config double exposing only the fields private methods need
 StubConfig = Struct.new(
-  :podcast_dir, :episodes_dir, :history_path, :author,
+  :podcast_dir, :episodes_dir, :history_path, :excluded_urls_path, :author,
   :cover_base_image, :cover_options, :cover_generation_enabled,
   :lingq_config, :lingq_enabled, :transcription_language,
   :transcription_engines, :target_language,
@@ -63,6 +64,7 @@ class TestLanguagePipeline < Minitest::Test
       podcast_dir: @tmpdir,
       episodes_dir: @episodes_dir,
       history_path: File.join(@tmpdir, "history.yml"),
+      excluded_urls_path: File.join(@tmpdir, "excluded_urls.yml"),
       author: "Test Author",
       cover_base_image: nil,
       cover_options: {},
@@ -512,6 +514,101 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal 38.0, called_with[:skip]
   end
 
+  # --- ask_trim exclude ---
+
+  def test_ask_trim_x_at_skip_prompt_excludes_episode
+    config = build_config
+    pipeline = build_pipeline(options: { ask_trim: true }, config: config)
+    episode = { title: "Unwanted Episode", audio_url: "https://example.com/ep1.mp3" }
+    pipeline.instance_variable_set(:@episode, episode)
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    # Stub probe_duration and system("open", ...) to avoid real calls
+    fake_assembler = Minitest::Mock.new
+    fake_assembler.expect(:probe_duration, 120.0, ["/fake/audio.mp3"])
+
+    $stdin.stub(:gets, "x\n") do
+      AudioAssembler.stub(:new, fake_assembler) do
+        pipeline.stub(:system, nil) do
+          result = pipeline.send(:trim_source_audio)
+          assert_equal :excluded, result
+        end
+      end
+    end
+
+    excluded_path = config.excluded_urls_path
+    assert File.exist?(excluded_path), "excluded_urls.yml should be created"
+    excluded = YAML.load_file(excluded_path)
+    assert_includes excluded, "https://example.com/ep1.mp3"
+    assert @logger.messages.any? { |m| m.include?("Excluded episode") }
+  end
+
+  def test_ask_trim_x_at_cut_prompt_excludes_episode
+    config = build_config
+    pipeline = build_pipeline(options: { ask_trim: true }, config: config)
+    episode = { title: "Unwanted Episode", audio_url: "https://example.com/ep2.mp3" }
+    pipeline.instance_variable_set(:@episode, episode)
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    fake_assembler = Minitest::Mock.new
+    fake_assembler.expect(:probe_duration, 120.0, ["/fake/audio.mp3"])
+
+    # First gets returns "10" (skip value), second returns "x" (exclude at cut prompt)
+    inputs = ["10\n", "x\n"]
+    call_count = 0
+    fake_gets = -> { r = inputs[call_count]; call_count += 1; r }
+
+    AudioAssembler.stub(:new, fake_assembler) do
+      pipeline.stub(:system, nil) do
+        $stdin.stub(:gets, fake_gets) do
+          result = pipeline.send(:trim_source_audio)
+          assert_equal :excluded, result
+        end
+      end
+    end
+
+    excluded = YAML.load_file(config.excluded_urls_path)
+    assert_includes excluded, "https://example.com/ep2.mp3"
+  end
+
+  def test_ask_trim_normal_input_does_not_exclude
+    config = build_config
+    pipeline = build_pipeline(options: { ask_trim: true }, config: config)
+    episode = { title: "Good Episode", audio_url: "https://example.com/ep3.mp3" }
+    pipeline.instance_variable_set(:@episode, episode)
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    fake_assembler = Minitest::Mock.new
+    fake_assembler.expect(:probe_duration, 120.0, ["/fake/audio.mp3"])
+
+    inputs = ["5\n", "10\n"]
+    call_count = 0
+    fake_gets = -> { r = inputs[call_count]; call_count += 1; r }
+
+    called_with = {}
+    fake_trimmer = Object.new
+    fake_trimmer.define_singleton_method(:apply_trim) do |path, skip:, cut:, snip:|
+      called_with[:skip] = skip
+      called_with[:cut] = cut
+      path
+    end
+
+    AudioAssembler.stub(:new, fake_assembler) do
+      AudioTrimmer.stub(:new, fake_trimmer) do
+        pipeline.stub(:system, nil) do
+          $stdin.stub(:gets, fake_gets) do
+            result = pipeline.send(:trim_source_audio)
+            refute_equal :excluded, result
+          end
+        end
+      end
+    end
+
+    refute File.exist?(config.excluded_urls_path)
+    assert_equal 5.0, called_with[:skip]
+    assert_equal 10.0, called_with[:cut]
+  end
+
   # --- staged output lifecycle ---
 
   def test_setup_staging_creates_directory
@@ -576,6 +673,7 @@ class TestLanguagePipeline < Minitest::Test
       podcast_dir: @tmpdir,
       episodes_dir: @episodes_dir,
       history_path: File.join(@tmpdir, "history.yml"),
+      excluded_urls_path: File.join(@tmpdir, "excluded_urls.yml"),
       author: "Test Author",
       cover_base_image: nil,
       cover_options: {},
