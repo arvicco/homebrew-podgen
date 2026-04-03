@@ -19,6 +19,7 @@ require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "timestamp_persister")
 require_relative File.join(root, "lib", "subtitle_generator")
 require_relative File.join(root, "lib", "video_generator")
+require_relative File.join(root, "lib", "url_cleaner")
 
 module PodgenCLI
   class LanguagePipeline
@@ -245,7 +246,7 @@ module PodgenCLI
     end
 
     def exclude_current_episode!
-      url = @episode[:audio_url]
+      url = UrlCleaner.clean(@episode[:audio_url])
       @episode_source.exclude_url!(url)
       logger.log("Excluded episode: #{url}")
       $stderr.puts "Excluded: \"#{@episode[:title]}\""
