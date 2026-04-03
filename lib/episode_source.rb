@@ -83,8 +83,6 @@ class EpisodeSource
     path
   end
 
-  private
-
   def exclude_url!(url)
     require_relative "atomic_writer"
     require_relative "yaml_loader"
@@ -97,6 +95,8 @@ class EpisodeSource
       AtomicWriter.write_yaml(path, current)
     end
   end
+
+  private
 
   # Resolves which feeds to use given an optional rss_filter.
   # - nil: use all configured feeds

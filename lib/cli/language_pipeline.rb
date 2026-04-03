@@ -51,7 +51,7 @@ module PodgenCLI
       return code if code
 
       setup_staging
-      trim_source_audio
+      return 0 if trim_source_audio == :excluded
       transcribe
       clean_or_generate_description(@episode, @reconciled_text || @transcription_result[:text])
       trim_outro
@@ -230,7 +230,12 @@ module PodgenCLI
       @trimmer = AudioTrimmer.new(assembler: assembler, logger: logger)
 
       if @options[:ask_trim]
-        skip, cut = ask_trim_interactive
+        result = ask_trim_interactive
+        if result == :exclude
+          exclude_current_episode!
+          return :excluded
+        end
+        skip, cut = result
       else
         skip = @options[:no_skip] ? nil : (@options[:skip] || @episode[:skip] || @config.skip)
         cut = @options[:no_cut] ? nil : (@options[:cut] || @episode[:cut] || @config.cut)
@@ -239,18 +244,27 @@ module PodgenCLI
       @source_audio_path = @trimmer.apply_trim(@source_audio_path, skip: skip, cut: cut, snip: snip)
     end
 
+    def exclude_current_episode!
+      url = @episode[:audio_url]
+      @episode_source.exclude_url!(url)
+      logger.log("Excluded episode: #{url}")
+      $stderr.puts "Excluded: \"#{@episode[:title]}\""
+    end
+
     def ask_trim_interactive
       duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
       $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
       $stderr.puts "Opening audio for preview..."
       system("open", @source_audio_path)
 
-      $stderr.print "Enter skip intro (seconds or min:sec), blank for none: "
+      $stderr.print "Enter skip intro (seconds or min:sec), x to exclude, blank for none: "
       skip_input = $stdin.gets&.strip
+      return :exclude if skip_input&.downcase == "x"
       skip = skip_input.nil? || skip_input.empty? ? nil : TimeValue.parse(skip_input)
 
-      $stderr.print "Enter cut outro (seconds or min:sec), blank for none: "
+      $stderr.print "Enter cut outro (seconds or min:sec), x to exclude, blank for none: "
       cut_input = $stdin.gets&.strip
+      return :exclude if cut_input&.downcase == "x"
       cut = cut_input.nil? || cut_input.empty? ? nil : TimeValue.parse(cut_input)
 
       [skip, cut]
