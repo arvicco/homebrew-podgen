@@ -519,7 +519,7 @@ class TestLanguagePipeline < Minitest::Test
   def test_ask_trim_x_at_skip_prompt_excludes_episode
     config = build_config
     pipeline = build_pipeline(options: { ask_trim: true }, config: config)
-    episode = { title: "Unwanted Episode", audio_url: "https://example.com/ep1.mp3" }
+    episode = { title: "Unwanted Episode", audio_url: "https://example.com/ep1.mp3?utm_source=rss&fbclid=abc" }
     pipeline.instance_variable_set(:@episode, episode)
     pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
 
@@ -540,6 +540,7 @@ class TestLanguagePipeline < Minitest::Test
     assert File.exist?(excluded_path), "excluded_urls.yml should be created"
     excluded = YAML.load_file(excluded_path)
     assert_includes excluded, "https://example.com/ep1.mp3"
+    refute excluded.any? { |u| u.include?("utm_source") }, "tracking params should be cleaned"
     assert @logger.messages.any? { |m| m.include?("Excluded episode") }
   end
 
