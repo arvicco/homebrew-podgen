@@ -7,6 +7,9 @@ require "cli"
 require "cli/schedule_command"
 
 class TestScheduleCommand < Minitest::Test
+  TEST_LABEL = "com.podcastagent.test_pod"
+  TEST_PLIST = File.join(Dir.home, "Library", "LaunchAgents", "#{TEST_LABEL}.plist")
+
   def setup
     @tmpdir = Dir.mktmpdir("podgen_sched_test")
     build_test_podcast(@tmpdir)
@@ -16,6 +19,12 @@ class TestScheduleCommand < Minitest::Test
   def teardown
     ENV.delete("PODGEN_ROOT")
     FileUtils.rm_rf(@tmpdir)
+    cleanup_launchd
+  end
+
+  def cleanup_launchd
+    system("launchctl", "unload", TEST_PLIST, err: File::NULL, out: File::NULL)
+    File.delete(TEST_PLIST) if File.exist?(TEST_PLIST)
   end
 
   # ── Defaults ──
@@ -106,6 +115,26 @@ class TestScheduleCommand < Minitest::Test
     cmd = PodgenCLI::ScheduleCommand.new(["--publish", "test_pod"], {})
     args = cmd.installer_args
     assert_equal ["test_pod", "6", "0", "--publish"], args
+  end
+
+  # ── --test flag ──
+
+  def test_accepts_test_flag
+    cmd = PodgenCLI::ScheduleCommand.new(["--test", "test_pod"], {})
+    assert cmd.test?
+  end
+
+  def test_test_defaults_to_false
+    cmd = PodgenCLI::ScheduleCommand.new(["test_pod"], {})
+    refute cmd.test?
+  end
+
+  def test_test_fails_without_telegram_env
+    ENV.delete("TELEGRAM_BOT_TOKEN")
+    ENV.delete("TELEGRAM_CHAT_ID")
+    code, _, err = run_cli("schedule", "test_pod", "--test")
+    assert_equal 1, code
+    assert_includes err, "TELEGRAM_BOT_TOKEN"
   end
 
   # ── Validation via run ──
