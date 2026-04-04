@@ -11,6 +11,7 @@ require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "upload_tracker")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   class PublishCommand
@@ -130,7 +131,46 @@ module PodgenCLI
         end
       end
 
+      tweet_new_episodes unless @options[:dry_run]
+
       0
+    end
+
+    def tweet_new_episodes
+      return unless @config.twitter_enabled?
+
+      tc = @config.twitter_config
+      cutoff = Date.today - (tc[:since] || 7)
+      template = tc[:template]
+
+      tracker = UploadTracker.for_config(@config)
+      tweeted = tracker.entries_for(:twitter, "posts")
+      episodes = scan_episodes.reject { |ep| tweeted.key?(ep[:base_name]) }
+
+      # Filter to recent episodes only
+      episodes.select! do |ep|
+        date = EpisodeFiltering.parse_date(ep[:base_name])
+        date && date >= cutoff
+      end
+
+      return if episodes.empty?
+
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "twitter_agent")
+      agent = TwitterAgent.new(logger: nil)
+
+      episodes.each do |ep|
+        title, description, = parse_transcript(ep[:transcript_path])
+        base = File.basename(ep[:mp3_path], ".mp3")
+        mp3_url = @config.base_url ? "#{@config.base_url}/episodes/#{File.basename(ep[:mp3_path])}" : ""
+        site_url = @config.base_url ? "#{@config.base_url}/site/episodes/#{base}.html" : ""
+
+        tweet_id = agent.post_episode(title: title, description: description, site_url: site_url, mp3_url: mp3_url, template: template)
+        tracker.record(:twitter, "posts", ep[:base_name], tweet_id) if tweet_id
+
+        puts "Tweeted: #{title}" unless @options[:verbosity] == :quiet
+      end
+    rescue => e
+      $stderr.puts "Warning: Twitter posting failed: #{e.message} (non-fatal)"
     end
 
     def publish_to_lingq
@@ -302,10 +342,10 @@ module PodgenCLI
         .sort
         .filter_map do |mp3_path|
           base_name = File.basename(mp3_path, ".mp3")
-          transcript_path = File.join(episodes_dir, "#{base_name}_transcript.md")
-          next unless File.exist?(transcript_path)
+          text_path = find_text_file(episodes_dir, base_name)
+          next unless text_path
 
-          { base_name: base_name, mp3_path: mp3_path, transcript_path: transcript_path }
+          { base_name: base_name, mp3_path: mp3_path, transcript_path: text_path }
         end
 
       all.reverse! if @options[:newest]
@@ -317,6 +357,14 @@ module PodgenCLI
         $stderr.puts "No episode found matching '#{@episode_id}'"
       end
       matched
+    end
+
+    def find_text_file(dir, base_name)
+      %w[_transcript.md _script.md].each do |suffix|
+        path = File.join(dir, "#{base_name}#{suffix}")
+        return path if File.exist?(path)
+      end
+      nil
     end
 
     # Parses a transcript markdown file.
