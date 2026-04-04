@@ -7,7 +7,8 @@ set -e
 PODCAST_NAME="$1"
 HOUR="${2:-6}"
 MINUTE="${3:-0}"
-shift 3 2>/dev/null || true
+# Shift past positional args to leave only flags (--publish, --telegram)
+if [ $# -ge 3 ]; then shift 3; else shift $#; fi
 
 if [ -z "$PODCAST_NAME" ]; then
   echo "Usage: scripts/install_scheduler.sh <podcast_name> <hour> <minute> [--publish] [--telegram]"
@@ -60,7 +61,8 @@ sed -e "s|PODGEN_DIR|$PROJECT_DIR|g" \
 
 # Replace EXTRA_ARGS placeholder with flag entries (or remove if empty)
 if [ -n "$EXTRA_ARGS" ]; then
-  # Use perl for reliable multi-line replacement
+  # Trim trailing \n to avoid blank line in plist
+  EXTRA_ARGS="${EXTRA_ARGS%\\n}"
   perl -pi -e "s|.*EXTRA_ARGS.*|${EXTRA_ARGS}|" "$PLIST_DEST"
 else
   perl -pi -e 's|.*EXTRA_ARGS.*\n||' "$PLIST_DEST"
