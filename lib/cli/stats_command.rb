@@ -41,6 +41,7 @@ module PodgenCLI
         $stderr.puts "Usage: podgen stats <podcast_name>"
         $stderr.puts "       podgen stats --all"
         $stderr.puts "       podgen stats --downloads [podcast] [--days N]"
+        $stderr.puts "       podgen stats --today|--week|--month [podcast]"
         $stderr.puts
         if available.any?
           $stderr.puts "Available podcasts:"
