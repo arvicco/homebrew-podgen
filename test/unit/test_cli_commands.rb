@@ -67,13 +67,12 @@ class TestCLICommands < Minitest::Test
   def test_schedule_no_podcast_name
     require "cli/schedule_command"
 
-    out, = capture_io do
+    _, err = capture_io do
       code = PodgenCLI::ScheduleCommand.new([], {}).run
       assert_equal 2, code
     end
 
-    assert_includes out, "Usage: podgen schedule"
-    assert_includes out, "launchd scheduler"
+    assert_includes err, "Usage: podgen schedule"
   end
 
   # --- RssCommand ---

@@ -109,7 +109,7 @@ ruby bin/podgen <command> [options]
 | `podgen fork <old> <new>`           | Fork podcast into a new namespace                                                                                                                                                                                      |
 | `podgen unpublish <podcast>`        | Remove podcast from Cloudflare R2                                                                                                                                                                                      |
 | `podgen test <name>`                | Run a standalone test (research, hn, rss, tts, etc.)                                                                                                                                                                   |
-| `podgen schedule <podcast>`         | Install a daily launchd scheduler                                                                                                                                                                                      |
+| `podgen schedule <podcast>`         | Install a daily launchd scheduler (`--time HH:MM`, `--publish`, `--telegram`)                                                                                                                                          |
 
 
 ### Global flags
@@ -807,11 +807,26 @@ Known words are stored as lemmas (dictionary forms) in `podcasts/<name>/known_vo
 
 ## Scheduling (launchd)
 
-Run the installer to set up daily generation at 6:00 AM:
+Install a daily launchd scheduler:
 
 ```bash
+# Default: generate at 06:00
 podgen schedule ruby_world
+
+# Custom time (24h format)
+podgen schedule ruby_world --time 18:00
+
+# Generate + publish, with Telegram alerts on failure
+podgen schedule fulgur_news --time 18:00 --publish --telegram
 ```
+
+| Flag           | Description                                            |
+| -------------- | ------------------------------------------------------ |
+| `--time HH:MM` | Time to run in 24h format (default: `06:00`)           |
+| `--publish`    | Run `podgen publish` after a successful generate       |
+| `--telegram`   | Send Telegram alert on generate or publish failure     |
+
+`--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the podcast's `.env` file.
 
 Verify it's loaded:
 

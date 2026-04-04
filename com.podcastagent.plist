@@ -10,14 +10,15 @@
         <string>/bin/bash</string>
         <string>PODGEN_DIR/scripts/run.sh</string>
         <string>PODCAST_NAME</string>
+        EXTRA_ARGS
     </array>
 
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>6</integer>
+        <integer>SCHEDULE_HOUR</integer>
         <key>Minute</key>
-        <integer>0</integer>
+        <integer>SCHEDULE_MINUTE</integer>
     </dict>
 
     <key>StandardOutPath</key>
