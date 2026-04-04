@@ -96,7 +96,7 @@ ruby bin/podgen <command> [options]
 | `podgen rss <podcast>`              | Generate RSS feed from existing episodes                                                                                                                                                                               |
 | `podgen site <podcast>`             | Generate static HTML website (`--clean`, `--base-url URL`)                                                                                                                                                             |
 | `podgen publish <podcast>`          | Publish to Cloudflare R2 via rclone (`--lingq` for LingQ)                                                                                                                                                              |
-| `podgen stats <podcast>`            | Show podcast statistics (`--all` for summary, `--downloads` for analytics)                                                                                                                                             |
+| `podgen stats <podcast>`            | Show podcast statistics (`--all` for summary, `--downloads`/`--today`/`--week`/`--month` for analytics)                                                                                                                |
 | `podgen analytics <sub>`            | Manage download analytics Worker (`setup`, `deploy`, `tail`, `status`)                                                                                                                                                 |
 | `podgen validate <podcast>`         | Validate config and output (`--all` for all podcasts)                                                                                                                                                                  |
 | `podgen list`                       | List available podcasts with titles                                                                                                                                                                                    |
@@ -945,8 +945,13 @@ podgen stats --downloads
 # Single podcast — per-episode counts, countries, apps, daily breakdown
 podgen stats --downloads ruby_world
 
+# Time shortcuts
+podgen stats --today ruby_world     # last 24h
+podgen stats --week ruby_world      # last 7 days
+podgen stats --month ruby_world     # last 30 days
+
 # Custom lookback period
-podgen stats --downloads ruby_world --days 7
+podgen stats --downloads ruby_world --days 90
 ```
 
 Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env`. See [docs/cloudflare.md](docs/cloudflare.md) for token setup.
