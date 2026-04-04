@@ -826,7 +826,7 @@ podgen schedule fulgur_news --time 18:00 --publish --telegram
 | `--publish`    | Run `podgen publish` after a successful generate       |
 | `--telegram`   | Send Telegram alert on generate or publish failure     |
 
-`--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the podcast's `.env` file.
+`--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast).
 
 Verify it's loaded:
 

@@ -26,11 +26,17 @@ for arg in "$@"; do
   esac
 done
 
-# Load podcast .env for Telegram credentials
-ENV_FILE="$PROJECT_DIR/podcasts/$PODCAST_NAME/.env"
-if [ -f "$ENV_FILE" ]; then
+# Load root .env, then per-podcast .env (overrides), matching Ruby load order
+ROOT_ENV="$PROJECT_DIR/.env"
+if [ -f "$ROOT_ENV" ]; then
   set -a
-  source "$ENV_FILE"
+  source "$ROOT_ENV"
+  set +a
+fi
+POD_ENV="$PROJECT_DIR/podcasts/$PODCAST_NAME/.env"
+if [ -f "$POD_ENV" ]; then
+  set -a
+  source "$POD_ENV"
   set +a
 fi
 
