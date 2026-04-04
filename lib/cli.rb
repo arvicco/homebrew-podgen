@@ -47,7 +47,7 @@ module PodgenCLI
       opts.separator "  validate <podcast> | --all     Validate config and output"
       opts.separator "  list                           List available podcasts"
       opts.separator "  test <name> [args]             Run a standalone test"
-      opts.separator "  schedule <podcast>             Install launchd scheduler"
+      opts.separator "  schedule <podcast>             Install launchd scheduler (--time, --publish, --telegram)"
       opts.separator "  analytics <setup|deploy|tail|status>  Manage download analytics Worker"
       opts.separator "  add <podcast> <url> [--note ...]     Queue a priority link for next episode"
       opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"
