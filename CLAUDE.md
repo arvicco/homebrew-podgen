@@ -60,9 +60,10 @@ If you are unsure about the root cause, say so and ask a clarifying question ins
 - Transcript HTML via `TranscriptRenderer` module (shared by RssGenerator and SiteGenerator). RSS passes `vocab: false` (strips vocabulary, removes bold markers); site uses default `vocab: true` (linked words + rendered definitions)
 - Known vocabulary via `KnownVocabulary` class — per-language lemma lists in `known_vocabulary.yml`, managed by `podgen vocab` CLI, filtered in `VocabularyAnnotator` before marking/rendering
 - Cognate filtering via deterministic code post-filter in `VocabularyAnnotator#filter_cognates` — ICU transliteration (`Cyrillic-Latin; Latin-ASCII`) + Levenshtein distance with length-adaptive thresholds. Supports Latin and Cyrillic scripts. Prompt-based filtering is unreliable for exclusion tasks; code handles it instead. The LLM provides `similar_translations` field for cross-script comparison
-- Upload tracking via `UploadTracker` (unified `uploads.yml` — tracks LingQ collections and YouTube playlists). Replaces old `LingqTracker`/`lingq_uploads.yml`. Auto-migrates legacy format on first load
+- Upload tracking via `UploadTracker` (unified `uploads.yml` — tracks LingQ collections, YouTube playlists, and Twitter posts). Replaces old `LingqTracker`/`lingq_uploads.yml`. Auto-migrates legacy format on first load
 - YouTube publishing: `TimestampPersister` saves transcription segments to `_timestamps.json`, `SubtitleGenerator` produces SRT, `VideoGenerator` creates MP4 (1fps, ultrafast), `YouTubeUploader` handles OAuth2 + Data API v3 (force-ssl scope). Old episodes without timestamps are retranscribed on demand. Batch stops on `uploadLimitExceeded`/`quotaExceeded`
 - Publish command supports `--youtube`, `--lingq`, `--force`, `--newest`, and optional episode ID (`publish <podcast> <date> --youtube`)
+- Twitter/X announcements: `TwitterAgent` posts via `x` gem (OAuth 1.0a), auto-triggered after R2 publish if `## Twitter` section is configured. Template-based (`{title}`, `{description}`, `{url}`), date cutoff via `since:` (default 7 days). Non-fatal — publish succeeds even if tweeting fails
 - URL cleaning via `UrlCleaner` module (strips tracking params like utm_*, fbclid, gclid)
 - Paths: `File.join` + `__dir__`-relative, `require_relative` throughout
 - Atomic writes (temp + rename) for history/cache
