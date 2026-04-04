@@ -12,6 +12,7 @@ class TestUtilities < Minitest::Test
 
   def teardown
     FileUtils.rm_rf(@tmpdir)
+    Object.send(:remove_const, :TestLoggableWidget) if defined?(TestLoggableWidget)
   end
 
   # --- LANGUAGE_NAMES ---
