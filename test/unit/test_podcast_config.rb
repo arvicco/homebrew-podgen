@@ -1122,6 +1122,51 @@ class TestPodcastConfig < Minitest::Test
     assert_nil config.lingq_config
   end
 
+  # --- twitter_config / twitter_enabled? ---
+
+  def test_twitter_config_parses_section
+    write_guidelines(<<~MD)
+      ## Twitter
+      - template: New ep: {title} {url}
+      - since: 3
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal "New ep: {title} {url}", config.twitter_config[:template]
+    assert_equal 3, config.twitter_config[:since]
+  end
+
+  def test_twitter_enabled_with_env_vars
+    write_guidelines("## Twitter\n- template: {title}")
+
+    saved = %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET].map { |k| [k, ENV[k]] }
+    saved.each { |k, _| ENV[k] = "test-value" }
+
+    config = PodcastConfig.new("myshow")
+    assert config.twitter_enabled?
+  ensure
+    saved&.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
+  end
+
+  def test_twitter_not_enabled_without_env_vars
+    write_guidelines("## Twitter\n- template: {title}")
+
+    saved = %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET].map { |k| [k, ENV.delete(k)] }
+
+    config = PodcastConfig.new("myshow")
+    refute config.twitter_enabled?
+  ensure
+    saved&.each { |k, v| ENV[k] = v if v }
+  end
+
+  def test_twitter_nil_when_section_missing
+    write_guidelines("## Podcast\n- name: Test")
+
+    config = PodcastConfig.new("myshow")
+    assert_nil config.twitter_config
+    refute config.twitter_enabled?
+  end
+
   private
 
   def write_guidelines(content)

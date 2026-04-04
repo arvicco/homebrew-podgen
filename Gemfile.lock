@@ -117,6 +117,8 @@ GEM
     trailblazer-option (0.1.2)
     uber (0.1.0)
     uri (1.1.1)
+    x (0.19.0)
+      base64 (>= 0.2)
 
 PLATFORMS
   arm64-darwin-24
@@ -143,6 +145,7 @@ DEPENDENCIES
   rexml (~> 3.4)
   rss (~> 0.3)
   sinatra (~> 4.1)
+  x (~> 0.14)
 
 CHECKSUMS
   addressable (2.8.9) sha256=cc154fcbe689711808a43601dee7b980238ce54368d23e127421753e46895485
@@ -202,6 +205,7 @@ CHECKSUMS
   trailblazer-option (0.1.2) sha256=20e4f12ea4e1f718c8007e7944ca21a329eee4eed9e0fa5dde6e8ad8ac4344a3
   uber (0.1.0) sha256=5beeb407ff807b5db994f82fa9ee07cfceaa561dad8af20be880bc67eba935dc
   uri (1.1.1) sha256=379fa58d27ffb1387eaada68c749d1426738bd0f654d812fcc07e7568f5c57c6
+  x (0.19.0) sha256=98fe268ff405572b1ab9181526972008c009c2aec11236b1b24e2d57a02478c0
 
 BUNDLED WITH
   4.0.3
