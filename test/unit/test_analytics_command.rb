@@ -5,8 +5,8 @@ require "cli/analytics_command"
 
 class TestAnalyticsCommand < Minitest::Test
   def setup
-    @tmpdir = Dir.mktmpdir("podgen_analytics_test")
     @original_worker_dir = PodgenCLI::AnalyticsCommand::WORKER_DIR
+    @tmpdir = Dir.mktmpdir("podgen_analytics_test")
     # Point WORKER_DIR to temp dir
     PodgenCLI::AnalyticsCommand.send(:remove_const, :WORKER_DIR)
     PodgenCLI::AnalyticsCommand.const_set(:WORKER_DIR, @tmpdir)
