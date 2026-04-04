@@ -108,6 +108,7 @@ ruby bin/podgen <command> [options]
 | `podgen cover <podcast> [episode]`  | Generate episode cover images (`--missing-only`, `--dry-run`, or manual: `podgen cover <podcast> <title>`)                                                                                                             |
 | `podgen fork <old> <new>`           | Fork podcast into a new namespace                                                                                                                                                                                      |
 | `podgen unpublish <podcast>`        | Remove podcast from Cloudflare R2                                                                                                                                                                                      |
+| `podgen tweet <podcast> <episode>`  | Tweet about a specific episode (`--force`, `--dry-run`)                                                                                                                                                                |
 | `podgen test <name>`                | Run a standalone test (research, hn, rss, tts, etc.)                                                                                                                                                                   |
 | `podgen schedule <podcast>`         | Install a daily launchd scheduler (`--time HH:MM`, `--publish`, `--telegram`)                                                                                                                                          |
 
@@ -804,6 +805,36 @@ Known words are stored as lemmas (dictionary forms) in `podcasts/<name>/known_vo
 - `collection` (required): LingQ collection/course ID
 - `level` / `tags` / `status`: lesson metadata
 - Upload is non-fatal — the pipeline continues if it fails
+
+### Twitter/X Announcements
+
+Automatically tweet about new episodes after publishing to R2. Add a `## Twitter` section to your guidelines.md and set OAuth 1.0a credentials in `.env`:
+
+```
+TWITTER_CONSUMER_KEY=...
+TWITTER_CONSUMER_SECRET=...
+TWITTER_ACCESS_TOKEN=...
+TWITTER_ACCESS_SECRET=...
+```
+
+```markdown
+## Twitter
+- template: New episode: {title}\n{site_url}
+- since: 7
+```
+
+- `template`: Tweet text with `{title}`, `{description}`, `{site_url}`, `{mp3_url}` variables (default: `🎙 {title}\n\n{site_url}`). Use `\n` for line breaks
+- `since`: Only tweet episodes from the last N days (default: 7). Prevents tweeting the entire backlog when first enabling
+
+Tweets fire automatically after a successful `podgen publish` to R2. Each episode is tweeted once — tracked in `uploads.yml` under the `twitter` platform. Tweeting is non-fatal: if it fails, publish still succeeds.
+
+To manually tweet about a specific (e.g. older) episode:
+
+```bash
+podgen tweet fulgur_news 2026-03-15           # tweet a specific episode
+podgen tweet fulgur_news 2026-03-15 --dry-run # preview without posting
+podgen tweet fulgur_news 2026-03-15 --force   # re-tweet even if already posted
+```
 
 ## Scheduling (launchd)
 
