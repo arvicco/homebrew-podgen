@@ -25,7 +25,8 @@ module PodgenCLI
     "exclude"   => ["Exclude URLs from future episodes",    "cli/exclude_command",     "ExcludeCommand"],
     "cover"     => ["Generate episode cover image",          "cli/cover_command",       "CoverCommand"],
     "fork"      => ["Fork podcast into a new namespace",    "cli/fork_command",        "ForkCommand"],
-    "unpublish" => ["Remove podcast from Cloudflare R2",    "cli/unpublish_command",   "UnpublishCommand"]
+    "unpublish" => ["Remove podcast from Cloudflare R2",    "cli/unpublish_command",   "UnpublishCommand"],
+    "tweet"     => ["Tweet about an episode",               "cli/tweet_command",       "TweetCommand"]
   }.freeze
 
   def self.run(argv)
@@ -58,6 +59,7 @@ module PodgenCLI
       opts.separator "  cover <podcast> <title|episode-id>   Generate episode cover image"
       opts.separator "  fork <old> <new>                   Fork podcast into a new namespace"
       opts.separator "  unpublish <podcast>                Remove podcast from Cloudflare R2"
+      opts.separator "  tweet <podcast> <episode-id>       Tweet about an episode (--force, --dry-run)"
       opts.separator ""
       opts.separator "Pipelines (configured via ## Type in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"
