@@ -217,6 +217,24 @@ class TestCLIOptions < Minitest::Test
     assert_equal true, cmd.instance_variable_get(:@all)
   end
 
+  def test_stats_today_sets_days_1
+    cmd = PodgenCLI::StatsCommand.new(["--today", "test_pod"], {})
+    assert_equal 1, cmd.instance_variable_get(:@days)
+    assert_equal true, cmd.instance_variable_get(:@downloads)
+  end
+
+  def test_stats_week_sets_days_7
+    cmd = PodgenCLI::StatsCommand.new(["--week", "test_pod"], {})
+    assert_equal 7, cmd.instance_variable_get(:@days)
+    assert_equal true, cmd.instance_variable_get(:@downloads)
+  end
+
+  def test_stats_month_sets_days_30
+    cmd = PodgenCLI::StatsCommand.new(["--month", "test_pod"], {})
+    assert_equal 30, cmd.instance_variable_get(:@days)
+    assert_equal true, cmd.instance_variable_get(:@downloads)
+  end
+
   def test_validate_accepts_all
     cmd = PodgenCLI::ValidateCommand.new(["--all"], {})
     assert_equal true, cmd.instance_variable_get(:@all)

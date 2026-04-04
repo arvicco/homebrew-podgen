@@ -22,6 +22,9 @@ module PodgenCLI
         opts.on("--all", "Show stats for all podcasts") { @all = true }
         opts.on("--downloads", "Show download analytics from Cloudflare") { @downloads = true }
         opts.on("--days N", Integer, "Lookback period for downloads (default 30)") { |n| @days = n }
+        opts.on("--today", "Downloads for today (shortcut for --days 1)") { @downloads = true; @days = 1 }
+        opts.on("--week", "Downloads for last 7 days") { @downloads = true; @days = 7 }
+        opts.on("--month", "Downloads for last 30 days") { @downloads = true; @days = 30 }
       end.parse!(args)
       @podcast_name = args.shift
     end
