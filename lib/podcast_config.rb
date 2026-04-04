@@ -205,6 +205,15 @@ class PodcastConfig
     config && config[:collection] && has_key
   end
 
+  def twitter_config
+    parser.twitter_config
+  end
+
+  def twitter_enabled?
+    twitter_config && %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET
+      TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET].all? { |k| ENV[k] && !ENV[k].empty? }
+  end
+
   def cover_generation_enabled?
     bi = cover_base_image
     bi && File.exist?(bi)

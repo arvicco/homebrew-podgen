@@ -19,6 +19,7 @@ gem "ffi-icu",   "~> 0.5"   # ICU transliteration for Cyrillic/Greek/Korean roma
 gem "google-apis-youtube_v3", "~> 0.54"  # YouTube Data API v3 (upload, captions)
 gem "googleauth", "~> 1.11"             # Google OAuth2 authentication
 gem "pstore",    "~> 0.1"               # Required by googleauth (removed from Ruby 4.0 defaults)
+gem "x",         "~> 0.14"              # X (Twitter) API v2 client
 
 group :test do
   gem "minitest",  "~> 5.25"

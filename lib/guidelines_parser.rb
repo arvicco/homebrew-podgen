@@ -38,6 +38,10 @@ class GuidelinesParser
     @youtube_config ||= parse_youtube_section
   end
 
+  def twitter_config
+    @twitter_config ||= parse_twitter_section
+  end
+
   def links_config
     @links_config ||= parse_links_section
   end
@@ -288,6 +292,17 @@ class GuidelinesParser
       when "privacy"   then { privacy: value } if %w[public unlisted private].include?(value)
       when "category"  then { category: value }
       when "tags"      then { tags: value.split(",").map(&:strip) }
+      end
+    end
+    return nil if config.nil? || config.empty?
+    config
+  end
+
+  def parse_twitter_section
+    config = parse_kv_section("Twitter") do |key, value|
+      case key
+      when "template" then { template: value }
+      when "since"    then { since: value.to_i }
       end
     end
     return nil if config.nil? || config.empty?
