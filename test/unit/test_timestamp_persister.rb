@@ -132,6 +132,48 @@ class TestTimestampPersister < Minitest::Test
     assert_nil TimestampPersister.load(File.join(@tmpdir, "nonexistent.json"))
   end
 
+  # --- update_segments ---
+
+  def test_update_segments_replaces_text_and_sets_reconciled
+    path = File.join(@tmpdir, "ep_timestamps.json")
+    TimestampPersister.persist(segments: [{ start: 0.0, end: 5.0, text: "Raw garbled." }],
+      engine: "groq", intro_duration: 0.0, output_path: path)
+
+    new_segments = [{ "start" => 0.0, "end" => 5.0, "text" => "Clean correct." }]
+    TimestampPersister.update_segments(path, new_segments)
+
+    data = JSON.parse(File.read(path))
+    assert_equal "Clean correct.", data["segments"][0]["text"]
+    assert_equal true, data["reconciled"]
+    assert_equal "groq", data["engine"] # preserved
+  end
+
+  def test_update_segments_preserves_metadata
+    path = File.join(@tmpdir, "ep_timestamps.json")
+    TimestampPersister.persist(segments: [{ start: 0.0, end: 5.0, text: "Old." }],
+      engine: "elab", intro_duration: 3.5, output_path: path)
+
+    TimestampPersister.update_segments(path, [{ "start" => 3.5, "end" => 8.5, "text" => "New." }])
+
+    data = JSON.parse(File.read(path))
+    assert_equal 1, data["version"]
+    assert_equal "elab", data["engine"]
+    assert_in_delta 3.5, data["intro_duration"]
+  end
+
+  def test_load_returns_reconciled_flag
+    path = File.join(@tmpdir, "ep_timestamps.json")
+    TimestampPersister.persist(segments: [{ start: 0.0, end: 5.0, text: "Raw." }],
+      engine: "groq", intro_duration: 0.0, output_path: path)
+
+    data = TimestampPersister.load(path)
+    refute data["reconciled"]
+
+    TimestampPersister.update_segments(path, [{ "start" => 0.0, "end" => 5.0, "text" => "Clean." }])
+    data = TimestampPersister.load(path)
+    assert data["reconciled"]
+  end
+
   # --- extract_segments ---
 
   def test_extract_segments_single_engine_with_segments

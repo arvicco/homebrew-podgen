@@ -47,6 +47,16 @@ module TimestampPersister
     File.write(output_path, JSON.pretty_generate(data))
   end
 
+  # Replace segments in an existing timestamps file and mark as reconciled.
+  def self.update_segments(path, segments)
+    data = load(path)
+    return unless data
+
+    data["segments"] = segments
+    data["reconciled"] = true
+    File.write(path, JSON.pretty_generate(data))
+  end
+
   # Load a timestamps JSON file. Returns parsed Hash or nil if file missing.
   def self.load(path)
     return nil unless File.exist?(path)
