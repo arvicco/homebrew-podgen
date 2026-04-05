@@ -34,6 +34,18 @@ class YouTubeUploader
     authorizer = Google::Auth::UserAuthorizer.new(client_id_obj, SCOPE, token_store)
 
     credentials = authorizer.get_credentials("default")
+
+    # If token is expired, try to refresh; if that fails, clear and re-prompt
+    if credentials && credentials.expired?
+      begin
+        credentials.refresh!
+      rescue StandardError
+        log("Stored YouTube token expired — re-authorizing")
+        authorizer.revoke_authorization(nil, "default")
+        credentials = nil
+      end
+    end
+
     if credentials.nil?
       url = authorizer.get_authorization_url(base_url: OOB_URI)
       log("Open the following URL in your browser and authorize the application:")

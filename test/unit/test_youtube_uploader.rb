@@ -29,6 +29,38 @@ class TestYouTubeUploader < Minitest::Test
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
   end
 
+  def test_authorize_clears_expired_credentials_and_reprompts
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+
+    # Fake an expired credential
+    expired_cred = Object.new
+    expired_cred.define_singleton_method(:expired?) { true }
+    expired_cred.define_singleton_method(:refresh!) { raise Signet::AuthorizationError.new("Token has been expired or revoked") }
+
+    fake_authorizer = Object.new
+    fake_authorizer.define_singleton_method(:get_credentials) { |_| expired_cred }
+    deleted_id = nil
+    fake_authorizer.define_singleton_method(:revoke_authorization) { |_, id| deleted_id = id }
+    fake_authorizer.define_singleton_method(:get_authorization_url) { |**_| "https://accounts.google.com/auth" }
+
+    uploader = YouTubeUploader.new
+    # Stub the authorizer creation
+    Google::Auth::UserAuthorizer.stub(:new, fake_authorizer) do
+      # Should detect expired token and prompt — which will fail on stdin
+      assert_raises(RuntimeError, /No authorization code/) do
+        $stdin.stub(:gets, nil) { uploader.authorize! }
+      end
+    end
+    # Verify it attempted to revoke the expired token
+    assert_equal "default", deleted_id
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+  end
+
   # --- upload_video ---
 
   def test_upload_video_without_service_triggers_authorize
