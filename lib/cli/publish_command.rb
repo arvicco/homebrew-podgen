@@ -284,8 +284,9 @@ module PodgenCLI
         # Generate timestamps via retranscription if missing, then SRT
         ts_path = File.join(episodes_dir, "#{ep[:base_name]}_timestamps.json")
         retranscribe_for_timestamps(ep[:mp3_path], ts_path, ep[:base_name]) unless File.exist?(ts_path)
+        reconcile_subtitles_if_needed(ts_path, ep[:transcript_path]) if File.exist?(ts_path)
         srt_path = File.join(episodes_dir, "#{ep[:base_name]}.srt")
-        SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path) && !File.exist?(srt_path)
+        SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path)
 
         # Generate video if not already present
         video_path = File.join(episodes_dir, "#{ep[:base_name]}.mp4")
@@ -365,6 +366,24 @@ module PodgenCLI
         return path if File.exist?(path)
       end
       nil
+    end
+
+    def reconcile_subtitles_if_needed(ts_path, transcript_path)
+      data = TimestampPersister.load(ts_path)
+      return if data.nil? || data["reconciled"]
+
+      api_key = ENV["ANTHROPIC_API_KEY"]
+      return unless api_key && !api_key.empty?
+
+      _, _, transcript_text = parse_transcript(transcript_path)
+      return if transcript_text.nil? || transcript_text.strip.empty?
+
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_reconciler")
+      segments = SubtitleReconciler.reconcile(data["segments"], transcript_text, api_key: api_key)
+      TimestampPersister.update_segments(ts_path, segments)
+      puts "  reconciled subtitles: #{File.basename(ts_path)}" unless @options[:verbosity] == :quiet
+    rescue => e
+      $stderr.puts "  Warning: subtitle reconciliation failed: #{e.message} (using raw segments)"
     end
 
     # Parses a transcript markdown file.
