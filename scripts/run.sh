@@ -26,19 +26,23 @@ for arg in "$@"; do
   esac
 done
 
+# Load .env files safely (handles unquoted values with spaces, unlike source)
+load_env() {
+  local file="$1"
+  [ -f "$file" ] || return
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip comments and blank lines
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "$line" ]] && continue
+    # Only process KEY=VALUE lines
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*) ]] || continue
+    export "${BASH_REMATCH[1]}=${BASH_REMATCH[2]}"
+  done < "$file"
+}
+
 # Load root .env, then per-podcast .env (overrides), matching Ruby load order
-ROOT_ENV="$PROJECT_DIR/.env"
-if [ -f "$ROOT_ENV" ]; then
-  set -a
-  source "$ROOT_ENV"
-  set +a
-fi
-POD_ENV="$PROJECT_DIR/podcasts/$PODCAST_NAME/.env"
-if [ -f "$POD_ENV" ]; then
-  set -a
-  source "$POD_ENV"
-  set +a
-fi
+load_env "$PROJECT_DIR/.env"
+load_env "$PROJECT_DIR/podcasts/$PODCAST_NAME/.env"
 
 # ── Helper: send Telegram alert ──
 send_telegram_alert() {
@@ -56,7 +60,7 @@ send_telegram_alert() {
 }
 
 # ── Run generate ──
-bundle exec ruby bin/podgen generate --quiet "$PODCAST_NAME"
+bundle exec ruby bin/podgen --quiet generate "$PODCAST_NAME"
 GEN_EXIT=$?
 
 if [ $GEN_EXIT -ne 0 ]; then
