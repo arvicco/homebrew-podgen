@@ -58,6 +58,7 @@ module PodgenCLI
       trim_outro
       assemble_episode
       persist_timestamps
+      reconcile_subtitles
       save_transcript_and_cover
       annotate_vocabulary if @config.vocabulary_level
       commit_episode
@@ -338,6 +339,27 @@ module PodgenCLI
         audio_duration: source_duration
       )
       logger.log("Timestamps saved: #{ts_path} (#{segments.length} segments, engine: #{engine}, intro: #{intro_duration.round(1)}s)")
+    end
+
+    def reconcile_subtitles
+      return unless @reconciled_text
+      ts_path = File.join(@staging_dir, "#{@base_name}_timestamps.json")
+      return unless File.exist?(ts_path)
+
+      api_key = ENV["ANTHROPIC_API_KEY"]
+      return unless api_key && !api_key.empty?
+
+      logger.phase_start("Subtitle Reconciliation")
+      require_relative "../subtitle_reconciler"
+      data = TimestampPersister.load(ts_path)
+      segments = SubtitleReconciler.reconcile(data["segments"], @reconciled_text, api_key: api_key)
+      TimestampPersister.update_segments(ts_path, segments)
+      logger.log("Subtitles reconciled (#{segments.length} segments)")
+      logger.phase_end("Subtitle Reconciliation")
+    rescue => e
+      logger.log("Warning: Subtitle reconciliation failed: #{e.message} (non-fatal, keeping raw segments)")
+      @warnings << "Subtitle reconciliation failed (#{e.message})"
+      logger.phase_end("Subtitle Reconciliation") rescue nil
     end
 
     def save_transcript_and_cover
