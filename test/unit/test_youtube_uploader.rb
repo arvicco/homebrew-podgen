@@ -61,6 +61,33 @@ class TestYouTubeUploader < Minitest::Test
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
   end
 
+  def test_revoke_authorization_called_with_single_arg
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+
+    expired_cred = Object.new
+    expired_cred.define_singleton_method(:expired?) { true }
+    expired_cred.define_singleton_method(:refresh!) { raise Signet::AuthorizationError.new("expired") }
+
+    mock_authorizer = Minitest::Mock.new
+    mock_authorizer.expect(:get_credentials, expired_cred, ["default"])
+    mock_authorizer.expect(:revoke_authorization, nil, ["default"])
+    mock_authorizer.expect(:get_authorization_url, "https://example.com", base_url: String)
+
+    uploader = YouTubeUploader.new
+    Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
+      $stdin.stub(:gets, nil) do
+        assert_raises(RuntimeError) { uploader.authorize! }
+      end
+    end
+    mock_authorizer.verify
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+  end
+
   # --- upload_video ---
 
   def test_upload_video_without_service_triggers_authorize
