@@ -41,7 +41,7 @@ class YouTubeUploader
         credentials.refresh!
       rescue StandardError
         log("Stored YouTube token expired — re-authorizing")
-        authorizer.revoke_authorization("default")
+        token_store.delete("default")
         credentials = nil
       end
     end
