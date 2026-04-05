@@ -43,7 +43,7 @@ class TestYouTubeUploader < Minitest::Test
     fake_authorizer = Object.new
     fake_authorizer.define_singleton_method(:get_credentials) { |_| expired_cred }
     deleted_id = nil
-    fake_authorizer.define_singleton_method(:revoke_authorization) { |_, id| deleted_id = id }
+    fake_authorizer.define_singleton_method(:revoke_authorization) { |id| deleted_id = id }
     fake_authorizer.define_singleton_method(:get_authorization_url) { |**_| "https://accounts.google.com/auth" }
 
     uploader = YouTubeUploader.new
