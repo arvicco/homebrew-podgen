@@ -22,7 +22,7 @@ class TestTranslationAgent < Minitest::Test
     stub_client(agent, nil_output: true)
 
     err = assert_raises(RuntimeError) { agent.translate(sample_script) }
-    assert_includes err.message, "Structured output parsing failed"
+    assert_includes err.message, "No parsed output"
   end
 
   def test_prompt_includes_language_name

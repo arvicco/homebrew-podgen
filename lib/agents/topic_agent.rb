@@ -34,7 +34,7 @@ class TopicAgent
     log("Generating topics with #{@model}")
     today = Date.today.strftime("%A, %B %-d, %Y (%Y-%m-%d)")
 
-    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
+    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
@@ -52,8 +52,7 @@ class TopicAgent
 
       log_api_usage("Topics generated", message, elapsed)
 
-      result = message.parsed_output
-      raise "Structured output parsing failed" if result.nil?
+      result = require_parsed_output!(message, TopicList)
 
       queries = result.queries.map(&:query)
       queries.each { |q| log("  → #{q}") }

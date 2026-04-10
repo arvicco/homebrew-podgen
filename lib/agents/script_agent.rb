@@ -48,7 +48,7 @@ class ScriptAgent
     log("Generating script with #{@model}")
     research_text = format_research(research_data)
 
-    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
+    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
@@ -66,8 +66,7 @@ class ScriptAgent
 
       log_api_usage("Script generated", message, elapsed)
 
-      script = message.parsed_output
-      raise "Structured output parsing failed" if script.nil?
+      script = require_parsed_output!(message, PodcastScript)
 
       result = {
         title: script.title,
