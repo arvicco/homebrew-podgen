@@ -14,6 +14,7 @@ require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "topic_agent")
 require_relative File.join(root, "lib", "source_manager")
 require_relative File.join(root, "lib", "agents", "script_agent")
+require_relative File.join(root, "lib", "agents", "script_reviewer")
 require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "audio_assembler")
@@ -74,6 +75,7 @@ module PodgenCLI
         research_data = research_topics(topics)
         research_data, priority_urls = inject_priority_links(research_data)
         script = generate_script(topics, research_data, priority_urls)
+        script = review_script(script, research_data, priority_urls) unless @dry_run
 
         if @dry_run
           log_dry_run_summary(topics, research_data, script)
@@ -267,6 +269,74 @@ module PodgenCLI
       @logger.log("Script generated: \"#{script[:title]}\" (#{script[:segments].length} segments)")
       @logger.phase_end("Script")
       script
+    end
+
+    MAX_REVIEW_RETRIES = 2
+
+    def review_script(script, research_data, priority_urls)
+      @logger.phase_start("Review")
+
+      reviewer = ScriptReviewer.new(
+        date: @today,
+        research_data: research_data,
+        priority_urls: priority_urls,
+        guidelines: @guidelines,
+        logger: @logger
+      )
+
+      attempt = 0
+
+      loop do
+        result = reviewer.review(script)
+
+        # Log all issues
+        result[:issues].each do |issue|
+          fixed = issue[:auto_fixed] ? " [auto-fixed]" : ""
+          @logger.log("  #{issue[:severity]}: [#{issue[:check]}] #{issue[:message]}#{fixed}")
+        end
+
+        # Use the corrected script (deterministic fixes applied)
+        script = result[:script]
+
+        # Check for unfixed blockers
+        unfixed_blockers = result[:issues].select { |i| i[:severity] == ScriptReviewer::BLOCKER && !i[:auto_fixed] }
+
+        if unfixed_blockers.empty?
+          total = result[:issues].length
+          @logger.log("Script review passed#{total > 0 ? " (#{total} issue(s), none blocking)" : ""}")
+          break
+        end
+
+        attempt += 1
+        if attempt > MAX_REVIEW_RETRIES
+          @warnings << "Script review: #{unfixed_blockers.length} unresolved blocker(s) after #{MAX_REVIEW_RETRIES} retries"
+          unfixed_blockers.each { |b| @warnings << "  - #{b[:message]}" }
+          @logger.log("Script review: proceeding with #{unfixed_blockers.length} unresolved blocker(s)")
+          break
+        end
+
+        @logger.log("Script review: #{unfixed_blockers.length} blocker(s) found, re-generating (attempt #{attempt}/#{MAX_REVIEW_RETRIES})")
+        feedback = unfixed_blockers.map { |b| "- #{b[:message]}" }.join("\n")
+        script = regenerate_script_with_feedback(research_data, priority_urls, feedback)
+      end
+
+      @logger.phase_end("Review")
+      script
+    end
+
+    def regenerate_script_with_feedback(research_data, priority_urls, feedback)
+      script_agent = ScriptAgent.new(
+        guidelines: @guidelines,
+        script_path: @config.script_path(@today),
+        logger: @logger,
+        priority_urls: priority_urls,
+        links_config: @config.links_enabled? ? @config.links_config : nil
+      )
+      augmented_data = research_data + [{
+        topic: "REVIEWER FEEDBACK — You MUST fix these issues in the new script",
+        findings: [{ title: "Issues to fix", url: "n/a", summary: feedback }]
+      }]
+      script_agent.generate(augmented_data)
     end
 
     def produce_episodes(script, research_data)
