@@ -125,8 +125,6 @@ module PodgenCLI
       YouTubeUploader.new
     end
 
-    private
-
     def run_rclone(args)
       rclone_env = {
         "RCLONE_CONFIG_R2_TYPE" => "s3",
