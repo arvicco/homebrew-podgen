@@ -275,7 +275,17 @@ module PodgenCLI
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_generator")
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "video_generator")
 
-      uploader = YouTubeUploader.new
+      uploader = build_youtube_uploader
+
+      # Verify playlist exists before uploading any videos
+      if yt_config[:playlist]
+        begin
+          uploader.verify_playlist!(yt_config[:playlist])
+        rescue => e
+          $stderr.puts "YouTube playlist verification failed: #{e.message}"
+          return 1
+        end
+      end
 
       pending.each do |ep|
         title, description, _transcript = parse_transcript(ep[:transcript_path])
@@ -368,7 +378,12 @@ module PodgenCLI
       nil
     end
 
+    def build_youtube_uploader
+      YouTubeUploader.new
+    end
+
     def reconcile_subtitles_if_needed(ts_path, transcript_path)
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "timestamp_persister")
       data = TimestampPersister.load(ts_path)
       return if data.nil? || data["reconciled"]
 
@@ -379,9 +394,10 @@ module PodgenCLI
       return if transcript_text.nil? || transcript_text.strip.empty?
 
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_reconciler")
+      print "  reconciling subtitles: #{File.basename(ts_path)}..." unless @options[:verbosity] == :quiet
       segments = SubtitleReconciler.reconcile(data["segments"], transcript_text, api_key: api_key)
       TimestampPersister.update_segments(ts_path, segments)
-      puts "  reconciled subtitles: #{File.basename(ts_path)}" unless @options[:verbosity] == :quiet
+      puts " done" unless @options[:verbosity] == :quiet
     rescue => e
       $stderr.puts "  Warning: subtitle reconciliation failed: #{e.message} (using raw segments)"
     end

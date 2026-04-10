@@ -625,6 +625,9 @@ module PodgenCLI
       uploader = YouTubeUploader.new(logger: logger)
       uploader.authorize!
 
+      # Verify playlist exists before uploading
+      uploader.verify_playlist!(yt_config[:playlist]) if yt_config[:playlist]
+
       video_id = uploader.upload_video(
         video_path,
         title: @episode[:title],

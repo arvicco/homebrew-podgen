@@ -56,4 +56,84 @@ class TestUnpublishCommand < Minitest::Test
   ensure
     %w[R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT R2_BUCKET].each { |k| ENV.delete(k) if ENV[k]&.start_with?("test-") }
   end
+
+  # --- YouTube unpublish ---
+
+  def test_unpublish_youtube_deletes_tracked_videos
+    output_dir = File.join(@tmpdir, "output", "testpod")
+    episodes_dir = File.join(output_dir, "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+
+    tracker_path = File.join(output_dir, "uploads.yml")
+    File.write(tracker_path, {
+      "youtube" => {
+        "PLtest123" => {
+          "ep-2026-01-15" => "vid_aaa",
+          "ep-2026-01-16" => "vid_bbb"
+        }
+      }
+    }.to_yaml)
+
+    cmd = PodgenCLI::UnpublishCommand.new(["testpod"], youtube: true)
+    deleted_ids = []
+    removed_from_playlist = []
+
+    # Stub YouTubeUploader
+    stub_uploader = Object.new
+    stub_uploader.define_singleton_method(:authorize!) { nil }
+    stub_uploader.define_singleton_method(:delete_video) { |id| deleted_ids << id; true }
+    stub_uploader.define_singleton_method(:remove_from_playlist) { |vid, pl| removed_from_playlist << [vid, pl]; true }
+
+    cmd.define_singleton_method(:build_youtube_uploader) { stub_uploader }
+
+    out, = capture_io { code = cmd.run; assert_equal 0, code }
+
+    assert_includes deleted_ids, "vid_aaa"
+    assert_includes deleted_ids, "vid_bbb"
+    assert_includes removed_from_playlist, ["vid_aaa", "PLtest123"]
+    assert_includes removed_from_playlist, ["vid_bbb", "PLtest123"]
+    assert_includes out, "vid_aaa"
+    assert_includes out, "vid_bbb"
+
+    # Tracker should be cleared
+    data = YAML.load_file(tracker_path)
+    youtube_entries = data.dig("youtube", "PLtest123") || {}
+    assert_empty youtube_entries
+  end
+
+  def test_unpublish_youtube_dry_run_does_not_delete
+    output_dir = File.join(@tmpdir, "output", "testpod")
+    episodes_dir = File.join(output_dir, "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+
+    tracker_path = File.join(output_dir, "uploads.yml")
+    File.write(tracker_path, {
+      "youtube" => {
+        "PLtest123" => { "ep-2026-01-15" => "vid_aaa" }
+      }
+    }.to_yaml)
+
+    cmd = PodgenCLI::UnpublishCommand.new(["testpod"], youtube: true, dry_run: true)
+
+    out, = capture_io { code = cmd.run; assert_equal 0, code }
+
+    assert_includes out, "would delete"
+    assert_includes out, "vid_aaa"
+
+    # Tracker should be unchanged
+    data = YAML.load_file(tracker_path)
+    assert_equal "vid_aaa", data.dig("youtube", "PLtest123", "ep-2026-01-15")
+  end
+
+  def test_unpublish_youtube_no_tracked_videos
+    output_dir = File.join(@tmpdir, "output", "testpod")
+    episodes_dir = File.join(output_dir, "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+
+    cmd = PodgenCLI::UnpublishCommand.new(["testpod"], youtube: true)
+
+    out, = capture_io { code = cmd.run; assert_equal 0, code }
+
+    assert_includes out, "No YouTube videos"
+  end
 end

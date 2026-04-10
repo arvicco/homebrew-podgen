@@ -120,6 +120,19 @@ class YouTubeUploader
     log("Captions uploaded")
   end
 
+  # Verify that a playlist exists and is accessible.
+  # Raises RuntimeError if the playlist is not found.
+  def verify_playlist!(playlist_id)
+    ensure_authorized!
+
+    response = @service.list_playlists("snippet", id: playlist_id, max_results: 1)
+    if response.items.nil? || response.items.empty?
+      raise "YouTube playlist not found: #{playlist_id} — check the playlist ID in your guidelines.md"
+    end
+
+    log("Playlist verified: #{playlist_id} (#{response.items.first.snippet.title})")
+  end
+
   # Add a video to a playlist.
   def add_to_playlist(video_id, playlist_id)
     ensure_authorized!
@@ -139,7 +152,26 @@ class YouTubeUploader
     log("Added to playlist")
   end
 
-  # Delete a video. Non-fatal on 404.
+  # Remove a video from a playlist. Non-fatal on failure.
+  def remove_from_playlist(video_id, playlist_id)
+    ensure_authorized!
+
+    log("Removing #{video_id} from playlist #{playlist_id}")
+    item_id = find_playlist_item_id(video_id, playlist_id)
+    unless item_id
+      log("Video #{video_id} not found in playlist #{playlist_id}")
+      return false
+    end
+
+    @service.delete_playlist_item(item_id)
+    log("Removed from playlist")
+    true
+  rescue Google::Apis::ClientError => e
+    log("Failed to remove #{video_id} from playlist: #{e.message}")
+    false
+  end
+
+  # Delete a video. Non-fatal on 404 or 403 (not owned / restricted).
   def delete_video(video_id)
     ensure_authorized!
 
@@ -148,8 +180,12 @@ class YouTubeUploader
     log("Video deleted")
     true
   rescue Google::Apis::ClientError => e
-    if e.status_code == 404
+    case e.status_code
+    when 404
       log("Video #{video_id} already deleted (404)")
+      false
+    when 403
+      log("Video #{video_id} cannot be deleted — forbidden (403)")
       false
     else
       raise
@@ -160,6 +196,22 @@ class YouTubeUploader
 
   def ensure_authorized!
     authorize! unless @service
+  end
+
+  def find_playlist_item_id(video_id, playlist_id)
+    page_token = nil
+    loop do
+      response = @service.list_playlist_items(
+        "snippet", playlist_id: playlist_id,
+        max_results: 50, page_token: page_token
+      )
+      response.items&.each do |item|
+        return item.id if item.snippet.resource_id.video_id == video_id
+      end
+      page_token = response.next_page_token
+      break unless page_token
+    end
+    nil
   end
 
   def log(msg)
