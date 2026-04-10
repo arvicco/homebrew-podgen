@@ -86,44 +86,44 @@ ruby bin/podgen <command> [options]
 
 ### Commands
 
+| Command                               | Description                                              |
+| ------------------------------------- | -------------------------------------------------------- |
+| `podgen generate <podcast>`           | Run the pipeline (news or language)                      |
+| `podgen translate <podcast>`          | Translate existing episodes to new languages             |
+| `podgen scrap <podcast> [episode]`    | Remove episode + history entry (default: latest)         |
+| `podgen exclude <podcast> <url>...`   | Skip URLs in future research and RSS episode collection  |
+| `podgen rss <podcast>`                | Generate RSS feed from existing episodes                 |
+| `podgen site <podcast>`               | Generate static HTML website                             |
+| `podgen publish <podcast>`            | Publish to Cloudflare R2, LingQ, or YouTube              |
+| `podgen unpublish <podcast>`          | Remove podcast from R2 or delete YouTube videos          |
+| `podgen tweet <podcast> <episode>`    | Tweet about a specific episode                           |
+| `podgen stats <podcast>`              | Show podcast statistics and download analytics           |
+| `podgen analytics <sub>`              | Manage Cloudflare analytics Worker                       |
+| `podgen validate <podcast>`           | Validate config and output                               |
+| `podgen list`                         | List available podcasts                                  |
+| `podgen add <podcast> <url>`          | Queue a priority link for the next episode               |
+| `podgen links <podcast>`              | List or manage queued priority links                     |
+| `podgen vocab <sub> <podcast>`        | Manage known vocabulary words (`add`/`remove`/`list`)    |
+| `podgen revocab <podcast> [episode]`  | Re-annotate vocabulary on transcripts                    |
+| `podgen reformat <podcast> [episode]` | Reformat transcripts (paragraph breaks, cleanup)         |
+| `podgen cover <podcast> [episode]`    | Generate episode cover images                            |
+| `podgen fork <old> <new>`             | Fork podcast into a new namespace                        |
+| `podgen test <name>`                  | Run a component test (research, hn, rss, tts, etc.)      |
+| `podgen schedule <podcast>`           | Install a daily launchd scheduler                        |
 
-| Command                             | Description                                                                                                                                                                                                            |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `podgen generate <podcast>`         | Run the full pipeline (news: research → script → TTS → assembly; language: RSS, `--file`, or `--url` → trim → transcribe → assembly)                                                                                   |
-| `podgen translate <podcast>`        | Translate existing episodes to new languages (`--last N`, `--lang xx`, `--dry-run`)                                                                                                                                    |
-| `podgen scrap <podcast> [episode]`  | Remove episode (MP3 + transcript + cover), history entry, and LingQ tracking. Omit episode for latest; specify as `YYYY-MM-DD` or `YYYY-MM-DD[a-z]` (e.g. `2026-03-31b`), or pass a full file path to any episode file |
-| `podgen exclude <podcast> <url>...` | Add URLs to history so they are skipped by future news research and language episode collection. `--rss <filter> --ask [N]` fetches the next N unprocessed episodes (default 5) from the matching RSS feed and lets you pick which to exclude interactively |
-| `podgen rss <podcast>`              | Generate RSS feed from existing episodes                                                                                                                                                                               |
-| `podgen site <podcast>`             | Generate static HTML website (`--clean`, `--base-url URL`)                                                                                                                                                             |
-| `podgen publish <podcast>`          | Publish to Cloudflare R2 via rclone (`--lingq` for LingQ)                                                                                                                                                              |
-| `podgen stats <podcast>`            | Show podcast statistics (`--all` for summary, `--downloads`/`--today`/`--week`/`--month` for analytics)                                                                                                                |
-| `podgen analytics <sub>`            | Manage download analytics Worker (`setup`, `deploy`, `tail`, `status`)                                                                                                                                                 |
-| `podgen validate <podcast>`         | Validate config and output (`--all` for all podcasts)                                                                                                                                                                  |
-| `podgen list`                       | List available podcasts with titles                                                                                                                                                                                    |
-| `podgen add <podcast> <url>`        | Queue a priority link for next episode (`--note "..."`)                                                                                                                                                                |
-| `podgen links <podcast>`            | List or manage queued priority links (`--remove URL`, `--clear`)                                                                                                                                                       |
-| `podgen vocab <sub> <podcast>`      | Manage known vocabulary words (`add`, `remove`, `list`; `--lang`)                                                                                                                                                      |
-| `podgen revocab <podcast> [episode]`| Re-annotate vocabulary on transcripts (`--missing-only`, `--dry-run`)                                                                                                                                                  |
-| `podgen reformat <podcast> [episode]`| Reformat transcripts with paragraph breaks and cleanup (`--dry-run`)                                                                                                                                                  |
-| `podgen cover <podcast> [episode]`  | Generate episode cover images (`--missing-only`, `--dry-run`, or manual: `podgen cover <podcast> <title>`)                                                                                                             |
-| `podgen fork <old> <new>`           | Fork podcast into a new namespace                                                                                                                                                                                      |
-| `podgen unpublish <podcast>`        | Remove podcast from Cloudflare R2                                                                                                                                                                                      |
-| `podgen tweet <podcast> <episode>`  | Tweet about a specific episode (`--force`, `--dry-run`)                                                                                                                                                                |
-| `podgen test <name>`                | Run a standalone test (research, hn, rss, tts, etc.)                                                                                                                                                                   |
-| `podgen schedule <podcast>`         | Install a daily launchd scheduler (`--time HH:MM`, `--publish`, `--telegram`)                                                                                                                                          |
+Per-command flags are documented in the dedicated sections below (e.g. [Generate command](#generate-command-options), [Publish command](#publishing-to-cloudflare-r2)).
 
 
 ### Global flags
 
-
-| Flag            | Description                                                                                  |
-| --------------- | -------------------------------------------------------------------------------------------- |
-| `-v, --verbose` | Verbose output                                                                               |
-| `-q, --quiet`   | Suppress terminal output (errors still shown, log file gets full detail)                     |
-| `--dry-run`     | Run pipeline without API calls or file output — validates config and shows what would happen |
-| `--lingq`       | Enable LingQ upload (generate) or publish to LingQ (publish)                                 |
-| `-V, --version` | Print version                                                                                |
-| `-h, --help`    | Show help                                                                                    |
+| Flag            | Description                                                              |
+| --------------- | ------------------------------------------------------------------------ |
+| `-v, --verbose` | Verbose output                                                           |
+| `-q, --quiet`   | Suppress terminal output (errors still shown, full detail in log file)   |
+| `--dry-run`     | Validate config and skip API calls + file output                         |
+| `--lingq`       | Enable LingQ upload (generate) or publish to LingQ (publish)             |
+| `-V, --version` | Print version                                                            |
+| `-h, --help`    | Show help                                                                |
 
 
 ### Examples
@@ -146,6 +146,9 @@ podgen scrap ruby_world 2026-03-15b
 
 # Scrap by file path — podcast and episode are detected automatically
 podgen scrap output/lahko_noc/episodes/lahko_noc-2026-02-23_transcript.md
+
+# Scrap and also add the source URL to the excluded list (language pipeline)
+podgen scrap lahko_noc 2026-04-07 --exclude
 
 # Preview what scrap would remove (no changes)
 podgen --dry-run scrap ruby_world
@@ -203,6 +206,39 @@ podgen publish lahko_noc --lingq --dry-run
 # Run a component test
 podgen test hn
 ```
+
+### Generate command options
+
+`podgen generate <podcast>` accepts the following flags. Some apply to both pipelines, others are pipeline-specific.
+
+| Flag                | Description                                                                  |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `--date YYYY-MM-DD` | Episode date (default: today). Useful for backfilling missed days            |
+| `--dry-run`         | Validate config and skip API calls + file output                             |
+| `--lingq`           | Upload to LingQ after generation (language pipeline)                         |
+| `--youtube`         | Upload to YouTube after generation (language pipeline)                       |
+| `--force`           | Process even if the episode is already in history                            |
+
+Language pipeline only:
+
+| Flag                | Description                                                                  |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `--file PATH`       | Local MP3 to process (skips RSS fetch)                                       |
+| `--url URL`         | YouTube video URL (downloads via yt-dlp; mutually exclusive with `--file`)   |
+| `--rss FILTER`      | Pick a specific RSS feed by URL substring (when multiple feeds configured)   |
+| `--title TEXT`      | Override episode title (default: feed/file/YouTube title)                    |
+| `--skip N`          | Seconds or `min:sec` to skip from start (`--skip-intro` is an alias)         |
+| `--cut N`           | Seconds (relative) or `min:sec` (absolute) to cut from end                   |
+| `--snip INTERVALS`  | Remove interior segments — see [Snip format](#snip-format)                   |
+| `--ask-trim`        | Preview audio then prompt for skip/cut interactively (`x` to exclude)        |
+| `--autotrim`        | Enable outro auto-detection from word timestamps                             |
+| `--no-skip`         | Disable skip even when configured                                            |
+| `--no-cut`          | Disable cut even when configured                                             |
+| `--no-autotrim`     | Disable autotrim even when configured                                        |
+| `--image PATH`      | Cover: file path, `thumb` (YouTube), or `last` (latest ~/Desktop screenshot) |
+| `--base-image PATH` | Base image for title-overlay cover generation                                |
+
+`--skip`/`--cut`/`--autotrim` override per-feed and `## Audio` config. The `--no-*` variants force-disable a setting that would otherwise apply.
 
 ## First Run
 
@@ -322,15 +358,16 @@ Research is modular — each podcast can enable different sources via a `## Sour
 
 Available sources:
 
+| Source      | Key          | API needed                  | Cost/run     | Description                  |
+| ----------- | ------------ | --------------------------- | ------------ | ---------------------------- |
+| Exa.ai      | `exa`        | EXA_API_KEY                 | ~$0.03       | AI search (default category) |
+| Hacker News | `hackernews` | None                        | $0           | HN Algolia top stories       |
+| RSS feeds   | `rss`        | None                        | $0           | Any RSS/Atom feed            |
+| Claude Web  | `claude_web` | ANTHROPIC_API_KEY           | ~$0.02/topic | Claude `web_search` (Haiku)  |
+| Bluesky     | `bluesky`    | BLUESKY_HANDLE + APP_PASSWD | $0           | AT Protocol post search      |
+| X (Twitter) | `x`          | SOCIALDATA_API_KEY          | ~$0.01       | Twitter via SocialData.tools |
 
-| Source            | Key          | API needed                            | Cost per run | Description                                                                   |
-| ----------------- | ------------ | ------------------------------------- | ------------ | ----------------------------------------------------------------------------- |
-| Exa.ai            | `exa`        | EXA_API_KEY                           | ~$0.03       | AI-powered search (default category: `news`; override with `- exa: research`) |
-| Hacker News       | `hackernews` | None (free)                           | $0           | HN Algolia API, top stories per topic                                         |
-| RSS feeds         | `rss`        | None                                  | $0           | Fetch any RSS/Atom feed                                                       |
-| Claude Web Search | `claude_web` | ANTHROPIC_API_KEY                     | ~$0.02/topic | Claude with web_search tool (Haiku)                                           |
-| Bluesky           | `bluesky`    | BLUESKY_HANDLE + BLUESKY_APP_PASSWORD | $0           | AT Protocol post search (great for tech topics)                               |
-| X (Twitter)       | `x`          | SOCIALDATA_API_KEY                    | ~$0.01       | Twitter/X search via SocialData.tools                                         |
+The Exa default category is `news`; override with `- exa: research` in the `## Sources` section.
 
 
 Add the section to `podcasts/<name>/guidelines.md`:
@@ -496,19 +533,7 @@ podgen generate lahko_noc --file episode.mp3 --title "Custom Title"
 ```
 
 
-| Flag                | Description                                                                   |
-| ------------------- | ----------------------------------------------------------------------------- |
-| `--file PATH`       | Local MP3 to process (skips RSS fetch)                                        |
-| `--title TEXT`      | Episode title (default: titleized filename, e.g. `my_story.mp3` → "My Story") |
-| `--skip N|M:SS`     | Seconds or min:sec to skip from start (overrides config)                      |
-| `--cut N|M:SS`      | Seconds to cut from end, or min:sec to cut at timestamp (overrides config)    |
-| `--snip INTERVALS`  | Remove interior segments (see [Snip format](#snip-format) below)              |
-| `--ask-trim`        | Preview audio then prompt for skip/cut; type `x` to exclude episode           |
-| `--autotrim`        | Enable outro auto-detection via word timestamps                               |
-| `--force`           | Process even if already in history (skip dedup check)                         |
-| `--image PATH|last` | Per-episode cover image, or `last` for latest ~/Desktop screenshot            |
-| `--base-image PATH` | Base image for title-overlay cover generation                                 |
-
+See [Generate command options](#generate-command-options) for the full flag reference. With `--file`, the default title is the titleized filename (e.g. `my_story.mp3` → "My Story").
 
 The rest of the pipeline (transcription, outro trimming, assembly, LingQ upload) works identically. The file's name and size are recorded in history for dedup (survives file moves). Re-running the same `--file` command exits with a warning if already processed; use `--force` to re-process.
 
@@ -522,19 +547,7 @@ podgen generate lahko_noc --url "https://youtube.com/watch?v=abc123" --title "Cu
 ```
 
 
-| Flag                      | Description                                                                                       |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| `--url URL`               | YouTube video URL (downloads audio via yt-dlp, mutually exclusive with `--file`)                  |
-| `--title TEXT`            | Episode title (default: YouTube video title)                                                      |
-| `--skip N|M:SS`           | Seconds or min:sec to skip from start (overrides config)                                          |
-| `--cut N|M:SS`            | Seconds to cut from end, or min:sec to cut at timestamp (overrides config)                        |
-| `--snip INTERVALS`        | Remove interior segments (see [Snip format](#snip-format) below)                                  |
-| `--ask-trim`              | Preview audio then prompt for skip/cut; type `x` to exclude episode                               |
-| `--autotrim`              | Enable outro auto-detection via word timestamps                                                   |
-| `--force`                 | Process even if already in history (skip dedup check)                                             |
-| `--image PATH|thumb|last` | Per-episode cover image, `thumb` for YouTube thumbnail, or `last` for latest ~/Desktop screenshot |
-| `--base-image PATH`       | Base image for title-overlay cover generation                                                     |
-
+See [Generate command options](#generate-command-options) for the full flag reference. With `--url`, `--image thumb` is the additional value that uses the YouTube auto-thumbnail.
 
 The video thumbnail is always downloaded as a fallback. When `base_image` is configured (via `## Image` section, per-feed, or `--base-image`), title-overlay generation runs instead of using the raw thumbnail. Use `--image thumb` to explicitly prefer the YouTube thumbnail over generation, or `--image PATH` for a custom static image. YouTube auto-captions in the target language are automatically fetched (when available) and passed to the transcription reconciler as an additional reference source. The captions are treated as lower quality and used only as a tiebreaker when STT engines disagree. Requires `yt-dlp` on `$PATH` (`brew install yt-dlp`). Authentication uses browser cookies via `--cookies-from-browser` (default: Chrome, override with `YOUTUBE_BROWSER` env var). The canonical YouTube URL is recorded in history for dedup. Re-running the same `--url` command exits with a warning if already processed; use `--force` to re-process.
 
@@ -604,6 +617,15 @@ Each episode produces:
 
 Subtitles are uploaded as captions in the episode's language. Upload tracking is shared with LingQ in `uploads.yml`.
 
+To remove all tracked YouTube videos for a podcast:
+
+```bash
+podgen unpublish lahko_noc --youtube           # delete all tracked videos
+podgen --dry-run unpublish lahko_noc --youtube # preview deletions
+```
+
+Without `--youtube`, `podgen unpublish` purges the podcast's R2 bucket prefix instead.
+
 ### Cover Image Configuration
 
 Cover and title-overlay generation settings are configured in a dedicated `## Image` section in `guidelines.md`:
@@ -622,17 +644,19 @@ Cover and title-overlay generation settings are configured in a dedicated `## Im
 ```
 
 
-| Key             | Description                                                                                                                 |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `cover`         | Podcast cover artwork filename (in `podcasts/<name>/`, copied to output by `podgen rss`) — replaces `image` in `## Podcast` |
-| `base_image`    | Base image for per-episode title-overlay generation                                                                         |
-| `font`          | Font family for title text                                                                                                  |
-| `font_color`    | Font color                                                                                                                  |
-| `font_size`     | Font size in points                                                                                                         |
-| `text_width`    | Max text width in pixels                                                                                                    |
-| `text_gravity`  | ImageMagick gravity (e.g. `south`, `center`)                                                                                |
-| `text_x_offset` | Horizontal offset in pixels                                                                                                 |
-| `text_y_offset` | Vertical offset in pixels                                                                                                   |
+| Key             | Description                                                              |
+| --------------- | ------------------------------------------------------------------------ |
+| `cover`         | Podcast cover artwork filename in `podcasts/<name>/` (see note below)    |
+| `base_image`    | Base image for per-episode title-overlay generation                      |
+| `font`          | Font family for title text                                               |
+| `font_color`    | Font color                                                               |
+| `font_size`     | Font size in points                                                      |
+| `text_width`    | Max text width in pixels                                                 |
+| `text_gravity`  | ImageMagick gravity (e.g. `south`, `center`)                             |
+| `text_x_offset` | Horizontal offset in pixels                                              |
+| `text_y_offset` | Vertical offset in pixels                                                |
+
+`cover` is copied to output by `podgen rss` and replaces the legacy `image` key in `## Podcast`.
 
 
 **Per-episode cover priority chain:**
@@ -658,6 +682,31 @@ Per-feed image overrides go inline with RSS URLs:
 Cover generation requires `imagemagick` + `librsvg` (`brew install imagemagick librsvg`) and fonts via `fontconfig`. Falls back to static cover or YouTube thumbnail on failure. Non-fatal.
 
 **Backward compatibility:** Image keys in `## LingQ` (`image`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset`) continue to work as fallbacks. The `## Image` section takes priority when present.
+
+#### Cover command
+
+`podgen cover` generates or regenerates per-episode covers without re-running the full pipeline.
+
+```bash
+podgen cover lahko_noc                           # all episodes
+podgen cover lahko_noc 2026-04-07                # specific episode
+podgen cover lahko_noc --missing-only            # only episodes without a cover
+podgen cover lahko_noc --dry-run                 # preview without writing files
+podgen cover lahko_noc "Custom Title"            # manual: render title onto base image
+```
+
+| Flag                | Description                                          |
+| ------------------- | ---------------------------------------------------- |
+| `--missing-only`    | Skip episodes that already have a cover              |
+| `--dry-run`         | Preview without writing files                        |
+| `--base-image PATH` | Override `base_image` from `## Image`                |
+| `--output PATH`     | Output path (manual mode)                            |
+| `--font NAME`       | Override font family                                 |
+| `--font-color C`    | Override font color                                  |
+| `--font-size N`     | Override font size                                   |
+| `--gravity POS`     | Override ImageMagick gravity (`Center`, `South`, …)  |
+| `--x-offset N`      | Override horizontal text offset                      |
+| `--y-offset N`      | Override vertical text offset                        |
 
 ### Site Customization
 
@@ -709,12 +758,16 @@ News pipeline episodes can include source links in the transcript. Add a `## Lin
 ```
 
 
-| Key        | Values            | Default     | Description                                                                                                                            |
-| ---------- | ----------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `show`     | `true`/`false`    | —           | Enable source links in transcripts                                                                                                     |
-| `position` | `bottom`/`inline` | `bottom`    | `bottom`: all links in one section at the end. `inline`: links after each podcast section where they were referenced                   |
-| `title`    | any string        | `More info` | Heading for the bottom links section (ignored in inline mode)                                                                          |
-| `max`      | integer           | unlimited   | Max links total (bottom) or per section (inline). Forces the script agent to choose the most relevant sources and drop near-duplicates |
+| Key        | Values            | Default     | Description                                          |
+| ---------- | ----------------- | ----------- | ---------------------------------------------------- |
+| `show`     | `true`/`false`    | —           | Enable source links in transcripts                   |
+| `position` | `bottom`/`inline` | `bottom`    | One section at the end, or per-segment (see below)   |
+| `title`    | any string        | `More info` | Heading for the bottom section (ignored when inline) |
+| `max`      | integer           | unlimited   | Cap total links (bottom) or links per segment (inline) |
+
+- `position: bottom` puts all links in one section at the end of the transcript.
+- `position: inline` places links after each segment where they were referenced.
+- `max` forces the script agent to pick the most relevant sources and drop near-duplicates.
 
 
 When enabled, the script agent asks Claude to list every source it referenced while writing the episode. Tracking parameters are stripped from URLs. The links render as clickable items on the episode's site page. RSS transcript HTML includes the links but note that most podcast apps (Pocket Casts, Apple Podcasts) do not render HTML links in transcripts.
@@ -836,6 +889,12 @@ podgen tweet fulgur_news 2026-03-15 --dry-run # preview without posting
 podgen tweet fulgur_news 2026-03-15 --force   # re-tweet even if already posted
 ```
 
+| Flag              | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `--force`         | Tweet even if the episode is already tracked as tweeted                  |
+| `--dry-run`       | Print the tweet without posting                                          |
+| `--template TEXT` | Override the configured `template` from `## Twitter` for this run        |
+
 ## Scheduling (launchd)
 
 Install a daily launchd scheduler:
@@ -856,8 +915,9 @@ podgen schedule fulgur_news --time 18:00 --publish --telegram
 | `--time HH:MM` | Time to run in 24h format (default: `06:00`)           |
 | `--publish`    | Run `podgen publish` after a successful generate       |
 | `--telegram`   | Send Telegram alert on generate or publish failure     |
+| `--test`       | Send a test Telegram message and exit                  |
 
-`--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast).
+`--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast). Use `--test` after setup to verify alerts are working.
 
 Verify it's loaded:
 
@@ -930,7 +990,22 @@ podgen publish ruby_world
 
 # Preview what would be synced
 podgen --dry-run publish ruby_world
+
+# Single episode by date
+podgen publish ruby_world 2026-03-28
+
+# Publish to LingQ or YouTube instead of R2
+podgen publish lahko_noc --lingq
+podgen publish lahko_noc --youtube
 ```
+
+| Flag        | Description                                                   |
+| ----------- | ------------------------------------------------------------- |
+| `--lingq`   | Publish to LingQ instead of R2 (language pipeline)            |
+| `--youtube` | Publish to YouTube instead of R2 (language pipeline)          |
+| `--newest`  | Process newest episodes first (useful with quota limits)      |
+| `--force`   | Re-upload even if already tracked in `uploads.yml`            |
+| `--dry-run` | Show what would be published without uploading                |
 
 Syncs only public-facing files: MP3 episodes, HTML transcripts, feed XML, site pages, and cover image. Internal files (history, research cache, markdown sources) are excluded.
 
@@ -1330,19 +1405,21 @@ PH: /kjoɯ wa ii teɴki desɯ/
 Available systems per language (first is the default):
 
 
-| Language                          | Systems                                                      | Engine                  |
-| --------------------------------- | ------------------------------------------------------------ | ----------------------- |
-| Japanese                          | `hiragana`, `hepburn`, `kunrei`, `ipa`                       | AI, Kana, Kana, Kana    |
-| Chinese                           | `pinyin`, `zhuyin`, `ipa`                                    | AI, AI, AI              |
-| Korean                            | `rr` (Revised Romanization), `mr` (McCune-Reischauer), `ipa` | ICU, AI, eSpeak         |
-| Arabic                            | `romanization`, `ipa`                                        | AI, AI                  |
-| Thai                              | `rtgs`, `ipa`                                                | AI, AI                  |
-| Georgian                          | `national`, `ipa`                                            | AI, eSpeak              |
-| Greek                             | `elot`, `ipa`                                                | ICU, eSpeak             |
-| Cyrillic (ru, uk, bg, sr, mk, be) | `scholarly`, `simple`, `ipa`                                 | ICU, ICU, eSpeak        |
-| Indic (hi, sa, ne, mr)            | `iast`, `ipa`                                                | AI, AI                  |
-| Hebrew (he, yi)                   | `standard`, `ipa`                                            | AI, AI                  |
-| Other languages                   | `ipa`                                                        | eSpeak (36 langs) or AI |
+| Language                          | Systems                                | Engine               |
+| --------------------------------- | -------------------------------------- | -------------------- |
+| Japanese                          | `hiragana`, `hepburn`, `kunrei`, `ipa` | AI, Kana, Kana, Kana |
+| Chinese                           | `pinyin`, `zhuyin`, `ipa`              | AI, AI, AI           |
+| Korean                            | `rr`, `mr`, `ipa`                      | ICU, AI, eSpeak      |
+| Arabic                            | `romanization`, `ipa`                  | AI, AI               |
+| Thai                              | `rtgs`, `ipa`                          | AI, AI               |
+| Georgian                          | `national`, `ipa`                      | AI, eSpeak           |
+| Greek                             | `elot`, `ipa`                          | ICU, eSpeak          |
+| Cyrillic (ru, uk, bg, sr, mk, be) | `scholarly`, `simple`, `ipa`           | ICU, ICU, eSpeak     |
+| Indic (hi, sa, ne, mr)            | `iast`, `ipa`                          | AI, AI               |
+| Hebrew (he, yi)                   | `standard`, `ipa`                      | AI, AI               |
+| Other languages                   | `ipa`                                  | eSpeak or AI         |
+
+Korean: `rr` = Revised Romanization, `mr` = McCune-Reischauer. "Other languages" covers eSpeak's 36 languages (falls back to AI when eSpeak isn't installed).
 
 
 **Phonetic engine cascade:** Kana (Japanese hepburn/kunrei/IPA from AI hiragana) → eSpeak-ng (IPA, 36 langs) → ICU transliteration (Cyrillic/Greek/Korean) → Claude AI (everything else). Rule-based engines are faster, free, and more accurate than AI. eSpeak-ng and libicu are optional — if not installed, Claude handles everything.
