@@ -17,9 +17,10 @@ module SubtitleReconciler
     prompt = build_prompt(segments, reconciled_text)
 
     client = Anthropic::Client.new(api_key: api_key)
+    tokens = [4096, segments.length * 80].max
     response = client.messages.create(
       model: model,
-      max_tokens: 4096,
+      max_tokens: tokens,
       messages: [{ role: "user", content: prompt }]
     )
 
