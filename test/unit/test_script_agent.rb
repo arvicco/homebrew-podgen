@@ -136,7 +136,7 @@ class TestScriptAgent < Minitest::Test
     stub_client(agent, nil_output: true)
 
     err = assert_raises(RuntimeError) { agent.generate(valid_research_data) }
-    assert_includes err.message, "Structured output parsing failed"
+    assert_includes err.message, "No parsed output"
   end
 
   def test_system_prompt_includes_todays_date_with_day_of_week

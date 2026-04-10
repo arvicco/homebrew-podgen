@@ -38,7 +38,7 @@ class TranslationAgent
 
     script_text = format_script_for_translation(script)
 
-    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
+    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
@@ -56,8 +56,7 @@ class TranslationAgent
 
       log_api_usage("Translation generated", message, elapsed)
 
-      translated = message.parsed_output
-      raise "Structured output parsing failed" if translated.nil?
+      translated = require_parsed_output!(message, TranslatedScript)
 
       result = {
         title: translated.title,

@@ -76,7 +76,7 @@ class TestTopicAgent < Minitest::Test
     stub_client(agent, nil)
 
     err = assert_raises(RuntimeError) { agent.generate }
-    assert_includes err.message, "Structured output parsing failed"
+    assert_includes err.message, "No parsed output"
   end
 
   def test_uses_model_from_env
