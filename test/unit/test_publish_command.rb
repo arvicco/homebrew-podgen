@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "json"
 require "yaml"
 require "cli/publish_command"
 
@@ -251,6 +252,77 @@ class TestPublishCommand < Minitest::Test
     cmd.send(:cleanup_cover, nil) # should not raise
   end
 
+  # --- reconcile_subtitles_if_needed ---
+
+  def test_reconcile_subtitles_if_needed_loads_timestamp_persister
+    ts_path = File.join(@episodes_dir, "ep-2026-01-15_timestamps.json")
+    File.write(ts_path, JSON.generate({
+      "version" => 1, "engine" => "groq", "intro_duration" => 0.0,
+      "segments" => [{ "start" => 0.0, "end" => 1.0, "text" => "hello" }]
+    }))
+    transcript_path = write_transcript("# Title\n\n## Transcript\n\nHello world.\n")
+
+    cmd = build_command
+    old_key = ENV.delete("ANTHROPIC_API_KEY")
+    begin
+      _, err = capture_io { cmd.send(:reconcile_subtitles_if_needed, ts_path, transcript_path) }
+      refute_match(/uninitialized constant/, err,
+        "TimestampPersister should be loaded before use in reconcile_subtitles_if_needed")
+    ensure
+      ENV["ANTHROPIC_API_KEY"] = old_key if old_key
+    end
+  end
+
+  # --- publish_to_youtube: playlist verification ---
+
+  def test_publish_to_youtube_verifies_playlist_before_uploading
+    create_mp3("ep-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# Title\n\n## Transcript\n\nHello.")
+
+    yt_config = { playlist: "PLbadplaylist", privacy: "unlisted", category: "27", tags: [] }
+    cmd = build_command(youtube_config: yt_config)
+
+    uploaded = []
+    verified = []
+
+    stub_uploader = Object.new
+    stub_uploader.define_singleton_method(:authorize!) { nil }
+    stub_uploader.define_singleton_method(:verify_playlist!) { |id| verified << id; raise "Playlist not found: #{id}" }
+    stub_uploader.define_singleton_method(:upload_video) { |*args, **kw| uploaded << args; "vid_123" }
+    stub_uploader.define_singleton_method(:upload_captions) { |*args, **kw| nil }
+    stub_uploader.define_singleton_method(:add_to_playlist) { |*args| nil }
+
+    cmd.define_singleton_method(:build_youtube_uploader) { stub_uploader }
+
+    _, err = capture_io { code = cmd.send(:publish_to_youtube); assert_equal 1, code }
+
+    assert_equal ["PLbadplaylist"], verified, "should have called verify_playlist!"
+    assert_empty uploaded, "should NOT upload any videos when playlist verification fails"
+    assert_includes err, "Playlist not found"
+  end
+
+  def test_publish_to_youtube_skips_verification_when_no_playlist
+    create_mp3("ep-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# Title\n\n## Transcript\n\nHello.")
+
+    yt_config = { privacy: "unlisted", category: "27", tags: [] }
+    cmd = build_command(youtube_config: yt_config)
+
+    verified = []
+
+    stub_uploader = Object.new
+    stub_uploader.define_singleton_method(:authorize!) { nil }
+    stub_uploader.define_singleton_method(:verify_playlist!) { |id| verified << id }
+    # Raise on upload to stop execution after we've confirmed verify was skipped
+    stub_uploader.define_singleton_method(:upload_video) { |*args, **kw| raise "stop" }
+
+    cmd.define_singleton_method(:build_youtube_uploader) { stub_uploader }
+
+    capture_io { cmd.send(:publish_to_youtube) }
+
+    assert_empty verified, "should NOT call verify_playlist! when no playlist configured"
+  end
+
   # --- rclone_available? ---
 
   def test_rclone_available_when_installed
@@ -305,10 +377,19 @@ class TestPublishCommand < Minitest::Test
   private
 
   StubPublishConfig = Struct.new(:episodes_dir, :name, :transcription_language,
-    :target_language, :transcription_engines, keyword_init: true) do
+    :target_language, :transcription_engines, :youtube_config_data, keyword_init: true) do
     def initialize(episodes_dir:, name: "test", transcription_language: nil,
-                   target_language: nil, transcription_engines: %w[groq])
+                   target_language: nil, transcription_engines: %w[groq],
+                   youtube_config_data: nil)
       super
+    end
+
+    def youtube_enabled?
+      !youtube_config_data.nil?
+    end
+
+    def youtube_config
+      youtube_config_data
     end
   end
 
@@ -323,14 +404,15 @@ class TestPublishCommand < Minitest::Test
   end
 
   def build_command(transcription_language: nil, transcription_engines: %w[groq],
-                    target_language: nil, episode_id: nil)
+                    target_language: nil, episode_id: nil, youtube_config: nil)
     cmd = PodgenCLI::PublishCommand.allocate
     config = StubPublishConfig.new(
       episodes_dir: @episodes_dir,
       name: "test",
       transcription_language: transcription_language,
       target_language: target_language,
-      transcription_engines: transcription_engines
+      transcription_engines: transcription_engines,
+      youtube_config_data: youtube_config
     )
     cmd.instance_variable_set(:@config, config)
     cmd.instance_variable_set(:@options, {})

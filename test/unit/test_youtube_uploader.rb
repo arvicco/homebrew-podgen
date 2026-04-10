@@ -95,14 +95,64 @@ class TestYouTubeUploader < Minitest::Test
     mock_service.verify
   end
 
-  def test_delete_video_reraises_non_404_errors
+  def test_delete_video_handles_403_gracefully
     mock_service = Minitest::Mock.new
     error = Google::Apis::ClientError.new("Forbidden", status_code: 403)
     mock_service.expect(:delete_video, nil) { raise error }
 
     @uploader.instance_variable_set(:@service, mock_service)
 
-    assert_raises(Google::Apis::ClientError) { @uploader.delete_video("forbidden") }
+    result = @uploader.delete_video("forbidden")
+    refute result, "Should return false for 403"
+    mock_service.verify
+  end
+
+  def test_delete_video_reraises_other_errors
+    mock_service = Minitest::Mock.new
+    error = Google::Apis::ClientError.new("Bad Request", status_code: 400)
+    mock_service.expect(:delete_video, nil) { raise error }
+
+    @uploader.instance_variable_set(:@service, mock_service)
+
+    assert_raises(Google::Apis::ClientError) { @uploader.delete_video("bad") }
+    mock_service.verify
+  end
+
+  # --- verify_playlist! ---
+
+  def test_verify_playlist_succeeds_when_playlist_exists
+    mock_service = Minitest::Mock.new
+    snippet = Struct.new(:title).new("My Playlist")
+    item = Struct.new(:id, :snippet).new("PLtest123", snippet)
+    response = Struct.new(:items).new([item])
+    mock_service.expect(:list_playlists, response, ["snippet"], id: "PLtest123", max_results: 1)
+
+    @uploader.instance_variable_set(:@service, mock_service)
+    @uploader.verify_playlist!("PLtest123") # should not raise
+    mock_service.verify
+  end
+
+  def test_verify_playlist_raises_when_playlist_not_found
+    mock_service = Minitest::Mock.new
+    response = Struct.new(:items).new([])
+    mock_service.expect(:list_playlists, response, ["snippet"], id: "PLbadid", max_results: 1)
+
+    @uploader.instance_variable_set(:@service, mock_service)
+
+    error = assert_raises(RuntimeError) { @uploader.verify_playlist!("PLbadid") }
+    assert_includes error.message, "PLbadid"
+    assert_includes error.message, "not found"
+    mock_service.verify
+  end
+
+  def test_verify_playlist_raises_when_items_nil
+    mock_service = Minitest::Mock.new
+    response = Struct.new(:items).new(nil)
+    mock_service.expect(:list_playlists, response, ["snippet"], id: "PLnone", max_results: 1)
+
+    @uploader.instance_variable_set(:@service, mock_service)
+
+    assert_raises(RuntimeError) { @uploader.verify_playlist!("PLnone") }
     mock_service.verify
   end
 
