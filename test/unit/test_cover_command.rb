@@ -207,4 +207,72 @@ class TestCoverCommand < Minitest::Test
     assert File.size(output) > 0
     assert_includes out, output
   end
+
+  # --- --image option ---
+
+  def test_image_copies_file_to_episode_cover
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-04-13_transcript.md"), "# Test Title\n\nBody.")
+
+    image_path = File.join(@tmpdir, "my_cover.jpg")
+    File.write(image_path, "fake jpg data")
+
+    out, = capture_io do
+      code = PodgenCLI::CoverCommand.new(
+        ["testpod", "2026-04-13", "--image", image_path], {}).run
+      assert_equal 0, code
+    end
+
+    cover = File.join(episodes_dir, "testpod-2026-04-13_cover.jpg")
+    assert File.exist?(cover), "should copy image as episode cover"
+    assert_equal "fake jpg data", File.read(cover)
+    assert_includes out, "testpod-2026-04-13"
+  end
+
+  def test_image_requires_episode_id
+    _, err = capture_io do
+      code = PodgenCLI::CoverCommand.new(
+        ["testpod", "--image", "/tmp/some.jpg"], {}).run
+      assert_equal 1, code
+    end
+    assert_includes err, "--image requires a specific episode ID"
+  end
+
+  def test_image_rejects_manual_title_mode
+    _, err = capture_io do
+      code = PodgenCLI::CoverCommand.new(
+        ["testpod", "My Title", "--image", "/tmp/some.jpg"], {}).run
+      assert_equal 1, code
+    end
+    assert_includes err, "--image requires a specific episode ID"
+  end
+
+  def test_image_rejects_nonexistent_file
+    _, err = capture_io do
+      code = PodgenCLI::CoverCommand.new(
+        ["testpod", "2026-04-13", "--image", "/tmp/nonexistent.jpg"], {}).run
+      assert_equal 1, code
+    end
+    assert_includes err, "image file not found"
+  end
+
+  def test_image_dry_run_does_not_copy
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-04-13_transcript.md"), "# Test Title\n\nBody.")
+
+    image_path = File.join(@tmpdir, "my_cover.png")
+    File.write(image_path, "fake png data")
+
+    out, = capture_io do
+      code = PodgenCLI::CoverCommand.new(
+        ["testpod", "2026-04-13", "--image", image_path], { dry_run: true }).run
+      assert_equal 0, code
+    end
+
+    cover = File.join(episodes_dir, "testpod-2026-04-13_cover.png")
+    refute File.exist?(cover), "should not copy in dry-run mode"
+    assert_includes out, "dry-run"
+  end
 end
