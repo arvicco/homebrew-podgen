@@ -668,6 +668,113 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # --- count_occurrences + frequency sorting ---
+
+  def test_count_occurrences_counts_all_forms
+    entries = [{ word: "lupini", lemma: "lupina", level: "B2", pos: "noun",
+                 words: ["lupini"] }]
+    text = "lupini in lupina in lupino"
+
+    Tell::Hunspell.stub(:supports?, false) do
+      @annotator.send(:count_occurrences, text, entries, "sl")
+      # Without hunspell: only "lupini" + "lupina" match (2)
+      assert_equal 2, entries.first[:frequency]
+    end
+  end
+
+  def test_count_occurrences_with_hunspell_expansion
+    entries = [{ word: "lupini", lemma: "lupina", level: "B2", pos: "noun",
+                 words: ["lupini"] }]
+    text = "lupini in lupina in lupino"
+
+    Tell::Hunspell.stub(:supports?, true) do
+      Tell::Hunspell.stub(:expand, %w[lupin lupina lupine lupini lupino]) do
+        @annotator.send(:count_occurrences, text, entries, "sl")
+        # With hunspell: "lupini" + "lupina" + "lupino" match (3)
+        assert_equal 3, entries.first[:frequency]
+      end
+    end
+  end
+
+  def test_max_cap_prefers_more_frequent_words_at_same_level
+    entries = [
+      { word: "redek", lemma: "redek", level: "B2", pos: "adj", translation: "rare", definition: "Rare." },
+      { word: "pogost", lemma: "pogost", level: "B2", pos: "adj", translation: "frequent", definition: "Frequent." }
+    ]
+    # "pogost" appears 3 times, "redek" only once
+    text = "pogost pogost pogost redek"
+
+    stub_classify(entries) do
+      Tell::Hunspell.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate(text, language: "sl", cutoff: "B2", max: 1)
+        assert_includes vocab, "pogost", "should keep the more frequent word"
+        refute_includes vocab, "redek", "should drop the less frequent word"
+      end
+    end
+  end
+
+  # --- mark_words with hunspell expansion ---
+
+  def test_mark_words_bolds_hunspell_expanded_forms
+    entries = [{ word: "lupini", lemma: "lupina", level: "B2", pos: "noun",
+                 words: ["lupini"] }]
+    text = "Na orehovo lupino in lupini."
+
+    Tell::Hunspell.stub(:supports?, true) do
+      Tell::Hunspell.stub(:expand, %w[lupin lupina lupine lupini lupino]) do
+        result = @annotator.send(:mark_words, text, entries, "sl")
+        assert_includes result, "**lupino**"
+        assert_includes result, "**lupini**"
+        assert_includes entries.first[:words], "lupino"
+        refute_includes entries.first[:words], "lupine"
+      end
+    end
+  end
+
+  def test_mark_words_works_without_hunspell
+    entries = [{ word: "lupini", lemma: "lupina", level: "B2", pos: "noun",
+                 words: ["lupini"] }]
+    text = "Na orehovo lupino in lupini."
+
+    Tell::Hunspell.stub(:supports?, false) do
+      result = @annotator.send(:mark_words, text, entries, "sl")
+      assert_includes result, "**lupini**"
+      refute_includes result, "**lupino**"
+    end
+  end
+
+  def test_mark_words_works_without_language
+    entries = [{ word: "lupini", lemma: "lupina", level: "B2", pos: "noun",
+                 words: ["lupini"] }]
+    text = "Lupina je trdna in lupini."
+
+    result = @annotator.send(:mark_words, text, entries)
+    assert_includes result, "**lupini**"
+    assert_includes result, "**Lupina**"
+  end
+
+  # --- sanitize_script ---
+
+  def test_sanitize_script_replaces_cyrillic_homoglyphs
+    entries = [{ word: "ištevanк\u0430", lemma: "ištevan\u043A\u0430",
+                 level: "C1", pos: "noun" }]
+    result = @annotator.send(:sanitize_script, entries, "Slovenian")
+    assert_equal "ištevanka", result.first[:lemma]
+    refute result.first[:word].match?(/\p{Cyrillic}/)
+  end
+
+  def test_sanitize_script_preserves_cyrillic_for_cyrillic_language
+    entries = [{ word: "студентка", lemma: "студентка", level: "B1", pos: "noun" }]
+    result = @annotator.send(:sanitize_script, entries, "Russian")
+    assert_equal "студентка", result.first[:lemma]
+  end
+
+  def test_sanitize_script_leaves_clean_latin_unchanged
+    entries = [{ word: "ištevanka", lemma: "ištevanka", level: "C1", pos: "noun" }]
+    result = @annotator.send(:sanitize_script, entries, "Slovenian")
+    assert_equal "ištevanka", result.first[:lemma]
+  end
+
   private
 
   def stub_classify_empty(&block)

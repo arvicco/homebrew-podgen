@@ -8,6 +8,7 @@ require_relative "retryable"
 require_relative "usage_logger"
 require "did_you_mean"
 require_relative "tell/espeak"
+require_relative "tell/hunspell"
 require_relative "tell/icu_phonetic"
 
 class VocabularyAnnotator
@@ -34,8 +35,8 @@ class VocabularyAnnotator
 
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff)")
     entries = classify_words(text, language, cutoff, filters)
+    entries = sanitize_script(entries, language)
     entries = dedup_by_lemma(entries)
-    entries = dedup_by_family(entries)
 
     if filters[:similar]
       similar_langs = filters[:similar].split(/,\s*/)
@@ -57,17 +58,20 @@ class VocabularyAnnotator
       return [text, ""]
     end
 
+    # Count text occurrences before capping so frequency informs prioritization
+    count_occurrences(text, entries, language)
+
     # Cap after known-word filtering so max applies to the final set
     if max && entries.length > max
-      # Keep hardest words (highest CEFR level first, then alphabetical)
-      entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), e[:lemma].to_s.downcase] }
+      # Prefer: highest CEFR level, then most frequent in text, then alphabetical
+      entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -e[:frequency], e[:lemma].to_s.downcase] }
       entries = entries.first(max)
-      log("Capped to #{max} entries (keeping hardest)")
+      log("Capped to #{max} entries (keeping hardest + most frequent)")
     end
 
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
     add_ipa(entries, language)
-    marked_body = mark_words(text, entries)
+    marked_body = mark_words(text, entries, language)
     vocabulary_md = build_vocabulary_section(entries)
 
     [marked_body, vocabulary_md]
@@ -150,6 +154,45 @@ class VocabularyAnnotator
     end
   end
 
+  CYRILLIC_LANGUAGES = Set.new(%w[russian ukrainian bulgarian serbian macedonian belarusian]).freeze
+
+  def sanitize_script(entries, language)
+    return entries if CYRILLIC_LANGUAGES.include?(language.to_s.downcase)
+
+    entries.each do |entry|
+      %i[word lemma].each do |field|
+        next unless entry[field]
+        entry[field] = replace_cyrillic(entry[field]) if entry[field].match?(/\p{Cyrillic}/)
+      end
+    end
+    entries
+  end
+
+  CYRILLIC_LATIN_MAP = {
+    "а" => "a", "б" => "b", "в" => "v", "г" => "g", "д" => "d",
+    "е" => "e", "ж" => "zh", "з" => "z", "и" => "i", "й" => "j",
+    "к" => "k", "л" => "l", "м" => "m", "н" => "n", "о" => "o",
+    "п" => "p", "р" => "r", "с" => "s", "т" => "t", "у" => "u",
+    "ф" => "f", "х" => "h", "ц" => "c", "ч" => "ch", "ш" => "sh",
+    "щ" => "shch", "ъ" => "", "ы" => "y", "ь" => "", "э" => "e",
+    "ю" => "yu", "я" => "ya",
+    "А" => "A", "Б" => "B", "В" => "V", "Г" => "G", "Д" => "D",
+    "Е" => "E", "Ж" => "Zh", "З" => "Z", "И" => "I", "Й" => "J",
+    "К" => "K", "Л" => "L", "М" => "M", "Н" => "N", "О" => "O",
+    "П" => "P", "Р" => "R", "С" => "S", "Т" => "T", "У" => "U",
+    "Ф" => "F", "Х" => "H", "Ц" => "C", "Ч" => "Ch", "Ш" => "Sh",
+    "Щ" => "Shch", "Ъ" => "", "Ы" => "Y", "Ь" => "", "Э" => "E",
+    "Ю" => "Yu", "Я" => "Ya"
+  }.freeze
+
+  def replace_cyrillic(text)
+    if defined?(Tell::IcuPhonetic) && Tell::IcuPhonetic.available?
+      result = icu_transliterate(text, "Cyrillic-Latin")
+      return result if result
+    end
+    text.gsub(/\p{Cyrillic}/) { |ch| CYRILLIC_LATIN_MAP[ch] || ch }
+  end
+
   def add_ipa(entries, language)
     if Tell::Espeak.supports?(language)
       entries.each do |entry|
@@ -218,8 +261,7 @@ class VocabularyAnnotator
       - level: CEFR level (A1/A2/B1/B2/C1/C2)
       - pos: part of speech (noun, verb, adj, adv, etc.)
       - translation: English translation of the LEMMA (not the inflected form)
-      - definition: brief dictionary-style definition of the LEMMA in English (1 sentence)
-      - family: the root word of the word family this lemma belongs to (the simplest/most fundamental lemma that related words derive from). Words sharing the same root AND similar meaning should have the same family tag. Words with the same root but unrelated meanings get different family tags#{ipa_line}#{similar_line}
+      - definition: brief dictionary-style definition of the LEMMA in English (1 sentence)#{ipa_line}#{similar_line}
 
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
@@ -375,12 +417,40 @@ class VocabularyAnnotator
     nil
   end
 
-  def mark_words(text, entries)
+  def count_occurrences(text, entries, language)
+    entries.each do |entry|
+      forms = ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
+      if language && Tell::Hunspell.supports?(language)
+        expanded = Tell::Hunspell.expand(entry[:lemma], lang: language)
+        forms = (forms + expanded).uniq(&:downcase) if expanded.any?
+      end
+      entry[:frequency] = forms.sum { |f| text.scan(/\b#{Regexp.escape(f)}\b/i).length }
+    end
+  end
+
+  def mark_words(text, entries, language = nil)
     marked = text.dup
 
     entries.each do |entry|
       # Mark all occurrences of all known forms + the lemma
       forms = ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
+
+      # Expand with hunspell inflections when available
+      if language && Tell::Hunspell.supports?(language)
+        expanded = Tell::Hunspell.expand(entry[:lemma], lang: language)
+        if expanded.any?
+          forms = (forms + expanded).uniq(&:downcase)
+          # Track attested expanded forms in entry[:words] for vocabulary section
+          existing = (entry[:words] || [entry[:word]]).map(&:downcase)
+          expanded.each do |form|
+            if !existing.include?(form.downcase) && text.match?(/\b#{Regexp.escape(form)}\b/i)
+              entry[:words] ||= [entry[:word]]
+              entry[:words] << form
+            end
+          end
+        end
+      end
+
       forms.each do |form|
         pattern = /(?<!\*)\b(#{Regexp.escape(form)})\b(?!\*)/i
         marked.gsub!(pattern, '**\1**')
