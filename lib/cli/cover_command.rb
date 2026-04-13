@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "optparse"
+require "fileutils"
 
 root = File.expand_path("../..", __dir__)
 
@@ -15,10 +16,12 @@ module PodgenCLI
       @options = options
       @output_path = nil
       @missing_only = false
+      @image = nil
       @overrides = {}
 
       OptionParser.new do |opts|
         opts.on("--missing-only", "Only generate covers for episodes without one") { @missing_only = true }
+        opts.on("--image PATH", "Image file path, or 'last' for latest ~/Desktop screenshot") { |v| @image = v }
         opts.on("--base-image PATH", "Override base image") { |v| @overrides[:base_image] = v }
         opts.on("--output PATH", "Output file path") { |v| @output_path = v }
         opts.on("--font NAME", "Override font family") { |v| @overrides[:font] = v }
@@ -48,8 +51,15 @@ module PodgenCLI
 
       config = load_config!
 
+      code = resolve_image_option
+      return code if code
+
       # Manual title mode: podgen cover <podcast> My Custom Title
       if @title && !@title.empty?
+        if @image
+          $stderr.puts "Error: --image is only valid with a specific episode ID, not manual title mode"
+          return 1
+        end
         return run_manual_title(config)
       end
 
@@ -58,6 +68,32 @@ module PodgenCLI
     end
 
     private
+
+    def resolve_image_option
+      return nil unless @image
+
+      unless @episode_id
+        $stderr.puts "Error: --image requires a specific episode ID"
+        return 1
+      end
+
+      if @image == "last"
+        screenshot = Dir.glob(File.join(Dir.home, "Desktop", "Screenshot *.png"))
+                       .max_by { |f| File.mtime(f) }
+        unless screenshot
+          $stderr.puts "Error: no screenshots found on ~/Desktop"
+          return 1
+        end
+        @image = screenshot
+      end
+
+      unless File.exist?(@image)
+        $stderr.puts "Error: image file not found: #{@image}"
+        return 1
+      end
+
+      nil
+    end
 
     def run_manual_title(config)
       base_image, cover_opts = resolve_cover_config(config)
@@ -84,6 +120,11 @@ module PodgenCLI
       if episodes.empty?
         $stderr.puts "No episodes found#{@episode_id ? " matching '#{@episode_id}'" : ""}"
         return 1
+      end
+
+      # Direct image copy mode
+      if @image
+        return copy_image_to_episodes(episodes)
       end
 
       base_image, cover_opts = resolve_cover_config(config)
@@ -114,6 +155,21 @@ module PodgenCLI
     rescue => e
       $stderr.puts "Cover generation failed: #{e.message}"
       1
+    end
+
+    def copy_image_to_episodes(episodes)
+      ext = File.extname(@image)
+      episodes.each do |ep|
+        output = ep[:output].sub(/\.\w+$/, ext)
+        if @dry_run
+          puts "  [dry-run] #{ep[:basename]}: copy #{@image}"
+          next
+        end
+        FileUtils.cp(@image, output)
+        puts "  #{ep[:basename]}: #{output}"
+      end
+      puts "Copied image to #{episodes.length} episode(s)" unless @dry_run
+      0
     end
 
     def resolve_episodes(config)
