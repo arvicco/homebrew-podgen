@@ -154,14 +154,18 @@ module PodgenCLI
     end
 
     def copy_image_to_episodes(episodes)
-      ext = File.extname(@image)
       episodes.each do |ep|
-        output = ep[:output].sub(/\.\w+$/, ext)
+        output = ep[:output] # always .jpg
         if @dry_run
           puts "  [dry-run] #{ep[:basename]}: copy #{@image}"
           next
         end
-        FileUtils.cp(@image, output)
+        if File.extname(@image).downcase == ".jpg" || File.extname(@image).downcase == ".jpeg"
+          FileUtils.cp(@image, output)
+        else
+          system("magick", @image, output) || system("convert", @image, output) ||
+            FileUtils.cp(@image, output)
+        end
         puts "  #{ep[:basename]}: #{output}"
       end
       puts "Copied image to #{episodes.length} episode(s)" unless @dry_run
