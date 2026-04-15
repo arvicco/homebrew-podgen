@@ -56,10 +56,6 @@ module PodgenCLI
 
       # Manual title mode: podgen cover <podcast> My Custom Title
       if @title && !@title.empty?
-        if @image
-          $stderr.puts "Error: --image is only valid with a specific episode ID, not manual title mode"
-          return 1
-        end
         return run_manual_title(config)
       end
 

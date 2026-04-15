@@ -146,7 +146,7 @@ module Tell
 
         unless File.exist?(utf8_dic) && File.exist?(utf8_aff)
           system("iconv", "-f", encoding, "-t", "UTF-8", dic_path, out: utf8_dic)
-          aff_content = `iconv -f #{encoding} -t UTF-8 #{aff_path}`
+          aff_content, _, _ = Open3.capture3("iconv", "-f", encoding, "-t", "UTF-8", aff_path)
           File.write(utf8_aff, aff_content.sub(/SET\s+\S+/, "SET UTF-8"))
         end
 
