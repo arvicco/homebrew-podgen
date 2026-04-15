@@ -318,34 +318,6 @@ class VocabularyAnnotator
     by_lemma.values
   end
 
-  # Merge entries sharing the same word family (same root + similar meaning).
-  # Prefers the entry whose lemma matches the family tag (the root word).
-  # Entries without a family field pass through unchanged.
-  def dedup_by_family(entries)
-    with_family, without_family = entries.partition { |e| e[:family] }
-    by_family = {}
-
-    with_family.each do |entry|
-      key = entry[:family].to_s.downcase
-      if by_family[key]
-        existing = by_family[key]
-        # Merge word forms
-        (entry[:words] || [entry[:word]]).each do |w|
-          existing[:words] << w unless existing[:words].any? { |ew| ew.downcase == w.downcase }
-        end
-        # If this entry's lemma matches the family tag, prefer its metadata
-        if entry[:lemma].to_s.downcase == key && existing[:lemma].to_s.downcase != key
-          old_words = existing[:words]
-          by_family[key] = entry.merge(words: old_words)
-        end
-      else
-        by_family[key] = entry.merge(words: entry[:words] || [entry[:word]])
-      end
-    end
-
-    by_family.values + without_family
-  end
-
   # Deterministic cognate filter: compare lemma against translations in similar
   # languages using transliteration + Levenshtein distance.
   def filter_cognates(entries, similar_langs)
@@ -422,7 +394,10 @@ class VocabularyAnnotator
       forms = ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
       if language && Tell::Hunspell.supports?(language)
         expanded = Tell::Hunspell.expand(entry[:lemma], lang: language)
-        forms = (forms + expanded).uniq(&:downcase) if expanded.any?
+        if expanded.any?
+          entry[:_expanded] = expanded
+          forms = (forms + expanded).uniq(&:downcase)
+        end
       end
       entry[:frequency] = forms.sum { |f| text.scan(/\b#{Regexp.escape(f)}\b/i).length }
     end
@@ -432,21 +407,21 @@ class VocabularyAnnotator
     marked = text.dup
 
     entries.each do |entry|
-      # Mark all occurrences of all known forms + the lemma
       forms = ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
 
-      # Expand with hunspell inflections when available
-      if language && Tell::Hunspell.supports?(language)
+      # Use memoized hunspell expansion from count_occurrences, or expand now
+      expanded = entry.delete(:_expanded)
+      if expanded.nil? && language && Tell::Hunspell.supports?(language)
         expanded = Tell::Hunspell.expand(entry[:lemma], lang: language)
-        if expanded.any?
-          forms = (forms + expanded).uniq(&:downcase)
-          # Track attested expanded forms in entry[:words] for vocabulary section
-          existing = (entry[:words] || [entry[:word]]).map(&:downcase)
-          expanded.each do |form|
-            if !existing.include?(form.downcase) && text.match?(/\b#{Regexp.escape(form)}\b/i)
-              entry[:words] ||= [entry[:word]]
-              entry[:words] << form
-            end
+      end
+
+      if expanded&.any?
+        forms = (forms + expanded).uniq(&:downcase)
+        existing = (entry[:words] || [entry[:word]]).map(&:downcase)
+        expanded.each do |form|
+          if !existing.include?(form.downcase) && text.match?(/\b#{Regexp.escape(form)}\b/i)
+            entry[:words] ||= [entry[:word]]
+            entry[:words] << form
           end
         end
       end
