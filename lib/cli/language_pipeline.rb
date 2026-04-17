@@ -285,8 +285,7 @@ module PodgenCLI
       case result[:quality]
       when :high
         # High-quality transcript — use as primary reference alongside STT
-        @discovered_transcript = result[:text]
-        @youtube_captions = result[:text]  # Feed into reconciler as reference
+        @youtube_captions = result[:text]
         logger.log("Discovered #{result[:source]} transcript (#{result[:quality]} quality, #{result[:text].split(/\s+/).length} words)")
       when :medium, :low
         # Lower quality — use as captions (tiebreaker in reconciliation)
