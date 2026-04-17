@@ -4,6 +4,7 @@ require "open3"
 require "json"
 require "tmpdir"
 require_relative "loggable"
+require_relative "subtitle_parser"
 
 class YouTubeDownloader
   include Loggable
@@ -123,7 +124,7 @@ class YouTubeDownloader
       end
 
       srt_content = File.read(sub_file, encoding: "UTF-8")
-      text = strip_srt_timestamps(srt_content)
+      text = SubtitleParser.parse_srt(srt_content)
 
       if text.empty?
         log("Captions file was empty")
@@ -144,15 +145,9 @@ class YouTubeDownloader
     ["--cookies-from-browser", @browser]
   end
 
+  # Delegated to SubtitleParser for backward compatibility with tests.
   def strip_srt_timestamps(srt)
-    srt.lines
-      .reject { |line| line.strip =~ /^\d+$/ }                          # sequence numbers
-      .reject { |line| line.strip =~ /^\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->/ } # timestamp lines
-      .map(&:strip)
-      .reject(&:empty?)
-      .join(" ")
-      .gsub(/\s+/, " ")
-      .strip
+    SubtitleParser.parse_srt(srt)
   end
 
   def verify_yt_dlp!
