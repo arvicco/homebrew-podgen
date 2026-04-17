@@ -66,24 +66,20 @@ class TestTranscriptDiscovery < Minitest::Test
     assert_nil result
   end
 
-  # --- episode page ---
+  # --- episode page (currently disabled — too many false positives) ---
 
-  def test_episode_page_with_article
+  def test_episode_page_scraping_disabled
+    result = TranscriptDiscovery.search(rss_item: { link: "https://example.com/ep1" })
+    assert_nil result, "episode page scraping should be disabled"
+  end
+
+  def test_scrape_episode_page_extracts_article_when_called_directly
     html = "<html><body><article>" + ("word " * 200) + "</article></body></html>"
 
     TranscriptDiscovery.stub(:fetch_url, html) do
-      result = TranscriptDiscovery.search(rss_item: { link: "https://example.com/ep1" })
+      result = TranscriptDiscovery.scrape_episode_page("https://example.com/ep1")
       assert_equal :high, result[:quality]
       assert_equal "episode_page", result[:source]
-    end
-  end
-
-  def test_episode_page_no_substantial_content
-    html = "<html><body><p>Short page.</p></body></html>"
-
-    TranscriptDiscovery.stub(:fetch_url, html) do
-      result = TranscriptDiscovery.search(rss_item: { link: "https://example.com/ep1" })
-      assert_nil result
     end
   end
 

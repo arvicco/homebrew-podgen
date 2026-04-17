@@ -38,11 +38,12 @@ module TranscriptDiscovery
       return result if result
     end
 
-    # 3. Episode web page
-    if (link = rss_item[:link])
-      result = scrape_episode_page(link, logger: logger)
-      return result if result
-    end
+    # 3. Episode web page — disabled: too many false positives from page chrome/JS.
+    #    Re-enable when we have a more reliable content extraction strategy.
+    # if (link = rss_item[:link])
+    #   result = scrape_episode_page(link, logger: logger)
+    #   return result if result
+    # end
 
     # 4. YouTube captions (lowest priority)
     if youtube_captions && !youtube_captions.strip.empty?
@@ -110,7 +111,9 @@ module TranscriptDiscovery
         response = http.request(Net::HTTP::Get.new(uri))
         case response
         when Net::HTTPSuccess
-          return response.body
+          body = response.body
+          body = body.force_encoding("UTF-8") if body.encoding == Encoding::ASCII_8BIT
+          return body
         when Net::HTTPRedirection
           uri = URI.join(uri, response["location"])
         else
