@@ -160,11 +160,15 @@ module PodgenCLI
           puts "  [dry-run] #{ep[:basename]}: copy #{@image}"
           next
         end
-        if File.extname(@image).downcase == ".jpg" || File.extname(@image).downcase == ".jpeg"
+        ext = File.extname(@image).downcase
+        if [".jpg", ".jpeg"].include?(ext)
           FileUtils.cp(@image, output)
+        elsif system("magick", @image, output) || system("convert", @image, output)
+          # converted to JPG via ImageMagick
         else
-          system("magick", @image, output) || system("convert", @image, output) ||
-            FileUtils.cp(@image, output)
+          output = ep[:output].sub(/\.jpg$/, ext)
+          FileUtils.cp(@image, output)
+          $stderr.puts "  Warning: ImageMagick not available, copied as #{ext} without conversion"
         end
         puts "  #{ep[:basename]}: #{output}"
       end
