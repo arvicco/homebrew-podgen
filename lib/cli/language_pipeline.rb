@@ -20,6 +20,7 @@ require_relative File.join(root, "lib", "timestamp_persister")
 require_relative File.join(root, "lib", "subtitle_generator")
 require_relative File.join(root, "lib", "video_generator")
 require_relative File.join(root, "lib", "url_cleaner")
+require_relative File.join(root, "lib", "transcript_discovery")
 
 module PodgenCLI
   class LanguagePipeline
@@ -53,6 +54,7 @@ module PodgenCLI
 
       setup_staging
       return 0 if trim_source_audio == :excluded
+      discover_transcript
       transcribe
       clean_or_generate_description(@episode, @reconciled_text || @transcription_result[:text])
       trim_outro
@@ -272,6 +274,27 @@ module PodgenCLI
       [skip, cut]
     end
 
+    def discover_transcript
+      result = TranscriptDiscovery.search(
+        rss_item: @episode || {},
+        youtube_captions: @youtube_captions,
+        logger: logger
+      )
+      return unless result
+
+      case result[:quality]
+      when :high
+        # High-quality transcript — use as primary reference alongside STT
+        @discovered_transcript = result[:text]
+        @youtube_captions = result[:text]  # Feed into reconciler as reference
+        logger.log("Discovered #{result[:source]} transcript (#{result[:quality]} quality, #{result[:text].split(/\s+/).length} words)")
+      when :medium, :low
+        # Lower quality — use as captions (tiebreaker in reconciliation)
+        @youtube_captions ||= result[:text]
+        logger.log("Discovered #{result[:source]} transcript (#{result[:quality]} quality, used as reference)")
+      end
+    end
+
     def transcribe
       logger.phase_start("Transcription")
       @base_name = @config.episode_basename(@today)
@@ -368,9 +391,17 @@ module PodgenCLI
       @current_episode_description = @episode[:description]
       cover_source = resolve_episode_cover(@episode[:title])
       if cover_source
-        ext = File.extname(cover_source)
-        cover_dest = File.join(@staging_dir, "#{@base_name}_cover#{ext}")
-        FileUtils.cp(cover_source, cover_dest)
+        ext = File.extname(cover_source).downcase
+        if [".jpg", ".jpeg"].include?(ext)
+          cover_dest = File.join(@staging_dir, "#{@base_name}_cover#{ext}")
+          FileUtils.cp(cover_source, cover_dest)
+        else
+          cover_dest = File.join(@staging_dir, "#{@base_name}_cover.jpg")
+          unless system("magick", cover_source, cover_dest) || system("convert", cover_source, cover_dest)
+            cover_dest = File.join(@staging_dir, "#{@base_name}_cover#{ext}")
+            FileUtils.cp(cover_source, cover_dest)
+          end
+        end
         logger.log("Episode cover saved: #{cover_dest}")
       else
         logger.log("No episode cover generated (no image source resolved)")
