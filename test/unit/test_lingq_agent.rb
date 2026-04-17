@@ -145,7 +145,7 @@ class TestLingQAgent < Minitest::Test
       assert_equal "tokyo", posted_body[:accent]
       assert_equal "shared", posted_body[:status]
       assert_equal "A podcast episode", posted_body[:description]
-      assert_equal "https://example.com/ep1", posted_body[:original_url]
+      assert_equal "https://example.com/ep1", posted_body[:originalUrl]
       assert_instance_of File, posted_body[:image]
       assert_includes posted_url, "/ja/lessons/"
     end

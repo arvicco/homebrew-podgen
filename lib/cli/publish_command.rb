@@ -216,6 +216,8 @@ module PodgenCLI
 
         puts "  uploading: #{ep[:base_name]} — \"#{title}\"" unless @options[:verbosity] == :quiet
 
+        site_url = @config.base_url ? "#{@config.base_url}/site/episodes/#{ep[:base_name]}.html" : nil
+
         lesson_id = agent.upload(
           title: title,
           text: transcript,
@@ -227,7 +229,8 @@ module PodgenCLI
           image_path: image_path,
           accent: lc[:accent],
           status: lc[:status],
-          description: description
+          description: description,
+          original_url: site_url
         )
 
         upload_tracker.record(:lingq, collection, ep[:base_name], lesson_id)

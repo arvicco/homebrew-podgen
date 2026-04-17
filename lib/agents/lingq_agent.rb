@@ -39,7 +39,7 @@ class LingQAgent
     body[:tags] = tags if tags&.any?
     body[:accent] = accent if accent
     body[:description] = description if description
-    body[:original_url] = original_url if original_url
+    body[:originalUrl] = original_url if original_url
 
     # Build multipart form
     body[:audio] = File.open(audio_path, "rb")
