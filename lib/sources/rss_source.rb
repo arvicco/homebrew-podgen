@@ -224,6 +224,18 @@ class RSSSource
         link: link
       }
       ep[:image_url] = image_url if image_url && !image_url.empty?
+
+      # Podcasting 2.0 transcript tag
+      if item.respond_to?(:podcast_transcript) && item.podcast_transcript
+        ep[:transcript_url] = item.podcast_transcript.url.to_s.strip rescue nil
+        ep[:transcript_type] = item.podcast_transcript.type.to_s.strip rescue nil
+      end
+
+      # content:encoded (may contain full transcript text)
+      if item.respond_to?(:content_encoded) && item.content_encoded
+        ep[:content_encoded] = item.content_encoded.to_s
+      end
+
       ep
     end
   rescue RSS::Error, RSS::NotWellFormedError => e
