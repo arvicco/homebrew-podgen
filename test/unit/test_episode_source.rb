@@ -232,6 +232,72 @@ class TestEpisodeSource < Minitest::Test
     s.send(:exclude_url!, "http://example.com/ep.mp3")
   end
 
+  # --- weighted_pick ---
+
+  def test_weighted_pick_respects_weights
+    feeds = [
+      { url: "https://a.com/feed", tag: "a", weight: 80 },
+      { url: "https://b.com/feed", tag: "b", weight: 20 }
+    ]
+    s = source(rss_feeds: feeds)
+
+    counts = Hash.new(0)
+    1000.times do
+      pick = s.send(:weighted_pick, feeds, 0)
+      counts[pick[:tag]] += 1
+    end
+
+    assert counts["a"] > 600, "Expected feed 'a' (weight 80) to be picked >600/1000 times, got #{counts['a']}"
+    assert counts["b"] > 100, "Expected feed 'b' (weight 20) to be picked >100/1000 times, got #{counts['b']}"
+  end
+
+  def test_weighted_pick_cycle_mode_equal_weights
+    feeds = [
+      { url: "https://a.com/feed", tag: "a" },
+      { url: "https://b.com/feed", tag: "b" }
+    ]
+    s = source(rss_feeds: feeds)
+
+    counts = Hash.new(0)
+    1000.times do
+      pick = s.send(:weighted_pick, feeds, 1)  # cycle mode: default weight 1
+      counts[pick[:tag]] += 1
+    end
+
+    assert counts["a"] > 350, "Expected roughly even distribution, got a=#{counts['a']}"
+    assert counts["b"] > 350, "Expected roughly even distribution, got b=#{counts['b']}"
+  end
+
+  def test_weights_mode_excludes_unweighted_feeds
+    feeds = [
+      { url: "https://a.com/feed", tag: "a", weight: 100 },
+      { url: "https://b.com/feed", tag: "b" }  # no weight → 0 in weights mode
+    ]
+    s = source(rss_feeds: feeds, select: "weights")
+
+    pool = feeds.select { |f| s.send(:feed_weight, f, 0) > 0 }
+    assert_equal 1, pool.length
+    assert_equal "a", pool.first[:tag]
+  end
+
+  def test_weighted_pick_handles_plain_url_strings
+    feeds = ["https://a.com/feed", "https://b.com/feed"]
+    s = source(rss_feeds: feeds)
+
+    pick = s.send(:weighted_pick, feeds, 1)
+    assert_includes feeds, pick
+  end
+
+  def test_select_mode_defaults_to_latest
+    s = source(rss_feeds: ["https://a.com/feed"])
+    assert_equal "latest", s.send(:select_mode)
+  end
+
+  def test_select_mode_reads_from_config
+    s = source(rss_feeds: ["https://a.com/feed"], select: "weights")
+    assert_equal "weights", s.send(:select_mode)
+  end
+
   def setup
     @tmpdir = Dir.mktmpdir("episode_source_test")
   end
@@ -242,8 +308,9 @@ class TestEpisodeSource < Minitest::Test
 
   private
 
-  def source(known_urls: [], rss_feeds: nil)
+  def source(known_urls: [], rss_feeds: nil, select: nil)
     sources = rss_feeds.nil? ? {} : { "rss" => rss_feeds }
+    sources["select"] = [select] if select
     config = Struct.new(:sources).new(sources)
     history = Struct.new(:all_urls).new(Set.new(known_urls))
     EpisodeSource.new(config: config, history: history)
