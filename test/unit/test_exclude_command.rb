@@ -318,16 +318,17 @@ class TestExcludeCommand < Minitest::Test
     assert_equal 2, received_feeds.length
   end
 
-  def test_rss_without_ask_falls_through_to_url_mode
+  def test_rss_without_ask_excludes_next_episode
     write_guidelines("language", rss: "https://feed.example.com/rss")
 
-    # --rss without --ask should treat remaining args as URLs (existing behavior)
+    # --rss without --ask should auto-exclude the next episode from that feed
+    # Will fail to find episodes (no real feed), but should attempt the rss_next path
     _, err = capture_io do
       code = PodgenCLI::ExcludeCommand.new(["testpod", "--rss", "feed.example.com"], {}).run
-      assert_equal 2, code
+      assert_equal 1, code  # no episodes found
     end
 
-    assert_includes err, "Usage:"
+    assert_includes err, "No unprocessed episodes"
   end
 
   def test_ask_no_episodes_found
