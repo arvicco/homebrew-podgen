@@ -301,6 +301,51 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal 30.0, entry[:skip]
   end
 
+  def test_parses_rss_with_weight
+    parser = build_parser(<<~MD)
+      ## Sources
+      - rss:
+        - https://example.com/feed1 tag: alpha weight: 40
+        - https://example.com/feed2 tag: beta weight: 20
+    MD
+
+    entries = parser.sources["rss"]
+    assert_equal 40, entries[0][:weight]
+    assert_equal 20, entries[1][:weight]
+  end
+
+  def test_parses_select_mode
+    parser = build_parser(<<~MD)
+      ## Sources
+      - select: weights
+      - rss:
+        - https://example.com/feed
+    MD
+
+    assert_equal ["weights"], parser.sources["select"]
+  end
+
+  def test_parses_select_mode_strips_inline_comment
+    parser = build_parser(<<~MD)
+      ## Sources
+      - select: weights # latest (default) | cycle | weights
+      - rss:
+        - https://example.com/feed
+    MD
+
+    assert_equal ["weights"], parser.sources["select"]
+  end
+
+  def test_inline_comment_does_not_strip_url_fragments
+    parser = build_parser(<<~MD)
+      ## Sources
+      - rss:
+        - https://example.com/feed#section
+    MD
+
+    assert_equal "https://example.com/feed#section", parser.sources["rss"][0]
+  end
+
   def test_sources_defaults_to_exa
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_equal({ "exa" => true }, parser.sources)

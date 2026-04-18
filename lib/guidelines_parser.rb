@@ -357,7 +357,7 @@ class GuidelinesParser
         if item.include?(":")
           key, value = item.split(":", 2)
           current_key = key.strip
-          inline = value.strip
+          inline = value.sub(/\s+#\s.*/, "").strip
           if inline.empty?
             # "- name:" with sub-list to follow
             sources[current_key] = []
@@ -413,6 +413,7 @@ class GuidelinesParser
       when "base_image" then options[:base_image] = resolve_path(v)
       when "image" then options[:image] = v
       when "tag" then options[:tag] = v
+      when "weight" then options[:weight] = v.to_i
       end
     end
 

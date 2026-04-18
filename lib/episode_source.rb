@@ -64,17 +64,14 @@ class EpisodeSource
     end
 
     feeds = resolve_feeds(rss_feeds, rss_filter)
-    source = RSSSource.new(feeds: feeds, logger: @logger)
-    exclude = force ? Set.new : @history.all_urls
-    episodes = source.fetch_episodes(exclude_urls: exclude)
+    mode = rss_filter ? "latest" : select_mode
 
-    if episodes.empty?
-      log("No episodes with audio enclosures found")
-      return nil
+    case mode
+    when "cycle", "weights"
+      fetch_weighted(feeds, force: force)
+    else
+      fetch_from_feeds(feeds, force: force)
     end
-
-    log("Found #{episodes.length} episodes with audio enclosures")
-    episodes.first
   end
 
   def download_audio(url)
@@ -97,6 +94,74 @@ class EpisodeSource
   end
 
   private
+
+  def select_mode
+    mode = @config.sources["select"]
+    mode = mode.first if mode.is_a?(Array)
+    mode || "latest"
+  end
+
+  def fetch_from_feeds(feeds, force: false)
+    source = RSSSource.new(feeds: feeds, logger: @logger)
+    exclude = force ? Set.new : @history.all_urls
+    episodes = source.fetch_episodes(exclude_urls: exclude)
+
+    if episodes.empty?
+      log("No episodes with audio enclosures found")
+      return nil
+    end
+
+    log("Found #{episodes.length} episodes with audio enclosures")
+    episodes.first
+  end
+
+  def fetch_weighted(feeds, force: false)
+    mode = select_mode
+    default_weight = mode == "cycle" ? 1 : 0
+    pool = feeds.select { |f| feed_weight(f, default_weight) > 0 }
+
+    if pool.empty?
+      log("No feeds with positive weight")
+      return nil
+    end
+
+    exclude = force ? Set.new : @history.all_urls
+    log("Feed selection: #{mode} mode, #{pool.length} feed(s) in pool")
+
+    while pool.any?
+      feed = weighted_pick(pool, default_weight)
+      source = RSSSource.new(feeds: [feed], logger: @logger)
+      episodes = source.fetch_episodes(exclude_urls: exclude)
+
+      if episodes.any?
+        tag = feed.is_a?(Hash) ? feed[:tag] : nil
+        log("Selected feed#{tag ? " '#{tag}'" : ""} (weight #{feed_weight(feed, default_weight)}): #{episodes.length} episode(s) available")
+        return episodes.first
+      end
+
+      pool.delete(feed)
+    end
+
+    log("No episodes with audio enclosures found (all feeds exhausted)")
+    nil
+  end
+
+  def feed_weight(feed, default)
+    feed.is_a?(Hash) ? (feed[:weight] || default) : default
+  end
+
+  def weighted_pick(feeds, default_weight)
+    total = feeds.sum { |f| feed_weight(f, default_weight) }
+    point = rand * total
+    cumulative = 0.0
+
+    feeds.each do |feed|
+      cumulative += feed_weight(feed, default_weight)
+      return feed if cumulative > point
+    end
+
+    feeds.last
+  end
 
   # Resolves which feeds to use given an optional rss_filter.
   # - nil: use all configured feeds
