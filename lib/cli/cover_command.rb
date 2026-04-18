@@ -202,6 +202,11 @@ module PodgenCLI
 
     def resolve_cover_config(config)
       base_image = @overrides[:base_image] || config.cover_base_image
+      # Resolve relative paths against podcast directory
+      if base_image && !base_image.start_with?("/") && !File.exist?(base_image)
+        candidate = File.join(config.podcast_dir, base_image)
+        base_image = candidate if File.exist?(candidate)
+      end
       unless base_image && File.exist?(base_image)
         $stderr.puts "No base_image available for cover generation."
         $stderr.puts "  Configure in guidelines.md under ## Image, or pass --base-image PATH"
