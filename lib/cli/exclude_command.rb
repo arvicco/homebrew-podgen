@@ -34,10 +34,11 @@ module PodgenCLI
       return code if code
 
       return run_ask if @ask
+      return run_rss_next if @rss_filter && @urls.empty?
 
       if @urls.empty?
         $stderr.puts "Usage: podgen exclude <podcast> <url> [url...]"
-        $stderr.puts "       podgen exclude <podcast> --rss <filter> --ask [N]"
+        $stderr.puts "       podgen exclude <podcast> --rss <filter> [--ask N]"
         return 2
       end
 
@@ -45,6 +46,41 @@ module PodgenCLI
     end
 
     private
+
+    def run_rss_next
+      config = PodcastConfig.new(@podcast_name)
+      history = EpisodeHistory.new(config.history_path, excluded_urls_path: config.excluded_urls_path)
+      exclude_set = history.all_urls
+
+      configured_feeds = config.sources["rss"]
+      unless configured_feeds.is_a?(Array) && configured_feeds.any?
+        $stderr.puts "Error: No RSS sources configured in guidelines.md"
+        return 2
+      end
+
+      begin
+        feeds = resolve_feeds(configured_feeds, @rss_filter)
+      rescue RuntimeError => e
+        $stderr.puts "Error: #{e.message}"
+        return 1
+      end
+
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "sources", "rss_source")
+      source = RSSSource.new(feeds: feeds)
+      episodes = source.fetch_episodes(exclude_urls: exclude_set)
+
+      if episodes.empty?
+        $stderr.puts "No unprocessed episodes in '#{@rss_filter}'."
+        return 1
+      end
+
+      ep = episodes.first
+      info = "#{ep[:title]}"
+      info += " (#{ep[:duration]})" if ep[:duration]
+      info += " [#{(ep[:file_size] / (1024.0 * 1024)).round(1)} MB]" if ep[:file_size]&.positive?
+      puts "Excluding next episode from '#{@rss_filter}': #{info}"
+      exclude_urls([ep[:audio_url]])
+    end
 
     def run_ask
       config = PodcastConfig.new(@podcast_name)
@@ -84,7 +120,10 @@ module PodgenCLI
       puts "Next unprocessed episodes:"
       episodes.each_with_index do |ep, i|
         date = ep[:pub_date]&.strftime("%Y-%m-%d") || "unknown"
-        puts "  #{i + 1}. [#{date}] #{ep[:title]}"
+        info = "  #{i + 1}. [#{date}] #{ep[:title]}"
+        info += " (#{ep[:duration]})" if ep[:duration]
+        info += " [#{(ep[:file_size] / (1024.0 * 1024)).round(1)} MB]" if ep[:file_size]&.positive?
+        puts info
       end
       puts
 

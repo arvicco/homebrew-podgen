@@ -216,6 +216,9 @@ class RSSSource
 
       image_url = item.respond_to?(:itunes_image) && item.itunes_image ? item.itunes_image.href.to_s.strip : nil
 
+      duration = item.respond_to?(:itunes_duration) ? item.itunes_duration&.content.to_s.strip : nil
+      file_size = enclosure.respond_to?(:length) ? enclosure.length.to_i : nil
+
       ep = {
         title: title,
         description: description,
@@ -223,6 +226,8 @@ class RSSSource
         pub_date: pub_time,
         link: link
       }
+      ep[:duration] = duration if duration && !duration.empty?
+      ep[:file_size] = file_size if file_size && file_size > 0
       ep[:image_url] = image_url if image_url && !image_url.empty?
 
       # Podcasting 2.0 transcript tag

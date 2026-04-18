@@ -166,15 +166,18 @@ class TestLanguagePipeline < Minitest::Test
     pipeline = build_pipeline(options: { image: image_path })
     result = pipeline.send(:resolve_episode_cover, "Title")
 
-    assert_equal File.expand_path(image_path), result
+    path, desc = result
+    assert_equal File.expand_path(image_path), path
+    assert_includes desc, "--image"
   end
 
   def test_resolve_cover_with_thumb_option
     pipeline = build_pipeline(options: { image: "thumb" })
     pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
-    result = pipeline.send(:resolve_episode_cover, "Title")
+    path, desc = pipeline.send(:resolve_episode_cover, "Title")
 
-    assert_equal "/tmp/thumb.jpg", result
+    assert_equal "/tmp/thumb.jpg", path
+    assert_includes desc, "thumb"
   end
 
   def test_resolve_cover_image_none_falls_to_thumbnail
@@ -182,31 +185,36 @@ class TestLanguagePipeline < Minitest::Test
     pipeline.instance_variable_set(:@current_episode_image_none, true)
     pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
 
-    result = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/thumb.jpg", result
+    path, desc = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal "/tmp/thumb.jpg", path
+    assert_includes desc, "none"
   end
 
   def test_resolve_cover_returns_nil_when_no_options
     pipeline = build_pipeline
-    result = pipeline.send(:resolve_episode_cover, "Title")
-    assert_nil result
+    path, = pipeline.send(:resolve_episode_cover, "Title")
+    assert_nil path
   end
 
   def test_resolve_cover_uses_rss_episode_image
     pipeline = build_pipeline
     pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
 
-    result = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/rss_cover.jpg", result
+    path, desc = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal "/tmp/rss_cover.jpg", path
+    assert_includes desc, "RSS"
   end
 
-  def test_resolve_cover_rss_image_beats_feed_base_image
+  def test_resolve_cover_feed_base_image_beats_rss_image
     pipeline = build_pipeline
     pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
     pipeline.instance_variable_set(:@current_episode_feed_base_image, "/tmp/base.jpg")
 
-    result = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/rss_cover.jpg", result
+    path, desc = pipeline.send(:resolve_episode_cover, "Title")
+    # feed base_image triggers generate_cover_image which fails on fake path,
+    # but the point is it did NOT return the RSS image
+    refute_equal "/tmp/rss_cover.jpg", path
+    assert_includes desc, "feed base_image"
   end
 
   def test_resolve_cover_base_image_option_beats_rss_image
@@ -217,11 +225,8 @@ class TestLanguagePipeline < Minitest::Test
     pipeline = build_pipeline(options: { base_image: base_path }, config: config)
     pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
 
-    result = pipeline.send(:resolve_episode_cover, "Title")
-    # --base-image triggers generate_cover_image, which needs a real image;
-    # it will fail on a touched file but fall through to youtube_thumbnail
-    # The point is it did NOT return the RSS image
-    refute_equal "/tmp/rss_cover.jpg", result
+    path, = pipeline.send(:resolve_episode_cover, "Title")
+    refute_equal "/tmp/rss_cover.jpg", path
   end
 
   def test_resolve_cover_image_option_beats_rss_image
@@ -231,16 +236,17 @@ class TestLanguagePipeline < Minitest::Test
     pipeline = build_pipeline(options: { image: image_path })
     pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
 
-    result = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal File.expand_path(image_path), result
+    path, = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal File.expand_path(image_path), path
   end
 
   def test_resolve_cover_falls_through_to_youtube_thumbnail
     pipeline = build_pipeline
     pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/yt.jpg")
 
-    result = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/yt.jpg", result
+    path, desc = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal "/tmp/yt.jpg", path
+    assert_includes desc, "thumbnail"
   end
 
   # --- cleanup_temp_files ---

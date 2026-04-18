@@ -203,11 +203,17 @@ module PodgenCLI
         return 1
       end
       @episode[:title] = @file_title if @file_title
-      logger.log("Selected episode: \"#{@episode[:title]}\" (#{@episode[:audio_url]})")
+      ep_info = "\"#{@episode[:title]}\""
+      ep_info += " (#{@episode[:duration]})" if @episode[:duration]
+      ep_info += " [#{(@episode[:file_size] / (1024.0 * 1024)).round(1)} MB]" if @episode[:file_size]
+      logger.log("Selected episode: #{ep_info}")
+      logger.log("  URL: #{@episode[:audio_url]}")
       # Stash per-feed image config for resolve_episode_cover
       @current_episode_feed_base_image = @episode.delete(:base_image)
       feed_image = @episode.delete(:image)
       @current_episode_image_none = (feed_image == "none")
+      # Per-feed image: supports same values as --image (path, "last", "thumb", "none")
+      @current_episode_feed_image = resolve_feed_image(feed_image) unless @current_episode_image_none
       episode_image_url = @episode.delete(:image_url)
       logger.phase_end("Fetch Episode")
 
@@ -388,7 +394,7 @@ module PodgenCLI
       save_transcript(@episode, @transcript, @base_name)
 
       @current_episode_description = @episode[:description]
-      cover_source = resolve_episode_cover(@episode[:title])
+      cover_source, cover_desc = resolve_episode_cover(@episode[:title])
       if cover_source
         ext = File.extname(cover_source).downcase
         if [".jpg", ".jpeg"].include?(ext)
@@ -401,9 +407,9 @@ module PodgenCLI
             FileUtils.cp(cover_source, cover_dest)
           end
         end
-        logger.log("Episode cover saved: #{cover_dest}")
+        logger.log("Episode cover: #{cover_desc} → #{cover_dest}")
       else
-        logger.log("No episode cover generated (no image source resolved)")
+        logger.log("No episode cover (no image source resolved)")
       end
     end
 
@@ -590,7 +596,7 @@ module PodgenCLI
       lc = @config.lingq_config
       language = @config.transcription_language
 
-      image_path = resolve_episode_cover(episode[:title])
+      image_path, = resolve_episode_cover(episode[:title])
 
       agent = LingQAgent.new(logger: logger, api_key: @config.lingq_config&.[](:token))
       lesson_id = agent.upload(
@@ -692,38 +698,71 @@ module PodgenCLI
     end
 
     # Resolves the episode cover image path using the priority chain:
-    # 1. --image PATH/last → static file (last = latest ~/Desktop screenshot, resolved at startup)
-    # 2. --image thumb → YouTube thumbnail
-    # 3. Per-feed image: none → YouTube thumbnail fallback
-    # 4. --base-image PATH → title overlay on file
+    def resolve_feed_image(value)
+      return nil if value.nil? || value == "none"
+
+      if value == "last"
+        screenshot = Dir.glob(File.join(Dir.home, "Desktop", "Screenshot *.png"))
+                       .max_by { |f| File.mtime(f) }
+        if screenshot
+          logger.log("Resolved per-feed image: last → #{screenshot}")
+          return screenshot
+        end
+        logger.log("Warning: per-feed image: last but no screenshots found on ~/Desktop")
+        return nil
+      end
+
+      return value if value == "thumb"
+
+      path = File.expand_path(value)
+      unless File.exist?(path)
+        logger.log("Warning: per-feed image not found: #{path}")
+        return nil
+      end
+      path
+    end
+
+    # Priority chain for episode cover:
+    # 1. --image PATH/last/thumb (CLI flag)
+    # 2. Per-feed image: PATH/last/thumb/none
+    # 3. --base-image PATH → title overlay
+    # 4. Per-feed base_image: PATH → title overlay
     # 5. RSS episode image → downloaded from feed
-    # 6. Per-feed base_image: PATH → title overlay on file
-    # 7. ## Image base_image: PATH → title overlay on file (via cover_generation_enabled?)
-    # 8. YouTube thumbnail → fallback
-    # 9. nil → no cover
+    # 6. ## Image base_image → title overlay
+    # 7. YouTube thumbnail → fallback
+    # 8. nil → no cover
     def resolve_episode_cover(title)
       if @options[:image]
         if @options[:image] == "thumb"
-          @youtube_thumbnail
+          [@youtube_thumbnail, "--image thumb (YouTube thumbnail)"]
         else
-          File.expand_path(@options[:image])
+          [File.expand_path(@options[:image]), "--image #{@options[:image]}"]
         end
       elsif @current_episode_image_none
-        @youtube_thumbnail
+        [@youtube_thumbnail, "feed image: none (YouTube thumbnail fallback)"]
+      elsif @current_episode_feed_image
+        if @current_episode_feed_image == "thumb"
+          [@youtube_thumbnail, "feed image: thumb (YouTube thumbnail)"]
+        else
+          [@current_episode_feed_image, "feed image: #{File.basename(@current_episode_feed_image)}"]
+        end
       elsif @options[:base_image]
-        generate_cover_image(title, File.expand_path(@options[:base_image])) || @youtube_thumbnail
-      elsif @rss_episode_image
-        @rss_episode_image
+        path = generate_cover_image(title, File.expand_path(@options[:base_image])) || @youtube_thumbnail
+        [path, "--base-image title overlay"]
       elsif @current_episode_feed_base_image
-        generate_cover_image(title, @current_episode_feed_base_image) || @youtube_thumbnail
+        path = generate_cover_image(title, @current_episode_feed_base_image) || @youtube_thumbnail
+        [path, "feed base_image title overlay"]
+      elsif @rss_episode_image
+        [@rss_episode_image, "RSS episode image"]
       elsif @config.cover_generation_enabled?
-        generate_cover_image(title) || @youtube_thumbnail
+        path = generate_cover_image(title) || @youtube_thumbnail
+        [path, "config base_image title overlay"]
       else
         bi = @config.cover_base_image
         if bi && !File.exist?(bi)
           logger.log("Warning: base_image configured but not found: #{bi}")
         end
-        @youtube_thumbnail
+        [@youtube_thumbnail, @youtube_thumbnail ? "YouTube thumbnail fallback" : nil]
       end
     end
 
