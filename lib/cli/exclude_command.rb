@@ -49,6 +49,12 @@ module PodgenCLI
 
     def run_rss_next
       config = PodcastConfig.new(@podcast_name)
+
+      unless config.type == "language"
+        $stderr.puts "Error: --rss requires a language pipeline podcast (type: language)"
+        return 2
+      end
+
       history = EpisodeHistory.new(config.history_path, excluded_urls_path: config.excluded_urls_path)
       exclude_set = history.all_urls
 

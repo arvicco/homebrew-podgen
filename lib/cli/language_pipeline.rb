@@ -205,7 +205,7 @@ module PodgenCLI
       @episode[:title] = @file_title if @file_title
       ep_info = "\"#{@episode[:title]}\""
       ep_info += " (#{@episode[:duration]})" if @episode[:duration]
-      ep_info += " [#{(@episode[:file_size] / (1024.0 * 1024)).round(1)} MB]" if @episode[:file_size]
+      ep_info += " [#{(@episode[:file_size] / (1024.0 * 1024)).round(1)} MB]" if @episode[:file_size]&.positive?
       logger.log("Selected episode: #{ep_info}")
       logger.log("  URL: #{@episode[:audio_url]}")
       # Stash per-feed image config for resolve_episode_cover
