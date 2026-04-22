@@ -44,7 +44,7 @@ class AudioAssembler
   # Input: segment_paths (array of MP3 paths), output_path (final MP3 path)
   # Optional: intro_path, outro_path (skipped if nil or file doesn't exist)
   # Optional: metadata hash (e.g. { title: "...", artist: "..." }) — sets ID3 tags on output
-  def assemble(segment_paths, output_path, intro_path: nil, outro_path: nil, metadata: {})
+  def assemble(segment_paths, output_path, intro_path: nil, outro_path: nil, metadata: {}, segment_pause: 0)
     intro_path = nil unless intro_path && File.exist?(intro_path)
     outro_path = nil unless outro_path && File.exist?(outro_path)
 
@@ -63,7 +63,8 @@ class AudioAssembler
     # Step 1: Concatenate all inputs with resampling and crossfades
     concat_path = output_path.sub(/\.mp3$/, "_concat.mp3")
     log("Concatenating #{all_inputs.length} audio files...")
-    concatenate(all_inputs, concat_path, intro: intro_path, outro: outro_path)
+    concatenate(all_inputs, concat_path, intro: intro_path, outro: outro_path,
+                segment_pause: segment_pause)
 
     # Step 2: Two-pass loudness normalization
     log("Normalizing loudness to #{TARGET_LUFS} LUFS...")
@@ -157,11 +158,20 @@ class AudioAssembler
 
   private
 
-  def concatenate(inputs, output_path, intro: nil, outro: nil)
+  def concatenate(inputs, output_path, intro: nil, outro: nil, segment_pause: 0)
     filter_parts = []
     stream_labels = []
+    silence_count = 0
 
     inputs.each_with_index do |input, i|
+      # Insert silence pad between content segments (not after intro or before outro)
+      if segment_pause > 0 && i > 0 && input != outro && inputs[i - 1] != intro
+        silence_label = "[silence#{silence_count}]"
+        filter_parts << "anullsrc=r=#{SAMPLE_RATE}:cl=mono,atrim=0:#{segment_pause},aformat=sample_fmts=fltp#{silence_label}"
+        stream_labels << silence_label
+        silence_count += 1
+      end
+
       # Resample all inputs to consistent format
       label = "[a#{i}]"
       filter = "[#{i}:a]aresample=#{SAMPLE_RATE},aformat=sample_fmts=fltp:channel_layouts=mono"
@@ -183,7 +193,7 @@ class AudioAssembler
       stream_labels << label
     end
 
-    n = inputs.length
+    n = stream_labels.length
     concat_filter = "#{stream_labels.join}concat=n=#{n}:v=0:a=1[out]"
     filter_parts << concat_filter
 

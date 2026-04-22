@@ -201,6 +201,50 @@ class TestAudioAssembler < Minitest::Test
     end
   end
 
+  def test_concatenate_with_segment_pause
+    skip_unless_command("ffmpeg")
+
+    Dir.mktmpdir("assembler_test") do |dir|
+      seg1 = File.join(dir, "seg1.mp3")
+      seg2 = File.join(dir, "seg2.mp3")
+      seg3 = File.join(dir, "seg3.mp3")
+      output = File.join(dir, "concat.mp3")
+      generate_tone(seg1, duration: 2)
+      generate_tone(seg2, duration: 2)
+      generate_tone(seg3, duration: 2)
+
+      assembler = AudioAssembler.new
+      assembler.send(:concatenate, [seg1, seg2, seg3], output,
+                     intro: nil, outro: nil, segment_pause: 2.0)
+
+      assert File.exist?(output)
+      duration = AudioAssembler.probe_duration(output)
+      # 3 segments × 2s + 2 pauses × 2s = 10s
+      assert_in_delta 10.0, duration, 0.5
+    end
+  end
+
+  def test_concatenate_no_pause_between_intro_and_first_segment
+    skip_unless_command("ffmpeg")
+
+    Dir.mktmpdir("assembler_test") do |dir|
+      intro = File.join(dir, "intro.mp3")
+      seg1 = File.join(dir, "seg1.mp3")
+      output = File.join(dir, "concat.mp3")
+      generate_tone(intro, duration: 3)
+      generate_tone(seg1, duration: 2)
+
+      assembler = AudioAssembler.new
+      assembler.send(:concatenate, [intro, seg1], output,
+                     intro: intro, outro: nil, segment_pause: 2.0)
+
+      assert File.exist?(output)
+      duration = AudioAssembler.probe_duration(output)
+      # intro 3s + segment 2s, NO pause between them
+      assert_in_delta 5.0, duration, 0.5
+    end
+  end
+
   def test_concatenate_with_outro_fade_in
     skip_unless_command("ffmpeg")
 
