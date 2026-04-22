@@ -70,7 +70,7 @@ class VocabularyAnnotator
       # Prefer: highest CEFR level, then most frequent in text, then alphabetical
       included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
       rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -e[:frequency], e[:lemma].to_s.downcase] }
-      entries = included + rest.first(max - included.length)
+      entries = included + rest.first([max - included.length, 0].max)
       log("Capped to #{max} entries (keeping hardest + most frequent)")
     end
 
