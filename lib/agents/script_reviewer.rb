@@ -57,7 +57,11 @@ class ScriptReviewer
     /\bsponsored by\b/i,
     /\bbrought to you by\b/i,
     /\bwithout further ado\b/i,
-    /\blet'?s dive (?:right )?in\b/i
+    /\blet'?s dive (?:right )?in\b/i,
+    /\bI'm \w+,? and this (?:has been|is)\b/i,
+    /\bmy name is \w+/i,
+    /\bI'm your host\b/i,
+    /\bthis is \w+,? (?:signing off|for)\b/i
   ].freeze
 
   MARKDOWN_BOLD = /\*\*(.+?)\*\*/
