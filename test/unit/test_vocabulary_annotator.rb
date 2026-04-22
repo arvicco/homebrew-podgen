@@ -595,6 +595,22 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # --- include_words protection ---
+
+  def test_annotate_include_words_survives_known_lemmas
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate("zavod", language: "sl", cutoff: "B1",
+                                             known_lemmas: Set.new(["zavod"]),
+                                             include_words: Set.new(["zavod"]))
+        assert_includes vocab, "zavod", "include_words should protect from known_lemmas filtering"
+      end
+    end
+  end
+
   # --- count_occurrences + frequency sorting ---
 
   def test_count_occurrences_counts_all_forms
@@ -700,6 +716,237 @@ class TestVocabularyAnnotator < Minitest::Test
     entries = [{ word: "ištevanka", lemma: "ištevanka", level: "C1", pos: "noun" }]
     result = @annotator.send(:sanitize_script, entries, "Slovenian")
     assert_equal "ištevanka", result.first[:lemma]
+  end
+
+  # --- partition_forms ---
+
+  def test_partition_forms_single_word_lemma_returns_all_as_head
+    entry = { word: "razglasil", lemma: "razglasiti", words: ["razglasil"] }
+    head, particles = @annotator.send(:partition_forms, entry)
+    assert_includes head, "razglasil"
+    assert_includes head, "razglasiti"
+    assert_empty particles
+  end
+
+  def test_partition_forms_multi_word_lemma_separates_particle
+    # Claude typically returns only the verb form, not "se" separately
+    entry = { word: "izvila", lemma: "izviti se", words: ["izvila"] }
+    head, particles = @annotator.send(:partition_forms, entry)
+    assert_includes head, "izvila"
+    assert_includes head, "izviti se"
+    refute_includes head, "se"
+    assert_equal ["se"], particles
+  end
+
+  def test_partition_forms_multi_word_lemma_with_particle_in_words
+    # When Claude returns "se" as a separate entry that gets deduped
+    entry = { word: "izvila", lemma: "izviti se", words: ["izvila", "se"] }
+    head, particles = @annotator.send(:partition_forms, entry)
+    assert_includes head, "izvila"
+    assert_includes head, "izviti se"
+    assert_equal ["se"], particles
+  end
+
+  # --- mark_words with reflexive particles ---
+
+  def test_mark_words_does_not_bold_particle_in_different_phrase
+    entries = [{ word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+                 words: ["izvila"] }]
+    text = "Ana se je smejala. Vrvica se je izvila."
+
+    Tell::Hunspell.stub(:supports?, false) do
+      result = @annotator.send(:mark_words, text, entries, "sl")
+      # "se" in first sentence (no vocab verb) should NOT be bolded
+      assert_includes result, "Ana se je smejala."
+      # "se" in second sentence near "izvila" should be bolded
+      assert_includes result, "**se**"
+      assert_includes result, "**izvila**"
+    end
+  end
+
+  def test_mark_words_bolds_particle_in_same_phrase
+    entries = [{ word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+                 words: ["izvila"] }]
+    text = "Vrvica se je izvila iz škatle."
+
+    Tell::Hunspell.stub(:supports?, false) do
+      result = @annotator.send(:mark_words, text, entries, "sl")
+      assert_includes result, "**se**"
+      assert_includes result, "**izvila**"
+    end
+  end
+
+  def test_mark_words_bolds_one_particle_per_verb_per_phrase
+    entries = [{ word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+                 words: ["izvila"] }]
+    # Two "se" in same phrase but only one vocab verb
+    text = "Vrvica se je izvila in se ovila."
+
+    Tell::Hunspell.stub(:supports?, false) do
+      result = @annotator.send(:mark_words, text, entries, "sl")
+      assert_equal 1, result.scan("**se**").length, "should bold only one 'se' per phrase"
+      assert_includes result, "**izvila**"
+    end
+  end
+
+  def test_mark_words_comma_separates_phrases
+    entries = [{ word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+                 words: ["izvila"] }]
+    text = "Ana se je smejala, vrvica se je izvila"
+
+    Tell::Hunspell.stub(:supports?, false) do
+      result = @annotator.send(:mark_words, text, entries, "sl")
+      # First "se" is in a different phrase (before comma)
+      assert_match(/Ana se je smejala,/, result)
+      # Second "se" is in same phrase as "izvila"
+      assert_includes result, "**se**"
+      assert_includes result, "**izvila**"
+      assert_equal 1, result.scan("**se**").length
+    end
+  end
+
+  def test_mark_words_single_word_lemma_unchanged_with_particles
+    # Regression: single-word lemmas must still bold all occurrences
+    entries = [{ word: "razglasil", lemma: "razglasiti", level: "C1", pos: "verb",
+                 words: ["razglasil"] }]
+    result = @annotator.send(:mark_words, "On je razglasil. Potem razglasil.", entries)
+    assert_equal 2, result.scan("**razglasil**").length
+  end
+
+  # --- count_occurrences with particles ---
+
+  def test_count_occurrences_excludes_particle_from_frequency
+    entries = [{ word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+                 words: ["izvila"] }]
+    text = "Ana se je smejala. Potem se je smejala. Vrvica se je izvila."
+
+    Tell::Hunspell.stub(:supports?, false) do
+      @annotator.send(:count_occurrences, text, entries, "sl")
+      # Only "izvila" counted (1), NOT "se" (3)
+      assert_equal 1, entries.first[:frequency]
+    end
+  end
+
+  # --- build_vocabulary_section with particles ---
+
+  def test_build_vocabulary_section_excludes_particle_from_forms
+    entries = [{ word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+                 words: ["izvila", "se"], translation: "to twist", definition: "To wind." }]
+    result = @annotator.send(:build_vocabulary_section, entries)
+    assert_includes result, "*izvila*"
+    refute_includes result, "*se*"
+    refute_includes result, "izvila, se"
+  end
+
+  def test_build_vocabulary_section_excludes_particle_without_se_in_words
+    # Realistic case: Claude didn't return "se" as a word, it's only in the lemma
+    entries = [{ word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+                 words: ["izvila"], translation: "to twist", definition: "To wind." }]
+    result = @annotator.send(:build_vocabulary_section, entries)
+    assert_includes result, "*izvila*"
+    assert_includes result, "**izviti se**"
+  end
+
+  # --- annotate integration with reflexive verb ---
+  #
+  # Claude's classification of reflexive verbs is non-deterministic:
+  # sometimes it returns "se" as a separate word form, sometimes it doesn't.
+  # The output must be identical regardless. These tests run the SAME assertions
+  # against both variants to guard against regressions from Claude behavior changes.
+
+  REFLEXIVE_TEXT = "Danes se je Ana odločila. Potem se je vrvica izvila iz škatle."
+
+  def assert_reflexive_marking(marked, vocab)
+    # "izvila" bolded
+    assert_includes marked, "**izvila**"
+    # "se" near "izvila" (second sentence) bolded
+    assert_includes marked, "**se** je vrvica **izvila**"
+    # "se" in first sentence NOT bolded (no vocab verb there)
+    assert_includes marked, "Danes se je Ana"
+    # Vocab section shows "izvila" form, not "se"
+    assert_includes vocab, "*izvila*"
+    refute_match(/\bse\b/, vocab.split("## Vocabulary").last.to_s.gsub(/\*\*.*?\*\*/, ""))
+  end
+
+  def test_annotate_reflexive_verb_claude_returns_se_as_word_form
+    # Claude returns two entries: verb form + particle separately
+    entries = [
+      { word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+        translation: "to twist", definition: "To wind around." },
+      { word: "se", lemma: "izviti se", level: "C1", pos: "verb",
+        translation: "to twist", definition: "To wind around." }
+    ]
+
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        Tell::Hunspell.stub(:supports?, false) do
+          marked, vocab = @annotator.annotate(REFLEXIVE_TEXT, language: "sl", cutoff: "B1")
+          assert_reflexive_marking(marked, vocab)
+        end
+      end
+    end
+  end
+
+  def test_annotate_reflexive_verb_claude_omits_se_from_word_forms
+    # Claude returns only the verb form, no separate "se" entry
+    entries = [
+      { word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+        translation: "to twist", definition: "To wind around." }
+    ]
+
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        Tell::Hunspell.stub(:supports?, false) do
+          marked, vocab = @annotator.annotate(REFLEXIVE_TEXT, language: "sl", cutoff: "B1")
+          assert_reflexive_marking(marked, vocab)
+        end
+      end
+    end
+  end
+
+  def test_annotate_reflexive_verb_with_hunspell_returning_se
+    # Claude returns only verb form, but hunspell expands "izviti se" → ["se"]
+    entries = [
+      { word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+        translation: "to twist", definition: "To wind around." }
+    ]
+
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        Tell::Hunspell.stub(:supports?, true) do
+          Tell::Hunspell.stub(:expand, ["se"]) do
+            marked, vocab = @annotator.annotate(REFLEXIVE_TEXT, language: "sl", cutoff: "B1")
+            assert_reflexive_marking(marked, vocab)
+          end
+        end
+      end
+    end
+  end
+
+  def test_annotate_multiple_reflexive_verbs_independent_particles
+    # Two reflexive verbs — each "se" should only be bolded near its own verb
+    entries = [
+      { word: "izvila", lemma: "izviti se", level: "C1", pos: "verb",
+        translation: "to twist", definition: "To twist." },
+      { word: "oglasila", lemma: "oglasiti se", level: "B2", pos: "verb",
+        translation: "to speak up", definition: "To speak up." }
+    ]
+    text = "Ana se je smejala. Vrvica se je izvila. Nato se je oglasila Ana."
+
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        Tell::Hunspell.stub(:supports?, false) do
+          marked, _vocab = @annotator.annotate(text, language: "sl", cutoff: "B1")
+          # First "se" (smejala) — NOT bolded
+          assert_includes marked, "Ana se je smejala."
+          # Second "se" (izvila) — bolded
+          assert_includes marked, "**se** je **izvila**"
+          # Third "se" (oglasila) — bolded
+          assert_includes marked, "**se** je **oglasila**"
+          assert_equal 2, marked.scan("**se**").length
+        end
+      end
+    end
   end
 
   private

@@ -448,7 +448,8 @@ module PodgenCLI
         cutoff: @config.vocabulary_level,
         known_lemmas: known_lemmas,
         max: @config.vocabulary_max,
-        filters: @config.vocabulary_filters
+        filters: @config.vocabulary_filters,
+        include_words: @options[:include_words] || Set.new
       )
 
       # Rewrite transcript file with marked words + vocabulary appendix

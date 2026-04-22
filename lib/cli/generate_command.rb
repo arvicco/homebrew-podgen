@@ -49,6 +49,7 @@ module PodgenCLI
         opts.on("--lingq", "Enable LingQ upload during generation") { @options[:lingq] = true }
         opts.on("--youtube", "Enable YouTube upload during generation") { @options[:youtube] = true }
         opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") { |d| @options[:date] = Date.parse(d) }
+        opts.on("--include WORDS", "Force-include vocabulary lemmas (comma-separated)") { |v| @options[:include_words] = Set.new(v.split(",").map { |w| w.strip.downcase }) }
         opts.on("--dry-run", "Validate config, skip API calls") { @options[:dry_run] = true }
       end.parse!(args)
 
@@ -406,7 +407,8 @@ module PodgenCLI
       output_path = File.join(@config.episodes_dir, "#{lang_basename}.mp3")
       assembler = AudioAssembler.new(logger: @logger)
       assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path,
-        metadata: { title: lang_script[:title], artist: @config.author })
+        metadata: { title: lang_script[:title], artist: @config.author },
+        segment_pause: 2.0)
       @logger.phase_end("Assembly (#{lang_code})")
 
       audio_paths.each { |p| File.delete(p) if File.exist?(p) }

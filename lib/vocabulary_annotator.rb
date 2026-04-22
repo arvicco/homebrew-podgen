@@ -17,6 +17,8 @@ class VocabularyAnnotator
   include UsageLogger
 
   CEFR_LEVELS = %w[A1 A2 B1 B2 C1 C2].freeze
+  MAX_PARTICLE_LENGTH = 3
+  PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
   def initialize(api_key, model: "claude-sonnet-4-6", logger: nil)
     @logger = logger
@@ -27,7 +29,7 @@ class VocabularyAnnotator
   # Returns [marked_body, vocabulary_md]
   # marked_body: transcript with all occurrences of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
-  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {})
+  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new)
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
@@ -41,14 +43,16 @@ class VocabularyAnnotator
     if filters[:similar]
       similar_langs = filters[:similar].split(/,\s*/)
       before = entries.length
-      entries = filter_cognates(entries, similar_langs)
+      entries = filter_cognates(entries, similar_langs).concat(
+        include_words.empty? ? [] : entries.select { |e| include_words.include?(e[:lemma].to_s.downcase) }
+      ).uniq { |e| e[:lemma].to_s.downcase }
       filtered_cognates = before - entries.length
       log("Filtered #{filtered_cognates} cognates") if filtered_cognates > 0
     end
 
     unless known_lemmas.empty?
       before = entries.length
-      entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) }
+      entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) && !include_words.include?(e[:lemma].to_s.downcase) }
       filtered = before - entries.length
       log("Filtered #{filtered} known words") if filtered > 0
     end
@@ -64,8 +68,9 @@ class VocabularyAnnotator
     # Cap after known-word filtering so max applies to the final set
     if max && entries.length > max
       # Prefer: highest CEFR level, then most frequent in text, then alphabetical
-      entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -e[:frequency], e[:lemma].to_s.downcase] }
-      entries = entries.first(max)
+      included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
+      rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -e[:frequency], e[:lemma].to_s.downcase] }
+      entries = included + rest.first(max - included.length)
       log("Capped to #{max} entries (keeping hardest + most frequent)")
     end
 
@@ -257,7 +262,7 @@ class VocabularyAnnotator
       Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
       For each word, provide:
       - word: the word as it appears in text
-      - lemma: dictionary form (infinitive for verbs, nominative singular masculine for adjectives, nominative singular for nouns)
+      - lemma: dictionary form (infinitive for verbs, positive nominative singular masculine for adjectives — never comparative/superlative, nominative singular for nouns)
       - level: CEFR level (A1/A2/B1/B2/C1/C2)
       - pos: part of speech (noun, verb, adj, adv, etc.)
       - translation: English translation of the LEMMA (not the inflected form)
@@ -265,7 +270,8 @@ class VocabularyAnnotator
 
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
-      If a word appears in multiple forms, include the most representative occurrence.#{filter_lines}
+      If a word appears in multiple forms, include the most representative occurrence.
+      Merge diminutives with their base word under the base lemma (e.g. peharček → pehar).#{filter_lines}
       Return ONLY the JSON array, no other text.
     PROMPT
   end
@@ -389,34 +395,59 @@ class VocabularyAnnotator
     nil
   end
 
+  def all_forms_for(entry)
+    ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
+  end
+
+  # Split forms into [head_forms, particle_forms] for multi-word lemmas.
+  # Particles are extracted from the lemma (e.g., "se" from "izviti se"),
+  # regardless of whether Claude returned them in the words array.
+  # Single-word lemmas return all forms as head, no particles.
+  def partition_forms(entry)
+    forms = all_forms_for(entry)
+    lemma = entry[:lemma].to_s
+    return [forms, []] unless lemma.include?(" ")
+
+    particle_parts = lemma.split.select { |part| part.length <= MAX_PARTICLE_LENGTH }.map(&:downcase)
+    return [forms, []] if particle_parts.empty?
+
+    particle_set = Set.new(particle_parts)
+    head_forms = forms.reject { |f| particle_set.include?(f.downcase) }
+    [head_forms, particle_parts]
+  end
+
   def count_occurrences(text, entries, language)
     entries.each do |entry|
-      forms = ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
+      head_forms, particles = partition_forms(entry)
       if language && Tell::Hunspell.supports?(language)
         expanded = Tell::Hunspell.expand(entry[:lemma], lang: language)
         if expanded.any?
+          particle_set = Set.new(particles.map(&:downcase))
+          expanded = expanded.reject { |f| particle_set.include?(f.downcase) }
           entry[:_expanded] = expanded
-          forms = (forms + expanded).uniq(&:downcase)
+          head_forms = (head_forms + expanded).uniq(&:downcase)
         end
       end
-      entry[:frequency] = forms.sum { |f| text.scan(/\b#{Regexp.escape(f)}\b/i).length }
+      entry[:frequency] = head_forms.sum { |f| text.scan(/\b#{Regexp.escape(f)}\b/i).length }
     end
   end
 
   def mark_words(text, entries, language = nil)
     marked = text.dup
 
-    entries.each do |entry|
-      forms = ((entry[:words] || [entry[:word]]) + [entry[:lemma]]).compact.uniq(&:downcase)
+    # Collect per-entry data: head/particle split + hunspell expansion
+    entry_data = entries.map do |entry|
+      head_forms, particle_forms = partition_forms(entry)
 
-      # Use memoized hunspell expansion from count_occurrences, or expand now
       expanded = entry.delete(:_expanded)
       if expanded.nil? && language && Tell::Hunspell.supports?(language)
         expanded = Tell::Hunspell.expand(entry[:lemma], lang: language)
       end
 
       if expanded&.any?
-        forms = (forms + expanded).uniq(&:downcase)
+        particle_set = Set.new(particle_forms.map(&:downcase))
+        expanded = expanded.reject { |f| particle_set.include?(f.downcase) }
+        head_forms = (head_forms + expanded).uniq(&:downcase)
         existing = (entry[:words] || [entry[:word]]).map(&:downcase)
         expanded.each do |form|
           if !existing.include?(form.downcase) && text.match?(/\b#{Regexp.escape(form)}\b/i)
@@ -426,9 +457,31 @@ class VocabularyAnnotator
         end
       end
 
-      forms.each do |form|
+      { entry: entry, head_forms: head_forms, particle_forms: particle_forms }
+    end
+
+    # Pass 1: bold all head forms from all entries
+    entry_data.each do |data|
+      data[:head_forms].each do |form|
         pattern = /(?<!\*)\b(#{Regexp.escape(form)})\b(?!\*)/i
         marked.gsub!(pattern, '**\1**')
+      end
+    end
+
+    # Pass 2: bold particles only in phrases containing a bolded head form from the same entry
+    entry_data.each do |data|
+      next if data[:particle_forms].empty?
+
+      bolded_head_re = Regexp.union(data[:head_forms].map { |h| /\*\*#{Regexp.escape(h)}\*\*/i })
+
+      data[:particle_forms].each do |particle|
+        particle_re = /(?<!\*)\b(#{Regexp.escape(particle)})\b(?!\*)/i
+        phrases = marked.split(PHRASE_BOUNDARY)
+        phrases.each_index do |i|
+          next unless phrases[i].match?(bolded_head_re)
+          phrases[i] = phrases[i].sub(particle_re, '**\1**')
+        end
+        marked = phrases.join
       end
     end
 
@@ -443,8 +496,12 @@ class VocabularyAnnotator
       line = "- **#{entry[:lemma]}**"
       line += " #{entry[:ipa]}" if entry[:ipa]
       line += " (#{entry[:level]} #{entry[:pos]})"
-      # Show word forms that differ from lemma
-      diff_forms = (entry[:words] || [entry[:word]]).reject { |w| w.downcase == entry[:lemma].downcase }
+      # Show word forms that differ from lemma, excluding particles
+      _head, particle_forms = partition_forms(entry)
+      particle_set = Set.new(particle_forms.map(&:downcase))
+      diff_forms = (entry[:words] || [entry[:word]])
+        .reject { |w| w.downcase == entry[:lemma].downcase }
+        .reject { |w| particle_set.include?(w.downcase) }
       line += " *#{diff_forms.join(', ')}*" unless diff_forms.empty?
       line += " — #{entry[:translation]}" if entry[:translation]
       line += ". #{entry[:definition]}" if entry[:definition]
