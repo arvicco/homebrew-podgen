@@ -336,6 +336,19 @@ class TestScriptReviewer < Minitest::Test
     assert_empty fp_issues
   end
 
+  def test_check_forbidden_phrases_detects_hallucinated_host_name
+    script = make_script(segments: [
+      { name: "Wrap-Up", text: "That's all for today. I'm Alex, and this has been Fulgur News." }
+    ])
+    reviewer = build_reviewer
+
+    _, issues = reviewer.run_deterministic_checks(script)
+
+    fp_issues = issues.select { |i| i[:check] == "forbidden_phrase" }
+    assert_equal 1, fp_issues.length
+    assert_includes fp_issues.first[:message], "I'm Alex"
+  end
+
   # --- check_number_format ---
 
   def test_check_number_format_spelled_out_detected

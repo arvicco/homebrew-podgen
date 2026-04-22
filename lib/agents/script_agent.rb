@@ -98,6 +98,7 @@ class ScriptAgent
 
       Write naturally as spoken word — no stage directions, no timestamps, no markdown.
       Each segment's text should be the exact words the host will speak aloud.
+      Do not invent a host name, persona, or sign-off identity. There is no named host.
       Use numeric digits for numbers, prices, percentages, and quantities ($67,500, 10 GW,
       22%, 1,031 BTC). TTS handles digits correctly — do NOT spell them out as words.
 
