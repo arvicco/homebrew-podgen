@@ -15,8 +15,10 @@ module PodgenCLI
 
     def initialize(args, options)
       require "optparse"
+      @include_words = Set.new
       OptionParser.new do |opts|
         opts.on("--missing-only", "Only annotate transcripts without existing vocabulary") { @missing_only = true }
+        opts.on("--include WORDS", "Force-include these lemmas (comma-separated)") { |v| @include_words = Set.new(v.split(",").map { |w| w.strip.downcase }) }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -79,7 +81,8 @@ module PodgenCLI
 
         puts "  #{basename}..."
         process_transcript(path, annotator: annotator, language: language, cutoff: cutoff,
-                          known_lemmas: known_lemmas, max: vocab_max, filters: vocab_filters, logger: logger)
+                          known_lemmas: known_lemmas, max: vocab_max, filters: vocab_filters,
+                          logger: logger, include_words: @include_words)
         processed += 1
       end
 
@@ -116,7 +119,7 @@ module PodgenCLI
       end
     end
 
-    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:)
+    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:, include_words: Set.new)
       text = File.read(path)
 
       # Split into header (title + description) and body
@@ -142,7 +145,8 @@ module PodgenCLI
         cutoff: cutoff,
         known_lemmas: known_lemmas,
         max: max,
-        filters: filters
+        filters: filters,
+        include_words: include_words
       )
 
       # Rewrite transcript file
