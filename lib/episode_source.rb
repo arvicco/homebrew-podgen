@@ -2,12 +2,32 @@
 
 require "set"
 require "tmpdir"
+require "uri"
+require "open3"
 require_relative "loggable"
 require_relative "sources/rss_source"
 require_relative "http_downloader"
 
 class EpisodeSource
   include Loggable
+
+  MIME_TO_EXT = {
+    "audio/mpeg" => ".mp3",
+    "audio/mp3" => ".mp3",
+    "audio/mp4" => ".m4a",
+    "audio/x-m4a" => ".m4a",
+    "audio/m4a" => ".m4a",
+    "audio/aac" => ".aac",
+    "audio/ogg" => ".ogg",
+    "audio/opus" => ".opus",
+    "audio/flac" => ".flac",
+    "audio/x-flac" => ".flac",
+    "audio/wav" => ".wav",
+    "audio/x-wav" => ".wav",
+    "audio/webm" => ".webm"
+  }.freeze
+
+  SUPPORTED_EXTENSIONS = MIME_TO_EXT.values.uniq.freeze
 
   def initialize(config:, history:, logger: nil)
     @config = config
@@ -74,10 +94,11 @@ class EpisodeSource
     end
   end
 
-  def download_audio(url)
-    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}.mp3")
-    HttpDownloader.new(logger: @logger).download(url, path)
-    path
+  def download_audio(episode)
+    ext = audio_extension_for(episode)
+    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}#{ext}")
+    HttpDownloader.new(logger: @logger).download(episode[:audio_url], path)
+    probe_and_fix_extension(path)
   end
 
   def exclude_url!(url)
@@ -94,6 +115,63 @@ class EpisodeSource
   end
 
   private
+
+  # ffprobe format_name → correct extension mapping
+  FORMAT_TO_EXT = {
+    "mp3" => ".mp3",
+    "mov,mp4,m4a,3gp,3g2,mj2" => ".m4a",
+    "ogg" => ".ogg",
+    "flac" => ".flac",
+    "wav" => ".wav",
+    "aac" => ".aac",
+    "matroska,webm" => ".webm",
+    "opus" => ".opus"
+  }.freeze
+
+  # Probe actual audio format after download and rename if extension is wrong.
+  # Returns the (possibly renamed) file path.
+  def probe_and_fix_extension(path)
+    stdout, _, status = Open3.capture3(
+      "ffprobe", "-v", "quiet",
+      "-show_entries", "format=format_name",
+      "-of", "csv=p=0",
+      path
+    )
+    return path unless status.success?
+
+    format_name = stdout.strip
+    correct_ext = FORMAT_TO_EXT[format_name]
+    return path unless correct_ext
+
+    current_ext = File.extname(path).downcase
+    return path if current_ext == correct_ext
+
+    new_path = path.sub(/\.[^.]+\z/, correct_ext)
+    File.rename(path, new_path)
+    log("Audio format mismatch: renamed #{current_ext} → #{correct_ext}")
+    new_path
+  rescue Errno::ENOENT
+    path # ffprobe not installed, keep as-is
+  end
+
+  # Determine file extension from MIME type (preferred) or URL path.
+  def audio_extension_for(episode)
+    # 1. MIME type from RSS enclosure (most reliable)
+    if (mime = episode[:content_type])
+      ext = MIME_TO_EXT[mime.downcase]
+      return ext if ext
+    end
+
+    # 2. URL path extension (handles encoded nested URLs like Anchor.fm)
+    url = episode[:audio_url].to_s
+    decoded = URI.decode_www_form_component(url) rescue url
+    [decoded, url].each do |candidate|
+      ext = File.extname(candidate.split("?").first.split("#").first).downcase
+      return ext if SUPPORTED_EXTENSIONS.include?(ext)
+    end
+
+    ".mp3" # fallback
+  end
 
   def select_mode
     mode = @config.sources["select"]

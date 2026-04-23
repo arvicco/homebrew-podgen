@@ -257,6 +257,34 @@ class TestCoverCommand < Minitest::Test
     assert_includes err, "image file not found"
   end
 
+  # --- --date and --title flags ---
+
+  def test_date_flag_sets_episode_id
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-04-13"], {})
+    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_date_flag_overrides_positional
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "2026-01-01", "--date", "2026-04-13"], {})
+    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_title_flag_sets_title
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--title", "My Custom Title"], {})
+    assert_equal "My Custom Title", cmd.instance_variable_get(:@title)
+  end
+
+  def test_title_flag_overrides_positional
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "Some Words", "--title", "Real Title"], {})
+    assert_equal "Real Title", cmd.instance_variable_get(:@title)
+  end
+
+  def test_date_and_title_flags_together
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-04-13", "--title", "My Title"], {})
+    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
+    assert_equal "My Title", cmd.instance_variable_get(:@title)
+  end
+
   def test_image_dry_run_does_not_copy
     episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
     FileUtils.mkdir_p(episodes_dir)

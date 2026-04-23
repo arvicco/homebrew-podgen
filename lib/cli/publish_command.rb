@@ -28,9 +28,10 @@ module PodgenCLI
         opts.on("--force", "Re-upload even if already tracked") { @options[:force] = true }
         opts.on("--newest", "Publish newest episodes first") { @options[:newest] = true }
         opts.on("--dry-run", "Show what would be published") { @options[:dry_run] = true }
+        opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
       end.parse!(args)
       @podcast_name = args.shift
-      @episode_id = args.shift # optional: e.g. "2026-03-31" or "2026-03-31b"
+      @episode_id ||= args.shift # optional: e.g. "2026-03-31" or "2026-03-31b"
     end
 
     def run

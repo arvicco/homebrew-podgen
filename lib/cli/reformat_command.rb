@@ -14,8 +14,13 @@ module PodgenCLI
     include TranscriptRenderer
 
     def initialize(args, options)
+      require "optparse"
+      OptionParser.new do |opts|
+        opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
+      end.parse!(args)
+
       @podcast_name = args.shift
-      @episode_id = args.shift
+      @episode_id ||= args.shift
       @options = options
       @dry_run = options[:dry_run] || false
     end
