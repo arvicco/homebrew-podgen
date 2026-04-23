@@ -334,7 +334,8 @@ class TestVocabularyAnnotator < Minitest::Test
     ]
     stub_classify(entries) do
       Tell::Espeak.stub(:supports?, false) do
-        _marked, vocab = @annotator.annotate("easy hard medium", language: "sl", cutoff: "B2", max: 2)
+        _marked, vocab = @annotator.annotate("easy hard medium", language: "sl", cutoff: "B2", max: 2,
+                                             filters: { priority: "hardest" })
         assert_includes vocab, "hard"
         assert_includes vocab, "medium"
         refute_includes vocab, "**easy**"
@@ -721,6 +722,80 @@ class TestVocabularyAnnotator < Minitest::Test
         @annotator.send(:count_occurrences, text, entries, "sl")
         # With hunspell: "lupini" + "lupina" + "lupino" match (3)
         assert_equal 3, entries.first[:frequency]
+      end
+    end
+  end
+
+  # --- priority sorting ---
+
+  def test_priority_hardest_keeps_highest_level
+    entries = [
+      { word: "easy", lemma: "easy", level: "A2", pos: "adj", translation: "easy", definition: "Not hard." },
+      { word: "hard", lemma: "hard", level: "C2", pos: "adj", translation: "hard", definition: "Difficult." },
+      { word: "medium", lemma: "medium", level: "B1", pos: "adj", translation: "medium", definition: "In between." }
+    ]
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate("easy hard medium", language: "sl", cutoff: "A2", max: 1,
+                                             filters: { priority: "hardest" })
+        assert_includes vocab, "hard"
+        refute_includes vocab, "**easy**"
+        refute_includes vocab, "**medium**"
+      end
+    end
+  end
+
+  def test_priority_frequent_keeps_most_common
+    entries = [
+      { word: "rare", lemma: "rare", level: "C2", pos: "adj", translation: "rare", definition: "Rare." },
+      { word: "common", lemma: "common", level: "A2", pos: "adj", translation: "common", definition: "Common." }
+    ]
+    # "common" appears 5 times, "rare" only once
+    text = "common common common common common rare"
+
+    stub_classify(entries) do
+      Tell::Hunspell.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate(text, language: "sl", cutoff: "A2", max: 1,
+                                             filters: { priority: "frequent" })
+        assert_includes vocab, "common", "should keep the more frequent word"
+        refute_includes vocab, "**rare**", "should drop the less frequent word"
+      end
+    end
+  end
+
+  def test_priority_balanced_prefers_words_near_cutoff
+    entries = [
+      { word: "basic", lemma: "basic", level: "A2", pos: "adj", translation: "basic", definition: "Basic." },
+      { word: "obscure", lemma: "obscure", level: "C2", pos: "adj", translation: "obscure", definition: "Obscure." },
+      { word: "middle", lemma: "middle", level: "B1", pos: "adj", translation: "middle", definition: "Middle." }
+    ]
+    # All appear once; balanced should prefer A2/B1 (near cutoff A2) over C2
+    text = "basic obscure middle"
+
+    stub_classify(entries) do
+      Tell::Hunspell.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate(text, language: "sl", cutoff: "A2", max: 2,
+                                             filters: { priority: "balanced" })
+        assert_includes vocab, "basic"
+        assert_includes vocab, "middle"
+        refute_includes vocab, "**obscure**"
+      end
+    end
+  end
+
+  def test_priority_defaults_to_balanced
+    entries = [
+      { word: "basic", lemma: "basic", level: "A2", pos: "adj", translation: "basic", definition: "Basic." },
+      { word: "obscure", lemma: "obscure", level: "C2", pos: "adj", translation: "obscure", definition: "Obscure." }
+    ]
+    text = "basic obscure"
+
+    stub_classify(entries) do
+      Tell::Hunspell.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate(text, language: "sl", cutoff: "A2", max: 1)
+        # Default is balanced — A2 should win over C2
+        assert_includes vocab, "basic"
+        refute_includes vocab, "**obscure**"
       end
     end
   end
