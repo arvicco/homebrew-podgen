@@ -21,6 +21,8 @@ require_relative File.join(root, "lib", "subtitle_generator")
 require_relative File.join(root, "lib", "video_generator")
 require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "transcript_discovery")
+require_relative File.join(root, "lib", "transcript_parser")
+require_relative File.join(root, "lib", "cover_resolver")
 
 module PodgenCLI
   class LanguagePipeline
@@ -416,12 +418,9 @@ module PodgenCLI
     def annotate_vocabulary
       logger.phase_start("Vocabulary")
       transcript_path = File.join(@staging_dir, "#{@base_name}_transcript.md")
-      text = File.read(transcript_path)
+      parsed = TranscriptParser.parse(transcript_path)
 
-      # Extract just the transcript body (after ## Transcript)
-      parts = text.split("## Transcript", 2)
-      body = parts.last&.strip
-      unless body && !body.empty?
+      unless parsed.body && !parsed.body.empty?
         logger.log("No transcript body found, skipping vocabulary annotation")
         logger.phase_end("Vocabulary")
         return
@@ -443,19 +442,23 @@ module PodgenCLI
         logger: logger
       )
       marked_body, vocabulary_md = annotator.annotate(
-        body,
+        parsed.body,
         language: @config.transcription_language,
         cutoff: @config.vocabulary_level,
         known_lemmas: known_lemmas,
         max: @config.vocabulary_max,
         filters: @config.vocabulary_filters,
-        include_words: @options[:include_words] || Set.new
+        include_words: @options[:include_words] || Set.new,
+        target_language: @config.vocabulary_target_language
       )
 
       # Rewrite transcript file with marked words + vocabulary appendix
-      new_text = parts.first + "## Transcript\n\n" + marked_body
-      new_text += "\n\n" + vocabulary_md unless vocabulary_md.empty?
-      File.write(transcript_path, new_text)
+      vocab = vocabulary_md.empty? ? nil : vocabulary_md.split("## Vocabulary", 2).last
+      TranscriptParser.write(transcript_path,
+        title: parsed.title,
+        description: parsed.description,
+        body: marked_body,
+        vocabulary: vocab)
 
       logger.log("Vocabulary annotated (#{@config.vocabulary_level}+ cutoff)")
       logger.phase_end("Vocabulary")
@@ -529,19 +532,59 @@ module PodgenCLI
 
     def clean_or_generate_description(episode, transcript)
       agent = DescriptionAgent.new(logger: logger)
+      lang = @config.transcription_language
 
       # Clean title (all sources)
       episode[:title] = agent.clean_title(title: episode[:title])
+
+      # Detect generic or wrong-language title → regenerate from transcript
+      if generic_title?(episode[:title])
+        logger.log("Title is generic or wrong language, generating from transcript")
+        generated = agent.generate_title(transcript: transcript, language: @config.target_language || lang)
+        episode[:title] = generated if generated
+      end
 
       # Clean or generate description
       if episode[:description].to_s.strip.empty?
         episode[:description] = agent.generate(title: episode[:title], transcript: transcript)
       else
         episode[:description] = agent.clean(title: episode[:title], description: episode[:description])
+
+        # Detect wrong-language description → regenerate from transcript
+        if wrong_language?(episode[:description], lang)
+          logger.log("Description language doesn't match transcript (#{lang}), regenerating")
+          episode[:description] = agent.generate(title: episode[:title], transcript: transcript)
+        end
       end
     rescue => e
       logger.log("Warning: Description processing failed: #{e.message} (non-fatal, keeping original)")
       @warnings << "Description cleanup failed (#{e.message})"
+    end
+
+    # Title is generic if it matches the podcast name or is in the wrong language.
+    def generic_title?(title)
+      return false if title.to_s.strip.empty?
+
+      # Matches podcast name (case-insensitive)
+      podcast_name = @config.respond_to?(:name) ? @config.name : nil
+      if podcast_name && title.strip.casecmp(podcast_name.strip).zero?
+        return true
+      end
+
+      # Wrong language
+      wrong_language?(title, @config.transcription_language)
+    end
+
+    # Checks if text language differs from expected language.
+    # Returns false for short text where detection is unreliable.
+    def wrong_language?(text, expected_lang)
+      return false if text.to_s.strip.length < 15
+
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "tell", "detector")
+      detected = Tell::Detector.detect(text)
+      return false unless detected # detection failed, assume OK
+
+      detected != expected_lang
     end
 
     def save_transcript(episode, transcript, base_name)
@@ -572,17 +615,10 @@ module PodgenCLI
     end
 
     def write_transcript_file(path, episode, transcript)
-      FileUtils.mkdir_p(File.dirname(path))
-
-      File.open(path, "w") do |f|
-        f.puts "# #{episode[:title]}"
-        f.puts
-        f.puts "#{episode[:description]}" unless episode[:description].to_s.empty?
-        f.puts
-        f.puts "## Transcript"
-        f.puts
-        f.puts transcript.strip
-      end
+      TranscriptParser.write(path,
+        title: episode[:title],
+        description: episode[:description],
+        body: transcript)
     end
 
     def upload_to_lingq(episode, transcript, audio_path, base_name)
@@ -694,8 +730,7 @@ module PodgenCLI
     end
 
     def resolve_committed_cover
-      covers = Dir.glob(File.join(@config.episodes_dir, "#{@base_name}_cover.*")).sort
-      covers.first
+      CoverResolver.find_episode_cover(@config.episodes_dir, @base_name)
     end
 
     # Resolves the episode cover image path using the priority chain:
@@ -788,23 +823,15 @@ module PodgenCLI
         logger.log("Warning: No base_image configured for cover generation")
         return nil
       end
-      unless File.exist?(base_image)
-        logger.log("Warning: base_image not found: #{base_image}")
-        return nil
-      end
 
-      cover_path = File.join(Dir.tmpdir, "podgen_cover_#{Process.pid}.jpg")
-      @temp_files << cover_path
-
-      agent = CoverAgent.new(logger: logger)
-      agent.generate(
+      path = CoverResolver.generate(
         title: title,
         base_image: base_image,
-        output_path: cover_path,
-        options: @config.cover_options
+        options: @config.cover_options,
+        logger: logger
       )
-
-      cover_path
+      @temp_files << path if path
+      path
     rescue => e
       logger.log("Warning: Cover generation failed: #{e.message} (falling back)")
       @warnings << "Cover generation failed (#{e.message})"
