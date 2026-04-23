@@ -30,7 +30,7 @@ StubConfig = Struct.new(
   :cover_base_image, :cover_options, :cover_generation_enabled,
   :lingq_config, :lingq_enabled, :transcription_language,
   :transcription_engines, :target_language,
-  :skip, :cut, :autotrim,
+  :skip, :cut, :autotrim, :name,
   keyword_init: true
 ) do
   def cover_generation_enabled? = cover_generation_enabled
@@ -40,15 +40,17 @@ end
 
 # Stub DescriptionAgent for testing clean_or_generate_description
 class StubDescriptionAgent
-  def initialize(clean_title: nil, clean: nil, generate: nil)
+  def initialize(clean_title: nil, clean: nil, generate: nil, generate_title: nil)
     @clean_title_result = clean_title
     @clean_result = clean
     @generate_result = generate
+    @generate_title_result = generate_title
   end
 
   def clean_title(title:) = @clean_title_result || title
   def clean(title:, description:) = @clean_result || description
   def generate(title:, transcript:) = @generate_result || ""
+  def generate_title(transcript:, language:) = @generate_title_result
 end
 
 class TestLanguagePipeline < Minitest::Test
@@ -344,6 +346,77 @@ class TestLanguagePipeline < Minitest::Test
 
     # Original description preserved on error
     assert_equal "Keep me", episode[:description]
+  end
+
+  def test_generic_title_matching_podcast_name_regenerated
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    episode = { title: "Basnie", description: "Desc" }
+
+    stub_agent = StubDescriptionAgent.new(clean_title: "Basnie", clean: "Desc", generate_title: "Szczepan i smok")
+    DescriptionAgent.stub(:new, stub_agent) do
+      pipeline.send(:clean_or_generate_description, episode, "Dawno temu żył Szczepan...")
+    end
+
+    assert_equal "Szczepan i smok", episode[:title]
+  end
+
+  def test_non_generic_title_not_regenerated
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    episode = { title: "Szczepan i smok", description: "Desc" }
+
+    stub_agent = StubDescriptionAgent.new(clean_title: "Szczepan i smok", clean: "Desc")
+    DescriptionAgent.stub(:new, stub_agent) do
+      pipeline.send(:clean_or_generate_description, episode, "transcript")
+    end
+
+    assert_equal "Szczepan i smok", episode[:title]
+  end
+
+  def test_wrong_language_description_regenerated
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    episode = { title: "Story Title", description: "Audiobook fairy tales with stories and morals for children and families" }
+
+    stub_agent = StubDescriptionAgent.new(
+      clean_title: "Story Title",
+      clean: "Audiobook fairy tales with stories and morals for children and families",
+      generate: "Opowieść o chłopcu i smoku."
+    )
+    DescriptionAgent.stub(:new, stub_agent) do
+      pipeline.send(:clean_or_generate_description, episode, "Dawno temu żył sobie chłopiec")
+    end
+
+    assert_equal "Opowieść o chłopcu i smoku.", episode[:description]
+  end
+
+  def test_correct_language_description_not_regenerated
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    episode = { title: "Title", description: "Opowieść o chłopcu który spotkał smoka w lesie" }
+
+    stub_agent = StubDescriptionAgent.new(
+      clean_title: "Title",
+      clean: "Opowieść o chłopcu który spotkał smoka w lesie"
+    )
+    DescriptionAgent.stub(:new, stub_agent) do
+      pipeline.send(:clean_or_generate_description, episode, "transcript")
+    end
+
+    assert_equal "Opowieść o chłopcu który spotkał smoka w lesie", episode[:description]
+  end
+
+  def test_wrong_language_title_regenerated
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    episode = { title: "Audio fairy tales for children and families to enjoy", description: "Desc" }
+
+    stub_agent = StubDescriptionAgent.new(
+      clean_title: "Audio fairy tales for children and families to enjoy",
+      clean: "Desc",
+      generate_title: "Szczepan i smok"
+    )
+    DescriptionAgent.stub(:new, stub_agent) do
+      pipeline.send(:clean_or_generate_description, episode, "Dawno temu żył Szczepan...")
+    end
+
+    assert_equal "Szczepan i smok", episode[:title]
   end
 
   # --- warnings tracking ---
@@ -705,10 +778,17 @@ class TestLanguagePipeline < Minitest::Test
     end
   end
 
-  def build_pipeline(options: {}, config: nil)
+  def build_pipeline(options: {}, config: nil, name: nil, transcription_language: nil)
+    cfg = config || @config
+    if name || transcription_language
+      cfg = StubConfig.new(**cfg.to_h.merge(
+        **(name ? { name: name } : {}),
+        **(transcription_language ? { transcription_language: transcription_language } : {})
+      ))
+    end
     opts = { verbosity: :quiet }.merge(options)
     PodgenCLI::LanguagePipeline.new(
-      config: config || @config,
+      config: cfg,
       options: opts,
       logger: @logger,
       history: @history,

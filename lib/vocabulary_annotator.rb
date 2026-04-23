@@ -29,27 +29,20 @@ class VocabularyAnnotator
   # Returns [marked_body, vocabulary_md]
   # marked_body: transcript with all occurrences of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
-  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new)
+  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English")
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
     end
 
-    log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff)")
+    log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff, definitions in #{target_language})")
+
+    # Stage 1: Lightweight classification — word/lemma/level/pos only
     entries = classify_words(text, language, cutoff, filters)
     entries = sanitize_script(entries, language)
     entries = dedup_by_lemma(entries)
 
-    if filters[:similar]
-      similar_langs = filters[:similar].split(/,\s*/)
-      before = entries.length
-      entries = filter_cognates(entries, similar_langs).concat(
-        include_words.empty? ? [] : entries.select { |e| include_words.include?(e[:lemma].to_s.downcase) }
-      ).uniq { |e| e[:lemma].to_s.downcase }
-      filtered_cognates = before - entries.length
-      log("Filtered #{filtered_cognates} cognates") if filtered_cognates > 0
-    end
-
+    # Stage 2: Filter and cap before enrichment to minimize API work
     unless known_lemmas.empty?
       before = entries.length
       entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) && !include_words.include?(e[:lemma].to_s.downcase) }
@@ -62,14 +55,41 @@ class VocabularyAnnotator
       return [text, ""]
     end
 
-    # Count text occurrences before capping so frequency informs prioritization
     count_occurrences(text, entries, language)
 
-    # Cap after known-word filtering so max applies to the final set
-    if max && entries.length > max
-      # Prefer: highest CEFR level, then most frequent in text, then alphabetical
+    # Over-select to leave room for cognate filtering after enrichment
+    has_cognate_filter = filters[:similar] && !filters[:similar].empty?
+    enrich_cap = max ? (has_cognate_filter ? max * 2 : max) : nil
+    if enrich_cap && entries.length > enrich_cap
       included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
-      rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -e[:frequency], e[:lemma].to_s.downcase] }
+      rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
+      entries = included + rest.first([enrich_cap - included.length, 0].max)
+      log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length + (entries.length - included.length)})")
+    end
+
+    # Stage 3: Enrich selected entries with translations/definitions
+    entries = enrich_entries(entries, language: language, target_language: target_language, filters: filters)
+
+    # Stage 4: Post-enrichment filtering
+    if has_cognate_filter
+      similar_langs = filters[:similar].split(/,\s*/)
+      before = entries.length
+      entries = filter_cognates(entries, similar_langs, target_language).concat(
+        include_words.empty? ? [] : entries.select { |e| include_words.include?(e[:lemma].to_s.downcase) }
+      ).uniq { |e| e[:lemma].to_s.downcase }
+      filtered_cognates = before - entries.length
+      log("Filtered #{filtered_cognates} cognates") if filtered_cognates > 0
+    end
+
+    if entries.empty?
+      log("No vocabulary words remaining after filtering")
+      return [text, ""]
+    end
+
+    # Final cap to max
+    if max && entries.length > max
+      included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
+      rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
       entries = included + rest.first([max - included.length, 0].max)
       log("Capped to #{max} entries (keeping hardest + most frequent)")
     end
@@ -124,7 +144,7 @@ class VocabularyAnnotator
         @client.messages.create(
           model: @model,
           max_tokens: 16384,
-          system: system_prompt(language, cutoff, filters),
+          system: classify_prompt(language, cutoff, filters),
           messages: [
             { role: "user", content: text }
           ]
@@ -244,36 +264,106 @@ class VocabularyAnnotator
     nil
   end
 
-  def system_prompt(language, cutoff, filters = {})
-    ipa_line = unless Tell::Espeak.supports?(language)
-      "\n      - pronunciation: IPA transcription of the lemma (e.g. /word/)"
-    end
-
+  # Stage 1 prompt: lightweight classification only (word/lemma/level/pos).
+  def classify_prompt(language, cutoff, filters = {})
     filter_lines = build_filter_lines(filters)
-
-    similar_line = if filters[:similar]
-      langs = filters[:similar].split(/,\s*/).reject { |l| l.casecmp("english").zero? }
-      unless langs.empty?
-        "\n      - similar_translations: object mapping language name to translation of the lemma in that language (e.g. {\"Russian\": \"слово\"}). Include: #{langs.join(', ')}"
-      end
-    end
 
     <<~PROMPT
       Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
-      For each word, provide:
+      For each word, provide ONLY these fields:
       - word: the word as it appears in text
       - lemma: dictionary form (infinitive for verbs, positive nominative singular masculine for adjectives — never comparative/superlative, nominative singular for nouns)
       - level: CEFR level (A1/A2/B1/B2/C1/C2)
       - pos: part of speech (noun, verb, adj, adv, etc.)
-      - translation: English translation of the LEMMA (not the inflected form)
-      - definition: brief dictionary-style definition of the LEMMA in English (1 sentence)#{ipa_line}#{similar_line}
 
+      Do NOT include translations, definitions, or any other fields.
       Return a JSON array. Only include words at #{cutoff} or above.
       Do not include proper nouns, numbers, or punctuation.
       If a word appears in multiple forms, include the most representative occurrence.
       Merge diminutives with their base word under the base lemma (e.g. peharček → pehar).#{filter_lines}
       Return ONLY the JSON array, no other text.
     PROMPT
+  end
+
+  # Stage 3 prompt: enrich selected lemmas with translations and definitions.
+  def enrich_prompt(language, target_language, filters = {})
+    ipa_line = unless Tell::Espeak.supports?(language)
+      "\n      - pronunciation: IPA transcription of the lemma (e.g. /word/)"
+    end
+
+    similar_line = if filters[:similar]
+      langs = filters[:similar].split(/,\s*/).reject { |l| l.casecmp(target_language).zero? }
+      unless langs.empty?
+        "\n      - similar_translations: object mapping language name to translation (e.g. {\"Russian\": \"слово\"}). Include: #{langs.join(', ')}"
+      end
+    end
+
+    <<~PROMPT
+      For each #{language} word below, provide:
+      - lemma: the word (as given)
+      - translation: #{target_language} translation of the word (not inflected forms)
+      - definition: brief dictionary-style definition in #{target_language} (1 sentence max)#{ipa_line}#{similar_line}
+
+      Return a JSON array matching the order of input words.
+      Return ONLY the JSON array, no other text.
+    PROMPT
+  end
+
+  # Stage 3: enrich pre-selected entries with translations/definitions via API.
+  def enrich_entries(entries, language:, target_language:, filters:)
+    return entries if entries.empty?
+
+    enrichments = call_enrich_api(entries, language: language, target_language: target_language, filters: filters)
+    merge_enrichments(entries, enrichments)
+  end
+
+  def call_enrich_api(entries, language:, target_language:, filters:)
+    lemmas = entries.map { |e| e[:lemma] }.uniq
+    prompt = enrich_prompt(language, target_language, filters)
+
+    with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
+      message, elapsed = measure_time do
+        @client.messages.create(
+          model: @model,
+          max_tokens: 16384,
+          system: prompt,
+          messages: [{ role: "user", content: lemmas.join("\n") }]
+        )
+      end
+
+      log_api_usage("Vocabulary enriched", message, elapsed)
+
+      raw = message.content.first.text.strip
+      json_str = if message.stop_reason == "max_tokens"
+        salvage_truncated_json(raw).tap do |r|
+          log(r ? "Salvaged partial enrichment" : "WARNING: Enrichment truncated and salvage failed")
+        end
+      else
+        raw[/\[.*\]/m]
+      end
+
+      return [] unless json_str
+
+      parsed = JSON.parse(json_str, symbolize_names: true)
+      parsed.is_a?(Array) ? parsed : []
+    end
+  end
+
+  def merge_enrichments(entries, enrichments)
+    by_lemma = {}
+    enrichments.each { |e| by_lemma[e[:lemma].to_s.downcase] = e if e[:lemma] }
+
+    entries.each do |entry|
+      enrichment = by_lemma[entry[:lemma].to_s.downcase]
+      next unless enrichment
+
+      entry[:translation] ||= enrichment[:translation]
+      entry[:definition] ||= enrichment[:definition]
+      entry[:pronunciation] ||= enrichment[:pronunciation]
+      entry[:similar_translations] ||= enrichment[:similar_translations]
+    end
+
+    entries
   end
 
   FREQUENCY_PROMPTS = {
@@ -326,18 +416,18 @@ class VocabularyAnnotator
 
   # Deterministic cognate filter: compare lemma against translations in similar
   # languages using transliteration + Levenshtein distance.
-  def filter_cognates(entries, similar_langs)
+  def filter_cognates(entries, similar_langs, target_language = "English")
     return entries if similar_langs.empty?
 
     entries.reject do |entry|
-      similar_langs.any? { |lang| cognate_in_language?(entry, lang) }
+      similar_langs.any? { |lang| cognate_in_language?(entry, lang, target_language) }
     end
   end
 
-  def cognate_in_language?(entry, lang)
+  def cognate_in_language?(entry, lang, target_language = "English")
     lemma_ascii = normalize_for_comparison(entry[:lemma].to_s)
 
-    if lang.casecmp("english").zero?
+    if lang.casecmp(target_language).zero?
       translation = entry[:translation].to_s
       translation.split(/[,;\/]\s*/).any? do |word|
         word = word.strip.sub(/\Ato /, "")

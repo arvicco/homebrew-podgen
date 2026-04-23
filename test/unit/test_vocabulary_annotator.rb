@@ -415,11 +415,12 @@ class TestVocabularyAnnotator < Minitest::Test
     # Simulates: LLM writes preamble with [A1/A2/B1/B2/C1/C2] before the JSON array,
     # then the response is truncated at max_tokens. The regex /\[.*\]/m matches the
     # preamble brackets, not the JSON. Salvage must still recover the real entries.
+    # Stage 1 classify returns lightweight entries (word/lemma/level/pos only).
     truncated_response = <<~RAW
       Here are the words at level [A1/A2/B1/B2/C1/C2] or above:
 
       ```json
-      [{"word":"razglasil","lemma":"razglasiti","level":"C1","pos":"verb","translation":"to announce","definition":"To declare publicly.","family":"razglasiti"},{"word":"trunc
+      [{"word":"razglasil","lemma":"razglasiti","level":"C1","pos":"verb"},{"word":"trunc
     RAW
 
     text_block = Struct.new(:type, :text).new("text", truncated_response)
@@ -487,20 +488,105 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_equal 1, chunks.length
   end
 
-  # --- system_prompt IPA conditional ---
+  # --- classify_prompt (stage 1: lightweight) ---
 
-  def test_system_prompt_includes_pronunciation_when_espeak_unsupported
+  def test_classify_prompt_requests_only_four_fields
+    prompt = @annotator.send(:classify_prompt, "sl", "B1")
+    assert_includes prompt, "word"
+    assert_includes prompt, "lemma"
+    assert_includes prompt, "level"
+    assert_includes prompt, "pos"
+    # Prompt mentions "translation" only to say "Do NOT include" it
+    assert_includes prompt, "Do NOT include translation"
+    refute_includes prompt, "- translation:"
+    refute_includes prompt, "- definition:"
+    refute_includes prompt, "- pronunciation:"
+  end
+
+  def test_classify_prompt_includes_frequency_filter
+    prompt = @annotator.send(:classify_prompt, "sl", "B1", { frequency: "rare" })
+    assert_includes prompt, "rare"
+  end
+
+  # --- enrich_prompt (stage 3: targeted) ---
+
+  def test_enrich_prompt_requests_translations
+    prompt = @annotator.send(:enrich_prompt, "sl", "English")
+    assert_includes prompt, "translation"
+    assert_includes prompt, "definition"
+    assert_includes prompt, "English"
+  end
+
+  def test_enrich_prompt_uses_target_language
+    prompt = @annotator.send(:enrich_prompt, "sl", "Polish")
+    assert_includes prompt, "Polish translation"
+    assert_includes prompt, "definition"
+    refute_includes prompt, "English translation"
+  end
+
+  def test_enrich_prompt_includes_pronunciation_when_espeak_unsupported
     Tell::Espeak.stub(:supports?, false) do
-      prompt = @annotator.send(:system_prompt, "zh", "B1")
+      prompt = @annotator.send(:enrich_prompt, "zh", "English")
       assert_includes prompt, "pronunciation"
     end
   end
 
-  def test_system_prompt_excludes_pronunciation_when_espeak_supported
+  def test_enrich_prompt_excludes_pronunciation_when_espeak_supported
     Tell::Espeak.stub(:supports?, true) do
-      prompt = @annotator.send(:system_prompt, "sl", "B1")
+      prompt = @annotator.send(:enrich_prompt, "sl", "English")
       refute_includes prompt, "pronunciation"
     end
+  end
+
+  def test_enrich_prompt_similar_excludes_target_language
+    prompt = @annotator.send(:enrich_prompt, "sl", "Polish", { similar: "Polish, Russian" })
+    assert_includes prompt, "Russian"
+    refute_match(/similar_translations.*Polish/, prompt)
+  end
+
+  # --- enrich_entries (merge logic) ---
+
+  def test_enrich_entries_merges_translation_into_entries
+    entries = [
+      { word: "razglasil", lemma: "razglasiti", level: "C1", pos: "verb" }
+    ]
+    enrichments = [
+      { lemma: "razglasiti", translation: "to announce", definition: "To declare publicly." }
+    ]
+
+    @annotator.stub(:call_enrich_api, enrichments) do
+      result = @annotator.send(:enrich_entries, entries, language: "sl", target_language: "English", filters: {})
+      assert_equal "to announce", result.first[:translation]
+      assert_equal "To declare publicly.", result.first[:definition]
+    end
+  end
+
+  def test_enrich_entries_preserves_unmatched_entries
+    entries = [
+      { word: "test", lemma: "test", level: "B1", pos: "noun" }
+    ]
+    # API returns nothing for this lemma
+    @annotator.stub(:call_enrich_api, []) do
+      result = @annotator.send(:enrich_entries, entries, language: "sl", target_language: "English", filters: {})
+      assert_equal 1, result.length
+      assert_nil result.first[:translation]
+    end
+  end
+
+  def test_enrich_entries_returns_unchanged_when_empty
+    result = @annotator.send(:enrich_entries, [], language: "sl", target_language: "English", filters: {})
+    assert_empty result
+  end
+
+  def test_cognate_in_language_uses_translation_for_target_language
+    entry = { lemma: "telefon", translation: "telefon", similar_translations: { "Russian" => "телефон" } }
+    # When target is Polish, cognate check on "Polish" should use the translation field
+    assert @annotator.send(:cognate_in_language?, entry, "Polish", "Polish")
+  end
+
+  def test_cognate_in_language_uses_similar_translations_for_non_target
+    entry = { lemma: "telefon", translation: "telephone", similar_translations: { "Russian" => "телефон" } }
+    assert @annotator.send(:cognate_in_language?, entry, "Russian", "English")
   end
 
   # --- valid_entry? ---
@@ -956,8 +1042,25 @@ class TestVocabularyAnnotator < Minitest::Test
   end
 
   def stub_classify(entries)
+    # Build enrichment lookup from test entries (keyed by lowercase lemma)
+    enrichment_map = {}
+    entries.each do |e|
+      enrichment_map[e[:lemma].to_s.downcase] = e.slice(:translation, :definition, :pronunciation, :similar_translations).compact
+    end
+
+    # enrich_entries receives the current (filtered) entries and merges enrichment data
+    enrich_passthrough = lambda do |current_entries, **_kwargs|
+      current_entries.each do |e|
+        data = enrichment_map[e[:lemma].to_s.downcase]
+        data&.each { |k, v| e[k] ||= v }
+      end
+      current_entries
+    end
+
     @annotator.stub(:classify_words, entries) do
-      yield
+      @annotator.stub(:enrich_entries, enrich_passthrough) do
+        yield
+      end
     end
   end
 end
