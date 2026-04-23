@@ -431,4 +431,97 @@ class TestTranscriptRenderer < Minitest::Test
     assert_includes html, 'href="#vocab-prepletati-se"'
     assert_includes html, 'id="vocab-prepletati-se"'
   end
+
+  # --- multi-language vocabulary ---
+
+  def test_split_vocabulary_section_multi_language
+    body = "Main text\n\n## Vocabulary (English, Russian)\n\n- **gatto** (A2 noun)\n  - cat\n  - кот"
+    text, vocab = @r.split_vocabulary_section(body)
+    assert_equal "Main text\n\n", text
+    assert_includes vocab, "English, Russian"
+    assert_includes vocab, "gatto"
+  end
+
+  def test_extract_vocab_languages_returns_array
+    vocab_body = " (English, Russian)\n\n- **gatto** (A2 noun)\n  - cat\n  - кот"
+    languages, clean = @r.extract_vocab_languages(vocab_body)
+    assert_equal ["English", "Russian"], languages
+    refute_includes clean, "(English, Russian)"
+  end
+
+  def test_extract_vocab_languages_nil_for_single
+    vocab_body = "\n\n- **gatto** (A2 noun) — cat"
+    languages, clean = @r.extract_vocab_languages(vocab_body)
+    assert_nil languages
+    assert_equal vocab_body, clean
+  end
+
+  def test_parse_vocab_entries_multi_language
+    vocab_body = " (English, Russian)\n\n- **gatto** (A2 noun)\n  - cat. A feline.\n  - кот. Домашнее животное."
+    entries = @r.parse_vocab_entries(vocab_body)
+    entry = entries["gatto"]
+    assert_equal "gatto", entry[:lemma]
+    assert_equal({ "English" => "cat. A feline.", "Russian" => "кот. Домашнее животное." }, entry[:definitions])
+    # First language used as default definition
+    assert_equal "cat. A feline.", entry[:definition]
+  end
+
+  def test_parse_vocab_entries_multi_language_with_originals
+    vocab_body = " (English, Russian)\n\n- **abbracciare** (B1 verb) *abbracciò*\n  - to hug\n  - обнимать"
+    entries = @r.parse_vocab_entries(vocab_body)
+    assert_equal "abbracciare", entries["abbracciò"][:lemma]
+    assert_equal "abbracciò", entries["abbracciare"][:original]
+  end
+
+  def test_render_vocabulary_html_multi_language_switcher
+    vocab_body = " (English, Russian)\n\n- **gatto** (A2 noun)\n  - cat. A feline.\n  - кот. Домашнее животное."
+    html = @r.render_vocabulary_html(vocab_body)
+    assert_includes html, "vocab-lang-switcher"
+    assert_includes html, 'data-vocab-lang="English"'
+    assert_includes html, 'data-vocab-lang="Russian"'
+    # First language button is active
+    assert_includes html, 'class="active" data-vocab-lang="English"'
+  end
+
+  def test_render_vocabulary_html_multi_language_dd_tags
+    vocab_body = " (English, Russian)\n\n- **gatto** (A2 noun)\n  - cat. A feline.\n  - кот. Домашнее животное."
+    html = @r.render_vocabulary_html(vocab_body)
+    assert_includes html, '<dd data-vocab-lang="English" class="active">cat. A feline.</dd>'
+    assert_includes html, '<dd data-vocab-lang="Russian">кот. Домашнее животное.</dd>'
+  end
+
+  def test_render_vocabulary_html_single_language_unchanged
+    vocab_body = "\n\n- **gatto** (A2 noun) — cat. A feline."
+    html = @r.render_vocabulary_html(vocab_body)
+    refute_includes html, "vocab-lang-switcher"
+    refute_includes html, "data-vocab-lang"
+    assert_includes html, "<dd>cat. A feline.</dd>"
+  end
+
+  def test_linkify_vocab_words_multi_language_tooltip
+    entries = {
+      "gatto" => {
+        lemma: "gatto", pos: "A2 noun", definition: "cat. A feline.",
+        definitions: { "English" => "cat. A feline.", "Russian" => "кот. Домашнее животное." },
+        languages: ["English", "Russian"]
+      }
+    }
+    result = @r.linkify_vocab_words("Il **gatto** dorme.", entries)
+    assert_includes result, 'data-vocab-lang="English"'
+    assert_includes result, 'data-vocab-lang="Russian"'
+    assert_includes result, "cat. A feline."
+    assert_includes result, "кот. Домашнее животное."
+  end
+
+  def test_render_body_html_multi_language_full_integration
+    body = "Il **gatto** dorme.\n\n## Vocabulary (English, Russian)\n\n- **gatto** (A2 noun)\n  - cat. A feline.\n  - кот. Домашнее животное."
+    html = @r.render_body_html(body, vocab: true)
+    # Vocab word linked
+    assert_includes html, 'class="vocab-word"'
+    # Language switcher present
+    assert_includes html, "vocab-lang-switcher"
+    # Both definitions rendered
+    assert_includes html, "cat. A feline."
+    assert_includes html, "кот. Домашнее животное."
+  end
 end

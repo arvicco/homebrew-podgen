@@ -151,12 +151,13 @@ class SiteGenerator
           episode_date: ep[:date].strftime("%B %d, %Y"),
           episode_duration: ep[:duration] ? format_duration(ep[:duration]) : nil,
           audio_url: audio_url_from_episode_page(ep[:filename], is_primary),
-          transcript_html: parse_transcript_html(ep[:transcript_path]),
+          transcript_html: ep[:transcript_html],
           index_path: is_primary ? "../index.html" : "../../#{lang_code}/index.html",
           site_config: @site_config,
           episode_cover_url: ep_cover_url,
           episode_cover_wide: ep_cover_wide,
-          has_vocabulary: ep[:has_vocabulary]
+          has_vocabulary: ep[:has_vocabulary],
+          vocab_languages: ep[:vocab_languages]
         )
       )
       File.write(File.join(episodes_html_dir, page_name), ep_html)
@@ -186,6 +187,8 @@ class SiteGenerator
 
     title = extract_title_from_file(transcript_path) || @title_map[filename] || "#{@config.title} — #{date.strftime('%B %d, %Y')}"
 
+    transcript_html, vocab_languages = parse_transcript_html(transcript_path)
+
     {
       filename: filename,
       basename: basename,
@@ -193,8 +196,10 @@ class SiteGenerator
       title: title,
       duration: @duration_map[filename],
       transcript_path: transcript_path,
+      transcript_html: transcript_html,
       cover_file: find_episode_cover(basename),
-      has_vocabulary: transcript_has_vocabulary?(transcript_path)
+      has_vocabulary: transcript_has_vocabulary?(transcript_path),
+      vocab_languages: vocab_languages
     }
   end
 
@@ -236,8 +241,9 @@ class SiteGenerator
 
   # --- Transcript parsing ---
 
+  # Returns [html, vocab_languages] where vocab_languages is nil or Array.
   def parse_transcript_html(path)
-    return nil unless path && File.exist?(path)
+    return [nil, nil] unless path && File.exist?(path)
 
     text = File.read(path)
 
@@ -248,7 +254,13 @@ class SiteGenerator
       text.sub(/\A#[^\n]*\n+/, "")
     end
 
-    render_body_html(body)
+    html = render_body_html(body)
+
+    # Extract vocab languages for the episode header switcher
+    _transcript, vocab_body = split_vocabulary_section(body)
+    languages, _ = extract_vocab_languages(vocab_body) if vocab_body
+
+    [html, languages]
   end
 
   # Override: site links open in new tab

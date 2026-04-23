@@ -225,7 +225,7 @@ module PodgenCLI
       end
 
       logger.phase_start("Download Audio")
-      @source_audio_path = @episode_source.download_audio(@episode[:audio_url])
+      @source_audio_path = @episode_source.download_audio(@episode)
       @temp_files << @source_audio_path
       logger.log("Downloaded source audio: #{(File.size(@source_audio_path) / (1024.0 * 1024)).round(2)} MB")
 
@@ -449,16 +449,15 @@ module PodgenCLI
         max: @config.vocabulary_max,
         filters: @config.vocabulary_filters,
         include_words: @options[:include_words] || Set.new,
-        target_language: @config.vocabulary_target_language
+        target_languages: @config.vocabulary_target_languages
       )
 
       # Rewrite transcript file with marked words + vocabulary appendix
-      vocab = vocabulary_md.empty? ? nil : vocabulary_md.split("## Vocabulary", 2).last
       TranscriptParser.write(transcript_path,
         title: parsed.title,
         description: parsed.description,
         body: marked_body,
-        vocabulary: vocab)
+        vocabulary: vocabulary_md.empty? ? nil : vocabulary_md)
 
       logger.log("Vocabulary annotated (#{@config.vocabulary_level}+ cutoff)")
       logger.phase_end("Vocabulary")

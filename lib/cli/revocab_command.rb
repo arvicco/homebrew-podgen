@@ -22,10 +22,11 @@ module PodgenCLI
         opts.on("--missing-only", "Only annotate transcripts without existing vocabulary") { @missing_only = true }
         opts.on("--include WORDS", "Force-include these lemmas (comma-separated)") { |v| @include_words = Set.new(v.split(",").map { |w| w.strip.downcase }) }
         opts.on("--target LANG", "Target language for definitions (e.g. Polish, English)") { |v| @target_language = v }
+        opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
       end.parse!(args)
 
       @podcast_name = args.shift
-      @episode_id = args.shift
+      @episode_id ||= args.shift
       @options = options
       @dry_run = options[:dry_run] || false
     end
@@ -57,7 +58,11 @@ module PodgenCLI
       cutoff = @config.vocabulary_level
       vocab_max = @config.vocabulary_max
       vocab_filters = @config.vocabulary_filters
-      target_language = @target_language || @config.vocabulary_target_language
+      target_languages = if @target_language
+        @target_language.split(",").map(&:strip)
+      else
+        @config.vocabulary_target_languages
+      end
       known = KnownVocabulary.for_config(@config)
       known_lemmas = known.lemma_set(language)
 
@@ -67,7 +72,7 @@ module PodgenCLI
         logger: logger
       )
 
-      puts "Re-annotating #{transcripts.length} transcript(s) (#{language}, #{cutoff}+ cutoff, definitions in #{target_language})"
+      puts "Re-annotating #{transcripts.length} transcript(s) (#{language}, #{cutoff}+ cutoff, definitions in #{target_languages.join(', ')})"
 
       processed = 0
       transcripts.each do |path|
@@ -87,7 +92,7 @@ module PodgenCLI
         process_transcript(path, annotator: annotator, language: language, cutoff: cutoff,
                           known_lemmas: known_lemmas, max: vocab_max, filters: vocab_filters,
                           logger: logger, include_words: @include_words,
-                          target_language: target_language)
+                          target_languages: target_languages)
         processed += 1
       end
 
@@ -124,7 +129,7 @@ module PodgenCLI
       end
     end
 
-    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:, include_words: Set.new, target_language: "English")
+    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:, include_words: Set.new, target_languages: ["English"])
       parsed = TranscriptParser.parse(path)
       unless parsed.transcript_section
         logger.log("Skipping #{File.basename(path)}: no ## Transcript section")
@@ -143,11 +148,11 @@ module PodgenCLI
         max: max,
         filters: filters,
         include_words: include_words,
-        target_language: target_language
+        target_languages: target_languages
       )
 
       # Rewrite transcript file
-      vocab = vocabulary_md.empty? ? nil : vocabulary_md.split("## Vocabulary", 2).last
+      vocab = vocabulary_md.empty? ? nil : vocabulary_md
       TranscriptParser.write(path,
         title: parsed.title,
         description: parsed.description,

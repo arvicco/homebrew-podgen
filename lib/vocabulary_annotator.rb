@@ -29,13 +29,14 @@ class VocabularyAnnotator
   # Returns [marked_body, vocabulary_md]
   # marked_body: transcript with all occurrences of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
-  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English")
+  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English", target_languages: nil)
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
     end
 
-    log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff, definitions in #{target_language})")
+    target_languages ||= [target_language]
+    log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff, definitions in #{target_languages.join(', ')})")
 
     # Stage 1: Lightweight classification — word/lemma/level/pos only
     entries = classify_words(text, language, cutoff, filters)
@@ -69,13 +70,17 @@ class VocabularyAnnotator
     end
 
     # Stage 3: Enrich selected entries with translations/definitions
-    entries = enrich_entries(entries, language: language, target_language: target_language, filters: filters)
+    if target_languages.length == 1
+      entries = enrich_entries(entries, language: language, target_language: target_languages.first, filters: filters)
+    else
+      enrich_multi_language!(entries, language: language, target_languages: target_languages, filters: filters)
+    end
 
     # Stage 4: Post-enrichment filtering
     if has_cognate_filter
       similar_langs = filters[:similar].split(/,\s*/)
       before = entries.length
-      entries = filter_cognates(entries, similar_langs, target_language).concat(
+      entries = filter_cognates(entries, similar_langs, target_languages.first).concat(
         include_words.empty? ? [] : entries.select { |e| include_words.include?(e[:lemma].to_s.downcase) }
       ).uniq { |e| e[:lemma].to_s.downcase }
       filtered_cognates = before - entries.length
@@ -98,7 +103,7 @@ class VocabularyAnnotator
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
     add_ipa(entries, language)
     marked_body = mark_words(text, entries, language)
-    vocabulary_md = build_vocabulary_section(entries)
+    vocabulary_md = build_vocabulary_section(entries, target_languages)
 
     [marked_body, vocabulary_md]
   end
@@ -340,6 +345,31 @@ class VocabularyAnnotator
     merge_enrichments(entries, enrichments)
   end
 
+  # Stage 3 (multi-language): enrich entries for each target language separately.
+  # Stores results in entry[:translations] and entry[:definitions] hashes.
+  def enrich_multi_language!(entries, language:, target_languages:, filters:)
+    return entries if entries.empty?
+
+    target_languages.each do |tl|
+      enrichments = call_enrich_api(entries, language: language, target_language: tl, filters: filters)
+      by_lemma = {}
+      enrichments.each { |e| by_lemma[e[:lemma].to_s.downcase] = e if e[:lemma] }
+
+      entries.each do |entry|
+        enrichment = by_lemma[entry[:lemma].to_s.downcase]
+        next unless enrichment
+
+        entry[:translations] ||= {}
+        entry[:definitions] ||= {}
+        entry[:translations][tl] = enrichment[:translation]
+        entry[:definitions][tl] = enrichment[:definition]
+        entry[:pronunciation] ||= enrichment[:pronunciation]
+        entry[:similar_translations] ||= enrichment[:similar_translations]
+      end
+    end
+    entries
+  end
+
   def call_enrich_api(entries, language:, target_language:, filters:)
     lemmas = entries.map { |e| e[:lemma] }.uniq
     prompt = enrich_prompt(language, target_language, filters)
@@ -451,16 +481,20 @@ class VocabularyAnnotator
     lemma_ascii = normalize_for_comparison(entry[:lemma].to_s)
 
     if lang.casecmp(target_language).zero?
-      translation = entry[:translation].to_s
-      translation.split(/[,;\/]\s*/).any? do |word|
+      # Multi-lang: check translations hash; single-lang: check translation field
+      translation = entry.dig(:translations, lang) || entry[:translation].to_s
+      translation.to_s.split(/[,;\/]\s*/).any? do |word|
         word = word.strip.sub(/\Ato /, "")
         cognate?(lemma_ascii, normalize_for_comparison(word))
       end
     else
-      translations = entry[:similar_translations]
-      return false unless translations.is_a?(Hash)
-
-      word = translations[lang] || translations[lang.to_sym]
+      # Check translations hash first (multi-lang), then similar_translations
+      word = entry.dig(:translations, lang)
+      unless word
+        translations = entry[:similar_translations]
+        return false unless translations.is_a?(Hash)
+        word = translations[lang] || translations[lang.to_sym]
+      end
       return false unless word
 
       cognate?(lemma_ascii, normalize_for_comparison(word.to_s))
@@ -601,10 +635,13 @@ class VocabularyAnnotator
     marked
   end
 
-  def build_vocabulary_section(entries)
+  def build_vocabulary_section(entries, target_languages = nil)
     sorted = entries.sort_by { |e| e[:lemma].to_s.downcase }
+    multi = target_languages && target_languages.length > 1
 
-    lines = ["## Vocabulary", ""]
+    heading = multi ? "## Vocabulary (#{target_languages.join(', ')})" : "## Vocabulary"
+    lines = [heading, ""]
+
     sorted.each do |entry|
       line = "- **#{entry[:lemma]}**"
       line += " #{entry[:ipa]}" if entry[:ipa]
@@ -616,9 +653,21 @@ class VocabularyAnnotator
         .reject { |w| w.downcase == entry[:lemma].downcase }
         .reject { |w| particle_set.include?(w.downcase) }
       line += " *#{diff_forms.join(', ')}*" unless diff_forms.empty?
-      line += " — #{entry[:translation]}" if entry[:translation]
-      line += ". #{entry[:definition]}" if entry[:definition]
-      lines << line
+
+      if multi
+        lines << line
+        target_languages.each do |tl|
+          translation = entry.dig(:translations, tl)
+          definition = entry.dig(:definitions, tl)
+          def_line = "  - #{translation}"
+          def_line += ". #{definition}" if definition
+          lines << def_line
+        end
+      else
+        line += " — #{entry[:translation]}" if entry[:translation]
+        line += ". #{entry[:definition]}" if entry[:definition]
+        lines << line
+      end
     end
 
     lines.join("\n").strip
