@@ -56,13 +56,14 @@ class VocabularyAnnotator
     end
 
     count_occurrences(text, entries, language)
+    priority = filters[:priority] || "balanced"
 
     # Over-select to leave room for cognate filtering after enrichment
     has_cognate_filter = filters[:similar] && !filters[:similar].empty?
     enrich_cap = max ? (has_cognate_filter ? max * 2 : max) : nil
     if enrich_cap && entries.length > enrich_cap
       included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
-      rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
+      sort_entries!(rest, priority, cutoff)
       entries = included + rest.first([enrich_cap - included.length, 0].max)
       log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length})")
     end
@@ -89,9 +90,9 @@ class VocabularyAnnotator
     # Final cap to max
     if max && entries.length > max
       included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
-      rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
+      sort_entries!(rest, priority, cutoff)
       entries = included + rest.first([max - included.length, 0].max)
-      log("Capped to #{max} entries (keeping hardest + most frequent)")
+      log("Capped to #{max} entries (priority: #{priority})")
     end
 
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
@@ -307,6 +308,28 @@ class VocabularyAnnotator
       Return a JSON array matching the order of input words.
       Return ONLY the JSON array, no other text.
     PROMPT
+  end
+
+  PRIORITY_MODES = %w[hardest frequent balanced].freeze
+
+  # Sort entries in place according to the priority mode.
+  # - hardest: highest CEFR level first, then frequency, then alpha
+  # - frequent: most text occurrences first, then level, then alpha
+  # - balanced: prefer words near the cutoff level, then frequency, then alpha
+  def sort_entries!(entries, priority, cutoff)
+    cutoff_idx = CEFR_LEVELS.index(cutoff)
+    case priority
+    when "hardest"
+      entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
+    when "frequent"
+      entries.sort_by! { |e| [-(e[:frequency] || 0), -CEFR_LEVELS.index(e[:level]), e[:lemma].to_s.downcase] }
+    else # balanced
+      entries.sort_by! do |e|
+        level_idx = CEFR_LEVELS.index(e[:level])
+        distance = (level_idx - cutoff_idx).abs
+        [distance, -(e[:frequency] || 0), e[:lemma].to_s.downcase]
+      end
+    end
   end
 
   # Stage 3: enrich pre-selected entries with translations/definitions via API.

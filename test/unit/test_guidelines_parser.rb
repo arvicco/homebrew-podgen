@@ -667,6 +667,26 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "Polish", parser.vocabulary_config[:target]
   end
 
+  def test_parses_vocabulary_priority
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+      - priority: frequent
+    MD
+
+    assert_equal "frequent", parser.vocabulary_config[:priority]
+  end
+
+  def test_vocabulary_priority_rejects_invalid
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+      - priority: random
+    MD
+
+    refute parser.vocabulary_config.key?(:priority)
+  end
+
   def test_vocabulary_target_defaults_to_nil_when_missing
     parser = build_parser(<<~MD)
       ## Vocabulary

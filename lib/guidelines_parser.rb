@@ -323,6 +323,8 @@ class GuidelinesParser
         { similar: value }
       when "target"
         { target: value }
+      when "priority"
+        { priority: value } if %w[hardest frequent balanced].include?(value)
       when "filter"
         { filter: value }
       end

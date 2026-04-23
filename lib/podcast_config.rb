@@ -186,7 +186,7 @@ class PodcastConfig
   def vocabulary_filters
     config = parser.vocabulary_config
     return {} unless config
-    config.slice(:frequency, :similar, :filter).compact
+    config.slice(:frequency, :similar, :filter, :priority).compact
   end
 
   def links_enabled?
