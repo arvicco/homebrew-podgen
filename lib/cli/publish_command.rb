@@ -422,11 +422,15 @@ module PodgenCLI
     def generate_cover_image(title, description: nil)
       return @config.cover_static_image unless @config.cover_generation_enabled?
 
-      CoverResolver.generate(
+      result = CoverResolver.generate(
         title: title,
         base_image: @config.cover_base_image,
         options: @config.cover_options
-      ) || @config.cover_static_image
+      )
+      unless result
+        $stderr.puts "  Warning: cover generation failed (using static image)" if @options[:verbosity] == :verbose
+      end
+      result || @config.cover_static_image
     end
 
     def cleanup_cover(image_path)

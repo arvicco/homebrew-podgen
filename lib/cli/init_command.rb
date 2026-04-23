@@ -57,6 +57,12 @@ module PodgenCLI
       FileUtils.cp_r(source_config.podcast_dir, new_podcast_dir)
       puts "Config: #{source_config.podcast_dir} → #{new_podcast_dir}"
 
+      # Warn if .env was copied (may contain secrets)
+      env_path = File.join(new_podcast_dir, ".env")
+      if File.exist?(env_path)
+        puts "  Warning: .env copied — review and update credentials for the new podcast"
+      end
+
       # Create empty output structure
       create_output_dir
 
@@ -150,6 +156,7 @@ module PodgenCLI
         <!-- ## Vocabulary -->
         <!-- Language learning: annotate transcripts with vocabulary -->
         <!-- - level: B2             # CEFR level: A1, A2, B1, B2, C1, C2 -->
+        <!-- - target: English       # Language for definitions/translations (default: English) -->
         <!-- - max: 30               # Max vocabulary entries per episode -->
         <!-- - frequency: uncommon   # common, uncommon, rare, literary, archaic -->
         <!-- - similar: English      # Languages for cognate filtering -->

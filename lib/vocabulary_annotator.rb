@@ -64,7 +64,7 @@ class VocabularyAnnotator
       included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
       rest.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
       entries = included + rest.first([enrich_cap - included.length, 0].max)
-      log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length + (entries.length - included.length)})")
+      log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length})")
     end
 
     # Stage 3: Enrich selected entries with translations/definitions
