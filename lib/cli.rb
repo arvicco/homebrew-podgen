@@ -24,6 +24,7 @@ module PodgenCLI
     "reformat"  => ["Reformat transcripts with paragraph breaks", "cli/reformat_command",    "ReformatCommand"],
     "exclude"   => ["Exclude URLs from future episodes",    "cli/exclude_command",     "ExcludeCommand"],
     "cover"     => ["Generate episode cover image",          "cli/cover_command",       "CoverCommand"],
+    "init"      => ["Initialize a new podcast",              "cli/init_command",        "InitCommand"],
     "fork"      => ["Fork podcast into a new namespace",    "cli/fork_command",        "ForkCommand"],
     "unpublish" => ["Remove podcast from Cloudflare R2",    "cli/unpublish_command",   "UnpublishCommand"],
     "tweet"     => ["Tweet about an episode",               "cli/tweet_command",       "TweetCommand"]
@@ -57,7 +58,8 @@ module PodgenCLI
       opts.separator "  reformat <podcast> [episode]         Reformat transcripts (paragraph breaks, cleanup)"
       opts.separator "  exclude <podcast> <url> [url...]     Exclude URLs from future episodes"
       opts.separator "  cover <podcast> <title|episode-id>   Generate episode cover image"
-      opts.separator "  fork <old> <new>                   Fork podcast into a new namespace"
+      opts.separator "  init <name> | <source> <name>      Initialize a new podcast (skeleton or from existing)"
+      opts.separator "  fork <old> <new>                   Fork podcast with all content into a new namespace"
       opts.separator "  unpublish <podcast>                Remove podcast from Cloudflare R2"
       opts.separator "  tweet <podcast> <episode-id>       Tweet about an episode (--force, --dry-run)"
       opts.separator ""

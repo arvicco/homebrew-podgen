@@ -118,6 +118,14 @@ class TestValidators < Minitest::Test
     assert result[:warnings].any? { |w| w.include?("parse error") }
   end
 
+  def test_guidelines_select_is_not_unrecognized_source
+    write_guidelines("## Format\nfoo\n## Tone\nbar")
+    result = validate(Validators::GuidelinesValidator,
+      sources: { "rss" => ["https://example.com/feed"], "select" => "weights" })
+
+    refute result[:warnings].any? { |w| w.include?("unrecognized source") }
+  end
+
   # --- HistoryValidator ---
 
   def test_history_count_mismatch

@@ -5,7 +5,7 @@ require_relative "../yaml_loader"
 
 module Validators
   class GuidelinesValidator < BaseValidator
-    KNOWN_SOURCES = %w[exa hackernews rss claude_web bluesky x].freeze
+    KNOWN_SOURCES = %w[exa hackernews rss claude_web bluesky x select].freeze
 
     private
 
