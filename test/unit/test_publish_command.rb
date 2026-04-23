@@ -374,6 +374,18 @@ class TestPublishCommand < Minitest::Test
     refute File.exist?(ts_path)
   end
 
+  # --- --date flag ---
+
+  def test_date_flag_sets_episode_id
+    cmd = PodgenCLI::PublishCommand.new(["testpod", "--date", "2026-03-10"], {})
+    assert_equal "2026-03-10", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_date_flag_overrides_positional
+    cmd = PodgenCLI::PublishCommand.new(["testpod", "2026-01-01", "--date", "2026-03-10"], {})
+    assert_equal "2026-03-10", cmd.instance_variable_get(:@episode_id)
+  end
+
   # --- find_text_file ---
 
   def test_find_text_file_prefers_transcript

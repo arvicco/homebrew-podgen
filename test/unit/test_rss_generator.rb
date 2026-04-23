@@ -294,6 +294,36 @@ class TestRssGenerator < Minitest::Test
     assert_includes xml, "06:00:00"
   end
 
+  def test_generate_pubdate_uses_episode_date_not_processing_timestamp
+    # Episode date is 2026-01-15 but was processed on 2026-04-23
+    create_mp3("test-2026-01-15.mp3", 1000)
+    history_path = File.join(@dir, "history.yml")
+    File.write(history_path, [
+      { "date" => "2026-01-15", "title" => "Backfilled Episode",
+        "timestamp" => "2026-04-23T22:42:39+02:00" }
+    ].to_yaml)
+
+    podcast_dir = File.join(@dir, "test")
+    ep_dir = File.join(podcast_dir, "episodes")
+    FileUtils.mkdir_p(ep_dir)
+    FileUtils.cp(File.join(@episodes_dir, "test-2026-01-15.mp3"), ep_dir)
+
+    feed = File.join(@dir, "pubdate_feed.xml")
+    gen = RssGenerator.new(
+      episodes_dir: ep_dir,
+      feed_path: feed,
+      title: "Test",
+      language: "en",
+      history_path: history_path
+    )
+    gen.generate
+
+    xml = File.read(feed)
+    # pubDate must contain Jan 2026, NOT Apr 2026
+    assert_match(/15 Jan 2026/, xml)
+    refute_match(/23 Apr 2026/, xml.split("lastBuildDate").last)
+  end
+
   def test_generate_includes_transcript_link
     create_mp3("test-2026-01-15.mp3", 1000)
     File.write(File.join(@episodes_dir, "test-2026-01-15_transcript.html"), "<html></html>")

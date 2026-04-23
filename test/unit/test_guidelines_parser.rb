@@ -351,6 +351,30 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal({ "exa" => true }, parser.sources)
   end
 
+  def test_parses_max_length
+    parser = build_parser(<<~MD)
+      ## Sources
+      - max_length: 20:00
+      - rss:
+        - https://example.com/feed
+    MD
+
+    assert_equal ["20:00"], parser.sources["max_length"]
+  end
+
+  def test_parses_min_length
+    parser = build_parser(<<~MD)
+      ## Sources
+      - min_length: 5:00
+      - max_length: 30:00
+      - rss:
+        - https://example.com/feed
+    MD
+
+    assert_equal ["5:00"], parser.sources["min_length"]
+    assert_equal ["30:00"], parser.sources["max_length"]
+  end
+
   # --- lingq_config ---
 
   def test_parses_lingq_section
@@ -665,6 +689,16 @@ class TestGuidelinesParser < Minitest::Test
     MD
 
     assert_equal "Polish", parser.vocabulary_config[:target]
+  end
+
+  def test_parses_vocabulary_multi_target
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+      - target: English, Russian
+    MD
+
+    assert_equal "English, Russian", parser.vocabulary_config[:target]
   end
 
   def test_parses_vocabulary_priority

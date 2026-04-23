@@ -226,6 +226,8 @@ class RSSSource
         pub_date: pub_time,
         link: link
       }
+      content_type = enclosure.type.to_s.strip
+      ep[:content_type] = content_type unless content_type.empty?
       ep[:duration] = duration if duration && !duration.empty?
       ep[:file_size] = file_size if file_size && file_size > 0
       ep[:image_url] = image_url if image_url && !image_url.empty?

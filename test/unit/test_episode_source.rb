@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "open3"
 require "episode_source"
 
 class TestEpisodeSource < Minitest::Test
@@ -204,6 +205,25 @@ class TestEpisodeSource < Minitest::Test
     refute episodes.first.key?(:image_url)
   end
 
+  # --- RSS content_type capture ---
+
+  def test_parse_feed_episodes_captures_content_type
+    xml = <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+        <channel>
+          <item>
+            <title>M4A Episode</title>
+            <enclosure url="http://example.com/ep.m4a" type="audio/x-m4a" length="5000"/>
+          </item>
+        </channel>
+      </rss>
+    XML
+    rss = RSSSource.new(feeds: [], logger: nil)
+    episodes = rss.send(:parse_feed_episodes, xml)
+    assert_equal "audio/x-m4a", episodes.first[:content_type]
+  end
+
   # --- exclude_url! ---
 
   def test_exclude_url_writes_to_file
@@ -306,7 +326,114 @@ class TestEpisodeSource < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # --- audio_extension_for ---
+
+  def test_audio_extension_for_mpeg_mime
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".mp3", s.send(:audio_extension_for, { audio_url: "https://x.com/ep", content_type: "audio/mpeg" })
+  end
+
+  def test_audio_extension_for_m4a_mime
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".m4a", s.send(:audio_extension_for, { audio_url: "https://x.com/ep", content_type: "audio/x-m4a" })
+  end
+
+  def test_audio_extension_for_mp4_mime
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".m4a", s.send(:audio_extension_for, { audio_url: "https://x.com/ep", content_type: "audio/mp4" })
+  end
+
+  def test_audio_extension_for_ogg_mime
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".ogg", s.send(:audio_extension_for, { audio_url: "https://x.com/ep", content_type: "audio/ogg" })
+  end
+
+  def test_audio_extension_falls_back_to_url_extension
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".m4a", s.send(:audio_extension_for, { audio_url: "https://cdn.example.com/file.m4a" })
+  end
+
+  def test_audio_extension_url_encoded_nested_url
+    url = "https://anchor.fm/s/123/play/456/https%3A%2F%2Fcdn.example.com%2Ffile.m4a"
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".m4a", s.send(:audio_extension_for, { audio_url: url })
+  end
+
+  def test_audio_extension_url_with_query_params
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".ogg", s.send(:audio_extension_for, { audio_url: "https://x.com/ep.ogg?token=abc" })
+  end
+
+  def test_audio_extension_defaults_to_mp3
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".mp3", s.send(:audio_extension_for, { audio_url: "https://x.com/stream/play" })
+  end
+
+  def test_audio_extension_unknown_mime_falls_back_to_url
+    s = source(rss_feeds: ["https://example.com/feed"])
+    assert_equal ".flac", s.send(:audio_extension_for, { audio_url: "https://x.com/ep.flac", content_type: "audio/x-flac" })
+  end
+
+  # --- probe_and_fix_extension ---
+
+  def test_probe_and_fix_extension_renames_when_wrong
+    # Create a file with .mp3 extension but M4A content header
+    path = File.join(@tmpdir, "podgen_source_test.mp3")
+    # Minimal valid ftyp box for MP4/M4A: 8 bytes size + "ftyp" + brand
+    File.binwrite(path, "\x00\x00\x00\x14ftypisom\x00\x00\x00\x00isom")
+
+    s = source(rss_feeds: ["https://example.com/feed"])
+
+    Open3.stub(:capture3, ["mov,mp4,m4a,3gp,3g2,mj2\n", "", stub_status(true)]) do
+      result = s.send(:probe_and_fix_extension, path)
+      assert_equal ".m4a", File.extname(result)
+      assert File.exist?(result)
+      refute File.exist?(path) unless result == path
+    end
+  end
+
+  def test_probe_and_fix_extension_keeps_correct_extension
+    path = File.join(@tmpdir, "podgen_source_test.mp3")
+    File.write(path, "fake mp3")
+
+    s = source(rss_feeds: ["https://example.com/feed"])
+
+    Open3.stub(:capture3, ["mp3\n", "", stub_status(true)]) do
+      result = s.send(:probe_and_fix_extension, path)
+      assert_equal path, result
+      assert_equal ".mp3", File.extname(result)
+    end
+  end
+
+  def test_probe_and_fix_extension_keeps_file_when_probe_fails
+    path = File.join(@tmpdir, "podgen_source_test.mp3")
+    File.write(path, "fake")
+
+    s = source(rss_feeds: ["https://example.com/feed"])
+
+    Open3.stub(:capture3, ["", "error", stub_status(false)]) do
+      result = s.send(:probe_and_fix_extension, path)
+      assert_equal path, result
+    end
+  end
+
+  def test_probe_and_fix_extension_ogg_format
+    path = File.join(@tmpdir, "podgen_source_test.mp3")
+    File.write(path, "fake ogg")
+
+    s = source(rss_feeds: ["https://example.com/feed"])
+
+    Open3.stub(:capture3, ["ogg\n", "", stub_status(true)]) do
+      result = s.send(:probe_and_fix_extension, path)
+      assert_equal ".ogg", File.extname(result)
+    end
+  end
+
   private
+
+  def stub_status(success)
+    Struct.new(:success?).new(success)
+  end
 
   def source(known_urls: [], rss_feeds: nil, select: nil)
     sources = rss_feeds.nil? ? {} : { "rss" => rss_feeds }

@@ -22,10 +22,14 @@ module PodgenCLI
       @overrides = {}
 
       OptionParser.new do |opts|
+        opts.banner = "Usage: podgen cover <podcast> [episode-date|title] [options]"
+        opts.separator ""
         opts.on("--missing-only", "Only generate covers for episodes without one") { @missing_only = true }
         opts.on("--image PATH", "Image file path, or 'last' for latest ~/Desktop screenshot") { |v| @image = v }
         opts.on("--base-image PATH", "Override base image") { |v| @overrides[:base_image] = v }
         opts.on("--output PATH", "Output file path") { |v| @output_path = v }
+        opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
+        opts.on("--title TEXT", "Cover title text") { |v| @title = v }
         opts.on("--font NAME", "Override font family") { |v| @overrides[:font] = v }
         opts.on("--font-color COLOR", "Override font color") { |v| @overrides[:font_color] = v }
         opts.on("--font-size N", Integer, "Override font size") { |v| @overrides[:font_size] = v }
@@ -35,15 +39,16 @@ module PodgenCLI
       end.parse!(args)
 
       @podcast_name = args.shift
-      # Second arg: episode id (date pattern) or manual title
-      second = args.first
-      if second && second.match?(/\d{4}-\d{2}-\d{2}/)
-        @episode_id = args.shift
-        @title = nil
-      else
-        @episode_id = nil
-        @title = args.join(" ")
+      # Positional args as fallback for --date / --title
+      unless @episode_id || @title
+        second = args.first
+        if second && second.match?(/\d{4}-\d{2}-\d{2}/)
+          @episode_id = args.shift
+        else
+          @title ||= args.join(" ") unless args.empty?
+        end
       end
+      @title = nil if @title&.empty?
       @dry_run = options[:dry_run] || false
     end
 

@@ -131,9 +131,11 @@ class RssGenerator
       ep_title = extract_title_from_episode(ep[:filename]) || @title_map[ep[:filename]]
       title = ep_title || "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
       add_text(item, "title", title)
-      pub_time = @timestamp_map[ep[:filename]]
-      pub_date = if pub_time
-        Time.parse(pub_time).strftime("%a, %d %b %Y %H:%M:%S %z")
+      # Use episode date for pubDate. If a processing timestamp exists,
+      # borrow only its time-of-day component (for stable ordering within a day).
+      pub_date = if (ts = @timestamp_map[ep[:filename]])
+        t = Time.parse(ts)
+        ep[:date].to_time.strftime("%a, %d %b %Y") + t.strftime(" %H:%M:%S %z")
       else
         ep[:date].to_time.strftime("%a, %d %b %Y 06:00:00 %z")
       end

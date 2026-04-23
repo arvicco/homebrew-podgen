@@ -18,22 +18,25 @@ module PodgenCLI
 
     def initialize(args, options)
       @exclude = false
+      @episode_id = nil
       OptionParser.new do |opts|
         opts.on("--exclude", "Also exclude episode URL from future processing") { @exclude = true }
+        opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
       end.parse!(args)
 
       first_arg = args.first
       if first_arg && (first_arg.include?("/") || File.exist?(first_arg))
         resolved = resolve_from_path(args.shift)
         if resolved
-          @podcast_name, @episode_id = resolved
+          @podcast_name, @episode_id = resolved unless @episode_id
+          @podcast_name ||= resolved[0]
         else
           $stderr.puts "Could not determine podcast/episode from path: #{first_arg}"
           @podcast_name = nil
         end
       else
         @podcast_name = args.shift
-        @episode_id = args.shift # optional: e.g. "2026-03-31b"
+        @episode_id ||= args.shift # optional: e.g. "2026-03-31b"
       end
       @options = options
       @dry_run = options[:dry_run] || false
