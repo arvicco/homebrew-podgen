@@ -12,6 +12,8 @@ require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "episode_filtering")
+require_relative File.join(root, "lib", "transcript_parser")
+require_relative File.join(root, "lib", "cover_resolver")
 
 module PodgenCLI
   class PublishCommand
@@ -408,66 +410,27 @@ module PodgenCLI
     # Parses a transcript markdown file.
     # Returns [title, description, transcript_text]
     def parse_transcript(path)
-      content = File.read(path)
-      lines = content.lines
-
-      # Title from first line: "# Title"
-      title = lines.first&.strip&.sub(/^#\s+/, "") || "Untitled"
-
-      # Find ## Transcript heading
-      transcript_idx = lines.index { |l| l.strip.match?(/^## Transcript/) }
-
-      if transcript_idx
-        # Description is between title and ## Transcript (skip blank lines)
-        desc_lines = lines[1...transcript_idx].map(&:strip).reject(&:empty?)
-        description = desc_lines.join("\n")
-        description = nil if description.empty?
-
-        # Transcript text is everything after ## Transcript, excluding ## Vocabulary
-        transcript = lines[(transcript_idx + 1)..].join
-        transcript = transcript.split("## Vocabulary", 2).first.strip
-      else
-        description = nil
-        transcript = lines[1..].join.strip
-      end
-
-      [title, description, transcript]
+      parsed = TranscriptParser.parse(path)
+      [parsed.title, parsed.description, parsed.body]
     end
 
     # Check for a per-episode cover saved by generate --image
     def find_episode_cover(base_name)
-      pattern = File.join(@config.episodes_dir, "#{base_name}_cover.*")
-      covers = Dir.glob(pattern)
-      covers.first
+      CoverResolver.find_episode_cover(@config.episodes_dir, base_name)
     end
 
     def generate_cover_image(title, description: nil)
       return @config.cover_static_image unless @config.cover_generation_enabled?
 
-      base_image = @config.cover_base_image
-
-      cover_path = File.join(Dir.tmpdir, "podgen_cover_publish_#{Process.pid}.jpg")
-
-      agent = CoverAgent.new
-      agent.generate(
+      CoverResolver.generate(
         title: title,
-        base_image: base_image,
-        output_path: cover_path,
+        base_image: @config.cover_base_image,
         options: @config.cover_options
-      )
-
-      cover_path
-    rescue => e
-      $stderr.puts "  Warning: cover generation failed: #{e.message} (using static image)" if @options[:verbosity] == :verbose
-      @config.cover_static_image
+      ) || @config.cover_static_image
     end
 
     def cleanup_cover(image_path)
-      return unless image_path
-      return unless image_path.start_with?(Dir.tmpdir)
-
-      File.delete(image_path) if File.exist?(image_path)
-    rescue # rubocop:disable Lint/SuppressedException
+      CoverResolver.cleanup(image_path)
     end
 
     # Retranscribe a final MP3 to generate timestamps for old episodes

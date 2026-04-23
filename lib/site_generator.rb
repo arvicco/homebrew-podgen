@@ -12,6 +12,8 @@ require_relative "format_helper"
 require_relative "language_names"
 require_relative "audio_assembler"
 require_relative "episode_filtering"
+require_relative "cover_resolver"
+require_relative "transcript_parser"
 require_relative "transcript_renderer"
 require_relative "history_maps"
 
@@ -205,7 +207,7 @@ class SiteGenerator
   end
 
   def find_episode_cover(basename)
-    Dir.glob(File.join(@episodes_dir, "#{basename}_cover.*")).first
+    CoverResolver.find_episode_cover(@episodes_dir, basename)
   end
 
   def wide_image?(path)
@@ -223,14 +225,13 @@ class SiteGenerator
   def transcript_has_vocabulary?(path)
     return false unless path && File.exist?(path)
 
-    File.foreach(path).any? { |line| line.include?("## Vocabulary") }
+    TranscriptParser.has_vocabulary?(path)
   end
 
   def extract_title_from_file(path)
     return nil unless path && File.exist?(path)
 
-    first_line = File.foreach(path).first
-    first_line&.strip&.sub(/^#\s+/, "")
+    TranscriptParser.extract_title(path)
   end
 
   # --- Transcript parsing ---

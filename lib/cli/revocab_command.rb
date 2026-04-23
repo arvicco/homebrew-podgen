@@ -6,6 +6,7 @@ require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "vocabulary_annotator")
 require_relative File.join(root, "lib", "known_vocabulary")
 require_relative File.join(root, "lib", "site_generator")
+require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "transcript_renderer")
 
 module PodgenCLI
@@ -16,9 +17,11 @@ module PodgenCLI
     def initialize(args, options)
       require "optparse"
       @include_words = Set.new
+      @target_language = nil
       OptionParser.new do |opts|
         opts.on("--missing-only", "Only annotate transcripts without existing vocabulary") { @missing_only = true }
         opts.on("--include WORDS", "Force-include these lemmas (comma-separated)") { |v| @include_words = Set.new(v.split(",").map { |w| w.strip.downcase }) }
+        opts.on("--target LANG", "Target language for definitions (e.g. Polish, English)") { |v| @target_language = v }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -54,6 +57,7 @@ module PodgenCLI
       cutoff = @config.vocabulary_level
       vocab_max = @config.vocabulary_max
       vocab_filters = @config.vocabulary_filters
+      target_language = @target_language || @config.vocabulary_target_language
       known = KnownVocabulary.for_config(@config)
       known_lemmas = known.lemma_set(language)
 
@@ -63,7 +67,7 @@ module PodgenCLI
         logger: logger
       )
 
-      puts "Re-annotating #{transcripts.length} transcript(s) (#{language}, #{cutoff}+ cutoff)"
+      puts "Re-annotating #{transcripts.length} transcript(s) (#{language}, #{cutoff}+ cutoff, definitions in #{target_language})"
 
       processed = 0
       transcripts.each do |path|
@@ -82,7 +86,8 @@ module PodgenCLI
         puts "  #{basename}..."
         process_transcript(path, annotator: annotator, language: language, cutoff: cutoff,
                           known_lemmas: known_lemmas, max: vocab_max, filters: vocab_filters,
-                          logger: logger, include_words: @include_words)
+                          logger: logger, include_words: @include_words,
+                          target_language: target_language)
         processed += 1
       end
 
@@ -119,24 +124,15 @@ module PodgenCLI
       end
     end
 
-    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:, include_words: Set.new)
-      text = File.read(path)
-
-      # Split into header (title + description) and body
-      parts = text.split("## Transcript", 2)
-      unless parts.length == 2
+    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:, include_words: Set.new, target_language: "English")
+      parsed = TranscriptParser.parse(path)
+      unless parsed.transcript_section
         logger.log("Skipping #{File.basename(path)}: no ## Transcript section")
         return
       end
 
-      header = parts.first
-      body = parts.last
-
-      # Strip existing vocabulary section
-      body, _old_vocab = split_vocabulary_section(body)
-
       # Strip bold markers from previous annotation
-      body = strip_bold_markers(body.strip)
+      body = strip_bold_markers(parsed.body)
 
       # Re-annotate
       marked_body, vocabulary_md = annotator.annotate(
@@ -146,13 +142,17 @@ module PodgenCLI
         known_lemmas: known_lemmas,
         max: max,
         filters: filters,
-        include_words: include_words
+        include_words: include_words,
+        target_language: target_language
       )
 
       # Rewrite transcript file
-      new_text = header + "## Transcript\n\n" + marked_body
-      new_text += "\n\n" + vocabulary_md unless vocabulary_md.empty?
-      File.write(path, new_text)
+      vocab = vocabulary_md.empty? ? nil : vocabulary_md.split("## Vocabulary", 2).last
+      TranscriptParser.write(path,
+        title: parsed.title,
+        description: parsed.description,
+        body: marked_body,
+        vocabulary: vocab)
 
       logger.log("Vocabulary re-annotated: #{File.basename(path)}")
     rescue => e

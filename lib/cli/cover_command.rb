@@ -7,6 +7,8 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "agents", "cover_agent")
+require_relative File.join(root, "lib", "transcript_parser")
+require_relative File.join(root, "lib", "cover_resolver")
 
 module PodgenCLI
   class CoverCommand
@@ -187,12 +189,11 @@ module PodgenCLI
       Dir.glob(pattern).sort.filter_map do |path|
         basename = File.basename(path, "_transcript.md")
 
-        if @missing_only && !Dir.glob(File.join(dir, "#{basename}_cover.*")).empty?
+        if @missing_only && CoverResolver.find_episode_cover(dir, basename)
           next
         end
 
-        first_line = File.foreach(path).first
-        title = first_line&.strip&.sub(/^#\s+/, "")
+        title = TranscriptParser.extract_title(path)
         next unless title && !title.empty?
 
         output = File.join(dir, "#{basename}_cover.jpg")

@@ -5,6 +5,7 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "transcription", "reconciler")
 require_relative File.join(root, "lib", "site_generator")
+require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "transcript_renderer")
 
 module PodgenCLI
@@ -87,25 +88,17 @@ module PodgenCLI
     end
 
     def process_transcript(path, logger:)
-      text = File.read(path)
-
-      parts = text.split("## Transcript", 2)
-      unless parts.length == 2
+      parsed = TranscriptParser.parse(path)
+      unless parsed.transcript_section
         logger.log("Skipping #{File.basename(path)}: no ## Transcript section")
         return
       end
 
-      header = parts.first
-      body = parts.last
-
-      # Preserve vocabulary section if present
-      body, vocab_section = split_vocabulary_section(body)
-
       # Parse vocab entries for re-marking after cleanup
-      vocab_entries = vocab_section ? parse_vocab_for_marking(vocab_section) : []
+      vocab_entries = parsed.vocabulary ? parse_vocab_for_marking(parsed.vocabulary) : []
 
       # Strip bold markers from previous vocabulary annotation
-      body = strip_bold_markers(body.strip)
+      body = strip_bold_markers(parsed.body)
 
       # Run through the formatting pipeline
       formatted = @reconciler.cleanup(body)
@@ -114,9 +107,11 @@ module PodgenCLI
       formatted = remark_vocab_words(formatted, vocab_entries) unless vocab_entries.empty?
 
       # Reassemble
-      new_text = header + "## Transcript\n\n" + formatted
-      new_text += "\n\n## Vocabulary\n" + vocab_section if vocab_section
-      File.write(path, new_text)
+      TranscriptParser.write(path,
+        title: parsed.title,
+        description: parsed.description,
+        body: formatted,
+        vocabulary: parsed.vocabulary)
 
       logger.log("Reformatted: #{File.basename(path)}")
     rescue => e
