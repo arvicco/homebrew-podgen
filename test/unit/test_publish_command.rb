@@ -374,6 +374,31 @@ class TestPublishCommand < Minitest::Test
     refute File.exist?(ts_path)
   end
 
+  # --- find_text_file ---
+
+  def test_find_text_file_prefers_transcript
+    File.write(File.join(@episodes_dir, "ep-2026-01-01_transcript.md"), "# T\n\n## Transcript\n\nBody")
+    File.write(File.join(@episodes_dir, "ep-2026-01-01_script.md"), "# S\n\nScript body")
+
+    cmd = build_command
+    result = cmd.send(:find_text_file, @episodes_dir, "ep-2026-01-01")
+    assert_equal File.join(@episodes_dir, "ep-2026-01-01_transcript.md"), result
+  end
+
+  def test_find_text_file_falls_back_to_script
+    File.write(File.join(@episodes_dir, "ep-2026-01-01_script.md"), "# S\n\nScript body")
+
+    cmd = build_command
+    result = cmd.send(:find_text_file, @episodes_dir, "ep-2026-01-01")
+    assert_equal File.join(@episodes_dir, "ep-2026-01-01_script.md"), result
+  end
+
+  def test_find_text_file_returns_nil_when_missing
+    cmd = build_command
+    result = cmd.send(:find_text_file, @episodes_dir, "ep-2026-01-01")
+    assert_nil result
+  end
+
   private
 
   StubPublishConfig = Struct.new(:episodes_dir, :name, :transcription_language,
