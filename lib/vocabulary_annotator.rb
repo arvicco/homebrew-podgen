@@ -659,6 +659,7 @@ class VocabularyAnnotator
         target_languages.each do |tl|
           translation = entry.dig(:translations, tl)
           definition = entry.dig(:definitions, tl)
+          next unless translation || definition
           def_line = "  - #{translation}"
           def_line += ". #{definition}" if definition
           lines << def_line
