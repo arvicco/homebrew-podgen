@@ -91,6 +91,40 @@ class DescriptionAgent
     description
   end
 
+  # Generates a story title from the transcript content.
+  # Returns generated title string, or nil on failure.
+  def generate_title(transcript:, language:)
+    return nil if transcript.to_s.strip.empty?
+
+    truncated = transcript[0, TRANSCRIPT_LIMIT]
+    log("Generating title from transcript (#{language}, #{truncated.length} chars)")
+
+    message, elapsed = measure_time do
+      @client.messages.create(
+        model: @model,
+        max_tokens: 256,
+        system: generate_title_system_prompt(language),
+        messages: [
+          { role: "user", content: truncated }
+        ]
+      )
+    end
+
+    result = message.content.first.text.strip
+    log_api_usage("Description generate_title", message, elapsed)
+
+    if result.empty?
+      log("Generated title was empty")
+      return nil
+    end
+
+    log("Title generated: \"#{result}\"")
+    result
+  rescue => e
+    log("Warning: Title generation failed: #{e.message} (non-fatal)")
+    nil
+  end
+
   # Generates a short description from the transcript for local file episodes.
   # Returns generated description string, or empty string on failure.
   def generate(title:, transcript:)
@@ -175,6 +209,15 @@ class DescriptionAgent
       Return ONLY the plot summary or content description — 1-3 sentences max.
       If there is no relevant content description, return the title as-is.
       Do not add any commentary, labels, or explanation. Output the cleaned text directly.
+    PROMPT
+  end
+
+  def generate_title_system_prompt(language)
+    <<~PROMPT
+      Generate a concise title for this #{language} story/episode based on the transcript.
+      The title should be in #{language} — like a book title on a library shelf.
+      Focus on the main character, event, or theme of the story.
+      Output only the title, nothing else. No quotes, no labels, no explanation.
     PROMPT
   end
 

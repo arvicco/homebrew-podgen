@@ -58,6 +58,30 @@ class TestDescriptionAgent < Minitest::Test
     assert_equal "Original desc", result
   end
 
+  # --- generate_title ---
+
+  def test_generate_title_returns_generated_title
+    agent = build_agent("Szczepan i smok")
+    result = agent.generate_title(transcript: "Dawno temu żył sobie chłopiec imieniem Szczepan...", language: "Polish")
+    assert_equal "Szczepan i smok", result
+  end
+
+  def test_generate_title_empty_transcript_returns_nil
+    agent = build_agent("anything")
+    assert_nil agent.generate_title(transcript: "", language: "Polish")
+    assert_nil agent.generate_title(transcript: nil, language: "Polish")
+  end
+
+  def test_generate_title_on_api_error_returns_nil
+    agent = build_agent_with_error
+    assert_nil agent.generate_title(transcript: "Some text", language: "Polish")
+  end
+
+  def test_generate_title_empty_result_returns_nil
+    agent = build_agent("")
+    assert_nil agent.generate_title(transcript: "Some text", language: "Polish")
+  end
+
   # --- generate ---
 
   def test_generate_returns_description
