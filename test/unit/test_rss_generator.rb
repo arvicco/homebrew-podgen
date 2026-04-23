@@ -514,6 +514,52 @@ class TestRssGenerator < Minitest::Test
     assert_includes xml, "<rss"
   end
 
+  # --- strip_markdown_links ---
+
+  def test_strip_markdown_links_removes_link_syntax
+    gen = build_generator
+    result = gen.send(:strip_markdown_links, "Read [this article](https://example.com) now")
+    assert_equal "Read this article now", result
+  end
+
+  def test_strip_markdown_links_handles_multiple_links
+    gen = build_generator
+    result = gen.send(:strip_markdown_links, "[A](url1) and [B](url2)")
+    assert_equal "A and B", result
+  end
+
+  def test_strip_markdown_links_passes_through_plain_text
+    gen = build_generator
+    result = gen.send(:strip_markdown_links, "No links here")
+    assert_equal "No links here", result
+  end
+
+  # --- extract_title_from_episode ---
+
+  def test_extract_title_from_episode_reads_transcript
+    File.write(File.join(@episodes_dir, "test-2026-01-01_transcript.md"),
+      "# Episode Title\n\nDescription\n\n## Transcript\n\nBody")
+
+    gen = build_generator
+    title = gen.send(:extract_title_from_episode, "test-2026-01-01.mp3")
+    assert_equal "Episode Title", title
+  end
+
+  def test_extract_title_from_episode_falls_back_to_script
+    File.write(File.join(@episodes_dir, "test-2026-01-01_script.md"),
+      "# Script Title\n\nContent here")
+
+    gen = build_generator
+    title = gen.send(:extract_title_from_episode, "test-2026-01-01.mp3")
+    assert_equal "Script Title", title
+  end
+
+  def test_extract_title_from_episode_returns_nil_when_no_file
+    gen = build_generator
+    title = gen.send(:extract_title_from_episode, "nonexistent-2026-01-01.mp3")
+    assert_nil title
+  end
+
   private
 
   def create_mp3(name, size)

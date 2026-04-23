@@ -211,6 +211,77 @@ class TestGenerateCommand < Minitest::Test
     end
   end
 
+  # --- inject_priority_links ---
+
+  def test_inject_priority_links_returns_unchanged_when_no_links_file
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+
+    # Point to nonexistent file — PriorityLinks will be empty
+    config = Struct.new(:links_path).new(File.join(@tmpdir, "nonexistent_links.md"))
+    cmd.instance_variable_set(:@config, config)
+
+    research = [{ topic: "AI", findings: [{ title: "Article", url: "https://example.com" }] }]
+    result_data, priority_urls = cmd.send(:inject_priority_links, research)
+
+    assert_equal 1, result_data.length
+    assert_equal "AI", result_data.first[:topic]
+    assert_empty priority_urls
+  end
+
+  def test_inject_priority_links_skips_on_dry_run
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, true)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+
+    links_path = File.join(@tmpdir, "links.md")
+    File.write(links_path, "- [Test](https://example.com) note\n")
+    config = Struct.new(:links_path).new(links_path)
+    cmd.instance_variable_set(:@config, config)
+
+    research = [{ topic: "AI", findings: [] }]
+    result_data, priority_urls = cmd.send(:inject_priority_links, research)
+
+    assert_equal 1, result_data.length
+    assert_empty priority_urls
+  end
+
+  # --- write_sources ---
+
+  def test_write_sources_writes_markdown_links
+    cmd = build_command
+    path = File.join(@tmpdir, "sources.md")
+    sources = [
+      { title: "Article A", url: "https://example.com/a?utm_source=test" },
+      { title: "Article B", url: "https://example.com/b" }
+    ]
+
+    File.open(path, "w") { |f| cmd.send(:write_sources, f, sources) }
+    content = File.read(path)
+
+    assert_includes content, "- [Article A](https://example.com/a)"
+    assert_includes content, "- [Article B](https://example.com/b)"
+    refute_includes content, "utm_source"
+  end
+
+  def test_write_sources_respects_max
+    cmd = build_command
+    path = File.join(@tmpdir, "sources.md")
+    sources = [
+      { title: "A", url: "https://a.com" },
+      { title: "B", url: "https://b.com" },
+      { title: "C", url: "https://c.com" }
+    ]
+
+    File.open(path, "w") { |f| cmd.send(:write_sources, f, sources, max: 2) }
+    content = File.read(path)
+
+    assert_includes content, "A"
+    assert_includes content, "B"
+    refute_includes content, "C"
+  end
+
   private
 
   class StubGenLogger
