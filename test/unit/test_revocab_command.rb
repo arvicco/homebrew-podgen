@@ -228,7 +228,7 @@ class TestRevocabCommand < Minitest::Test
   def build_stub_config
     Struct.new(:podcast_dir, :episodes_dir, :transcription_language,
                :vocabulary_level, :vocabulary_max, :vocabulary_filters,
-               :history_path, :title, :description,
+               :vocabulary_target_language, :history_path, :title, :description,
                :author, :languages, :base_url, :site_config, :type,
                keyword_init: true)
       .new(
@@ -238,6 +238,7 @@ class TestRevocabCommand < Minitest::Test
         vocabulary_level: "B2",
         vocabulary_max: nil,
         vocabulary_filters: {},
+        vocabulary_target_language: "English",
         history_path: File.join(@tmpdir, "history.yml"),
         title: "Test", description: nil, author: "Test",
         languages: ["sl"], base_url: nil, site_config: {},

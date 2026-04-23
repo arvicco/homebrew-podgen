@@ -321,6 +321,8 @@ class GuidelinesParser
         { frequency: value } if %w[common uncommon rare literary archaic].include?(value)
       when "similar"
         { similar: value }
+      when "target"
+        { target: value }
       when "filter"
         { filter: value }
       end

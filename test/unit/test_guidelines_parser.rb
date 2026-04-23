@@ -657,6 +657,25 @@ class TestGuidelinesParser < Minitest::Test
     refute parser.vocabulary_config.key?(:frequency)
   end
 
+  def test_parses_vocabulary_target_language
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+      - target: Polish
+    MD
+
+    assert_equal "Polish", parser.vocabulary_config[:target]
+  end
+
+  def test_vocabulary_target_defaults_to_nil_when_missing
+    parser = build_parser(<<~MD)
+      ## Vocabulary
+      - level: B2
+    MD
+
+    assert_nil parser.vocabulary_config[:target]
+  end
+
   # --- text accessor ---
 
   def test_text_returns_comment_stripped_guidelines

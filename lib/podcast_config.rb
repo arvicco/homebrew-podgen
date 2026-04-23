@@ -179,6 +179,10 @@ class PodcastConfig
     parser.vocabulary_config&.dig(:max)
   end
 
+  def vocabulary_target_language
+    parser.vocabulary_config&.dig(:target) || "English"
+  end
+
   def vocabulary_filters
     config = parser.vocabulary_config
     return {} unless config
