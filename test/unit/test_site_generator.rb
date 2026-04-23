@@ -111,7 +111,7 @@ class TestSiteGenerator < Minitest::Test
     File.write(path, "# Title\n\nDescription\n\n## Transcript\n\nFirst para.\n\nSecond para.")
 
     gen = build_generator
-    html = gen.send(:parse_transcript_html, path)
+    html, _langs = gen.send(:parse_transcript_html, path)
 
     assert_includes html, "<p>First para.</p>"
     assert_includes html, "<p>Second para.</p>"
@@ -124,7 +124,7 @@ class TestSiteGenerator < Minitest::Test
     File.write(path, "# Episode Title\n\n## Opening\n\nHello world.\n\n## Main\n\nContent here.")
 
     gen = build_generator
-    html = gen.send(:parse_transcript_html, path)
+    html, _langs = gen.send(:parse_transcript_html, path)
 
     assert_includes html, "<h2>Opening</h2>"
     assert_includes html, "<p>Hello world.</p>"
@@ -136,7 +136,7 @@ class TestSiteGenerator < Minitest::Test
     File.write(path, "# Title\n\n## Transcript\n\nText with <script>alert('xss')</script> inside.")
 
     gen = build_generator
-    html = gen.send(:parse_transcript_html, path)
+    html, _langs = gen.send(:parse_transcript_html, path)
 
     refute_includes html, "<script>"
     assert_includes html, "&lt;script&gt;"
@@ -147,7 +147,7 @@ class TestSiteGenerator < Minitest::Test
     File.write(path, "# Title\n\n## Opening\n\nHello world.\n\n## More info\n\n- [GPT-5 launches](https://example.com/gpt5)\n- [Bitcoin surges](https://example.com/btc)")
 
     gen = build_generator
-    html = gen.send(:parse_transcript_html, path)
+    html, _langs = gen.send(:parse_transcript_html, path)
 
     assert_includes html, "<h2>More info</h2>"
     assert_includes html, '<a href="https://example.com/gpt5" target="_blank" rel="noopener">GPT-5 launches</a>'
@@ -158,8 +158,12 @@ class TestSiteGenerator < Minitest::Test
 
   def test_parse_transcript_html_returns_nil_for_missing_file
     gen = build_generator
-    assert_nil gen.send(:parse_transcript_html, nil)
-    assert_nil gen.send(:parse_transcript_html, "/nonexistent.md")
+    html, langs = gen.send(:parse_transcript_html, nil)
+    assert_nil html
+    assert_nil langs
+    html, langs = gen.send(:parse_transcript_html, "/nonexistent.md")
+    assert_nil html
+    assert_nil langs
   end
 
   # --- generate ---
@@ -287,7 +291,7 @@ class TestSiteGenerator < Minitest::Test
     gen.generate
 
     index = File.read(File.join(@podcast_dir, "site", "index.html"))
-    refute_includes index, "lang-switcher"
+    refute_includes index, '<nav class="lang-switcher">'
   end
 
   # --- site customization ---
@@ -480,7 +484,10 @@ class TestSiteGenerator < Minitest::Test
     MD
 
     gen = build_generator
-    html = gen.send(:parse_transcript_html, path)
+    html, langs = gen.send(:parse_transcript_html, path)
+
+    # Single-language: no vocab_languages
+    assert_nil langs
 
     # Vocabulary section rendered as flat list
     assert_includes html, '<div class="vocabulary" id="vocabulary">'
@@ -499,10 +506,11 @@ class TestSiteGenerator < Minitest::Test
     File.write(path, "# Title\n\n## Transcript\n\nSimple text.")
 
     gen = build_generator
-    html = gen.send(:parse_transcript_html, path)
+    html, langs = gen.send(:parse_transcript_html, path)
 
     assert_includes html, "<p>Simple text.</p>"
     refute_includes html, "vocabulary"
+    assert_nil langs
   end
 
   def test_audio_elements_use_preload_metadata

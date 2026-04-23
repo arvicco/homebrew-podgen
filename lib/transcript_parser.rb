@@ -74,7 +74,14 @@ class TranscriptParser
     content += "#{description}\n\n" if description && !description.empty?
     content += "## Transcript\n\n"
     content += body.strip
-    content += "\n\n## Vocabulary\n\n#{vocabulary.strip}" if vocabulary && !vocabulary.strip.empty?
+    if vocabulary && !vocabulary.strip.empty?
+      v = vocabulary.strip
+      content += if v.start_with?("## Vocabulary")
+        "\n\n#{v}"
+      else
+        "\n\n## Vocabulary\n\n#{v}"
+      end
+    end
     content += "\n"
 
     File.write(path, content)

@@ -68,6 +68,19 @@
       if (a !== e.target) a.pause();
     });
   }, true);
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.vocab-lang-switcher button');
+    if (!btn) return;
+    var lang = btn.getAttribute('data-vocab-lang');
+    btn.closest('.vocab-lang-switcher').querySelectorAll('button').forEach(function(b) {
+      b.classList.toggle('active', b === btn);
+    });
+    document.querySelectorAll('[data-vocab-lang]').forEach(function(el) {
+      if (!el.closest('.vocab-lang-switcher')) {
+        el.classList.toggle('active', el.getAttribute('data-vocab-lang') === lang);
+      }
+    });
+  });
   </script>
 </body>
 </html>

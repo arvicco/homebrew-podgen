@@ -908,6 +908,133 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_equal ["se"], particles
   end
 
+  # --- multi-language build_vocabulary_section ---
+
+  def test_build_vocabulary_section_multi_language_heading
+    entries = [
+      { word: "abbracciare", lemma: "abbracciare", level: "B1", pos: "verb",
+        words: ["abbracciò"],
+        translations: { "English" => "to hug", "Russian" => "обнимать" },
+        definitions: { "English" => "To hold someone closely.", "Russian" => "Крепко держать кого-либо." } }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries, ["English", "Russian"])
+    assert_includes result, "## Vocabulary (English, Russian)"
+  end
+
+  def test_build_vocabulary_section_multi_language_indented_definitions
+    entries = [
+      { word: "abbracciò", lemma: "abbracciare", level: "B1", pos: "verb",
+        words: ["abbracciò"],
+        translations: { "English" => "to hug", "Russian" => "обнимать" },
+        definitions: { "English" => "To hold someone closely.", "Russian" => "Крепко держать кого-либо." } }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries, ["English", "Russian"])
+
+    # Should NOT have single-line format with —
+    refute_includes result, "— to hug"
+    # Should have indented definition lines
+    assert_includes result, "  - to hug. To hold someone closely."
+    assert_includes result, "  - обнимать. Крепко держать кого-либо."
+  end
+
+  def test_build_vocabulary_section_multi_language_no_dash_on_header_line
+    entries = [
+      { word: "gatto", lemma: "gatto", level: "A2", pos: "noun",
+        translations: { "English" => "cat", "Russian" => "кот" },
+        definitions: { "English" => "A feline.", "Russian" => "Домашнее животное." } }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries, ["English", "Russian"])
+
+    # Header line has no — or translation
+    header_line = result.lines.find { |l| l.include?("**gatto**") }
+    refute_includes header_line, "—"
+    refute_includes header_line, "cat"
+  end
+
+  def test_build_vocabulary_section_single_language_array_unchanged
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.",
+        translation: "institute", definition: "An organization." }
+    ]
+    result = @annotator.send(:build_vocabulary_section, entries, ["English"])
+    # Single language uses the old single-line format
+    assert_includes result, "## Vocabulary"
+    refute_includes result, "## Vocabulary ("
+    assert_includes result, "— institute. An organization."
+  end
+
+  # --- multi-language annotate integration ---
+
+  def test_annotate_multi_language_produces_multi_line_format
+    entries = [
+      { word: "gatto", lemma: "gatto", level: "A2", pos: "noun" }
+    ]
+    per_lang = {
+      "English" => [{ lemma: "gatto", translation: "cat", definition: "A feline." }],
+      "Russian" => [{ lemma: "gatto", translation: "кот", definition: "Домашнее животное." }]
+    }
+    stub_classify_multi(entries, per_lang) do
+      Tell::Espeak.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate("gatto", language: "Italian", cutoff: "A2",
+                                             target_languages: ["English", "Russian"])
+        assert_includes vocab, "## Vocabulary (English, Russian)"
+        assert_includes vocab, "  - cat. A feline."
+        assert_includes vocab, "  - кот. Домашнее животное."
+      end
+    end
+  end
+
+  def test_annotate_multi_language_still_marks_words
+    entries = [
+      { word: "gatto", lemma: "gatto", level: "A2", pos: "noun" }
+    ]
+    per_lang = {
+      "English" => [{ lemma: "gatto", translation: "cat", definition: "A feline." }],
+      "Russian" => [{ lemma: "gatto", translation: "кот", definition: "Домашнее животное." }]
+    }
+    stub_classify_multi(entries, per_lang) do
+      Tell::Espeak.stub(:supports?, false) do
+        marked, _vocab = @annotator.annotate("Il gatto dorme.", language: "Italian", cutoff: "A2",
+                                              target_languages: ["English", "Russian"])
+        assert_includes marked, "**gatto**"
+      end
+    end
+  end
+
+  def test_annotate_single_target_language_backward_compat
+    # When target_languages is a single-element array, output is identical to target_language: string
+    entries = [
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    stub_classify(entries) do
+      Tell::Espeak.stub(:supports?, false) do
+        _marked, vocab = @annotator.annotate("zavod", language: "sl", cutoff: "B1",
+                                             target_languages: ["English"])
+        assert_includes vocab, "## Vocabulary"
+        refute_includes vocab, "## Vocabulary ("
+        assert_includes vocab, "— institute"
+      end
+    end
+  end
+
+  # --- cognate filter with multi-language translations hash ---
+
+  def test_cognate_in_language_checks_translations_hash
+    entry = { lemma: "telefon",
+              translations: { "English" => "telephone", "Russian" => "телефон" },
+              similar_translations: {} }
+    # "English" is a target language, translation is a cognate
+    assert @annotator.send(:cognate_in_language?, entry, "English", "English")
+  end
+
+  def test_cognate_in_language_checks_translations_hash_non_target
+    entry = { lemma: "telefon",
+              translations: { "English" => "telephone", "Russian" => "телефон" },
+              similar_translations: {} }
+    # "Russian" is a target language, translation is a cognate (телефон → telefon)
+    assert @annotator.send(:cognate_in_language?, entry, "Russian", "English")
+  end
+
   # --- mark_words with reflexive particles ---
 
   def test_mark_words_does_not_bold_particle_in_different_phrase
@@ -1134,6 +1261,20 @@ class TestVocabularyAnnotator < Minitest::Test
 
     @annotator.stub(:classify_words, entries) do
       @annotator.stub(:enrich_entries, enrich_passthrough) do
+        yield
+      end
+    end
+  end
+
+  # Stub for multi-language tests. per_lang_enrichments maps target language →
+  # array of enrichment hashes (same format as call_enrich_api return value).
+  def stub_classify_multi(entries, per_lang_enrichments)
+    call_enrich_stub = lambda do |_entries, language:, target_language:, filters:|
+      per_lang_enrichments[target_language] || []
+    end
+
+    @annotator.stub(:classify_words, entries) do
+      @annotator.stub(:call_enrich_api, call_enrich_stub) do
         yield
       end
     end

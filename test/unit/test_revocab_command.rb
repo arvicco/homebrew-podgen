@@ -125,6 +125,18 @@ class TestRevocabCommand < Minitest::Test
     assert_equal "Just plain text, no sections.", File.read(path)
   end
 
+  # --- --date flag ---
+
+  def test_date_flag_sets_episode_id
+    cmd = PodgenCLI::RevocabCommand.new(["testpod", "--date", "2026-03-10"], {})
+    assert_equal "2026-03-10", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_date_flag_overrides_positional
+    cmd = PodgenCLI::RevocabCommand.new(["testpod", "2026-01-01", "--date", "2026-03-10"], {})
+    assert_equal "2026-03-10", cmd.instance_variable_get(:@episode_id)
+  end
+
   # --- dry run ---
 
   def test_dry_run_does_not_modify_files
@@ -228,7 +240,8 @@ class TestRevocabCommand < Minitest::Test
   def build_stub_config
     Struct.new(:podcast_dir, :episodes_dir, :transcription_language,
                :vocabulary_level, :vocabulary_max, :vocabulary_filters,
-               :vocabulary_target_language, :history_path, :title, :description,
+               :vocabulary_target_language, :vocabulary_target_languages,
+               :history_path, :title, :description,
                :author, :languages, :base_url, :site_config, :type,
                keyword_init: true)
       .new(
@@ -239,6 +252,7 @@ class TestRevocabCommand < Minitest::Test
         vocabulary_max: nil,
         vocabulary_filters: {},
         vocabulary_target_language: "English",
+        vocabulary_target_languages: ["English"],
         history_path: File.join(@tmpdir, "history.yml"),
         title: "Test", description: nil, author: "Test",
         languages: ["sl"], base_url: nil, site_config: {},
