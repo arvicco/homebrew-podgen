@@ -4,6 +4,7 @@ require "optparse"
 require "net/http"
 require "uri"
 require "json"
+require "open3"
 
 root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
@@ -11,6 +12,10 @@ require_relative File.join(root, "lib", "cli", "podcast_command")
 module PodgenCLI
   class ScheduleCommand
     include PodcastCommand
+
+    LAUNCH_AGENTS_DIR = File.join(Dir.home, "Library", "LaunchAgents")
+    LABEL_PREFIX = "com.podcastagent"
+    PLIST_BUDDY = "/usr/libexec/PlistBuddy"
 
     attr_reader :hour, :minute
 
@@ -21,12 +26,16 @@ module PodgenCLI
       @publish = false
       @telegram = false
       @test = false
+      @remove = false
+      @status = false
 
       OptionParser.new do |opts|
         opts.on("--time HH:MM", "Time to run in 24h format (default: 06:00)") { |t| parse_time!(t) }
         opts.on("--publish", "Run publish after successful generate") { @publish = true }
         opts.on("--telegram", "Send Telegram alert on failure") { @telegram = true }
         opts.on("--test", "Send a test Telegram message and exit") { @test = true }
+        opts.on("--remove", "Remove an installed scheduler") { @remove = true }
+        opts.on("--status", "Show scheduler status") { @status = true }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -35,6 +44,8 @@ module PodgenCLI
     def publish? = @publish
     def telegram? = @telegram
     def test? = @test
+    def remove? = @remove
+    def status? = @status
 
     def installer_args
       args = [@podcast_name, @hour.to_s, @minute.to_s]
@@ -44,10 +55,17 @@ module PodgenCLI
     end
 
     def run
+      if [@remove, @status, @test].count(true) > 1
+        $stderr.puts "Error: --remove, --status, and --test are mutually exclusive"
+        return 1
+      end
+
+      return remove_scheduler! if @remove
+      return show_status       if @status
+      return send_test_message if @test
+
       code = require_podcast!("schedule")
       return code if code
-
-      return send_test_message if @test
 
       return 1 unless valid_time?
 
@@ -55,7 +73,115 @@ module PodgenCLI
       exec("bash", script_path, *installer_args)
     end
 
+    # Pure parsers on launchctl output, exposed for unit tests.
+    def self.parse_last_exit_status(text)
+      m = text.match(/"LastExitStatus"\s*=\s*(-?\d+);/)
+      m ? m[1].to_i : nil
+    end
+
+    def self.parse_pid(text)
+      m = text.match(/"PID"\s*=\s*(\d+);/)
+      m ? m[1].to_i : nil
+    end
+
     private
+
+    def label
+      "#{LABEL_PREFIX}.#{@podcast_name}"
+    end
+
+    def plist_path
+      File.join(LAUNCH_AGENTS_DIR, "#{label}.plist")
+    end
+
+    def plist_exists?
+      File.exist?(plist_path)
+    end
+
+    # --- --remove ---
+
+    def remove_scheduler!
+      unless plist_exists?
+        $stderr.puts "No scheduler installed for #{@podcast_name}"
+        return 1
+      end
+      do_launchctl_unload(plist_path)
+      do_plist_delete(plist_path)
+      puts "Scheduler removed for #{@podcast_name}"
+      0
+    end
+
+    def do_launchctl_unload(path)
+      system("launchctl", "unload", path, out: File::NULL, err: File::NULL)
+    end
+
+    def do_plist_delete(path)
+      File.delete(path)
+    end
+
+    # --- --status ---
+
+    def show_status
+      unless plist_exists?
+        puts "#{@podcast_name}: no scheduler installed."
+        return 0
+      end
+
+      output = launchctl_list_output(label)
+      loaded = !output.nil?
+      pid = loaded ? self.class.parse_pid(output) : nil
+      exit_code = loaded ? self.class.parse_last_exit_status(output) : nil
+      mtime = log_mtime(plist_log_path)
+
+      puts "#{@podcast_name}:"
+      puts "  scheduled:       #{format('%02d:%02d', plist_hour, plist_minute)} daily"
+      puts "  loaded:          #{loaded ? 'yes' : 'no'}"
+      puts "  running:         #{pid ? "yes (PID #{pid})" : 'no'}"
+      puts "  last run:        #{format_last_run(mtime)}"
+      puts "  last exit code:  #{exit_code.nil? ? 'n/a' : exit_code}"
+      0
+    end
+
+    def plist_hour
+      plist_read(":StartCalendarInterval:Hour").to_i
+    end
+
+    def plist_minute
+      plist_read(":StartCalendarInterval:Minute").to_i
+    end
+
+    def plist_log_path
+      plist_read(":StandardOutPath")
+    end
+
+    def plist_read(key)
+      out, _, status = Open3.capture3(PLIST_BUDDY, "-c", "Print #{key}", plist_path)
+      status.success? ? out.strip : nil
+    end
+
+    def launchctl_list_output(label)
+      out, _, status = Open3.capture3("launchctl", "list", label)
+      status.success? ? out : nil
+    end
+
+    def log_mtime(path)
+      return nil unless path && !path.empty? && File.exist?(path)
+      File.mtime(path)
+    end
+
+    def format_last_run(mtime)
+      return "never" unless mtime
+      "#{mtime.strftime('%Y-%m-%d %H:%M:%S')} (#{humanize_ago(Time.now - mtime)})"
+    end
+
+    def humanize_ago(seconds)
+      return "just now" if seconds < 60
+      return "#{(seconds / 60).to_i}m ago" if seconds < 3600
+      return "#{(seconds / 3600).to_i}h ago" if seconds < 86_400
+      "#{(seconds / 86_400).to_i}d ago"
+    end
+
+    # --- --test (existing) ---
 
     def parse_time!(str)
       match = str.match(/\A(\d{1,2}):(\d{2})\z/)
