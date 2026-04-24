@@ -104,9 +104,10 @@
     });
   });
   // Vocab tooltip on touch: first tap previews, second tap navigates.
-  // Gated by matchMedia so desktop :hover behavior is untouched.
+  // Gated by pointerType on the click event itself — works on pure-touch
+  // devices AND hybrids (laptop with touch screen, iPad with trackpad).
   document.addEventListener('click', function(e) {
-    if (!window.matchMedia('(hover: none)').matches) return;
+    if (e.pointerType !== 'touch') return;
     var word = e.target.closest('.vocab-word');
     if (word) {
       if (!word.classList.contains('show-tip')) {
