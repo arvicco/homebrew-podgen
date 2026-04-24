@@ -18,7 +18,7 @@
     <a href="<%= ep[:page_path] %>"><img class="episode-thumb" src="<%= ep[:thumb_url] %>" alt=""></a>
 <% end %>
     <div class="episode-content">
-      <div class="episode-meta"><%= ep[:date] %><% if ep[:duration] && site_config.fetch(:show_duration, true) %> &middot; <%= ep[:duration] %><% end %></div>
+      <div class="episode-meta"><%= ep[:date] %><% if ep[:duration] && site_config.fetch(:show_duration, true) %> &middot; <%= ep[:duration] %><% end %> <select class="speed-selector"></select></div>
       <a class="episode-title" href="<%= ep[:page_path] %>"><%= ep[:title] %></a>
       <audio controls preload="metadata" src="<%= ep[:audio_url] %>"></audio>
     </div>
