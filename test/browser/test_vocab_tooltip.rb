@@ -25,41 +25,34 @@ class VocabTooltipTest < BrowserTest
     @file = render_fixture(body: TRANSCRIPT_BODY, title: "Vocab Tooltip Test")
   end
 
-  # --- matchMedia emulation -------------------------------------------------
-  # CDP's Emulation.setEmulatedMedia doesn't reliably flip window.matchMedia
-  # under Cuprite/Ferrum, so we override the JS function directly. This tests
-  # the code path that runs on real mobile browsers (where matchMedia returns
-  # true for '(hover: none)').
+  # --- touch input via CDP --------------------------------------------------
+  # Dispatch real touch events through Chromium's input pipeline. This produces
+  # trusted click events with pointerType === 'touch', the same way a finger
+  # tap on a real mobile browser does. No mocks on window.matchMedia or
+  # pointerType — we exercise the genuine code path.
 
-  def set_mobile_mode
-    override_match_media(hover: "none", pointer: "coarse")
+  def tap_vocab(word)
+    tap_at_selector(".vocab-word[href=\"#vocab-#{word}\"]")
   end
 
-  def set_desktop_mode
-    override_match_media(hover: "hover", pointer: "fine")
-  end
-
-  def override_match_media(hover:, pointer:)
-    execute_script(<<~JS)
+  def tap_at_selector(selector)
+    coords = evaluate_script(<<~JS)
       (function() {
-        var overrides = {
-          '(hover: #{hover})': true,
-          '(hover: none)': #{hover == "none"},
-          '(pointer: #{pointer})': true,
-          '(pointer: coarse)': #{pointer == "coarse"}
-        };
-        var original = window.__origMatchMedia || window.matchMedia;
-        window.__origMatchMedia = original;
-        window.matchMedia = function(q) {
-          if (q in overrides) {
-            return { matches: overrides[q], media: q,
-                     addEventListener: function() {}, removeEventListener: function() {},
-                     addListener: function() {}, removeListener: function() {} };
-          }
-          return original.call(window, q);
-        };
-      })();
+        var el = document.querySelector(#{selector.to_json});
+        if (!el) return null;
+        var r = el.getBoundingClientRect();
+        return [r.left + r.width/2, r.top + r.height/2];
+      })()
     JS
+    raise "could not locate #{selector}" unless coords
+    x, y = coords
+    touch("touchStart", x, y)
+    touch("touchEnd",   x, y)
+  end
+
+  def touch(type, x, y)
+    points = (type == "touchEnd") ? [] : [{ x: x, y: y }]
+    page.driver.browser.page.command("Input.dispatchTouchEvent", type: type, touchPoints: points)
   end
 
   # --- helpers --------------------------------------------------------------
@@ -76,28 +69,25 @@ class VocabTooltipTest < BrowserTest
     URI.parse(current_url).fragment
   end
 
-  # --- desktop regression guards -------------------------------------------
+  # --- desktop regression guards (real mouse click) ------------------------
 
   def test_desktop_hover_shows_exactly_one_tooltip
     visit "/#{@file}"
-    set_desktop_mode
     find(".vocab-word", text: "alpha").hover
     assert_equal 1, visible_tooltip_count, "exactly one bubble should be visible on hover"
   end
 
-  def test_desktop_click_navigates_to_vocab_anchor
+  def test_desktop_mouse_click_navigates_to_vocab_anchor
     visit "/#{@file}"
-    set_desktop_mode
     find(".vocab-word", text: "alpha").click
     assert_equal "vocab-alpha", hash_fragment
   end
 
-  # --- mobile / touch behavior (failing until Phase 3) ---------------------
+  # --- mobile / touch behavior via real touch events -----------------------
 
   def test_touch_first_tap_shows_tooltip_without_navigation
     visit "/#{@file}"
-    set_mobile_mode
-    find(".vocab-word", text: "alpha").click
+    tap_vocab("alpha")
     assert_nil hash_fragment, "URL should not acquire anchor on first tap"
     assert has_selector?(".vocab-word.show-tip", text: "alpha"),
            "tapped word should have show-tip class"
@@ -105,30 +95,26 @@ class VocabTooltipTest < BrowserTest
 
   def test_touch_second_tap_on_same_word_navigates
     visit "/#{@file}"
-    set_mobile_mode
-    word = find(".vocab-word", text: "alpha")
-    word.click
+    tap_vocab("alpha")
     assert_nil hash_fragment, "first tap must not navigate"
-    word.click
+    tap_vocab("alpha")
     assert_equal "vocab-alpha", hash_fragment
   end
 
   def test_touch_tap_outside_closes_tooltip
     visit "/#{@file}"
-    set_mobile_mode
-    find(".vocab-word", text: "alpha").click
+    tap_vocab("alpha")
     assert has_selector?(".vocab-word.show-tip", text: "alpha"),
            "show-tip must be set after first tap (precondition)"
-    find("#outside").click
+    tap_at_selector("#outside")
     refute has_selector?(".vocab-word.show-tip"),
            "tapping outside should clear show-tip"
   end
 
   def test_touch_tap_on_different_word_switches_tooltip
     visit "/#{@file}"
-    set_mobile_mode
-    find(".vocab-word", text: "alpha").click
-    find(".vocab-word", text: "beta").click
+    tap_vocab("alpha")
+    tap_vocab("beta")
     assert has_selector?(".vocab-word.show-tip", text: "beta"),
            "second word should now have show-tip"
     refute has_selector?(".vocab-word.show-tip", text: "alpha"),
