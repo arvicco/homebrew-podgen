@@ -72,8 +72,9 @@ fi
 launchctl load "$PLIST_DEST"
 
 echo "Scheduler installed and loaded."
-echo "Verify with: launchctl list | grep podcastagent"
 echo
-echo "To uninstall:"
-echo "  launchctl unload $PLIST_DEST"
-echo "  rm $PLIST_DEST"
+echo "Check status:"
+echo "  podgen schedule $PODCAST_NAME --status"
+echo
+echo "Remove:"
+echo "  podgen schedule $PODCAST_NAME --remove"
