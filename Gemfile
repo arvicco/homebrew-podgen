@@ -25,4 +25,6 @@ group :test do
   gem "minitest",  "~> 5.25"
   gem "rake",      "~> 13.2"
   gem "rack-test", "~> 2.2"   # HTTP testing for Sinatra endpoints
+  gem "capybara",  "~> 3.40"  # Browser test DSL for test/browser/
+  gem "cuprite",   "~> 0.15"  # Headless Chrome driver (CDP, no Selenium)
 end
