@@ -214,6 +214,8 @@ class GuidelinesParser
         { key.to_sym => sanitize_css(value) }
       when "footer"
         { footer: value }
+      when "playback_speed"
+        { playback_speed: value.to_f }
       when "show_duration", "show_transcript"
         { key.to_sym => value != "false" }
       end

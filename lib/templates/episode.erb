@@ -8,7 +8,7 @@
 <% end %>
     <div class="header-text">
       <h1><%= episode_title %></h1>
-      <div class="meta"><%= episode_date %><% if episode_duration && site_config.fetch(:show_duration, true) %> &middot; <%= episode_duration %><% end %><% if has_vocabulary %> &middot; <a class="vocab-link" href="#vocabulary">&#x1F4D6; Vocabulary</a><% if vocab_languages %> <span class="vocab-lang-switcher"><% vocab_languages.each_with_index do |lang, i| %><button<%= i == 0 ? ' class="active"' : '' %> data-vocab-lang="<%= lang %>"><%= lang[0..1].upcase %></button><% end %></span><% end %><% end %></div>
+      <div class="meta"><%= episode_date %><% if episode_duration && site_config.fetch(:show_duration, true) %> &middot; <%= episode_duration %><% end %><% if has_vocabulary %> &middot; <a class="vocab-link" href="#vocabulary">&#x1F4D6; Vocabulary</a><% if vocab_languages %> <span class="vocab-lang-switcher"><% vocab_languages.each_with_index do |lang, i| %><button<%= i == 0 ? ' class="active"' : '' %> data-vocab-lang="<%= lang %>"><%= lang[0..1].upcase %></button><% end %></span><% end %><% end %><select class="speed-selector"></select></div>
       <audio controls preload="metadata" src="<%= audio_url %>"></audio>
     </div>
   </div>

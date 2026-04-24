@@ -68,6 +68,28 @@
       if (a !== e.target) a.pause();
     });
   }, true);
+  (function() {
+    var speeds = [0.75, 0.8, 0.85, 0.9, 0.95, 1, 1.1, 1.2];
+    var def = <%= site_config.fetch(:playback_speed, 1) %>;
+    var saved = parseFloat(localStorage.getItem('playbackRate')) || def;
+    document.querySelectorAll('audio').forEach(function(a) { a.playbackRate = saved; });
+    document.querySelectorAll('.speed-selector').forEach(function(sel) {
+      speeds.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s === 1 ? '1x' : s + 'x';
+        if (s === saved) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+    document.addEventListener('change', function(e) {
+      if (!e.target.classList.contains('speed-selector')) return;
+      var rate = parseFloat(e.target.value);
+      localStorage.setItem('playbackRate', rate);
+      document.querySelectorAll('audio').forEach(function(a) { a.playbackRate = rate; });
+      document.querySelectorAll('.speed-selector').forEach(function(s) { s.value = rate; });
+    });
+  })();
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.vocab-lang-switcher button');
     if (!btn) return;
