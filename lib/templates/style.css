@@ -101,6 +101,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .vocab-tip .pos { color: var(--fg-muted); font-weight: normal; font-size: 0.8rem; }
 .vocab-tip-def { display: block; margin-top: 0.25rem; color: var(--fg-muted); }
 .vocab-word:hover .vocab-tip { display: block; }
+.vocab-word.show-tip .vocab-tip { display: block; }
 
 .vocabulary { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
 .vocabulary h2 { font-size: 1.25rem; margin-bottom: 1rem; }

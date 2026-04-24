@@ -103,6 +103,25 @@
       }
     });
   });
+  // Vocab tooltip on touch: first tap previews, second tap navigates.
+  // Gated by matchMedia so desktop :hover behavior is untouched.
+  document.addEventListener('click', function(e) {
+    if (!window.matchMedia('(hover: none)').matches) return;
+    var word = e.target.closest('.vocab-word');
+    if (word) {
+      if (!word.classList.contains('show-tip')) {
+        e.preventDefault();
+        document.querySelectorAll('.vocab-word.show-tip').forEach(function(w) {
+          if (w !== word) w.classList.remove('show-tip');
+        });
+        word.classList.add('show-tip');
+      }
+    } else {
+      document.querySelectorAll('.vocab-word.show-tip').forEach(function(w) {
+        w.classList.remove('show-tip');
+      });
+    }
+  });
   </script>
 </body>
 </html>
