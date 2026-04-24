@@ -9,3 +9,4 @@ vendor/bundle/
 *.code-workspace
 podcasts/*/
 !podcasts/ruby_world/
+.claude/worktrees/
