@@ -47,6 +47,7 @@ GEM
       websocket-driver (~> 0.7)
     ffi (1.17.3)
     ffi (1.17.3-arm64-darwin)
+    ffi (1.17.3-x86_64-linux-gnu)
     ffi-icu (0.5.3)
       ffi (~> 1.0, >= 1.0.9)
     google-apis-core (1.0.2)
@@ -92,6 +93,8 @@ GEM
       uri (>= 0.11.1)
     nio4r (2.7.5)
     nokogiri (1.19.2-arm64-darwin)
+      racc (~> 1.4)
+    nokogiri (1.19.2-x86_64-linux-gnu)
       racc (~> 1.4)
     os (1.1.4)
     pstore (0.2.1)
@@ -154,6 +157,7 @@ GEM
 PLATFORMS
   arm64-darwin-24
   arm64-darwin-25
+  x86_64-linux
 
 DEPENDENCIES
   anthropic (~> 1.21)
@@ -201,6 +205,7 @@ CHECKSUMS
   ferrum (0.17.2) sha256=2c2540a850b211a46f4d81de21bfd62048f507e4c327d1807225c3823c17e6ee
   ffi (1.17.3) sha256=0e9f39f7bb3934f77ad6feab49662be77e87eedcdeb2a3f5c0234c2938563d4c
   ffi (1.17.3-arm64-darwin) sha256=0c690555d4cee17a7f07c04d59df39b2fba74ec440b19da1f685c6579bb0717f
+  ffi (1.17.3-x86_64-linux-gnu) sha256=3746b01f677aae7b16dc1acb7cb3cc17b3e35bdae7676a3f568153fb0e2c887f
   ffi-icu (0.5.3) sha256=9881e8a60a45c79d22fc78b0ea817873589a9c0dd452e39ce6ff075ee83bf11c
   google-apis-core (1.0.2) sha256=ba4579aaadc902d6cc7bc8db88f566ab00f5e31ea87ab41e9f9a032c470f2629
   google-apis-youtube_v3 (0.63.0) sha256=c9609ba570375932ef376c9c08ae917fc982f2d6351922a0d1b74d83a38e57ec
@@ -221,6 +226,7 @@ CHECKSUMS
   net-http (0.9.1) sha256=25ba0b67c63e89df626ed8fac771d0ad24ad151a858af2cc8e6a716ca4336996
   nio4r (2.7.5) sha256=6c90168e48fb5f8e768419c93abb94ba2b892a1d0602cb06eef16d8b7df1dca1
   nokogiri (1.19.2-arm64-darwin) sha256=58d8ea2e31a967b843b70487a44c14c8ba1866daa1b9da9be9dbdf1b43dee205
+  nokogiri (1.19.2-x86_64-linux-gnu) sha256=fa8feca882b73e871a9845f3817a72e9734c8e974bdc4fbad6e4bc6e8076b94f
   os (1.1.4) sha256=57816d6a334e7bd6aed048f4b0308226c5fb027433b67d90a9ab435f35108d3f
   pstore (0.2.1) sha256=03904d0f2c66579e96d1e6704cdabc0c88df7ea8ed8782d9f3569f6f6c702c1a
   public_suffix (7.0.5) sha256=1a8bb08f1bbea19228d3bed6e5ed908d1cb4f7c2726d18bd9cadf60bc676f623
