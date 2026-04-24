@@ -22,6 +22,11 @@ namespace :test do
     t.libs << "test"
     t.test_files = FileList["test/api/*test*.rb"]
   end
+
+  Rake::TestTask.new(:browser) do |t|
+    t.libs << "test"
+    t.test_files = FileList["test/browser/*test*.rb"]
+  end
 end
 
 task default: :test
