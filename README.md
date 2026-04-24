@@ -109,7 +109,7 @@ ruby bin/podgen <command> [options]
 | `podgen cover <podcast> [episode]`    | Generate episode cover images                            |
 | `podgen fork <old> <new>`             | Fork podcast into a new namespace                        |
 | `podgen test <name>`                  | Run a component test (research, hn, rss, tts, etc.)      |
-| `podgen schedule <podcast>`           | Install a daily launchd scheduler                        |
+| `podgen schedule <podcast>`           | Install, remove, or inspect a daily launchd scheduler    |
 
 Per-command flags are documented in the dedicated sections below (e.g. [Generate command](#generate-command-options), [Publish command](#publishing-to-cloudflare-r2)).
 
@@ -916,21 +916,30 @@ podgen schedule fulgur_news --time 18:00 --publish --telegram
 | `--publish`    | Run `podgen publish` after a successful generate       |
 | `--telegram`   | Send Telegram alert on generate or publish failure     |
 | `--test`       | Send a test Telegram message and exit                  |
+| `--remove`     | Unload and delete the scheduler for this podcast       |
+| `--status`     | Report scheduled time, loaded/running state, last run  |
 
-`--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast). Use `--test` after setup to verify alerts are working.
+`--remove`, `--status`, and `--test` are mutually exclusive. `--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast). Use `--test` after setup to verify alerts are working.
 
-Verify it's loaded:
-
-```bash
-launchctl list | grep podcastagent
-```
-
-To uninstall:
+Check status of an installed scheduler:
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.podcastagent.<podcast_name>.plist
-rm ~/Library/LaunchAgents/com.podcastagent.<podcast_name>.plist
+podgen schedule ruby_world --status
+# ruby_world:
+#   scheduled:       06:00 daily
+#   loaded:          yes
+#   running:         yes (PID 12345)
+#   last run:        2026-04-23 06:00:14 (1d 5h ago)
+#   last exit code:  0
 ```
+
+Remove a scheduler:
+
+```bash
+podgen schedule ruby_world --remove
+```
+
+`--remove` and `--status` do not require the podcast directory to still exist, so you can clean up schedulers for deleted podcasts.
 
 **Note:** macOS must be awake at the scheduled time. Keep the machine plugged in and disable sleep, or use `caffeinate`.
 
