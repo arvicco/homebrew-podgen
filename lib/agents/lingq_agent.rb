@@ -36,7 +36,6 @@ class LingQAgent
     }
     body[:collection] = collection if collection
     body[:level] = level.to_s if level
-    body[:tags] = tags if tags&.any?
     body[:accent] = accent if accent
     body[:description] = description if description
     body[:originalUrl] = original_url if original_url
@@ -50,6 +49,9 @@ class LingQAgent
 
     elapsed = (Time.now - start).round(2)
     log("Lesson created: ID #{lesson_id} (#{elapsed}s)")
+
+    # Set tags via PATCH (multipart form sends tags[] which LingQ ignores)
+    patch_tags(language, lesson_id, tags) if tags&.any?
 
     # Trigger timestamp generation (non-fatal)
     generate_timestamps(language, lesson_id)
@@ -87,6 +89,22 @@ class LingQAgent
     end
   end
 
+  def patch_tags(language, lesson_id, tags)
+    url = "#{BASE_URL}/v3/#{language}/lessons/#{lesson_id}/"
+    response = HTTParty.patch(
+      url,
+      headers: {
+        "Authorization" => "Token #{@api_key}",
+        "Content-Type" => "application/json"
+      },
+      body: { tags: tags }.to_json,
+      timeout: 30
+    )
+    log("Tags set: #{tags.join(', ')}") if response.code.between?(200, 299)
+  rescue => e
+    log("Warning: setting tags failed: #{e.message} (non-fatal)")
+  end
+
   def generate_timestamps(language, lesson_id)
     url = "#{BASE_URL}/v3/#{language}/lessons/#{lesson_id}/timestamps/"
     log("Requesting timestamp generation for lesson #{lesson_id}")
@@ -98,6 +116,7 @@ class LingQAgent
           "Authorization" => "Token #{@api_key}",
           "Content-Type" => "application/json"
         },
+        body: "[]",
         timeout: 30
       )
 
@@ -107,7 +126,7 @@ class LingQAgent
       when *RETRIABLE_CODES
         raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
       else
-        log("Warning: timestamp generation returned HTTP #{response.code} (non-fatal)")
+        log("Warning: timestamp generation returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
       end
     end
   rescue => e
