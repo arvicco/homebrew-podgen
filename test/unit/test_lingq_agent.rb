@@ -123,6 +123,8 @@ class TestLingQAgent < Minitest::Test
         99
       end
       agent.define_singleton_method(:generate_timestamps) { |_lang, _id| }
+      patched_tags = nil
+      agent.define_singleton_method(:patch_tags) { |_lang, _id, tags| patched_tags = tags }
 
       agent.upload(
         title: "Lesson",
@@ -141,7 +143,7 @@ class TestLingQAgent < Minitest::Test
 
       assert_equal "col-123", posted_body[:collection]
       assert_equal "3", posted_body[:level]
-      assert_equal ["podcast", "japanese"], posted_body[:tags]
+      assert_equal ["podcast", "japanese"], patched_tags
       assert_equal "tokyo", posted_body[:accent]
       assert_equal "shared", posted_body[:status]
       assert_equal "A podcast episode", posted_body[:description]
