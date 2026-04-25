@@ -15,18 +15,21 @@ module PodgenCLI
   class CoverCommand
     include PodcastCommand
 
+    CANDIDATE_GLOB = "*_cover[0-9]*.*"
+
     def initialize(args, options)
       @options = options
       @output_path = nil
       @missing_only = false
       @image = nil
+      @clear_candidates = false
       @overrides = {}
 
       OptionParser.new do |opts|
         opts.banner = "Usage: podgen cover <podcast> [options]"
         opts.separator ""
         opts.on("--missing-only", "Only generate covers for episodes without one") { @missing_only = true }
-        opts.on("--image PATH", "Image file path, or 'last' for latest ~/Desktop screenshot") { |v| @image = v }
+        opts.on("--image PATH", "Image file path, 'last' for latest ~/Desktop screenshot, or 'auto' to search") { |v| @image = v }
         opts.on("--base-image PATH", "Override base image") { |v| @overrides[:base_image] = v }
         opts.on("--output PATH", "Output file path") { |v| @output_path = v }
         opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
@@ -37,6 +40,7 @@ module PodgenCLI
         opts.on("--gravity POS", "Override gravity (Center, South, etc.)") { |v| @overrides[:gravity] = v }
         opts.on("--x-offset N", Integer, "Override horizontal offset") { |v| @overrides[:x_offset] = v }
         opts.on("--y-offset N", Integer, "Override vertical offset") { |v| @overrides[:y_offset] = v }
+        opts.on("--clear-candidates", "Remove _cover{N}.* candidate files (one podcast or all)") { @clear_candidates = true }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -46,6 +50,8 @@ module PodgenCLI
     end
 
     def run
+      return run_clear_candidates if @clear_candidates
+
       code = require_podcast!("cover")
       return code if code
 
@@ -167,6 +173,28 @@ module PodgenCLI
     rescue => e
       $stderr.puts "Cover generation failed: #{e.message}"
       1
+    end
+
+    def run_clear_candidates
+      podcasts = @podcast_name ? [@podcast_name] : PodcastConfig.available
+      total = 0
+      podcasts.each do |name|
+        episodes_dir = File.join(PodcastConfig.root, "output", name, "episodes")
+        next unless Dir.exist?(episodes_dir)
+
+        files = Dir.glob(File.join(episodes_dir, CANDIDATE_GLOB))
+        next if files.empty?
+
+        if @dry_run
+          files.each { |f| puts "  [dry-run] would remove #{f}" }
+        else
+          files.each { |f| File.delete(f) }
+          puts "#{name}: removed #{files.length} candidate file(s)"
+        end
+        total += files.length
+      end
+      puts "Removed #{total} candidate file(s) total" unless @dry_run
+      0
     end
 
     def run_auto_image_mode(config, episodes)
