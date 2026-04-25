@@ -45,13 +45,14 @@ class ImageRanker
 
     annotated = candidates.each_with_index.map do |c, i|
       r = parsed.find { |row| row["index"] == i } || {}
-      score = r["fits_fairytale_cover"].to_i + r["matches_episode_description"].to_i
-      vetoed = r["has_watermark"] || r["composition_ok"] == false
+      score = r["visual_quality"].to_i + r["subject_match"].to_i
+      vetoed = r["has_overlay_watermark"] == true
       c.merge(
         score: score,
+        visual_quality: r["visual_quality"].to_i,
+        subject_match: r["subject_match"].to_i,
         has_title_text: r["has_title_text"] == true,
-        has_watermark: r["has_watermark"] == true,
-        composition_ok: r["composition_ok"] != false,
+        has_overlay_watermark: r["has_overlay_watermark"] == true,
         reasons: r["reasons"].to_s,
         vetoed: !!vetoed
       )
@@ -88,13 +89,24 @@ class ImageRanker
       Episode title: #{title}
       Episode description: #{description.to_s.empty? ? "(none)" : description}
 
-      For each image evaluate:
-      1. fits_fairytale_cover (1-10): Does it look like illustration suitable for a children's fairytale podcast cover? Higher for evocative illustrations; lower for stock photos, screenshots, clipart, or unrelated content.
-      2. matches_episode_description (1-10): How well does the image content match the episode title and description?
-      3. has_title_text (boolean): Does the image already contain visible text matching or related to the episode title? (Bonus if true.)
-      4. has_watermark (boolean): Does the image contain a watermark, logo overlay, or copyright notice that would be ugly on a cover? (Veto if true.)
-      5. composition_ok (boolean): Is the composition usable for a square or near-square cover — clear focal point, not extreme aspect ratio, not visually cluttered? (Veto if false.)
-      6. reasons: one short sentence explaining your scoring.
+      For each image, score:
+      1. visual_quality (1-10): How clean is the image as a finished piece of cover artwork?
+         HIGH (8-10): clean rendered illustration, sharp resolution, no JPEG artifacts, no
+         visible damage or wear, professional finish.
+         LOW (1-4): low-res scan, faded or worn document, photo of physical media (book on
+         a shelf, CD on a basket, magazine on a table), screenshot artifacts, busy
+         real-world photographic background, heavy noise, or dog-eared/scuffed edges.
+      2. subject_match (1-10): How well does the depicted content match the episode title
+         and description?
+      3. has_title_text (boolean): Does the image already contain visible text matching the
+         episode title? (Bonus if true.)
+      4. has_overlay_watermark (boolean): Is there a REPEATING watermark pattern — the same
+         logo or text tiled across the image, or a translucent overlay covering most of the
+         artwork? Veto if true.
+         IMPORTANT: small corner logos, attribution lines, theatre/publisher branding in
+         the corners, or letterbox bars are NOT watermarks. Only flag a tiled/repeating
+         watermark or a centered translucent stamp covering the artwork.
+      5. reasons: one short sentence explaining your scoring.
     TEXT
   end
 
@@ -105,11 +117,10 @@ class ImageRanker
         "rankings": [
           {
             "index": 0,
-            "fits_fairytale_cover": 8,
-            "matches_episode_description": 9,
+            "visual_quality": 8,
+            "subject_match": 9,
             "has_title_text": false,
-            "has_watermark": false,
-            "composition_ok": true,
+            "has_overlay_watermark": false,
             "reasons": "..."
           }
         ]

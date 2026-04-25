@@ -22,9 +22,9 @@ class TestAutoCoverResolver < Minitest::Test
 
   def test_returns_winner_when_top_score_above_threshold
     ranked = [
-      @candidates[0].merge(score: 18, has_title_text: true,  has_watermark: false, composition_ok: true,  vetoed: false, reasons: ""),
-      @candidates[1].merge(score: 14, has_title_text: false, has_watermark: false, composition_ok: true,  vetoed: false, reasons: ""),
-      @candidates[2].merge(score: 10, has_title_text: false, has_watermark: false, composition_ok: true,  vetoed: false, reasons: "")
+      @candidates[0].merge(score: 18, has_title_text: true,  has_overlay_watermark: false, vetoed: false, reasons: ""),
+      @candidates[1].merge(score: 14, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: ""),
+      @candidates[2].merge(score: 10, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: "")
     ]
     result = build_resolver(@candidates, ranked).try(
       title: "T", description: "D", episodes_dir: @episodes_dir, basename: @basename
@@ -39,9 +39,9 @@ class TestAutoCoverResolver < Minitest::Test
 
   def test_returns_no_winner_when_top_score_below_threshold
     ranked = [
-      @candidates[0].merge(score: 10, has_title_text: false, has_watermark: false, composition_ok: true, vetoed: false, reasons: ""),
-      @candidates[1].merge(score:  8, has_title_text: false, has_watermark: false, composition_ok: true, vetoed: false, reasons: ""),
-      @candidates[2].merge(score:  6, has_title_text: false, has_watermark: false, composition_ok: true, vetoed: false, reasons: "")
+      @candidates[0].merge(score: 10, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: ""),
+      @candidates[1].merge(score:  8, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: ""),
+      @candidates[2].merge(score:  6, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: "")
     ]
     result = build_resolver(@candidates, ranked, config: { auto_cover_min_score: 14 }).try(
       title: "T", description: "D", episodes_dir: @episodes_dir, basename: @basename
@@ -55,9 +55,9 @@ class TestAutoCoverResolver < Minitest::Test
 
   def test_returns_no_winner_when_top_is_vetoed
     ranked = [
-      @candidates[0].merge(score: 20, has_title_text: false, has_watermark: true,  composition_ok: true,  vetoed: true,  reasons: "watermark"),
-      @candidates[1].merge(score: 10, has_title_text: false, has_watermark: false, composition_ok: true,  vetoed: false, reasons: "ok"),
-      @candidates[2].merge(score:  8, has_title_text: false, has_watermark: false, composition_ok: true,  vetoed: false, reasons: "ok")
+      @candidates[0].merge(score: 20, has_title_text: false, has_overlay_watermark: true, vetoed: true, reasons: "watermark"),
+      @candidates[1].merge(score: 10, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: "ok"),
+      @candidates[2].merge(score:  8, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: "ok")
     ]
     # Note: ImageRanker normally sorts vetoed last; here the test passes them
     # in (presumably already-sorted) order to reflect the resolver's contract.
@@ -82,7 +82,7 @@ class TestAutoCoverResolver < Minitest::Test
     @candidates[1][:ext] = ".png"
 
     ranked = @candidates.each_with_index.map do |c, i|
-      c.merge(score: 18 - i, has_title_text: false, has_watermark: false, composition_ok: true, vetoed: false, reasons: "")
+      c.merge(score: 18 - i, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: "")
     end
     result = build_resolver(@candidates, ranked).try(
       title: "T", description: "D", episodes_dir: @episodes_dir, basename: @basename
@@ -121,9 +121,9 @@ class TestAutoCoverResolver < Minitest::Test
 
   def test_cleans_up_tmp_files_after_persisting
     ranked = [
-      @candidates[0].merge(score: 18, has_title_text: true,  has_watermark: false, composition_ok: true, vetoed: false, reasons: ""),
-      @candidates[1].merge(score: 14, has_title_text: false, has_watermark: false, composition_ok: true, vetoed: false, reasons: ""),
-      @candidates[2].merge(score: 10, has_title_text: false, has_watermark: false, composition_ok: true, vetoed: false, reasons: "")
+      @candidates[0].merge(score: 18, has_title_text: true,  has_overlay_watermark: false, vetoed: false, reasons: ""),
+      @candidates[1].merge(score: 14, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: ""),
+      @candidates[2].merge(score: 10, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: "")
     ]
     build_resolver(@candidates, ranked).try(
       title: "T", description: "D", episodes_dir: @episodes_dir, basename: @basename
