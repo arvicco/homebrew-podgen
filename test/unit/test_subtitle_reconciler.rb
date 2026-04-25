@@ -91,7 +91,7 @@ class TestSubtitleReconciler < Minitest::Test
   # --- model resolution ---
 
   def test_reconcile_uses_default_model_when_no_env_or_arg
-    ENV.delete("CLAUDE_RECONCILER_MODEL")
+    prev = ENV.delete("CLAUDE_RECONCILER_MODEL")
     captured_model = nil
     fake_messages = Object.new
     fake_messages.define_singleton_method(:create) do |**kwargs|
@@ -105,6 +105,8 @@ class TestSubtitleReconciler < Minitest::Test
       SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k")
     end
     assert_equal "claude-sonnet-4-6", captured_model
+  ensure
+    ENV["CLAUDE_RECONCILER_MODEL"] = prev if prev
   end
 
   def test_reconcile_uses_env_var_when_set
