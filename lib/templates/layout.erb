@@ -112,22 +112,27 @@
     tip.style.left = '';
     tip.style.transform = '';
     tip.style.setProperty('--vocab-tip-arrow-x', '50%');
+    tip.classList.remove('below');
 
     var rect = tip.getBoundingClientRect();
     if (rect.width === 0) return; // not displayed yet
 
     var pad = 8;
     var vw = window.innerWidth;
-    if (rect.left >= pad && rect.right <= vw - pad) return;
-
     var wordRect = word.getBoundingClientRect();
-    var newLeft = rect.left < pad ? pad : (vw - pad - rect.width);
-    tip.style.left = (newLeft - wordRect.left) + 'px';
-    tip.style.transform = 'none';
 
-    var wordCenter = wordRect.left + wordRect.width / 2;
-    var arrowX = Math.max(8, Math.min(rect.width - 8, wordCenter - newLeft));
-    tip.style.setProperty('--vocab-tip-arrow-x', arrowX + 'px');
+    if (rect.left < pad || rect.right > vw - pad) {
+      var newLeft = rect.left < pad ? pad : (vw - pad - rect.width);
+      tip.style.left = (newLeft - wordRect.left) + 'px';
+      tip.style.transform = 'none';
+      var wordCenter = wordRect.left + wordRect.width / 2;
+      var arrowX = Math.max(8, Math.min(rect.width - 8, wordCenter - newLeft));
+      tip.style.setProperty('--vocab-tip-arrow-x', arrowX + 'px');
+    }
+
+    if (rect.top < pad) {
+      tip.classList.add('below');
+    }
   }
 
   // Vocab tooltip on touch: first tap previews, second tap navigates.
