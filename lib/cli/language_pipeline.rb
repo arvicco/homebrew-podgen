@@ -826,15 +826,18 @@ module PodgenCLI
     end
 
     # Attempts an auto-cover search for a feed configured with `image: auto`.
-    # Returns a winner path (already persisted as <basename>_cover1.<ext> in
-    # episodes_dir) or nil — the caller falls through to the normal cover chain.
+    # Top candidates are persisted into @staging_dir (not episodes_dir) so
+    # they participate in the pipeline's atomic commit: a crash before
+    # commit_episode wipes them along with everything else in staging.
+    # Returns the winner's path (in staging_dir) or nil — the caller falls
+    # through to the normal cover chain.
     def try_auto_cover_for_feed(title)
       description = @episode.is_a?(Hash) ? @episode[:description].to_s : ""
       resolver = AutoCoverResolver.new(config: @config.auto_cover_config, logger: logger)
       result = resolver.try(
         title: title,
         description: description,
-        episodes_dir: @config.episodes_dir,
+        episodes_dir: @staging_dir,
         basename: @base_name
       )
       result[:winner_path]
