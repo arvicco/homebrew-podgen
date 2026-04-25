@@ -176,6 +176,22 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal 20, s[:text_y_offset]
   end
 
+  def test_image_section_parses_auto_cover_keys
+    parser = build_parser(<<~MD)
+      ## Image
+      - auto_cover_min_bytes: 30000
+      - auto_cover_min_score: 12
+      - auto_cover_candidates: 8
+      - auto_cover_model: claude-haiku-4-5-20251001
+    MD
+
+    s = parser.image_section
+    assert_equal 30_000, s[:auto_cover_min_bytes]
+    assert_equal 12, s[:auto_cover_min_score]
+    assert_equal 8, s[:auto_cover_candidates]
+    assert_equal "claude-haiku-4-5-20251001", s[:auto_cover_model]
+  end
+
   def test_image_section_empty_when_missing
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_equal({}, parser.image_section)
