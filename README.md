@@ -1096,9 +1096,18 @@ Two columns: `BODY` is the number of times the lemma (or any inflected form) app
 Inflected forms come from three sources:
 1. The lemma itself.
 2. Historical `*original*` surface forms collected from past vocab entries.
-3. `Tell::Hunspell.expand` — used automatically when a hunspell dictionary for the podcast's `transcription_language` is installed at `~/Library/Spelling/<LANG>.{dic,aff}`, `/Library/Spelling`, `/usr/share/hunspell`, or `/usr/local/share/hunspell`. Free dicts: clone [github.com/wooorm/dictionaries](https://github.com/wooorm/dictionaries) and copy the relevant `<lang>/index.{dic,aff}` files.
+3. `Tell::Hunspell.expand` — used automatically when a hunspell dictionary for the podcast's `transcription_language` is installed at `~/Library/Spelling/<LANG>.{dic,aff}` (or any of the system dirs `/Library/Spelling`, `/usr/share/hunspell`, `/usr/local/share/hunspell`). Hunspell expansion only runs for single-word lemmas — multi-word entries (e.g. `andare d'accordo`) skip it to avoid false matches from individual tokens.
 
-When hunspell isn't available, body counts use lemma + historical surface forms only (a warning prints to stderr explaining how to install the dict). Generated forms are cached at `output/<podcast>/word_forms.yml` and regenerate only when the lemma set or hunspell-availability changes.
+To install hunspell dicts for the languages of all configured podcasts:
+
+```bash
+ruby scripts/install_hunspell_dicts.rb            # auto-detect from podcasts
+ruby scripts/install_hunspell_dicts.rb it sl pl   # explicit list
+```
+
+Pulls `.dic`/`.aff` files from [github.com/wooorm/dictionaries](https://github.com/wooorm/dictionaries) and installs them into `~/Library/Spelling`. Idempotent.
+
+When hunspell isn't available for a language, body counts use lemma + historical surface forms only (a warning prints to stderr). Generated forms are cached at `output/<podcast>/word_forms.yml` and regenerate only when the lemma set or hunspell-availability changes.
 
 ## Project Structure
 
