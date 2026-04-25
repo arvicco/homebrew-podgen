@@ -20,10 +20,12 @@ class VocabularyAnnotator
   MAX_PARTICLE_LENGTH = 3
   PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
-  def initialize(api_key, model: "claude-sonnet-4-6", logger: nil)
+  DEFAULT_MODEL = "claude-sonnet-4-6"
+
+  def initialize(api_key, model: nil, logger: nil)
     @logger = logger
     @client = Anthropic::Client.new(api_key: api_key)
-    @model = model
+    @model = model || ENV.fetch("CLAUDE_VOCAB_MODEL", DEFAULT_MODEL)
   end
 
   # Returns [marked_body, vocabulary_md]

@@ -68,7 +68,6 @@ module PodgenCLI
 
       annotator = VocabularyAnnotator.new(
         ENV["ANTHROPIC_API_KEY"],
-        model: "claude-sonnet-4-6",
         logger: logger
       )
 

@@ -88,6 +88,63 @@ class TestSubtitleReconciler < Minitest::Test
 
   # --- reconcile (stubbed API) ---
 
+  # --- model resolution ---
+
+  def test_reconcile_uses_default_model_when_no_env_or_arg
+    ENV.delete("CLAUDE_RECONCILER_MODEL")
+    captured_model = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**kwargs|
+      captured_model = kwargs[:model]
+      content_block = Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))
+      Struct.new(:content).new([content_block])
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+
+    Anthropic::Client.stub(:new, fake_client) do
+      SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k")
+    end
+    assert_equal "claude-sonnet-4-6", captured_model
+  end
+
+  def test_reconcile_uses_env_var_when_set
+    ENV["CLAUDE_RECONCILER_MODEL"] = "claude-opus-4-7"
+    captured_model = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**kwargs|
+      captured_model = kwargs[:model]
+      content_block = Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))
+      Struct.new(:content).new([content_block])
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+
+    Anthropic::Client.stub(:new, fake_client) do
+      SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k")
+    end
+    assert_equal "claude-opus-4-7", captured_model
+  ensure
+    ENV.delete("CLAUDE_RECONCILER_MODEL")
+  end
+
+  def test_reconcile_explicit_model_arg_takes_precedence_over_env
+    ENV["CLAUDE_RECONCILER_MODEL"] = "claude-opus-4-7"
+    captured_model = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**kwargs|
+      captured_model = kwargs[:model]
+      content_block = Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))
+      Struct.new(:content).new([content_block])
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+
+    Anthropic::Client.stub(:new, fake_client) do
+      SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k", model: "claude-haiku-4-5-20251001")
+    end
+    assert_equal "claude-haiku-4-5-20251001", captured_model
+  ensure
+    ENV.delete("CLAUDE_RECONCILER_MODEL")
+  end
+
   def test_reconcile_calls_api_and_returns_segments
     segments = [
       { "start" => 0.0, "end" => 5.0, "text" => "Garbled." },

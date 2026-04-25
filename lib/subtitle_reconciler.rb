@@ -13,7 +13,8 @@ module SubtitleReconciler
 
   # Reconcile raw segments with a corrected transcript via Claude API.
   # Returns an array of segments with corrected text (same start/end values).
-  def self.reconcile(segments, reconciled_text, api_key:, model: DEFAULT_MODEL)
+  def self.reconcile(segments, reconciled_text, api_key:, model: nil)
+    model ||= ENV.fetch("CLAUDE_RECONCILER_MODEL", DEFAULT_MODEL)
     prompt = build_prompt(segments, reconciled_text)
 
     client = Anthropic::Client.new(api_key: api_key)
