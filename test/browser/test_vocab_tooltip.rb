@@ -120,4 +120,72 @@ class VocabTooltipTest < BrowserTest
     refute has_selector?(".vocab-word.show-tip", text: "alpha"),
            "first word should no longer have show-tip"
   end
+
+  # --- viewport overflow guards (mobile and desktop) -----------------------
+
+  EDGE_BODY = <<~HTML
+    <a href="#vocab-alpha" class="vocab-word" style="position:absolute; left: 10px; top: 200px;">alpha<span class="vocab-tip"><strong>alpha</strong><span class="vocab-tip-def">first letter, with a definition long enough to make the bubble wide</span></span></a>
+    <a href="#vocab-beta" class="vocab-word" style="position:absolute; right: 10px; top: 200px;">beta<span class="vocab-tip"><strong>beta</strong><span class="vocab-tip-def">second letter, with a definition long enough to make the bubble wide</span></span></a>
+    <section class="vocabulary">
+      <dl><dt id="vocab-alpha">alpha</dt><dt id="vocab-beta">beta</dt></dl>
+    </section>
+  HTML
+
+  def with_narrow_viewport(width: 400, height: 700)
+    Capybara.current_session.current_window.resize_to(width, height)
+    yield
+  ensure
+    Capybara.current_session.current_window.resize_to(1200, 800)
+  end
+
+  def tooltip_rect(word)
+    evaluate_script(<<~JS)
+      (function() {
+        var el = document.querySelector('.vocab-word[href="#vocab-#{word}"] .vocab-tip');
+        var r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, width: r.width };
+      })()
+    JS
+  end
+
+  def test_touch_tooltip_stays_within_viewport_at_left_edge
+    file = render_fixture(body: EDGE_BODY, title: "Edge")
+    with_narrow_viewport do
+      visit "/#{file}"
+      tap_vocab("alpha")
+      assert has_selector?(".vocab-word.show-tip"), "tooltip should be visible"
+      rect = tooltip_rect("alpha")
+      assert rect["left"] >= 0,
+             "tooltip overflows left edge: left=#{rect['left']}"
+      assert rect["right"] <= 400,
+             "tooltip overflows right edge: right=#{rect['right']} viewport=400"
+    end
+  end
+
+  def test_touch_tooltip_stays_within_viewport_at_right_edge
+    file = render_fixture(body: EDGE_BODY, title: "Edge")
+    with_narrow_viewport do
+      visit "/#{file}"
+      tap_vocab("beta")
+      assert has_selector?(".vocab-word.show-tip"), "tooltip should be visible"
+      rect = tooltip_rect("beta")
+      assert rect["left"] >= 0,
+             "tooltip overflows left edge: left=#{rect['left']}"
+      assert rect["right"] <= 400,
+             "tooltip overflows right edge: right=#{rect['right']} viewport=400"
+    end
+  end
+
+  def test_desktop_hover_tooltip_stays_within_viewport_at_edge
+    file = render_fixture(body: EDGE_BODY, title: "Edge")
+    with_narrow_viewport do
+      visit "/#{file}"
+      find(".vocab-word", text: "alpha").hover
+      rect = tooltip_rect("alpha")
+      assert rect["left"] >= 0,
+             "tooltip overflows left edge on hover: left=#{rect['left']}"
+      assert rect["right"] <= 400,
+             "tooltip overflows right edge on hover: right=#{rect['right']} viewport=400"
+    end
+  end
 end

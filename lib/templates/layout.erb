@@ -103,6 +103,33 @@
       }
     });
   });
+  // Vocab tooltip positioning: shift the bubble inside the viewport when its
+  // word sits near a screen edge, and move the arrow so it still points at
+  // the word's center.
+  function positionVocabTip(word) {
+    var tip = word.querySelector('.vocab-tip');
+    if (!tip) return;
+    tip.style.left = '';
+    tip.style.transform = '';
+    tip.style.setProperty('--vocab-tip-arrow-x', '50%');
+
+    var rect = tip.getBoundingClientRect();
+    if (rect.width === 0) return; // not displayed yet
+
+    var pad = 8;
+    var vw = window.innerWidth;
+    if (rect.left >= pad && rect.right <= vw - pad) return;
+
+    var wordRect = word.getBoundingClientRect();
+    var newLeft = rect.left < pad ? pad : (vw - pad - rect.width);
+    tip.style.left = (newLeft - wordRect.left) + 'px';
+    tip.style.transform = 'none';
+
+    var wordCenter = wordRect.left + wordRect.width / 2;
+    var arrowX = Math.max(8, Math.min(rect.width - 8, wordCenter - newLeft));
+    tip.style.setProperty('--vocab-tip-arrow-x', arrowX + 'px');
+  }
+
   // Vocab tooltip on touch: first tap previews, second tap navigates.
   // Gated by pointerType on the click event itself — works on pure-touch
   // devices AND hybrids (laptop with touch screen, iPad with trackpad).
@@ -116,12 +143,20 @@
           if (w !== word) w.classList.remove('show-tip');
         });
         word.classList.add('show-tip');
+        positionVocabTip(word);
       }
     } else {
       document.querySelectorAll('.vocab-word.show-tip').forEach(function(w) {
         w.classList.remove('show-tip');
       });
     }
+  });
+
+  // Desktop hover: CSS :hover continues to control display; we only adjust
+  // position to keep the bubble inside the viewport.
+  document.addEventListener('mouseover', function(e) {
+    var word = e.target.closest && e.target.closest('.vocab-word');
+    if (word) positionVocabTip(word);
   });
   </script>
 </body>
