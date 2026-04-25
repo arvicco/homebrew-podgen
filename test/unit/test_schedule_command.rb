@@ -240,6 +240,20 @@ class TestScheduleCommand < Minitest::Test
     assert_equal [:unload, :delete], actions
   end
 
+  def test_remove_requires_podcast_name
+    code, _, err = run_cli("schedule", "--remove")
+    assert_equal 2, code
+    assert_includes err, "Usage:"
+    assert_includes err, "--remove"
+  end
+
+  def test_status_requires_podcast_name
+    code, _, err = run_cli("schedule", "--status")
+    assert_equal 2, code
+    assert_includes err, "Usage:"
+    assert_includes err, "--status"
+  end
+
   def test_remove_does_not_require_podcast_to_exist
     # Podcast dir doesn't exist — --remove should proceed to plist check,
     # not error out with "Unknown podcast".
