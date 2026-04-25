@@ -606,7 +606,7 @@ class TestScriptReviewer < Minitest::Test
     msg.expect(:parsed_output, parsed_output)
     msg.expect(:stop_reason, "end_turn")
     msg.expect(:usage, UsageStub.new(100, 50, 0, 0))
-    msg.expect(:model, "claude-opus-4-6")
+    msg.expect(:model, "claude-opus-4-7")
     msg
   end
 end

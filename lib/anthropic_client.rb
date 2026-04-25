@@ -10,7 +10,7 @@ class StructuredOutputError < StandardError; end
 module AnthropicClient
   private
 
-  def init_anthropic_client(env_key: "CLAUDE_MODEL", default_model: "claude-opus-4-6")
+  def init_anthropic_client(env_key: "CLAUDE_MODEL", default_model: "claude-opus-4-7")
     @client = Anthropic::Client.new
     @model = ENV.fetch(env_key, default_model)
   end

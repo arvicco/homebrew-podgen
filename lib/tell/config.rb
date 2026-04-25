@@ -30,7 +30,7 @@ module Tell
 
     VALID_GLOSS_MODELS = %w[opus sonnet haiku].freeze
     GLOSS_MODEL_IDS = {
-      "opus"   => "claude-opus-4-6",
+      "opus"   => "claude-opus-4-7",
       "sonnet" => "claude-sonnet-4-6",
       "haiku"  => "claude-haiku-4-5-20251001"
     }.freeze
