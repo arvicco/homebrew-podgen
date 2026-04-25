@@ -689,7 +689,10 @@ Per-feed image overrides go inline with RSS URLs:
 - rss:
   - https://podcast.example.com/feed base_image: special_cover.jpg
   - https://other.example.com/feed image: none
+  - https://classics.example.com/feed image: auto      # search the web, rank with Claude vision
 ```
+
+`image: auto` triggers `AutoCoverResolver` for each *new* episode pulled from that feed (existing committed episodes are never re-covered). On a successful winner the search result becomes the cover; otherwise the priority chain falls through to `base_image` overlay / RSS-episode-image / YouTube thumbnail as if `image:` weren't set. Tunable per podcast via the `auto_cover_*` keys in `## Image`.
 
 Cover generation requires `imagemagick` + `librsvg` (`brew install imagemagick librsvg`) and fonts via `fontconfig`. Falls back to static cover or YouTube thumbnail on failure. Non-fatal.
 

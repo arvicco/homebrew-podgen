@@ -23,6 +23,7 @@ require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "transcript_discovery")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "cover_resolver")
+require_relative File.join(root, "lib", "auto_cover_resolver")
 
 module PodgenCLI
   class LanguagePipeline
@@ -747,6 +748,7 @@ module PodgenCLI
       end
 
       return value if value == "thumb"
+      return value if value == "auto"
 
       path = File.expand_path(value)
       unless File.exist?(path)
@@ -757,15 +759,25 @@ module PodgenCLI
     end
 
     # Priority chain for episode cover:
-    # 1. --image PATH/last/thumb (CLI flag)
-    # 2. Per-feed image: PATH/last/thumb/none
-    # 3. --base-image PATH → title overlay
-    # 4. Per-feed base_image: PATH → title overlay
-    # 5. RSS episode image → downloaded from feed
-    # 6. ## Image base_image → title overlay
-    # 7. YouTube thumbnail → fallback
-    # 8. nil → no cover
-    def resolve_episode_cover(title)
+    # 1.  --image PATH/last/thumb (CLI flag)
+    # 2.  Per-feed image: PATH/last/thumb/none
+    # 2a. Per-feed image: auto → AutoCoverResolver; falls through if no winner
+    # 3.  --base-image PATH → title overlay
+    # 4.  Per-feed base_image: PATH → title overlay
+    # 5.  RSS episode image → downloaded from feed
+    # 6.  ## Image base_image → title overlay
+    # 7.  YouTube thumbnail → fallback
+    # 8.  nil → no cover
+    def resolve_episode_cover(title, skip_auto: false)
+      # Auto path: try first, recurse with skip_auto if no winner
+      if !skip_auto && @current_episode_feed_image == "auto"
+        winner = try_auto_cover_for_feed(title)
+        return [winner, "feed image: auto (winner)"] if winner
+        return resolve_episode_cover(title, skip_auto: true)
+      end
+
+      feed_image = @current_episode_feed_image == "auto" ? nil : @current_episode_feed_image
+
       if @options[:image]
         if @options[:image] == "thumb"
           [@youtube_thumbnail, "--image thumb (YouTube thumbnail)"]
@@ -774,11 +786,11 @@ module PodgenCLI
         end
       elsif @current_episode_image_none
         [@youtube_thumbnail, "feed image: none (YouTube thumbnail fallback)"]
-      elsif @current_episode_feed_image
-        if @current_episode_feed_image == "thumb"
+      elsif feed_image
+        if feed_image == "thumb"
           [@youtube_thumbnail, "feed image: thumb (YouTube thumbnail)"]
         else
-          [@current_episode_feed_image, "feed image: #{File.basename(@current_episode_feed_image)}"]
+          [feed_image, "feed image: #{File.basename(feed_image)}"]
         end
       elsif @options[:base_image]
         path = generate_cover_image(title, File.expand_path(@options[:base_image])) || @youtube_thumbnail
@@ -810,6 +822,24 @@ module PodgenCLI
       path
     rescue => e
       logger.log("Warning: Failed to download episode image: #{e.message}")
+      nil
+    end
+
+    # Attempts an auto-cover search for a feed configured with `image: auto`.
+    # Returns a winner path (already persisted as <basename>_cover1.<ext> in
+    # episodes_dir) or nil — the caller falls through to the normal cover chain.
+    def try_auto_cover_for_feed(title)
+      description = @episode.is_a?(Hash) ? @episode[:description].to_s : ""
+      resolver = AutoCoverResolver.new(config: @config.auto_cover_config, logger: logger)
+      result = resolver.try(
+        title: title,
+        description: description,
+        episodes_dir: @config.episodes_dir,
+        basename: @base_name
+      )
+      result[:winner_path]
+    rescue => e
+      logger.log("Warning: auto cover search failed: #{e.message}")
       nil
     end
 
