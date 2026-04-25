@@ -127,7 +127,11 @@ class WordStats
       set = Set.new
       set.add(lemma)
       vocab_index[lemma][:originals].each { |o| set.add(o) }
-      if hunspell_ok
+      # Hunspell expansion is only meaningful for single-word lemmas. For
+      # multi-word phrases (e.g. "andare d'accordo"), hunspell falls back
+      # to expanding individual tokens, which yields false matches across
+      # the corpus. Skip those — surface forms cover them adequately.
+      if hunspell_ok && lemma.match?(/\A\p{L}+\z/u)
         expanded = Tell::Hunspell.expand(lemma, lang: lang) || []
         expanded.each { |f| set.add(f.downcase) }
       end

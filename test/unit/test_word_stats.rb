@@ -90,6 +90,23 @@ class TestWordStats < Minitest::Test
     assert_equal ["principe"], cache["forms"]["principe"]
   end
 
+  def test_skips_hunspell_for_multi_word_lemmas
+    # Multi-word phrases would have hunspell expand individual tokens
+    # (e.g. "andare" alone), producing false matches. Verify only the
+    # lemma + originals end up in the form set.
+    write_transcript("ep1",
+      body: "Vado d'accordo con tutti. Andiamo via.",
+      vocabulary: <<~MD)
+        - **andare d'accordo** (B1 verb) — to get along
+      MD
+
+    stats = WordStats.new(config: stub_config(language: "it")).build
+    forms = stats.first.forms
+    refute_includes forms, "vado", "single-token expansion of 'andare' must not leak through"
+    refute_includes forms, "andiamo"
+    assert_includes forms, "andare d'accordo"
+  end
+
   def test_cache_invalidates_on_lemma_set_change
     write_transcript("ep1", body: "x.", vocabulary: "- **alpha** (A1 n.) — first\n")
     config = stub_config
