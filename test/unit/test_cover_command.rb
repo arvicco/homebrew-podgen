@@ -311,6 +311,74 @@ class TestCoverCommand < Minitest::Test
     assert_equal File.expand_path(out_path), captured[:output_path]
   end
 
+  # --- --clear-candidates -------------------------------------------------
+
+  def test_clear_candidates_removes_numbered_covers_from_specific_podcast
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_cover.jpg"), "main")
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_cover1.jpg"), "c1")
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_cover2.png"), "c2")
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_cover3.webp"), "c3")
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_cover_old.jpg"), "old")
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"), "# x\n\nbody")
+
+    capture_io do
+      code = PodgenCLI::CoverCommand.new(["testpod", "--clear-candidates"], {}).run
+      assert_equal 0, code
+    end
+
+    refute File.exist?(File.join(episodes_dir, "testpod-2026-03-10_cover1.jpg"))
+    refute File.exist?(File.join(episodes_dir, "testpod-2026-03-10_cover2.png"))
+    refute File.exist?(File.join(episodes_dir, "testpod-2026-03-10_cover3.webp"))
+    assert File.exist?(File.join(episodes_dir, "testpod-2026-03-10_cover.jpg")),
+           "main cover must not be removed"
+    assert File.exist?(File.join(episodes_dir, "testpod-2026-03-10_cover_old.jpg")),
+           "_cover_old must not be removed (no digit after _cover)"
+    assert File.exist?(File.join(episodes_dir, "testpod-2026-03-10_transcript.md")),
+           "transcript must not be touched"
+  end
+
+  def test_clear_candidates_without_podcast_cleans_all_podcasts
+    pod_a_dir = File.join(@tmpdir, "podcasts", "podA")
+    pod_b_dir = File.join(@tmpdir, "podcasts", "podB")
+    FileUtils.mkdir_p(pod_a_dir)
+    FileUtils.mkdir_p(pod_b_dir)
+    File.write(File.join(pod_a_dir, "guidelines.md"), "# A\n## Podcast\nName: A\n## Format\nx\n## Tone\nx")
+    File.write(File.join(pod_b_dir, "guidelines.md"), "# B\n## Podcast\nName: B\n## Format\nx\n## Tone\nx")
+
+    a_eps = File.join(@tmpdir, "output", "podA", "episodes")
+    b_eps = File.join(@tmpdir, "output", "podB", "episodes")
+    FileUtils.mkdir_p(a_eps)
+    FileUtils.mkdir_p(b_eps)
+    File.write(File.join(a_eps, "podA-2026-01-01_cover1.jpg"), "ax")
+    File.write(File.join(b_eps, "podB-2026-01-01_cover2.png"), "bx")
+    File.write(File.join(b_eps, "podB-2026-01-01_cover.jpg"), "main")
+
+    capture_io do
+      code = PodgenCLI::CoverCommand.new(["--clear-candidates"], {}).run
+      assert_equal 0, code
+    end
+
+    refute File.exist?(File.join(a_eps, "podA-2026-01-01_cover1.jpg"))
+    refute File.exist?(File.join(b_eps, "podB-2026-01-01_cover2.png"))
+    assert File.exist?(File.join(b_eps, "podB-2026-01-01_cover.jpg"))
+  end
+
+  def test_clear_candidates_dry_run_does_not_delete
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_cover1.jpg"), "c1")
+
+    capture_io do
+      code = PodgenCLI::CoverCommand.new(["testpod", "--clear-candidates"], { dry_run: true }).run
+      assert_equal 0, code
+    end
+
+    assert File.exist?(File.join(episodes_dir, "testpod-2026-03-10_cover1.jpg")),
+           "dry-run must not delete files"
+  end
+
   # --- --image auto -------------------------------------------------------
 
   def test_image_auto_with_title_returns_error
