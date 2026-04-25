@@ -20,12 +20,12 @@ class TestImageRanker < Minitest::Test
 
   def test_rank_returns_candidates_with_scores
     rankings = [
-      { "index" => 0, "fits_fairytale_cover" => 8, "matches_episode_description" => 9,
-        "has_title_text" => false, "has_watermark" => false, "composition_ok" => true, "reasons" => "ok" },
-      { "index" => 1, "fits_fairytale_cover" => 6, "matches_episode_description" => 5,
-        "has_title_text" => false, "has_watermark" => false, "composition_ok" => true, "reasons" => "weaker" },
-      { "index" => 2, "fits_fairytale_cover" => 7, "matches_episode_description" => 8,
-        "has_title_text" => true, "has_watermark" => false, "composition_ok" => true, "reasons" => "has title" }
+      { "index" => 0, "visual_quality" => 8, "subject_match" => 9,
+        "has_title_text" => false, "has_overlay_watermark" => false, "reasons" => "ok" },
+      { "index" => 1, "visual_quality" => 6, "subject_match" => 5,
+        "has_title_text" => false, "has_overlay_watermark" => false, "reasons" => "weaker" },
+      { "index" => 2, "visual_quality" => 7, "subject_match" => 8,
+        "has_title_text" => true, "has_overlay_watermark" => false, "reasons" => "has title" }
     ]
     ranked = with_stubbed_claude(rankings) do
       ImageRanker.new.rank(@candidates, title: "T", description: "D")
@@ -41,14 +41,14 @@ class TestImageRanker < Minitest::Test
     assert_equal "https://x.com/c2.jpg", ranked[2][:url]
   end
 
-  def test_rank_marks_watermarked_as_vetoed_but_keeps_in_results
+  def test_rank_marks_overlay_watermark_as_vetoed
     rankings = [
-      { "index" => 0, "fits_fairytale_cover" => 9, "matches_episode_description" => 9,
-        "has_title_text" => false, "has_watermark" => true, "composition_ok" => true, "reasons" => "watermark" },
-      { "index" => 1, "fits_fairytale_cover" => 6, "matches_episode_description" => 6,
-        "has_title_text" => false, "has_watermark" => false, "composition_ok" => true, "reasons" => "ok" },
-      { "index" => 2, "fits_fairytale_cover" => 5, "matches_episode_description" => 5,
-        "has_title_text" => false, "has_watermark" => false, "composition_ok" => true, "reasons" => "ok" }
+      { "index" => 0, "visual_quality" => 9, "subject_match" => 9,
+        "has_title_text" => false, "has_overlay_watermark" => true, "reasons" => "watermark" },
+      { "index" => 1, "visual_quality" => 6, "subject_match" => 6,
+        "has_title_text" => false, "has_overlay_watermark" => false, "reasons" => "ok" },
+      { "index" => 2, "visual_quality" => 5, "subject_match" => 5,
+        "has_title_text" => false, "has_overlay_watermark" => false, "reasons" => "ok" }
     ]
     ranked = with_stubbed_claude(rankings) do
       ImageRanker.new.rank(@candidates, title: "T", description: "D")
@@ -59,23 +59,6 @@ class TestImageRanker < Minitest::Test
     assert_equal true, ranked.last[:vetoed]
     refute ranked[0][:vetoed]
     refute ranked[1][:vetoed]
-  end
-
-  def test_rank_marks_bad_composition_as_vetoed
-    rankings = [
-      { "index" => 0, "fits_fairytale_cover" => 8, "matches_episode_description" => 8,
-        "has_title_text" => false, "has_watermark" => false, "composition_ok" => false, "reasons" => "bad" },
-      { "index" => 1, "fits_fairytale_cover" => 5, "matches_episode_description" => 5,
-        "has_title_text" => false, "has_watermark" => false, "composition_ok" => true, "reasons" => "ok" },
-      { "index" => 2, "fits_fairytale_cover" => 6, "matches_episode_description" => 6,
-        "has_title_text" => false, "has_watermark" => false, "composition_ok" => true, "reasons" => "ok" }
-    ]
-    ranked = with_stubbed_claude(rankings) do
-      ImageRanker.new.rank(@candidates, title: "T", description: "D")
-    end
-
-    assert_equal true, ranked.last[:vetoed]
-    assert_equal "https://x.com/c1.jpg", ranked.last[:url]
   end
 
   def test_rank_handles_malformed_json_returns_empty
@@ -97,8 +80,8 @@ class TestImageRanker < Minitest::Test
 
   def test_rank_passes_configured_model_to_api
     captured_model = nil
-    rankings = [{ "index" => 0, "fits_fairytale_cover" => 8, "matches_episode_description" => 8,
-                  "has_title_text" => false, "has_watermark" => false, "composition_ok" => true, "reasons" => "" }]
+    rankings = [{ "index" => 0, "visual_quality" => 8, "subject_match" => 8,
+                  "has_title_text" => false, "has_overlay_watermark" => false, "reasons" => "" }]
     fake_response = Struct.new(:content).new([Struct.new(:text).new(JSON.generate("rankings" => rankings))])
     fake_messages = Object.new
     fake_messages.define_singleton_method(:create) { |**kwargs| captured_model = kwargs[:model]; fake_response }

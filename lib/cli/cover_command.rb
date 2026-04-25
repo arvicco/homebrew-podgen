@@ -191,6 +191,19 @@ module PodgenCLI
           basename: ep[:basename]
         )
 
+        result[:candidates].each_with_index do |c, idx|
+          flags = [
+            "vq=#{c[:visual_quality]}",
+            "subj=#{c[:subject_match]}",
+            c[:has_title_text] ? "title=Y" : "title=N",
+            c[:has_overlay_watermark] ? "WATERMARK" : nil,
+            c[:vetoed] ? "VETO" : nil
+          ].compact.join(" ")
+          path = result[:top_paths][idx] || "(unranked)"
+          puts "    [#{idx + 1}] score=#{c[:score]} #{flags}  #{File.basename(path)}"
+          puts "        #{c[:reasons]}" if c[:reasons] && !c[:reasons].empty?
+        end
+
         if result[:winner_path]
           install_winner_as_cover(result[:winner_path], ep[:output])
           score = result[:candidates].first&.dig(:score)
