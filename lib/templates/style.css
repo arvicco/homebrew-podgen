@@ -97,6 +97,11 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   content: ""; position: absolute; top: 100%; left: var(--vocab-tip-arrow-x, 50%); transform: translateX(-50%);
   border: 6px solid transparent; border-top-color: var(--border);
 }
+.vocab-tip.below { bottom: auto; top: calc(100% + 10px); }
+.vocab-tip.below::after {
+  top: auto; bottom: 100%;
+  border-top-color: transparent; border-bottom-color: var(--border);
+}
 .vocab-tip .ipa { color: var(--fg-muted); font-weight: normal; font-size: 0.8rem; }
 .vocab-tip .pos { color: var(--fg-muted); font-weight: normal; font-size: 0.8rem; }
 .vocab-tip-def { display: block; margin-top: 0.25rem; color: var(--fg-muted); }

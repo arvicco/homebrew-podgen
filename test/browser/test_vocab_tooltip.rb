@@ -126,8 +126,9 @@ class VocabTooltipTest < BrowserTest
   EDGE_BODY = <<~HTML
     <a href="#vocab-alpha" class="vocab-word" style="position:absolute; left: 10px; top: 200px;">alpha<span class="vocab-tip"><strong>alpha</strong><span class="vocab-tip-def">first letter, with a definition long enough to make the bubble wide</span></span></a>
     <a href="#vocab-beta" class="vocab-word" style="position:absolute; right: 10px; top: 200px;">beta<span class="vocab-tip"><strong>beta</strong><span class="vocab-tip-def">second letter, with a definition long enough to make the bubble wide</span></span></a>
+    <a href="#vocab-gamma" class="vocab-word" style="position:absolute; left: 50%; top: 10px;">gamma<span class="vocab-tip"><strong>gamma</strong><span class="vocab-tip-def">third letter, with a definition long enough to make the bubble tall</span></span></a>
     <section class="vocabulary">
-      <dl><dt id="vocab-alpha">alpha</dt><dt id="vocab-beta">beta</dt></dl>
+      <dl><dt id="vocab-alpha">alpha</dt><dt id="vocab-beta">beta</dt><dt id="vocab-gamma">gamma</dt></dl>
     </section>
   HTML
 
@@ -186,6 +187,42 @@ class VocabTooltipTest < BrowserTest
              "tooltip overflows left edge on hover: left=#{rect['left']}"
       assert rect["right"] <= 400,
              "tooltip overflows right edge on hover: right=#{rect['right']} viewport=400"
+    end
+  end
+
+  def tooltip_full_rect(word)
+    evaluate_script(<<~JS)
+      (function() {
+        var el = document.querySelector('.vocab-word[href="#vocab-#{word}"] .vocab-tip');
+        var r = el.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+      })()
+    JS
+  end
+
+  def test_touch_tooltip_flips_below_when_word_near_top
+    file = render_fixture(body: EDGE_BODY, title: "Edge")
+    with_narrow_viewport(width: 400, height: 700) do
+      visit "/#{file}"
+      tap_vocab("gamma")
+      rect = tooltip_full_rect("gamma")
+      assert rect["top"] >= 0,
+             "tooltip overflows top edge: top=#{rect['top']}"
+      assert rect["bottom"] <= 700,
+             "tooltip overflows bottom edge: bottom=#{rect['bottom']}"
+    end
+  end
+
+  def test_desktop_hover_tooltip_flips_below_when_word_near_top
+    file = render_fixture(body: EDGE_BODY, title: "Edge")
+    with_narrow_viewport(width: 400, height: 700) do
+      visit "/#{file}"
+      find(".vocab-word", text: "gamma").hover
+      rect = tooltip_full_rect("gamma")
+      assert rect["top"] >= 0,
+             "tooltip overflows top edge on hover: top=#{rect['top']}"
+      assert rect["bottom"] <= 700,
+             "tooltip overflows bottom edge on hover: bottom=#{rect['bottom']}"
     end
   end
 end
