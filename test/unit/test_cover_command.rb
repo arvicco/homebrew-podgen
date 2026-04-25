@@ -379,6 +379,34 @@ class TestCoverCommand < Minitest::Test
            "dry-run must not delete files"
   end
 
+  # --- install_winner_as_cover ---
+
+  def test_install_winner_returns_dest_when_source_is_jpg
+    src = File.join(@tmpdir, "src.jpg")
+    File.binwrite(src, "jpg-bytes")
+    dest = File.join(@tmpdir, "out.jpg")
+
+    cmd = PodgenCLI::CoverCommand.new(["testpod"], {})
+    actual = cmd.send(:install_winner_as_cover, src, dest)
+    assert_equal dest, actual
+    assert File.exist?(dest)
+  end
+
+  def test_install_winner_preserves_real_extension_when_magick_unavailable
+    src = File.join(@tmpdir, "src.png")
+    File.binwrite(src, "png-bytes")
+    dest = File.join(@tmpdir, "out.jpg")
+
+    cmd = PodgenCLI::CoverCommand.new(["testpod"], {})
+    # Force the magick branch to fail by stubbing system to return false
+    cmd.stub :system, false do
+      actual = cmd.send(:install_winner_as_cover, src, dest)
+      assert_equal File.join(@tmpdir, "out.png"), actual
+      assert File.exist?(actual)
+      refute File.exist?(dest), "should NOT write .jpg-named file containing png bytes"
+    end
+  end
+
   # --- --image auto -------------------------------------------------------
 
   def test_image_auto_with_title_returns_error

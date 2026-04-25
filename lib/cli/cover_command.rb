@@ -233,9 +233,9 @@ module PodgenCLI
         end
 
         if result[:winner_path]
-          install_winner_as_cover(result[:winner_path], ep[:output])
+          installed = install_winner_as_cover(result[:winner_path], ep[:output])
           score = result[:candidates].first&.dig(:score)
-          puts "  #{ep[:basename]}: #{ep[:output]} (auto, score #{score})"
+          puts "  #{ep[:basename]}: #{installed} (auto, score #{score})"
         elsif fallback_agent
           fallback_agent.generate(
             title: ep[:title],
@@ -257,14 +257,22 @@ module PodgenCLI
       1
     end
 
+    # Returns the actual destination path (may differ from dest_jpg if magick
+    # is unavailable and the source isn't a JPEG — in that case we keep the
+    # source extension so file contents and filename agree).
     def install_winner_as_cover(src, dest_jpg)
       ext = File.extname(src).downcase
       if [".jpg", ".jpeg"].include?(ext)
         FileUtils.cp(src, dest_jpg)
+        dest_jpg
       elsif system("magick", src, dest_jpg, out: File::NULL, err: File::NULL)
-        # converted via magick
+        dest_jpg
       else
-        FileUtils.cp(src, dest_jpg)
+        # No magick available and source isn't JPEG — preserve the real
+        # extension so the file isn't a non-jpg masquerading as .jpg.
+        dest = dest_jpg.sub(/\.jpg$/, ext)
+        FileUtils.cp(src, dest)
+        dest
       end
     end
 
