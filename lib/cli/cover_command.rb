@@ -9,6 +9,7 @@ require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "cover_resolver")
+require_relative File.join(root, "lib", "auto_cover_resolver")
 
 module PodgenCLI
   class CoverCommand
@@ -54,6 +55,11 @@ module PodgenCLI
         return 2
       end
 
+      if @image == "auto" && @title && !@title.empty?
+        $stderr.puts "Error: --image auto cannot be combined with --title (no episode description for ranking)"
+        return 1
+      end
+
       config = load_config!
 
       code = resolve_image_option
@@ -73,6 +79,7 @@ module PodgenCLI
 
     def resolve_image_option
       return nil unless @image
+      return nil if @image == "auto"  # auto handles batch + single via run_auto_image_mode
 
       unless @episode_id
         $stderr.puts "Error: --image requires a specific episode ID"
@@ -126,6 +133,7 @@ module PodgenCLI
 
       # Direct image copy mode
       if @image
+        return run_auto_image_mode(config, episodes) if @image == "auto"
         return copy_image_to_episodes(episodes)
       end
 
@@ -159,6 +167,64 @@ module PodgenCLI
     rescue => e
       $stderr.puts "Cover generation failed: #{e.message}"
       1
+    end
+
+    def run_auto_image_mode(config, episodes)
+      resolver = AutoCoverResolver.new(config: config.auto_cover_config)
+      base_image, cover_opts = resolve_cover_config(config)
+      fallback_agent = base_image ? CoverAgent.new : nil
+
+      puts "Auto cover search for #{episodes.length} episode(s) (~$0.02 each)"
+
+      processed = 0
+      episodes.each do |ep|
+        if @dry_run
+          puts "  [dry-run] #{ep[:basename]}: #{ep[:title]}"
+          next
+        end
+
+        parsed = TranscriptParser.parse(ep[:transcript_path])
+        result = resolver.try(
+          title: parsed.title,
+          description: parsed.description.to_s,
+          episodes_dir: config.episodes_dir,
+          basename: ep[:basename]
+        )
+
+        if result[:winner_path]
+          install_winner_as_cover(result[:winner_path], ep[:output])
+          score = result[:candidates].first&.dig(:score)
+          puts "  #{ep[:basename]}: #{ep[:output]} (auto, score #{score})"
+        elsif fallback_agent
+          fallback_agent.generate(
+            title: ep[:title],
+            base_image: base_image,
+            output_path: ep[:output],
+            options: cover_opts
+          )
+          puts "  #{ep[:basename]}: #{ep[:output]} (no auto winner — generated with overlay)"
+        else
+          puts "  #{ep[:basename]}: skipped (no auto winner, no base_image for fallback)"
+        end
+        processed += 1
+      end
+
+      puts "Processed #{processed} episode(s)" unless @dry_run
+      0
+    rescue => e
+      $stderr.puts "Auto cover failed: #{e.message}"
+      1
+    end
+
+    def install_winner_as_cover(src, dest_jpg)
+      ext = File.extname(src).downcase
+      if [".jpg", ".jpeg"].include?(ext)
+        FileUtils.cp(src, dest_jpg)
+      elsif system("magick", src, dest_jpg, out: File::NULL, err: File::NULL)
+        # converted via magick
+      else
+        FileUtils.cp(src, dest_jpg)
+      end
     end
 
     def copy_image_to_episodes(episodes)
@@ -203,7 +269,7 @@ module PodgenCLI
         next unless title && !title.empty?
 
         output = File.join(dir, "#{basename}_cover.jpg")
-        { basename: basename, title: title, output: output }
+        { basename: basename, title: title, output: output, transcript_path: path }
       end
     end
 

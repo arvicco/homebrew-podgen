@@ -645,20 +645,28 @@ Cover and title-overlay generation settings are configured in a dedicated `## Im
 - text_gravity: south
 - text_x_offset: 0
 - text_y_offset: 50
+- auto_cover_min_bytes: 20000        # filter tiny placeholders
+- auto_cover_min_score: 14           # 2-20, threshold for declaring a winner
+- auto_cover_candidates: 5           # how many to fetch and rank per episode
+- auto_cover_model: claude-sonnet-4-6
 ```
 
 
-| Key             | Description                                                              |
-| --------------- | ------------------------------------------------------------------------ |
-| `cover`         | Podcast cover artwork filename in `podcasts/<name>/` (see note below)    |
-| `base_image`    | Base image for per-episode title-overlay generation                      |
-| `font`          | Font family for title text                                               |
-| `font_color`    | Font color                                                               |
-| `font_size`     | Font size in points                                                      |
-| `text_width`    | Max text width in pixels                                                 |
-| `text_gravity`  | ImageMagick gravity (e.g. `south`, `center`)                             |
-| `text_x_offset` | Horizontal offset in pixels                                              |
-| `text_y_offset` | Vertical offset in pixels                                                |
+| Key                     | Description                                                              |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `cover`                 | Podcast cover artwork filename in `podcasts/<name>/` (see note below)    |
+| `base_image`            | Base image for per-episode title-overlay generation                      |
+| `font`                  | Font family for title text                                               |
+| `font_color`            | Font color                                                               |
+| `font_size`             | Font size in points                                                      |
+| `text_width`            | Max text width in pixels                                                 |
+| `text_gravity`          | ImageMagick gravity (e.g. `south`, `center`)                             |
+| `text_x_offset`         | Horizontal offset in pixels                                              |
+| `text_y_offset`         | Vertical offset in pixels                                                |
+| `auto_cover_min_bytes`  | `--image auto`: minimum download size to keep (filters placeholders)     |
+| `auto_cover_min_score`  | `--image auto`: combined score threshold (2–20) to declare a winner      |
+| `auto_cover_candidates` | `--image auto`: how many candidates to fetch from search                 |
+| `auto_cover_model`      | `--image auto`: Claude vision model used for ranking                     |
 
 `cover` is copied to output by `podgen rss` and replaces the legacy `image` key in `## Podcast`.
 
@@ -698,6 +706,8 @@ podgen cover lahko_noc --date 2026-04-07 --title "New Title"  # override the ren
 podgen cover lahko_noc --missing-only                         # only episodes without a cover
 podgen cover lahko_noc --dry-run                              # preview without writing files
 podgen cover lahko_noc --title "Custom Title"                 # manual preview into <podcast_dir>/cover_preview.jpg
+podgen cover lahko_noc --date 2026-04-07 --image auto         # search web, rank with Claude vision, fall back to overlay
+podgen cover lahko_noc --image auto                           # batch — auto-search every episode (~$0.02 each)
 ```
 
 | Flag                | Description                                          |

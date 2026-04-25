@@ -311,6 +311,110 @@ class TestCoverCommand < Minitest::Test
     assert_equal File.expand_path(out_path), captured[:output_path]
   end
 
+  # --- --image auto -------------------------------------------------------
+
+  def test_image_auto_with_title_returns_error
+    _, err = capture_io do
+      code = PodgenCLI::CoverCommand.new(
+        ["testpod", "--image", "auto", "--title", "X"], {}).run
+      assert_equal 1, code
+    end
+    assert_match(/--image auto.*--title/, err)
+  end
+
+  def test_image_auto_uses_resolver_winner_per_episode
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"),
+               "# Ep One\n\nDesc one.\n\n## Transcript\n\nx.")
+
+    captured_calls = []
+    fake_resolver = Object.new
+    fake_resolver.define_singleton_method(:try) do |title:, description:, episodes_dir:, basename:|
+      captured_calls << { title: title, description: description, basename: basename }
+      winner = File.join(episodes_dir, "#{basename}_cover1.jpg")
+      File.binwrite(winner, "winner-bytes")
+      { winner_path: winner, top_paths: [winner], candidates: [{ score: 18 }] }
+    end
+
+    PodgenCLI::CoverCommand.const_get(:AutoCoverResolver).stub(:new, fake_resolver) do
+      capture_io do
+        code = PodgenCLI::CoverCommand.new(
+          ["testpod", "--date", "2026-03-10", "--image", "auto"], {}).run
+        assert_equal 0, code
+      end
+    end
+
+    cover = File.join(episodes_dir, "testpod-2026-03-10_cover.jpg")
+    assert File.exist?(cover), "winner should be copied to episode cover path"
+    assert_equal 1, captured_calls.length
+    assert_equal "Ep One", captured_calls.first[:title]
+    assert_equal "Desc one.", captured_calls.first[:description]
+  end
+
+  def test_image_auto_falls_back_to_cover_agent_when_no_winner
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"),
+               "# Ep One\n\nDesc one.\n\n## Transcript\n\nx.")
+
+    fake_resolver = Object.new
+    fake_resolver.define_singleton_method(:try) do |**_kw|
+      { winner_path: nil, top_paths: [], candidates: [] }
+    end
+
+    captured_agent = nil
+    fake_agent = Object.new
+    fake_agent.define_singleton_method(:generate) do |title:, base_image:, output_path:, options: {}|
+      captured_agent = { title: title, output_path: output_path }
+      output_path
+    end
+
+    PodgenCLI::CoverCommand.const_get(:AutoCoverResolver).stub(:new, fake_resolver) do
+      PodgenCLI::CoverCommand.const_get(:CoverAgent).stub(:new, fake_agent) do
+        capture_io do
+          code = PodgenCLI::CoverCommand.new(
+            ["testpod", "--date", "2026-03-10", "--image", "auto"], {}).run
+          assert_equal 0, code
+        end
+      end
+    end
+
+    refute_nil captured_agent, "CoverAgent should be invoked as fallback"
+    assert_equal "Ep One", captured_agent[:title]
+    assert_includes captured_agent[:output_path], "testpod-2026-03-10_cover.jpg"
+  end
+
+  def test_image_auto_batch_runs_resolver_for_each_episode
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"), "# Ep A\n\nDA.\n\n## Transcript\n\nx.")
+    File.write(File.join(episodes_dir, "testpod-2026-03-11_transcript.md"), "# Ep B\n\nDB.\n\n## Transcript\n\nx.")
+
+    invocations = []
+    fake_resolver = Object.new
+    fake_resolver.define_singleton_method(:try) do |title:, description:, episodes_dir:, basename:|
+      invocations << basename
+      { winner_path: nil, top_paths: [], candidates: [] }
+    end
+
+    fake_agent = Object.new
+    fake_agent.define_singleton_method(:generate) { |**_kw| nil }
+
+    PodgenCLI::CoverCommand.const_get(:AutoCoverResolver).stub(:new, fake_resolver) do
+      PodgenCLI::CoverCommand.const_get(:CoverAgent).stub(:new, fake_agent) do
+        capture_io do
+          code = PodgenCLI::CoverCommand.new(["testpod", "--image", "auto"], {}).run
+          assert_equal 0, code
+        end
+      end
+    end
+
+    assert_equal 2, invocations.length
+    assert_includes invocations, "testpod-2026-03-10"
+    assert_includes invocations, "testpod-2026-03-11"
+  end
+
   def test_image_dry_run_does_not_copy
     episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
     FileUtils.mkdir_p(episodes_dir)
