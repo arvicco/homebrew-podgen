@@ -60,6 +60,11 @@ module PodgenCLI
         return 1
       end
 
+      if (@remove || @status) && (@podcast_name.nil? || @podcast_name.empty?)
+        $stderr.puts "Usage: podgen schedule <podcast> #{@remove ? "--remove" : "--status"}"
+        return 2
+      end
+
       return remove_scheduler! if @remove
       return show_status       if @status
       return send_test_message if @test
