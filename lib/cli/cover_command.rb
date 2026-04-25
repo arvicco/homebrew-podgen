@@ -22,7 +22,7 @@ module PodgenCLI
       @overrides = {}
 
       OptionParser.new do |opts|
-        opts.banner = "Usage: podgen cover <podcast> [episode-date|title] [options]"
+        opts.banner = "Usage: podgen cover <podcast> [options]"
         opts.separator ""
         opts.on("--missing-only", "Only generate covers for episodes without one") { @missing_only = true }
         opts.on("--image PATH", "Image file path, or 'last' for latest ~/Desktop screenshot") { |v| @image = v }
@@ -39,15 +39,7 @@ module PodgenCLI
       end.parse!(args)
 
       @podcast_name = args.shift
-      # Positional args as fallback for --date / --title
-      unless @episode_id || @title
-        second = args.first
-        if second && second.match?(/\d{4}-\d{2}-\d{2}/)
-          @episode_id = args.shift
-        else
-          @title ||= args.join(" ") unless args.empty?
-        end
-      end
+      @extra_args = args
       @title = nil if @title&.empty?
       @dry_run = options[:dry_run] || false
     end
@@ -55,6 +47,12 @@ module PodgenCLI
     def run
       code = require_podcast!("cover")
       return code if code
+
+      unless @extra_args.empty?
+        $stderr.puts "Error: unexpected arguments: #{@extra_args.join(' ')}"
+        $stderr.puts "Hint: pass episode date with --date YYYY-MM-DD and title with --title TEXT"
+        return 2
+      end
 
       config = load_config!
 

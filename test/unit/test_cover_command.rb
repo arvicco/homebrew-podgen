@@ -29,12 +29,22 @@ class TestCoverCommand < Minitest::Test
     assert_includes err, "Usage:"
   end
 
+  def test_extra_positional_args_returns_error_with_hint
+    _, err = capture_io do
+      code = PodgenCLI::CoverCommand.new(["testpod", "2026-04-13"], {}).run
+      assert_equal 2, code
+    end
+    assert_includes err, "unexpected arguments"
+    assert_includes err, "--date"
+    assert_includes err, "--title"
+  end
+
   def test_missing_base_image_returns_error
     File.write(File.join(@podcast_dir, "guidelines.md"),
       "# Test\n## Podcast\nName: Test Pod\n## Format\nfoo\n## Tone\nbar")
 
     _, err = capture_io do
-      code = PodgenCLI::CoverCommand.new(["testpod", "My Title"], {}).run
+      code = PodgenCLI::CoverCommand.new(["testpod", "--title", "My Title"], {}).run
       assert_equal 1, code
     end
     assert_includes err, "base_image"
@@ -42,14 +52,13 @@ class TestCoverCommand < Minitest::Test
 
   def test_option_parsing_base_image
     cmd = PodgenCLI::CoverCommand.new(
-      ["--base-image", "/tmp/custom.png", "testpod", "My Title"], {})
+      ["--base-image", "/tmp/custom.png", "testpod"], {})
     assert_equal "/tmp/custom.png", cmd.instance_variable_get(:@overrides)[:base_image]
   end
 
   def test_option_parsing_font_overrides
     cmd = PodgenCLI::CoverCommand.new(
-      ["--font", "Arial", "--font-color", "#FF0000", "--font-size", "80",
-       "testpod", "My Title"], {})
+      ["--font", "Arial", "--font-color", "#FF0000", "--font-size", "80", "testpod"], {})
     overrides = cmd.instance_variable_get(:@overrides)
     assert_equal "Arial", overrides[:font]
     assert_equal "#FF0000", overrides[:font_color]
@@ -58,8 +67,7 @@ class TestCoverCommand < Minitest::Test
 
   def test_option_parsing_geometry
     cmd = PodgenCLI::CoverCommand.new(
-      ["--gravity", "South", "--x-offset", "50", "--y-offset", "100",
-       "testpod", "Title"], {})
+      ["--gravity", "South", "--x-offset", "50", "--y-offset", "100", "testpod"], {})
     overrides = cmd.instance_variable_get(:@overrides)
     assert_equal "South", overrides[:gravity]
     assert_equal 50, overrides[:x_offset]
@@ -68,28 +76,37 @@ class TestCoverCommand < Minitest::Test
 
   def test_option_parsing_output
     cmd = PodgenCLI::CoverCommand.new(
-      ["--output", "/tmp/out.jpg", "testpod", "Title"], {})
+      ["--output", "/tmp/out.jpg", "testpod"], {})
     assert_equal "/tmp/out.jpg", cmd.instance_variable_get(:@output_path)
   end
 
-  # --- --episode mode ---
+  # --- --date / --title flags ---
 
-  def test_episode_flag_extracts_title_from_transcript
-    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
-    FileUtils.mkdir_p(episodes_dir)
-    File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"), "# My Episode Title\n\n## Transcript\n\nText.")
-
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "2026-03-10"], {})
-    assert_equal "2026-03-10", cmd.instance_variable_get(:@episode_id)
+  def test_date_flag_sets_episode_id
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-04-13"], {})
+    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
     assert_nil cmd.instance_variable_get(:@title)
   end
+
+  def test_title_flag_sets_title
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--title", "My Custom Title"], {})
+    assert_equal "My Custom Title", cmd.instance_variable_get(:@title)
+  end
+
+  def test_date_and_title_flags_together
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-04-13", "--title", "My Title"], {})
+    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
+    assert_equal "My Title", cmd.instance_variable_get(:@title)
+  end
+
+  # --- episode resolution ---
 
   def test_episode_resolves_title_and_output_path
     episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
     FileUtils.mkdir_p(episodes_dir)
     File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"), "# Medved z Nanosa\n\n## Transcript\n\nText.")
 
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "2026-03-10"], {})
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-03-10"], {})
     config = Struct.new(:episodes_dir).new(episodes_dir)
 
     episodes = cmd.send(:resolve_episodes, config)
@@ -99,7 +116,7 @@ class TestCoverCommand < Minitest::Test
   end
 
   def test_episode_not_found_returns_error
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "2026-99-99"], {})
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-99-99"], {})
 
     _, err = capture_io { code = cmd.run; assert_equal 1, code }
     assert_includes err, "No episodes found"
@@ -126,7 +143,7 @@ class TestCoverCommand < Minitest::Test
     File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"), "# Ep One\n\n## Transcript\n\nText.")
     File.write(File.join(episodes_dir, "testpod-2026-03-11_transcript.md"), "# Ep Two\n\n## Transcript\n\nText.")
 
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "2026-03-10"], {})
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-03-10"], {})
     config = Struct.new(:episodes_dir).new(episodes_dir)
 
     episodes = cmd.send(:resolve_episodes, config)
@@ -179,7 +196,7 @@ class TestCoverCommand < Minitest::Test
     system("magick", "-size", "100x100", "xc:white", File.join(@podcast_dir, "base.png"))
 
     out, = capture_io do
-      code = PodgenCLI::CoverCommand.new(["testpod", "2026-03-10"], {}).run
+      code = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-03-10"], {}).run
       assert_equal 0, code
     end
 
@@ -199,7 +216,7 @@ class TestCoverCommand < Minitest::Test
 
     out, = capture_io do
       code = PodgenCLI::CoverCommand.new(
-        ["--output", output, "testpod", "Test Title"], {}).run
+        ["--output", output, "testpod", "--title", "Test Title"], {}).run
       assert_equal 0, code
     end
 
@@ -220,7 +237,7 @@ class TestCoverCommand < Minitest::Test
 
     out, = capture_io do
       code = PodgenCLI::CoverCommand.new(
-        ["testpod", "2026-04-13", "--image", image_path], {}).run
+        ["testpod", "--date", "2026-04-13", "--image", image_path], {}).run
       assert_equal 0, code
     end
 
@@ -242,7 +259,7 @@ class TestCoverCommand < Minitest::Test
   def test_image_rejects_manual_title_mode
     _, err = capture_io do
       code = PodgenCLI::CoverCommand.new(
-        ["testpod", "My Title", "--image", "/tmp/some.jpg"], {}).run
+        ["testpod", "--title", "My Title", "--image", "/tmp/some.jpg"], {}).run
       assert_equal 1, code
     end
     assert_includes err, "--image requires a specific episode ID"
@@ -251,38 +268,10 @@ class TestCoverCommand < Minitest::Test
   def test_image_rejects_nonexistent_file
     _, err = capture_io do
       code = PodgenCLI::CoverCommand.new(
-        ["testpod", "2026-04-13", "--image", "/tmp/nonexistent.jpg"], {}).run
+        ["testpod", "--date", "2026-04-13", "--image", "/tmp/nonexistent.jpg"], {}).run
       assert_equal 1, code
     end
     assert_includes err, "image file not found"
-  end
-
-  # --- --date and --title flags ---
-
-  def test_date_flag_sets_episode_id
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-04-13"], {})
-    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
-  end
-
-  def test_date_flag_overrides_positional
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "2026-01-01", "--date", "2026-04-13"], {})
-    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
-  end
-
-  def test_title_flag_sets_title
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "--title", "My Custom Title"], {})
-    assert_equal "My Custom Title", cmd.instance_variable_get(:@title)
-  end
-
-  def test_title_flag_overrides_positional
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "Some Words", "--title", "Real Title"], {})
-    assert_equal "Real Title", cmd.instance_variable_get(:@title)
-  end
-
-  def test_date_and_title_flags_together
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-04-13", "--title", "My Title"], {})
-    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
-    assert_equal "My Title", cmd.instance_variable_get(:@title)
   end
 
   # --- --title + --date dispatch and output paths ---
@@ -332,7 +321,7 @@ class TestCoverCommand < Minitest::Test
 
     out, = capture_io do
       code = PodgenCLI::CoverCommand.new(
-        ["testpod", "2026-04-13", "--image", image_path], { dry_run: true }).run
+        ["testpod", "--date", "2026-04-13", "--image", image_path], { dry_run: true }).run
       assert_equal 0, code
     end
 
