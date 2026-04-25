@@ -110,7 +110,7 @@ ruby bin/podgen <command> [options]
 | `podgen vocab <sub> <podcast>`        | Manage known vocabulary words (`add`/`remove`/`list`)    |
 | `podgen revocab <podcast> [episode]`  | Re-annotate vocabulary on transcripts                    |
 | `podgen reformat <podcast> [episode]` | Reformat transcripts (paragraph breaks, cleanup)         |
-| `podgen cover <podcast> [episode]`    | Generate episode cover images                            |
+| `podgen cover <podcast>`              | Generate episode cover images (use --date, --title, --image flags) |
 | `podgen fork <old> <new>`             | Fork podcast into a new namespace                        |
 | `podgen test <name>`                  | Run a component test (research, hn, rss, tts, etc.)      |
 | `podgen schedule <podcast>`           | Install, remove, or inspect a daily launchd scheduler    |
@@ -692,11 +692,12 @@ Cover generation requires `imagemagick` + `librsvg` (`brew install imagemagick l
 `podgen cover` generates or regenerates per-episode covers without re-running the full pipeline.
 
 ```bash
-podgen cover lahko_noc                           # all episodes
-podgen cover lahko_noc 2026-04-07                # specific episode
-podgen cover lahko_noc --missing-only            # only episodes without a cover
-podgen cover lahko_noc --dry-run                 # preview without writing files
-podgen cover lahko_noc "Custom Title"            # manual: render title onto base image
+podgen cover lahko_noc                                        # all episodes
+podgen cover lahko_noc --date 2026-04-07                      # specific episode
+podgen cover lahko_noc --date 2026-04-07 --title "New Title"  # override the rendered title
+podgen cover lahko_noc --missing-only                         # only episodes without a cover
+podgen cover lahko_noc --dry-run                              # preview without writing files
+podgen cover lahko_noc --title "Custom Title"                 # manual preview into <podcast_dir>/cover_preview.jpg
 ```
 
 | Flag                | Description                                          |
