@@ -91,16 +91,26 @@ class LingQAgent
 
   def patch_tags(language, lesson_id, tags)
     url = "#{BASE_URL}/v3/#{language}/lessons/#{lesson_id}/"
-    response = HTTParty.patch(
-      url,
-      headers: {
-        "Authorization" => "Token #{@api_key}",
-        "Content-Type" => "application/json"
-      },
-      body: { tags: tags }.to_json,
-      timeout: 30
-    )
-    log("Tags set: #{tags.join(', ')}") if response.code.between?(200, 299)
+    with_retries(max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
+      response = HTTParty.patch(
+        url,
+        headers: {
+          "Authorization" => "Token #{@api_key}",
+          "Content-Type" => "application/json"
+        },
+        body: { tags: tags }.to_json,
+        timeout: 30
+      )
+
+      case response.code
+      when 200..299
+        log("Tags set: #{tags.join(', ')}")
+      when *RETRIABLE_CODES
+        raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
+      else
+        log("Warning: setting tags returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
+      end
+    end
   rescue => e
     log("Warning: setting tags failed: #{e.message} (non-fatal)")
   end
