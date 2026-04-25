@@ -36,6 +36,7 @@ StubConfig = Struct.new(
   def cover_generation_enabled? = cover_generation_enabled
   def lingq_enabled? = lingq_enabled
   def episode_basename(_date) = "test-2026-03-10"
+  def auto_cover_config = {}
 end
 
 # Stub DescriptionAgent for testing clean_or_generate_description
@@ -217,6 +218,42 @@ class TestLanguagePipeline < Minitest::Test
     # but the point is it did NOT return the RSS image
     refute_equal "/tmp/rss_cover.jpg", path
     assert_includes desc, "feed base_image"
+  end
+
+  def test_resolve_cover_per_feed_image_auto_uses_resolver_winner
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@current_episode_feed_image, "auto")
+    pipeline.instance_variable_set(:@base_name, "show-2026-04-25")
+    pipeline.instance_variable_set(:@episode, { description: "Episode about a king." })
+
+    fake = Object.new
+    fake.define_singleton_method(:try) do |title:, description:, episodes_dir:, basename:|
+      { winner_path: "/tmp/winner.jpg", top_paths: ["/tmp/winner.jpg"], candidates: [{ score: 18 }] }
+    end
+
+    PodgenCLI::LanguagePipeline.const_get(:AutoCoverResolver).stub(:new, fake) do
+      path, desc = pipeline.send(:resolve_episode_cover, "King Title")
+      assert_equal "/tmp/winner.jpg", path
+      assert_includes desc, "auto"
+    end
+  end
+
+  def test_resolve_cover_per_feed_image_auto_falls_through_when_no_winner
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@current_episode_feed_image, "auto")
+    pipeline.instance_variable_set(:@base_name, "show-2026-04-25")
+    pipeline.instance_variable_set(:@episode, { description: "x" })
+    # Set RSS image so the chain has something to fall through TO
+    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_fallback.jpg")
+
+    fake = Object.new
+    fake.define_singleton_method(:try) { |**_kw| { winner_path: nil, top_paths: [], candidates: [] } }
+
+    PodgenCLI::LanguagePipeline.const_get(:AutoCoverResolver).stub(:new, fake) do
+      path, desc = pipeline.send(:resolve_episode_cover, "Title")
+      assert_equal "/tmp/rss_fallback.jpg", path, "should fall through to RSS image when auto returns no winner"
+      assert_includes desc, "RSS"
+    end
   end
 
   def test_resolve_cover_base_image_option_beats_rss_image
