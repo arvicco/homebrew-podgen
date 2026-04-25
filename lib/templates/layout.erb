@@ -71,7 +71,14 @@
   (function() {
     var speeds = [1.2, 1.1, 1, 0.95, 0.9, 0.85, 0.8, 0.75];
     var def = <%= site_config.fetch(:playback_speed, 1) %>;
-    var saved = parseFloat(localStorage.getItem('playbackRate')) || def;
+    var rawSaved = parseFloat(localStorage.getItem('playbackRate'));
+    var saved = isNaN(rawSaved) ? def : rawSaved;
+    // Snap saved value to the nearest allowlisted speed so the <select>
+    // displayed value matches the actual playbackRate.
+    var snapped = speeds.reduce(function(best, s) {
+      return Math.abs(s - saved) < Math.abs(best - saved) ? s : best;
+    }, speeds[0]);
+    saved = snapped;
     document.querySelectorAll('audio').forEach(function(a) { a.playbackRate = saved; });
     document.querySelectorAll('.speed-selector').forEach(function(sel) {
       speeds.forEach(function(s) {
