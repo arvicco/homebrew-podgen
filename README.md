@@ -12,8 +12,9 @@ Runs on a daily schedule with zero human involvement.
 
 - **Ruby 3.2+** (tested with Ruby 4.0)
 - **Homebrew** (macOS)
-- **ffmpeg**: `brew install ffmpeg` (podgen only)
-- **yt-dlp** (for `--url` YouTube support): `brew install yt-dlp`
+- **System tools** (macOS):
+  - Required: `brew install ffmpeg yt-dlp imagemagick librsvg`
+  - Optional: `brew install espeak-ng icu4c` (IPA pronunciation, cognate transliteration)
 - **API accounts** (news pipeline):
   - [Anthropic](https://console.anthropic.com/) — Claude API for script generation (also powers Claude Web Search source)
   - [Exa.ai](https://exa.ai/) — research/news search (default source)
