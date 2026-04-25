@@ -711,8 +711,8 @@ podgen cover lahko_noc --dry-run                              # preview without 
 podgen cover lahko_noc --title "Custom Title"                 # manual preview into <podcast_dir>/cover_preview.jpg
 podgen cover lahko_noc --date 2026-04-07 --image auto         # search web, rank with Claude vision, fall back to overlay
 podgen cover lahko_noc --image auto                           # batch — auto-search every episode (~$0.02 each)
-podgen cover lahko_noc --clear-candidates                     # delete _cover1/2/3.* leftovers from --image auto
-podgen cover --clear-candidates                               # same, across all podcasts
+podgen cover lahko_noc --clean                     # delete _cover1/2/3.* leftovers from --image auto
+podgen cover --clean                               # same, across all podcasts
 ```
 
 | Flag                | Description                                          |

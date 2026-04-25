@@ -311,9 +311,9 @@ class TestCoverCommand < Minitest::Test
     assert_equal File.expand_path(out_path), captured[:output_path]
   end
 
-  # --- --clear-candidates -------------------------------------------------
+  # --- --clean -------------------------------------------------
 
-  def test_clear_candidates_removes_numbered_covers_from_specific_podcast
+  def test_clean_removes_numbered_covers_from_specific_podcast
     episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
     FileUtils.mkdir_p(episodes_dir)
     File.write(File.join(episodes_dir, "testpod-2026-03-10_cover.jpg"), "main")
@@ -324,7 +324,7 @@ class TestCoverCommand < Minitest::Test
     File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"), "# x\n\nbody")
 
     capture_io do
-      code = PodgenCLI::CoverCommand.new(["testpod", "--clear-candidates"], {}).run
+      code = PodgenCLI::CoverCommand.new(["testpod", "--clean"], {}).run
       assert_equal 0, code
     end
 
@@ -339,7 +339,7 @@ class TestCoverCommand < Minitest::Test
            "transcript must not be touched"
   end
 
-  def test_clear_candidates_without_podcast_cleans_all_podcasts
+  def test_clean_without_podcast_cleans_all_podcasts
     pod_a_dir = File.join(@tmpdir, "podcasts", "podA")
     pod_b_dir = File.join(@tmpdir, "podcasts", "podB")
     FileUtils.mkdir_p(pod_a_dir)
@@ -356,7 +356,7 @@ class TestCoverCommand < Minitest::Test
     File.write(File.join(b_eps, "podB-2026-01-01_cover.jpg"), "main")
 
     capture_io do
-      code = PodgenCLI::CoverCommand.new(["--clear-candidates"], {}).run
+      code = PodgenCLI::CoverCommand.new(["--clean"], {}).run
       assert_equal 0, code
     end
 
@@ -365,13 +365,13 @@ class TestCoverCommand < Minitest::Test
     assert File.exist?(File.join(b_eps, "podB-2026-01-01_cover.jpg"))
   end
 
-  def test_clear_candidates_dry_run_does_not_delete
+  def test_clean_dry_run_does_not_delete
     episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
     FileUtils.mkdir_p(episodes_dir)
     File.write(File.join(episodes_dir, "testpod-2026-03-10_cover1.jpg"), "c1")
 
     capture_io do
-      code = PodgenCLI::CoverCommand.new(["testpod", "--clear-candidates"], { dry_run: true }).run
+      code = PodgenCLI::CoverCommand.new(["testpod", "--clean"], { dry_run: true }).run
       assert_equal 0, code
     end
 
