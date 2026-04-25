@@ -13,7 +13,7 @@ class DescriptionAgent
 
   def initialize(logger: nil)
     @logger = logger
-    init_anthropic_client(env_key: "CLAUDE_WEB_MODEL", default_model: "claude-haiku-4-5-20251001")
+    init_anthropic_client(env_key: "CLAUDE_DESCRIPTION_MODEL", default_model: "claude-haiku-4-5-20251001")
   end
 
   # Cleans a YouTube/RSS episode title by stripping category prefixes, labels, and noise.
