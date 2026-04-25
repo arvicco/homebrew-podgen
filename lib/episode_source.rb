@@ -7,6 +7,7 @@ require "open3"
 require_relative "loggable"
 require_relative "sources/rss_source"
 require_relative "http_downloader"
+require_relative "time_value"
 
 class EpisodeSource
   include Loggable
@@ -190,6 +191,9 @@ class EpisodeSource
     end
 
     log("Found #{episodes.length} episodes with audio enclosures")
+    episodes = filter_by_length(episodes)
+    return nil if episodes.empty?
+
     episodes.first
   end
 
@@ -210,6 +214,7 @@ class EpisodeSource
       feed = weighted_pick(pool, default_weight)
       source = RSSSource.new(feeds: [feed], logger: @logger)
       episodes = source.fetch_episodes(exclude_urls: exclude)
+      episodes = filter_by_length(episodes) if episodes.any?
 
       if episodes.any?
         tag = feed.is_a?(Hash) ? feed[:tag] : nil
@@ -227,6 +232,66 @@ class EpisodeSource
   def feed_weight(feed, default)
     feed.is_a?(Hash) ? (feed[:weight] || default) : default
   end
+
+  # Filters episodes by config min_length / max_length using each item's
+  # itunes_duration metadata. Episodes with missing or unparseable
+  # :duration are kept (will be checked post-download).
+  def filter_by_length(episodes)
+    min_s = @config.respond_to?(:min_length_seconds) ? @config.min_length_seconds : nil
+    max_s = @config.respond_to?(:max_length_seconds) ? @config.max_length_seconds : nil
+    return episodes unless min_s || max_s
+
+    too_short = 0
+    too_long = 0
+    unknown = 0
+    kept = episodes.select do |ep|
+      secs = TimeValue.parse_duration_seconds(ep[:duration])
+      if secs.nil?
+        unknown += 1
+        next true
+      end
+      if min_s && secs < min_s
+        too_short += 1
+        next false
+      end
+      if max_s && secs > max_s
+        too_long += 1
+        next false
+      end
+      true
+    end
+
+    range = "#{format_length(min_s)}–#{format_length(max_s)}"
+    parts = ["#{kept.length}/#{episodes.length} kept"]
+    parts << "#{too_short} too short" if too_short > 0
+    parts << "#{too_long} too long" if too_long > 0
+    parts << "#{unknown} unknown duration" if unknown > 0
+    log("Length filter [#{range}]: #{parts.join(', ')}")
+    kept
+  end
+
+  def format_length(secs)
+    return "?" unless secs
+    m = (secs / 60).to_i
+    s = (secs % 60).round
+    "#{m}:#{s.to_s.rjust(2, '0')}"
+  end
+
+  public
+
+  # Returns :ok, :too_short, or :too_long for the given audio duration in
+  # seconds. Used by the language pipeline post-download to validate
+  # episodes whose RSS metadata didn't include a usable :duration.
+  def length_check(seconds)
+    min_s = @config.respond_to?(:min_length_seconds) ? @config.min_length_seconds : nil
+    max_s = @config.respond_to?(:max_length_seconds) ? @config.max_length_seconds : nil
+    return :ok unless seconds.is_a?(Numeric)
+    return :too_short if min_s && seconds < min_s
+    return :too_long if max_s && seconds > max_s
+    :ok
+  end
+
+  private
 
   def weighted_pick(feeds, default_weight)
     total = feeds.sum { |f| feed_weight(f, default_weight) }

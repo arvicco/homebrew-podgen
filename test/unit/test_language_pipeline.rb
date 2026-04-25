@@ -37,6 +37,8 @@ StubConfig = Struct.new(
   def lingq_enabled? = lingq_enabled
   def episode_basename(_date) = "test-2026-03-10"
   def auto_cover_config = {}
+  def min_length_seconds; nil; end
+  def max_length_seconds; nil; end
 end
 
 # Stub DescriptionAgent for testing clean_or_generate_description
@@ -218,6 +220,76 @@ class TestLanguagePipeline < Minitest::Test
     # but the point is it did NOT return the RSS image
     refute_equal "/tmp/rss_cover.jpg", path
     assert_includes desc, "feed base_image"
+  end
+
+  # --- enforce_length_post_download ---
+
+  def test_enforce_length_returns_nil_when_in_range
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
+    fake_source = Object.new
+    fake_source.define_singleton_method(:length_check) { |_d| :ok }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+    AudioAssembler.stub :probe_duration, 300.0 do
+      result = pipeline.send(:enforce_length_post_download)
+      assert_nil result
+    end
+  end
+
+  def test_enforce_length_aborts_on_too_long_without_ask_trim
+    pipeline = build_pipeline(options: {})
+    pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    fake_source = Object.new
+    fake_source.define_singleton_method(:length_check) { |_d| :too_long }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+    AudioAssembler.stub :probe_duration, 700.0 do
+      result = pipeline.send(:enforce_length_post_download)
+      assert_equal 1, result
+    end
+  end
+
+  def test_enforce_length_with_ask_trim_excludes_on_e
+    pipeline = build_pipeline(options: { ask_trim: true })
+    pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    pipeline.instance_variable_set(:@episode, { audio_url: "https://ex.com/ep.mp3" })
+
+    excluded_url = nil
+    fake_source = Object.new
+    fake_source.define_singleton_method(:length_check) { |_d| :too_long }
+    fake_source.define_singleton_method(:exclude_url!) { |url| excluded_url = url }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+
+    $stdin.stub :gets, "e\n" do
+      AudioAssembler.stub :probe_duration, 700.0 do
+        capture_io do
+          result = pipeline.send(:enforce_length_post_download)
+          assert_equal 1, result
+        end
+      end
+    end
+    assert_equal "https://ex.com/ep.mp3", excluded_url
+  end
+
+  def test_enforce_length_with_ask_trim_continues_on_t
+    pipeline = build_pipeline(options: { ask_trim: true })
+    pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    pipeline.instance_variable_set(:@episode, { audio_url: "https://ex.com/ep.mp3" })
+
+    fake_source = Object.new
+    fake_source.define_singleton_method(:length_check) { |_d| :too_long }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+
+    $stdin.stub :gets, "t\n" do
+      AudioAssembler.stub :probe_duration, 700.0 do
+        capture_io do
+          result = pipeline.send(:enforce_length_post_download)
+          assert_nil result
+        end
+      end
+    end
   end
 
   def test_resolve_cover_per_feed_image_auto_uses_resolver_winner
@@ -821,6 +893,30 @@ class TestLanguagePipeline < Minitest::Test
       transcription_language: "sl",
       **overrides
     )
+  end
+
+  def build_config_with_length(min:, max:)
+    klass = Class.new(StubConfig) do
+      attr_accessor :min_length_override, :max_length_override
+      def min_length_seconds; @min_length_override; end
+      def max_length_seconds; @max_length_override; end
+    end
+    cfg = klass.new(
+      podcast_dir: @tmpdir,
+      episodes_dir: @episodes_dir,
+      history_path: File.join(@tmpdir, "history.yml"),
+      excluded_urls_path: File.join(@tmpdir, "excluded_urls.yml"),
+      author: "Test Author",
+      cover_base_image: nil,
+      cover_options: {},
+      cover_generation_enabled: false,
+      lingq_config: nil,
+      lingq_enabled: false,
+      transcription_language: "sl"
+    )
+    cfg.min_length_override = min
+    cfg.max_length_override = max
+    cfg
   end
 
   def stub_trimmer(called_with)

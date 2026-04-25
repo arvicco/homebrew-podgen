@@ -465,6 +465,27 @@ For `skip`, both formats mean "start playback from this point" — `skip: 80` an
 
 CLI flags `--skip N` / `--cut N` override per-feed values. `skip`/`cut` in `## Audio` is used as a fallback if neither CLI flag nor per-feed config is set.
 
+#### Episode length filtering
+
+Set `min_length` / `max_length` in `## Sources` to filter out episodes outside the desired duration range:
+
+```markdown
+## Sources
+- min_length: 2:00
+- max_length: 9:30
+- rss:
+  - https://podcast.example.com/feed
+```
+
+Accepts the same formats as RSS `itunes_duration`: plain seconds (`120`), `MM:SS`, or `HH:MM:SS`. Applied in two stages:
+
+1. **Pre-download**: episodes whose `itunes_duration` falls outside `[min_length, max_length]` are dropped before download. A summary line logs how many were kept and why others were filtered (`Length filter [2:00–9:30]: 59/60 kept, 1 too long`).
+2. **Post-download**: the actual audio duration is probed (covers feeds without reliable `itunes_duration`). If outside range:
+   - With `--ask-trim`: prompt `[t]rim manually / [e]xclude / [a]bort?` — `e` writes the URL to `excluded_urls.yml` so future runs skip it.
+   - Without `--ask-trim`: log warning and abort with exit 1.
+
+Episodes with missing or unparseable `itunes_duration` pass the pre-download filter and are validated post-download.
+
 #### Interactive trimming
 
 `--ask-trim` downloads the audio, opens it for preview, then prompts for skip and cut values interactively. Mutually exclusive with `--skip`/`--no-skip`/`--cut`/`--no-cut`.

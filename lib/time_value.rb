@@ -40,4 +40,24 @@ class TimeValue < DelegateClass(Float)
       new(Float(str), absolute: false)
     end
   end
+
+  # Parses a duration string into Float seconds. Accepts:
+  #   "775" / "775.9" → seconds
+  #   "12:55"          → minutes:seconds
+  #   "01:23:45"       → hours:minutes:seconds
+  # Returns nil for nil/empty/unparseable input. Used for filtering RSS
+  # itunes_duration values, which can be in any of these formats.
+  def self.parse_duration_seconds(value)
+    return nil if value.nil?
+    str = value.to_s.strip
+    return nil if str.empty?
+    return (Float(str) rescue nil) unless str.include?(":")
+
+    parsed = str.split(":").map { |p| Float(p) rescue nil }
+    return nil if parsed.any?(&:nil?)
+    case parsed.length
+    when 2 then parsed[0] * 60 + parsed[1]
+    when 3 then parsed[0] * 3600 + parsed[1] * 60 + parsed[2]
+    end
+  end
 end
