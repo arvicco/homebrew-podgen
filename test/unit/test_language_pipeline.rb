@@ -238,6 +238,27 @@ class TestLanguagePipeline < Minitest::Test
     end
   end
 
+  def test_resolve_cover_per_feed_image_auto_persists_into_staging_dir
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@current_episode_feed_image, "auto")
+    pipeline.instance_variable_set(:@base_name, "show-2026-04-25")
+    pipeline.instance_variable_set(:@episode, { description: "x" })
+    staging = pipeline.instance_variable_get(:@staging_dir)
+
+    captured_dir = nil
+    fake = Object.new
+    fake.define_singleton_method(:try) do |title:, description:, episodes_dir:, basename:|
+      captured_dir = episodes_dir
+      { winner_path: nil, top_paths: [], candidates: [] }
+    end
+
+    PodgenCLI::LanguagePipeline.const_get(:AutoCoverResolver).stub(:new, fake) do
+      pipeline.send(:resolve_episode_cover, "Title")
+    end
+    assert_equal staging, captured_dir,
+                 "candidates must be persisted into @staging_dir so they participate in commit_episode's atomic move"
+  end
+
   def test_resolve_cover_per_feed_image_auto_falls_through_when_no_winner
     pipeline = build_pipeline
     pipeline.instance_variable_set(:@current_episode_feed_image, "auto")
