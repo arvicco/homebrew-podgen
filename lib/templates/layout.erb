@@ -119,19 +119,41 @@
 
     var pad = 8;
     var vw = window.innerWidth;
+    var vh = window.innerHeight;
     var wordRect = word.getBoundingClientRect();
+    var wordCenter = wordRect.left + wordRect.width / 2;
 
-    if (rect.left < pad || rect.right > vw - pad) {
-      var newLeft = rect.left < pad ? pad : (vw - pad - rect.width);
-      tip.style.left = (newLeft - wordRect.left) + 'px';
+    // Horizontal: center on word, then clamp into viewport [pad, vw - pad]
+    var desiredLeft = wordCenter - rect.width / 2;
+    var clampedLeft = Math.max(pad, Math.min(vw - pad - rect.width, desiredLeft));
+    if (Math.abs(clampedLeft - desiredLeft) > 0.5) {
+      tip.style.left = (clampedLeft - wordRect.left) + 'px';
       tip.style.transform = 'none';
-      var wordCenter = wordRect.left + wordRect.width / 2;
-      var arrowX = Math.max(8, Math.min(rect.width - 8, wordCenter - newLeft));
+      var arrowX = Math.max(8, Math.min(rect.width - 8, wordCenter - clampedLeft));
       tip.style.setProperty('--vocab-tip-arrow-x', arrowX + 'px');
     }
 
-    if (rect.top < pad) {
+    // Vertical: pick the side with more room
+    var spaceAbove = wordRect.top - pad;
+    var spaceBelow = vh - wordRect.bottom - pad;
+    var aboveFits = rect.height <= spaceAbove;
+    var belowFits = rect.height <= spaceBelow;
+    if (!aboveFits && belowFits) {
       tip.classList.add('below');
+    } else if (!aboveFits && !belowFits && spaceBelow > spaceAbove) {
+      tip.classList.add('below');
+    }
+
+    // Defensive re-check: if anything in the layout shifted between measurements,
+    // force the bubble back into the viewport.
+    var finalRect = tip.getBoundingClientRect();
+    var currentInline = parseFloat(tip.style.left) || 0;
+    if (finalRect.right > vw - pad) {
+      tip.style.left = (currentInline - (finalRect.right - (vw - pad))) + 'px';
+      tip.style.transform = 'none';
+    } else if (finalRect.left < pad) {
+      tip.style.left = (currentInline + (pad - finalRect.left)) + 'px';
+      tip.style.transform = 'none';
     }
   }
 

@@ -213,6 +213,33 @@ class VocabTooltipTest < BrowserTest
     end
   end
 
+  # Regression test: word in flowing paragraph text near the right edge
+  # of a narrow viewport, with a wide definition that pushes the bubble
+  # near max-width. Mirrors the real-mobile failure mode where an
+  # absolute-positioned-edge test passed but flowing text didn't.
+  FLOWING_BODY = <<~HTML
+    <div style="padding: 10px; font-size: 14px;">
+      <p>Some leading text to push the next word near the right edge of the line —
+      <a href="#vocab-delta" class="vocab-word">delta<span class="vocab-tip"><strong>delta</strong> /ˈdɛltə/ <span class="pos">(noun)</span><span class="vocab-tip-def">a long, fairly detailed definition that fills the bubble out toward its maximum width and would overflow the viewport on a narrow screen</span></span></a>
+      and continuing with more text after the linked word.</p>
+      <p>Some text on a later paragraph for context.</p>
+      <section class="vocabulary"><dl><dt id="vocab-delta">delta</dt></dl></section>
+    </div>
+  HTML
+
+  def test_touch_tooltip_stays_in_viewport_when_word_in_flowing_text
+    file = render_fixture(body: FLOWING_BODY, title: "Flow")
+    with_narrow_viewport(width: 400, height: 700) do
+      visit "/#{file}"
+      tap_vocab("delta")
+      rect = tooltip_rect("delta")
+      assert rect["left"] >= 0,
+             "tooltip overflows left edge in flowing text: left=#{rect['left']}"
+      assert rect["right"] <= 400,
+             "tooltip overflows right edge in flowing text: right=#{rect['right']} viewport=400"
+    end
+  end
+
   def test_desktop_hover_tooltip_flips_below_when_word_near_top
     file = render_fixture(body: EDGE_BODY, title: "Edge")
     with_narrow_viewport(width: 400, height: 700) do
