@@ -429,7 +429,97 @@ class TestEpisodeSource < Minitest::Test
     end
   end
 
+  # --- filter_by_length ---
+
+  def test_filter_by_length_returns_unchanged_when_no_limits
+    eps = [{ duration: "5:00" }, { duration: "9:00" }]
+    src = source_with_length(min: nil, max: nil)
+    assert_equal eps, src.send(:filter_by_length, eps)
+  end
+
+  def test_filter_by_length_drops_episodes_over_max
+    eps = [
+      { duration: "5:00", audio_url: "a" },
+      { duration: "12:55", audio_url: "b" },
+      { duration: "8:00", audio_url: "c" }
+    ]
+    src = source_with_length(min: 120, max: 570) # 2:00–9:30
+    kept = src.send(:filter_by_length, eps)
+    assert_equal ["a", "c"], kept.map { |e| e[:audio_url] }
+  end
+
+  def test_filter_by_length_drops_episodes_under_min
+    eps = [
+      { duration: "0:30", audio_url: "short" },
+      { duration: "5:00", audio_url: "ok" }
+    ]
+    src = source_with_length(min: 120, max: 570)
+    kept = src.send(:filter_by_length, eps)
+    assert_equal ["ok"], kept.map { |e| e[:audio_url] }
+  end
+
+  def test_filter_by_length_keeps_episodes_with_missing_duration
+    eps = [
+      { audio_url: "no-duration" },
+      { duration: "12:55", audio_url: "too-long" },
+      { duration: "5:00", audio_url: "ok" }
+    ]
+    src = source_with_length(min: 120, max: 570)
+    kept = src.send(:filter_by_length, eps)
+    assert_equal ["no-duration", "ok"], kept.map { |e| e[:audio_url] }
+  end
+
+  def test_filter_by_length_logs_stats
+    eps = [
+      { duration: "0:30", audio_url: "a" },
+      { duration: "12:55", audio_url: "b" },
+      { duration: "5:00", audio_url: "c" }
+    ]
+    logged = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |msg| logged << msg }
+
+    src = source_with_length(min: 120, max: 570, logger: logger)
+    src.send(:filter_by_length, eps)
+    msg = logged.find { |m| m.include?("Length filter") }
+    refute_nil msg
+    assert_includes msg, "1/3 kept"
+    assert_includes msg, "1 too short"
+    assert_includes msg, "1 too long"
+    assert_includes msg, "2:00–9:30"
+  end
+
+  # --- length_check ---
+
+  def test_length_check_ok_when_no_limits
+    src = source_with_length(min: nil, max: nil)
+    assert_equal :ok, src.length_check(99999)
+  end
+
+  def test_length_check_too_long
+    src = source_with_length(min: 120, max: 570)
+    assert_equal :too_long, src.length_check(600)
+  end
+
+  def test_length_check_too_short
+    src = source_with_length(min: 120, max: 570)
+    assert_equal :too_short, src.length_check(60)
+  end
+
+  def test_length_check_ok_within_range
+    src = source_with_length(min: 120, max: 570)
+    assert_equal :ok, src.length_check(300)
+  end
+
   private
+
+  def source_with_length(min:, max:, logger: nil)
+    config = Struct.new(:sources, :min_length_seconds, :max_length_seconds, keyword_init: true).new(
+      sources: {}, min_length_seconds: min, max_length_seconds: max
+    )
+    history = Struct.new(:all_urls).new(Set.new)
+    EpisodeSource.new(config: config, history: history, logger: logger)
+  end
 
   def stub_status(success)
     Struct.new(:success?).new(success)

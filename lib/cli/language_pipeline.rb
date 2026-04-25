@@ -235,7 +235,55 @@ module PodgenCLI
       end
       logger.phase_end("Download Audio")
 
+      verdict = enforce_length_post_download
+      return verdict if verdict
+
       nil
+    end
+
+    # Probes the downloaded audio duration and rejects episodes outside the
+    # configured min_length/max_length range. Returns nil to continue, or an
+    # exit code to abort.
+    def enforce_length_post_download
+      duration = AudioAssembler.probe_duration(@source_audio_path)
+      verdict = @episode_source.length_check(duration)
+      return nil if verdict == :ok
+
+      reason = verdict == :too_long ? "too long" : "too short"
+      min_s = @config.min_length_seconds
+      max_s = @config.max_length_seconds
+      range = "#{format_length(min_s)}–#{format_length(max_s)}"
+      actual = format_length(duration)
+      logger.log("Warning: episode duration #{actual} is #{reason} (allowed range #{range})")
+
+      if @options[:ask_trim]
+        prompt = "Episode is #{reason} (#{actual}, allowed #{range}). [t]rim manually / [e]xclude / [a]bort? "
+        $stdout.print(prompt)
+        $stdout.flush
+        choice = ($stdin.gets || "").strip.downcase
+        case choice
+        when "t", "trim"
+          logger.log("Continuing with manual trim despite out-of-range duration")
+          return nil
+        when "e", "exclude"
+          @episode_source.exclude_url!(@episode[:audio_url])
+          logger.log("Excluded #{@episode[:audio_url]}")
+          return 1
+        else
+          logger.log("Aborted by user")
+          return 1
+        end
+      end
+
+      logger.error("Episode duration #{actual} outside allowed range #{range}; aborting")
+      1
+    end
+
+    def format_length(secs)
+      return "?" unless secs
+      m = (secs / 60).to_i
+      s = (secs % 60).round
+      "#{m}:#{s.to_s.rjust(2, '0')}"
     end
 
     def trim_source_audio

@@ -758,6 +758,38 @@ class TestPodcastConfig < Minitest::Test
     assert_equal 50, opts[:y_offset]
   end
 
+  def test_min_length_seconds_parses_mm_ss
+    write_guidelines(<<~MD)
+      ## Format
+      x.
+
+      ## Tone
+      x.
+
+      ## Sources
+      - rss:
+        - https://example.com/feed
+      - min_length: 2:00
+      - max_length: 9:30
+    MD
+    config = PodcastConfig.new("myshow")
+    assert_equal 120.0, config.min_length_seconds
+    assert_equal 570.0, config.max_length_seconds
+  end
+
+  def test_length_seconds_returns_nil_when_unset
+    write_guidelines(<<~MD)
+      ## Format
+      x.
+
+      ## Tone
+      x.
+    MD
+    config = PodcastConfig.new("myshow")
+    assert_nil config.min_length_seconds
+    assert_nil config.max_length_seconds
+  end
+
   def test_auto_cover_config_returns_user_overrides
     write_guidelines(<<~MD)
       ## Format

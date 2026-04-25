@@ -116,6 +116,20 @@ class PodcastConfig
   # Only keys explicitly set in ## Image are returned; the resolver merges
   # with its own defaults. Keys: auto_cover_min_bytes, auto_cover_min_score,
   # auto_cover_candidates, auto_cover_model.
+  # Minimum/maximum episode length in seconds, parsed from ## Sources keys
+  # min_length: / max_length: (e.g. "2:00", "9:30", "01:23:45", or "775").
+  # Returns nil when not configured. Used by EpisodeSource to filter RSS
+  # episodes by their itunes_duration metadata before download.
+  def min_length_seconds
+    return @min_length_seconds if defined?(@min_length_seconds)
+    @min_length_seconds = parse_length(parser.sources["min_length"])
+  end
+
+  def max_length_seconds
+    return @max_length_seconds if defined?(@max_length_seconds)
+    @max_length_seconds = parse_length(parser.sources["max_length"])
+  end
+
   def auto_cover_config
     @auto_cover_config ||= begin
       src = parser.image_section
@@ -321,5 +335,11 @@ class PodcastConfig
   def resolve_path(value)
     return value if value.start_with?("/")
     File.join(@podcast_dir, value)
+  end
+
+  def parse_length(value)
+    return nil unless value
+    raw = value.is_a?(Array) ? value.first : value
+    TimeValue.parse_duration_seconds(raw)
   end
 end
