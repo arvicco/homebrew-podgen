@@ -250,4 +250,46 @@ class TestLingQAgent < Minitest::Test
       refute posted_body.key?(:tags)
     end
   end
+
+  # --- HTTP-boundary regression tests for the tag/timestamp fixes ---
+  # These stub HTTParty directly (not the agent's helpers), so a future
+  # revert of the underlying request shape would fail here.
+
+  def test_patch_tags_sends_json_body_via_http_patch
+    captured = nil
+    fake_response = Struct.new(:code, :body) { def parsed_response; {}; end }.new(200, "{}")
+    HTTParty.stub :patch, ->(url, opts) { captured = { url: url, opts: opts }; fake_response } do
+      LingQAgent.new.send(:patch_tags, "ja", 12345, ["foo", "bar"])
+    end
+    assert_includes captured[:url], "/ja/lessons/12345/"
+    assert_equal "application/json", captured[:opts][:headers]["Content-Type"]
+    assert_equal({ tags: ["foo", "bar"] }.to_json, captured[:opts][:body])
+  end
+
+  def test_patch_tags_logs_warning_on_non_2xx
+    fake_response = Struct.new(:code, :body) { def parsed_response; { "detail" => "bad request" }; end }.new(400, "{}")
+    logger = Object.new
+    logged = []
+    logger.define_singleton_method(:log) { |msg| logged << msg }
+
+    agent = LingQAgent.new(logger: logger)
+    HTTParty.stub :patch, fake_response do
+      agent.send(:patch_tags, "en", 1, ["t"])
+    end
+
+    warnings = logged.select { |m| m.include?("Warning") }
+    refute_empty warnings, "non-2xx should produce a warning log"
+    assert(warnings.any? { |m| m.include?("HTTP 400") }, "warning should include the HTTP code")
+  end
+
+  def test_generate_timestamps_sends_empty_array_body
+    captured = nil
+    fake_response = Struct.new(:code, :body) { def parsed_response; {}; end }.new(200, "{}")
+    HTTParty.stub :post, ->(url, opts) { captured = { url: url, opts: opts }; fake_response } do
+      LingQAgent.new.send(:generate_timestamps, "sl", 999)
+    end
+    assert_includes captured[:url], "/sl/lessons/999/timestamps/"
+    assert_equal "[]", captured[:opts][:body], "LingQ timestamps endpoint requires an empty JSON array body"
+    assert_equal "application/json", captured[:opts][:headers]["Content-Type"]
+  end
 end
