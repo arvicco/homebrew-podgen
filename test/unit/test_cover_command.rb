@@ -405,11 +405,16 @@ class TestCoverCommand < Minitest::Test
       { winner_path: winner, top_paths: [winner], candidates: [{ score: 18 }] }
     end
 
+    fake_agent = Object.new
+    fake_agent.define_singleton_method(:generate) { |**_kw| nil }
+
     PodgenCLI::CoverCommand.const_get(:AutoCoverResolver).stub(:new, fake_resolver) do
-      capture_io do
-        code = PodgenCLI::CoverCommand.new(
-          ["testpod", "--date", "2026-03-10", "--image", "auto"], {}).run
-        assert_equal 0, code
+      PodgenCLI::CoverCommand.const_get(:CoverAgent).stub(:new, fake_agent) do
+        capture_io do
+          code = PodgenCLI::CoverCommand.new(
+            ["testpod", "--date", "2026-03-10", "--image", "auto"], {}).run
+          assert_equal 0, code
+        end
       end
     end
 
