@@ -84,7 +84,7 @@ class TestTopicAgent < Minitest::Test
     client = stub_client(agent, ["q1"])
 
     agent.generate
-    assert_equal ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6"), client.last_call[:model]
+    assert_equal ENV.fetch("CLAUDE_MODEL", "claude-opus-4-7"), client.last_call[:model]
   end
 
   private

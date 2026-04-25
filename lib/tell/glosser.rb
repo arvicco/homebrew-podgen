@@ -73,7 +73,7 @@ module Tell
       end
     end
 
-    def initialize(api_key, model: "claude-opus-4-6")
+    def initialize(api_key, model: "claude-opus-4-7")
       require "anthropic"
       @client = Anthropic::Client.new(api_key: api_key, timeout: 15, max_retries: 1)
       @model = model

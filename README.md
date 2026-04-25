@@ -56,7 +56,7 @@ GROQ_API_KEY=...              # Optional: Groq transcription engine (language pi
 GROQ_WHISPER_MODEL=whisper-large-v3   # Optional: Groq Whisper model (default: whisper-large-v3)
 LINGQ_API_KEY=...             # Optional: LingQ upload (language pipeline)
 YOUTUBE_BROWSER=chrome        # Optional: browser for yt-dlp cookie auth (default: chrome)
-CLAUDE_MODEL=claude-opus-4-6          # Optional: Claude model for scripts/reconciliation
+CLAUDE_MODEL=claude-opus-4-7          # Optional: Claude model for scripts (default: claude-opus-4-7)
 CLAUDE_WEB_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for web search source
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
 ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
@@ -308,7 +308,7 @@ Configure in `.env`:
 ```
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2    # Multilingual, best quality
 ELEVENLABS_VOICE_ID=cjVigY5qzO86Huf0OWal     # Eric - Smooth, Trustworthy
-CLAUDE_MODEL=claude-opus-4-6                   # Script generation model
+CLAUDE_MODEL=claude-opus-4-7                   # Script generation model
 ```
 
 ### Intro/Outro Music

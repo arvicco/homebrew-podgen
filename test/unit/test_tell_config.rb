@@ -540,8 +540,8 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
-    assert_equal "claude-opus-4-6", config.gloss_reconciler
+    assert_equal ["claude-opus-4-7", "claude-sonnet-4-6"], config.gloss_model
+    assert_equal "claude-opus-4-7", config.gloss_reconciler
   end
 
   def test_gloss_model_single_string
@@ -564,7 +564,7 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6"], config.gloss_model
+    assert_equal ["claude-opus-4-7"], config.gloss_model
   end
 
   def test_gloss_model_env_override
@@ -603,8 +603,8 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6"], config.phonetic_model
-    assert_equal "claude-opus-4-6", config.phonetic_reconciler
+    assert_equal ["claude-opus-4-7"], config.phonetic_model
+    assert_equal "claude-opus-4-7", config.phonetic_reconciler
   end
 
   def test_phonetic_model_explicit_scalar
@@ -702,8 +702,8 @@ class TestTellConfig < Minitest::Test
   def test_gloss_model_array_preserved_for_consensus
     write_config(base_config.merge("gloss_model" => ["opus", "sonnet"]))
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
-    assert_equal "claude-opus-4-6", config.gloss_reconciler # first = reconciler
+    assert_equal ["claude-opus-4-7", "claude-sonnet-4-6"], config.gloss_model
+    assert_equal "claude-opus-4-7", config.gloss_reconciler # first = reconciler
   end
 
   def test_gloss_model_array_resolves_short_names
