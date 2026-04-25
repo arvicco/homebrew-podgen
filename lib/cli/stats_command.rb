@@ -10,6 +10,7 @@ require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_filtering")
+require_relative File.join(root, "lib", "word_stats")
 
 module PodgenCLI
   class StatsCommand
@@ -18,6 +19,8 @@ module PodgenCLI
       @all = false
       @downloads = false
       @days = 30
+      @words = false
+      @top = 50
       OptionParser.new do |opts|
         opts.on("--all", "Show stats for all podcasts") { @all = true }
         opts.on("--downloads", "Show download analytics from Cloudflare") { @downloads = true }
@@ -25,12 +28,16 @@ module PodgenCLI
         opts.on("--today", "Downloads for today (shortcut for --days 1)") { @downloads = true; @days = 1 }
         opts.on("--week", "Downloads for last 7 days") { @downloads = true; @days = 7 }
         opts.on("--month", "Downloads for last 30 days") { @downloads = true; @days = 30 }
+        opts.on("--words", "Vocabulary frequency across all episodes") { @words = true }
+        opts.on("--top N", Integer, "Limit --words to top N rows (default 50, 0 = all)") { |n| @top = n }
       end.parse!(args)
       @podcast_name = args.shift
     end
 
     def run
-      if @downloads
+      if @words
+        return run_words
+      elsif @downloads
         run_downloads
       elsif @all
         run_all
@@ -52,6 +59,41 @@ module PodgenCLI
     end
 
     private
+
+    def run_words
+      unless @podcast_name
+        $stderr.puts "Usage: podgen stats <podcast> --words [--top N]"
+        return 2
+      end
+
+      config = PodcastConfig.new(@podcast_name)
+      stats = WordStats.new(config: config, logger: nil).build
+      if stats.empty?
+        puts "#{@podcast_name}: no vocabulary data found"
+        return 0
+      end
+
+      sorted = stats.sort_by { |s| [-s.body_count, -s.vocab_count, s.lemma] }
+      sorted = sorted.first(@top) if @top.positive?
+
+      puts "Vocabulary frequency for '#{@podcast_name}' (#{stats.length} unique lemma(s)):"
+      puts
+      printf "  %5s  %5s  %-22s  %-10s  %s\n", "BODY", "VOCAB", "LEMMA", "POS", "DEFINITION"
+      printf "  %5s  %5s  %-22s  %-10s  %s\n", "─────", "─────", "─" * 22, "─" * 10, "─" * 30
+      sorted.each do |s|
+        printf "  %5d  %5d  %-22s  %-10s  %s\n",
+               s.body_count, s.vocab_count,
+               truncate(s.lemma, 22),
+               truncate(s.pos.to_s, 10),
+               truncate(s.definition.to_s, 50)
+      end
+      0
+    end
+
+    def truncate(str, width)
+      return str if str.length <= width
+      str[0, width - 1] + "…"
+    end
 
     def run_downloads
       require_relative "../analytics_client"
