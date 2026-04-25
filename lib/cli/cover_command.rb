@@ -22,7 +22,7 @@ module PodgenCLI
       @output_path = nil
       @missing_only = false
       @image = nil
-      @clear_candidates = false
+      @clean = false
       @overrides = {}
 
       OptionParser.new do |opts|
@@ -40,7 +40,7 @@ module PodgenCLI
         opts.on("--gravity POS", "Override gravity (Center, South, etc.)") { |v| @overrides[:gravity] = v }
         opts.on("--x-offset N", Integer, "Override horizontal offset") { |v| @overrides[:x_offset] = v }
         opts.on("--y-offset N", Integer, "Override vertical offset") { |v| @overrides[:y_offset] = v }
-        opts.on("--clear-candidates", "Remove _cover{N}.* candidate files (one podcast or all)") { @clear_candidates = true }
+        opts.on("--clean", "Remove _cover{N}.* candidate files (one podcast or all)") { @clean = true }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -50,7 +50,7 @@ module PodgenCLI
     end
 
     def run
-      return run_clear_candidates if @clear_candidates
+      return run_clean if @clean
 
       code = require_podcast!("cover")
       return code if code
@@ -175,7 +175,7 @@ module PodgenCLI
       1
     end
 
-    def run_clear_candidates
+    def run_clean
       podcasts = @podcast_name ? [@podcast_name] : PodcastConfig.available
       total = 0
       podcasts.each do |name|
