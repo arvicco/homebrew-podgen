@@ -58,6 +58,7 @@ LINGQ_API_KEY=...             # Optional: LingQ upload (language pipeline)
 YOUTUBE_BROWSER=chrome        # Optional: browser for yt-dlp cookie auth (default: chrome)
 CLAUDE_MODEL=claude-opus-4-7          # Optional: Claude model for scripts (default: claude-opus-4-7)
 CLAUDE_WEB_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for web search source
+CLAUDE_DESCRIPTION_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for episode title/description cleanup
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
 ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
 ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription model

@@ -114,6 +114,32 @@ class TestDescriptionAgent < Minitest::Test
     assert user_msg.length < 5000
   end
 
+  # --- model selection ---
+
+  def test_default_model_is_haiku
+    ENV.delete("CLAUDE_DESCRIPTION_MODEL")
+    ENV.delete("CLAUDE_WEB_MODEL")
+    agent = DescriptionAgent.new
+    assert_equal "claude-haiku-4-5-20251001", agent.instance_variable_get(:@model)
+  end
+
+  def test_claude_description_model_env_overrides_default
+    ENV["CLAUDE_DESCRIPTION_MODEL"] = "claude-sonnet-4-6"
+    agent = DescriptionAgent.new
+    assert_equal "claude-sonnet-4-6", agent.instance_variable_get(:@model)
+  ensure
+    ENV.delete("CLAUDE_DESCRIPTION_MODEL")
+  end
+
+  def test_claude_web_model_does_not_affect_description_agent
+    ENV.delete("CLAUDE_DESCRIPTION_MODEL")
+    ENV["CLAUDE_WEB_MODEL"] = "claude-sonnet-4-6"
+    agent = DescriptionAgent.new
+    assert_equal "claude-haiku-4-5-20251001", agent.instance_variable_get(:@model)
+  ensure
+    ENV.delete("CLAUDE_WEB_MODEL")
+  end
+
   private
 
   def build_agent(response_text)
