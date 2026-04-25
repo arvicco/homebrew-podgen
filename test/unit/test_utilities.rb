@@ -236,7 +236,7 @@ class TestUtilities < Minitest::Test
     obj.send(:init_anthropic_client)
 
     assert_kind_of Anthropic::Client, obj.instance_variable_get(:@client)
-    assert_equal ENV.fetch("CLAUDE_MODEL", "claude-opus-4-6"), obj.instance_variable_get(:@model)
+    assert_equal ENV.fetch("CLAUDE_MODEL", "claude-opus-4-7"), obj.instance_variable_get(:@model)
   end
 
   def test_anthropic_client_custom_env_key
