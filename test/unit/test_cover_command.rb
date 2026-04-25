@@ -285,6 +285,43 @@ class TestCoverCommand < Minitest::Test
     assert_equal "My Title", cmd.instance_variable_get(:@title)
   end
 
+  # --- --title + --date dispatch and output paths ---
+
+  def test_title_with_date_routes_to_episode_mode_with_override_title
+    episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    File.write(File.join(episodes_dir, "testpod-2026-03-10_transcript.md"),
+               "# Original Episode Title\n\n## Transcript\n\nText.")
+
+    captured = capture_cover_agent_call do
+      PodgenCLI::CoverCommand.new(
+        ["testpod", "--date", "2026-03-10", "--title", "Custom Override"], {}).run
+    end
+
+    assert_equal "Custom Override", captured[:title]
+    assert_equal File.join(episodes_dir, "testpod-2026-03-10_cover.jpg"), captured[:output_path]
+  end
+
+  def test_title_alone_writes_preview_into_podcast_dir
+    captured = capture_cover_agent_call do
+      PodgenCLI::CoverCommand.new(["testpod", "--title", "Preview Title"], {}).run
+    end
+
+    assert_equal "Preview Title", captured[:title]
+    expected = File.expand_path(File.join(@podcast_dir, "cover_preview.jpg"))
+    assert_equal expected, captured[:output_path]
+  end
+
+  def test_title_with_explicit_output_uses_output_path
+    out_path = File.join(@tmpdir, "my_preview.jpg")
+    captured = capture_cover_agent_call do
+      PodgenCLI::CoverCommand.new(
+        ["testpod", "--title", "X", "--output", out_path], {}).run
+    end
+
+    assert_equal File.expand_path(out_path), captured[:output_path]
+  end
+
   def test_image_dry_run_does_not_copy
     episodes_dir = File.join(@tmpdir, "output", "testpod", "episodes")
     FileUtils.mkdir_p(episodes_dir)
@@ -302,5 +339,26 @@ class TestCoverCommand < Minitest::Test
     cover = File.join(episodes_dir, "testpod-2026-04-13_cover.png")
     refute File.exist?(cover), "should not copy in dry-run mode"
     assert_includes out, "dry-run"
+  end
+
+  private
+
+  # Stubs CoverAgent so generate(...) records its args without actually
+  # invoking magick/rsvg-convert. Returns the captured hash.
+  def capture_cover_agent_call
+    captured = {}
+    fake = Object.new
+    fake.define_singleton_method(:generate) do |title:, base_image:, output_path:, options: {}|
+      captured[:title] = title
+      captured[:base_image] = base_image
+      captured[:output_path] = output_path
+      captured[:options] = options
+      output_path
+    end
+
+    PodgenCLI::CoverCommand.const_get(:CoverAgent).stub(:new, fake) do
+      capture_io { yield }
+    end
+    captured
   end
 end

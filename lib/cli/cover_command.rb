@@ -61,12 +61,13 @@ module PodgenCLI
       code = resolve_image_option
       return code if code
 
-      # Manual title mode: podgen cover <podcast> My Custom Title
-      if @title && !@title.empty?
+      # --title + --date: episode mode with title override (writes to episode cover path)
+      # --title alone: preview mode (writes to podcast_dir/cover_preview.jpg)
+      if @title && !@title.empty? && !@episode_id
         return run_manual_title(config)
       end
 
-      # Episode mode (single or batch)
+      # Episode mode (single or batch). May still use @title to override transcript title.
       return run_episode_mode(config)
     end
 
@@ -102,7 +103,7 @@ module PodgenCLI
       base_image, cover_opts = resolve_cover_config(config)
       return 1 unless base_image
 
-      output = @output_path || "cover_preview.jpg"
+      output = File.expand_path(@output_path || File.join(config.podcast_dir, "cover_preview.jpg"))
 
       CoverAgent.new.generate(
         title: @title,
@@ -143,11 +144,13 @@ module PodgenCLI
           next
         end
 
-        puts "  #{ep[:basename]}..."
+        title = @title && !@title.empty? ? @title : ep[:title]
+        output = File.expand_path(ep[:output])
+        puts "  #{ep[:basename]}: #{output}"
         agent.generate(
-          title: ep[:title],
+          title: title,
           base_image: base_image,
-          output_path: ep[:output],
+          output_path: output,
           options: cover_opts
         )
         processed += 1
