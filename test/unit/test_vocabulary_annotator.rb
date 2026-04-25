@@ -9,6 +9,30 @@ class TestVocabularyAnnotator < Minitest::Test
     @annotator = VocabularyAnnotator.new("test-key", model: "claude-sonnet-4-6")
   end
 
+  # --- model resolution ---
+
+  def test_default_model_is_sonnet_when_no_env_set
+    ENV.delete("CLAUDE_VOCAB_MODEL")
+    annotator = VocabularyAnnotator.new("test-key")
+    assert_equal "claude-sonnet-4-6", annotator.instance_variable_get(:@model)
+  end
+
+  def test_claude_vocab_model_env_overrides_default
+    ENV["CLAUDE_VOCAB_MODEL"] = "claude-opus-4-7"
+    annotator = VocabularyAnnotator.new("test-key")
+    assert_equal "claude-opus-4-7", annotator.instance_variable_get(:@model)
+  ensure
+    ENV.delete("CLAUDE_VOCAB_MODEL")
+  end
+
+  def test_explicit_model_arg_takes_precedence_over_env
+    ENV["CLAUDE_VOCAB_MODEL"] = "claude-opus-4-7"
+    annotator = VocabularyAnnotator.new("test-key", model: "claude-haiku-4-5-20251001")
+    assert_equal "claude-haiku-4-5-20251001", annotator.instance_variable_get(:@model)
+  ensure
+    ENV.delete("CLAUDE_VOCAB_MODEL")
+  end
+
   # --- CEFR level validation ---
 
   def test_rejects_invalid_cefr_level
