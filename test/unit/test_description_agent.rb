@@ -117,10 +117,13 @@ class TestDescriptionAgent < Minitest::Test
   # --- model selection ---
 
   def test_default_model_is_haiku
-    ENV.delete("CLAUDE_DESCRIPTION_MODEL")
-    ENV.delete("CLAUDE_WEB_MODEL")
+    prev_desc = ENV.delete("CLAUDE_DESCRIPTION_MODEL")
+    prev_web = ENV.delete("CLAUDE_WEB_MODEL")
     agent = DescriptionAgent.new
     assert_equal "claude-haiku-4-5-20251001", agent.instance_variable_get(:@model)
+  ensure
+    ENV["CLAUDE_DESCRIPTION_MODEL"] = prev_desc if prev_desc
+    ENV["CLAUDE_WEB_MODEL"] = prev_web if prev_web
   end
 
   def test_claude_description_model_env_overrides_default
