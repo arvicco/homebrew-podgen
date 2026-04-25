@@ -1081,6 +1081,25 @@ podgen stats --downloads ruby_world --days 90
 
 Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env`. See [docs/cloudflare.md](docs/cloudflare.md) for token setup.
 
+### Vocabulary frequency
+
+For language podcasts, find which vocabulary words come up most often:
+
+```bash
+podgen stats fiabe --words            # top 50 by body occurrences
+podgen stats fiabe --words --top 100  # top 100
+podgen stats fiabe --words --top 0    # all
+```
+
+Two columns: `BODY` is the number of times the lemma (or any inflected form) appears across all transcript bodies; `VOCAB` is the number of episodes that listed the lemma in their `## Vocabulary` section.
+
+Inflected forms come from three sources:
+1. The lemma itself.
+2. Historical `*original*` surface forms collected from past vocab entries.
+3. `Tell::Hunspell.expand` — used automatically when a hunspell dictionary for the podcast's `transcription_language` is installed at `~/Library/Spelling/<LANG>.{dic,aff}`, `/Library/Spelling`, `/usr/share/hunspell`, or `/usr/local/share/hunspell`. Free dicts: clone [github.com/wooorm/dictionaries](https://github.com/wooorm/dictionaries) and copy the relevant `<lang>/index.{dic,aff}` files.
+
+When hunspell isn't available, body counts use lemma + historical surface forms only (a warning prints to stderr explaining how to install the dict). Generated forms are cached at `output/<podcast>/word_forms.yml` and regenerate only when the lemma set or hunspell-availability changes.
+
 ## Project Structure
 
 ```
