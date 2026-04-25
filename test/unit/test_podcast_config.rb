@@ -758,6 +758,42 @@ class TestPodcastConfig < Minitest::Test
     assert_equal 50, opts[:y_offset]
   end
 
+  def test_auto_cover_config_returns_user_overrides
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Image
+      - auto_cover_min_bytes: 30000
+      - auto_cover_min_score: 12
+      - auto_cover_candidates: 8
+      - auto_cover_model: claude-haiku-4-5-20251001
+    MD
+
+    config = PodcastConfig.new("myshow")
+    cfg = config.auto_cover_config
+    assert_equal 30_000, cfg[:auto_cover_min_bytes]
+    assert_equal 12, cfg[:auto_cover_min_score]
+    assert_equal 8, cfg[:auto_cover_candidates]
+    assert_equal "claude-haiku-4-5-20251001", cfg[:auto_cover_model]
+  end
+
+  def test_auto_cover_config_returns_empty_when_unset
+    write_guidelines(<<~MD)
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal({}, config.auto_cover_config)
+  end
+
   def test_cover_options_falls_back_to_lingq
     write_guidelines(<<~MD)
       ## Format

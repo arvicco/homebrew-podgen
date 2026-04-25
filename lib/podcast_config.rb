@@ -112,6 +112,18 @@ class PodcastConfig
     end
   end
 
+  # Returns the user-provided overrides for AutoCoverResolver settings.
+  # Only keys explicitly set in ## Image are returned; the resolver merges
+  # with its own defaults. Keys: auto_cover_min_bytes, auto_cover_min_score,
+  # auto_cover_candidates, auto_cover_model.
+  def auto_cover_config
+    @auto_cover_config ||= begin
+      src = parser.image_section
+      %i[auto_cover_min_bytes auto_cover_min_score auto_cover_candidates auto_cover_model]
+        .each_with_object({}) { |key, h| h[key] = src[key] if src[key] }
+    end
+  end
+
   def pronunciation_pls_path
     path = File.join(@podcast_dir, "pronunciation.pls")
     File.exist?(path) ? path : nil

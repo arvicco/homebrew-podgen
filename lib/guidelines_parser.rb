@@ -203,6 +203,10 @@ class GuidelinesParser
       when "text_gravity"  then { text_gravity: value }
       when "text_x_offset" then { text_x_offset: value.to_i }
       when "text_y_offset" then { text_y_offset: value.to_i }
+      when "auto_cover_min_bytes"  then { auto_cover_min_bytes: value.to_i }
+      when "auto_cover_min_score"  then { auto_cover_min_score: value.to_i }
+      when "auto_cover_candidates" then { auto_cover_candidates: value.to_i }
+      when "auto_cover_model"      then { auto_cover_model: value }
       end
     end || {}
   end
