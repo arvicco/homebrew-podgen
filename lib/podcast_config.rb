@@ -130,6 +130,15 @@ class PodcastConfig
     @max_length_seconds = parse_length(parser.sources["max_length"])
   end
 
+  # Per-podcast ElevenLabs TTS model override. Reads `tts_model:` from the
+  # ## Audio section. Returns nil when not set (callers fall back to ENV
+  # ELEVENLABS_MODEL_ID, then to TTSAgent::DEFAULT_MODEL_ID).
+  def tts_model_id
+    return @tts_model_id if defined?(@tts_model_id)
+    raw = parser.audio_section[:tts_model]
+    @tts_model_id = raw.is_a?(String) && !raw.strip.empty? ? raw.strip : nil
+  end
+
   def auto_cover_config
     @auto_cover_config ||= begin
       src = parser.image_section

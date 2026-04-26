@@ -14,11 +14,38 @@ class TestTTSAgent < Minitest::Test
   end
 
   def test_max_chars_constant
-    assert_equal 9_500, TTSAgent::MAX_CHARS
+    assert_equal 9_500, TTSAgent::DEFAULT_MAX_CHARS
   end
 
   def test_max_retries_constant
     assert_equal 3, TTSAgent::MAX_RETRIES
+  end
+
+  # --- model selection + per-model max_chars ---
+
+  def test_default_model_is_multilingual_v2
+    agent = TTSAgent.new
+    assert_equal "eleven_multilingual_v2", agent.instance_variable_get(:@model_id)
+  end
+
+  def test_model_id_override_takes_precedence_over_env
+    ENV["ELEVENLABS_MODEL_ID"] = "eleven_turbo_v2_5"
+    agent = TTSAgent.new(model_id_override: "eleven_v3")
+    assert_equal "eleven_v3", agent.instance_variable_get(:@model_id)
+  ensure
+    ENV.delete("ELEVENLABS_MODEL_ID")
+  end
+
+  def test_v3_uses_smaller_max_chars
+    agent = TTSAgent.new(model_id_override: "eleven_v3")
+    splitter = agent.instance_variable_get(:@splitter)
+    assert_equal 4_500, splitter.instance_variable_get(:@max_chars)
+  end
+
+  def test_unknown_model_falls_back_to_default_max_chars
+    agent = TTSAgent.new(model_id_override: "eleven_future_model")
+    splitter = agent.instance_variable_get(:@splitter)
+    assert_equal 9_500, splitter.instance_variable_get(:@max_chars)
   end
 
   # --- load_dict_cache ---
