@@ -58,7 +58,7 @@ module Tell
         dic_path, aff_path = utf8_paths(dict)
         return [] unless dic_path && aff_path
 
-        dic_content = File.read(dic_path, encoding: "UTF-8")
+        index = dic_word_index(dict, dic_path)
 
         # Get dictionary roots for the lemma
         roots = stem(lemma, dict)
@@ -67,15 +67,13 @@ module Tell
         # e.g., "zlekniti" → stem "zlekn" finds zleknem/F, zlekne/V, zleknil/A etc.
         verb_stem = lemma.sub(/(?:ova|eva|a|i|e)ti\z/, "")
         entries = if verb_stem != lemma && verb_stem.length >= 3
-          dic_content.lines.select do |l|
-            word = l.split("/").first.strip
-            word.start_with?(verb_stem) && word.length <= verb_stem.length + 3
+          index.flat_map do |word, lines|
+            next [] unless word.start_with?(verb_stem) && word.length <= verb_stem.length + 3
+            lines
           end
         else
-          # Non-verb: find exact root entries only (root or root/FLAGS)
-          roots.flat_map do |root|
-            dic_content.lines.select { |l| l.strip == root || l.start_with?("#{root}/") }
-          end
+          # Non-verb: find exact root entries only
+          roots.flat_map { |root| index[root] }
         end
 
         return [] if entries.empty?
@@ -99,6 +97,27 @@ module Tell
 
       def dict_for(lang)
         DICT_MAP[lang]
+      end
+
+      # In-memory cache: dict name → { word => [dic_content_lines] }.
+      # Avoids re-reading and re-parsing the .dic file on every expand() call.
+      def dic_word_index(dict, dic_path)
+        @dic_index_cache ||= {}
+        @dic_index_cache[dict] ||= begin
+          idx = Hash.new { |h, k| h[k] = [] }
+          File.foreach(dic_path, encoding: "UTF-8") do |line|
+            word = line.split("/", 2).first.to_s.strip
+            next if word.empty?
+            idx[word] << line
+          end
+          idx
+        end
+      end
+
+      # Test/dev helper — clear the in-memory cache. Production code never
+      # calls this; the cache is per-process and lives until exit.
+      def clear_cache!
+        @dic_index_cache = nil
       end
 
       private

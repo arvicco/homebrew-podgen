@@ -35,30 +35,98 @@ class WordStats
     @logger = logger
   end
 
-  def build
+  # Build vocabulary frequency stats.
+  #
+  # Args:
+  #   top: when given, optimize by skipping hunspell expansion for lemmas
+  #        unlikely to appear in the top-N. We do a fast first pass without
+  #        expansion, take ≥max(3*top, 200) candidates by base count, then
+  #        expand only those candidates. Lemmas outside the candidate set
+  #        keep their pass-1 (undercount) body_count — fine because they
+  #        won't appear in the top-N anyway.
+  #        nil or 0 = expand every lemma (slow but exhaustive).
+  def build(top: nil)
     transcripts = collect_transcripts
     return [] if transcripts.empty?
+    progress("Read #{transcripts.length} transcript(s)")
 
     vocab_index = aggregate_vocab(transcripts)
     return [] if vocab_index.empty?
+    progress("Aggregated #{vocab_index.length} unique lemma(s) from vocab sections")
 
-    forms_by_lemma = resolve_forms(vocab_index)
     body_text = transcripts.map { |t| t[:body].to_s }.join("\n").downcase
+    progress("Counting occurrences across #{body_text.length / 1024} KB of transcript text...")
 
-    vocab_index.map do |lemma, info|
-      forms = forms_by_lemma[lemma] || [lemma]
-      Result.new(
-        lemma: lemma,
-        pos: info[:pos],
-        definition: info[:definition],
-        vocab_count: info[:episode_count],
-        body_count: count_occurrences(body_text, forms),
-        forms: forms
-      )
+    if top && top.positive? && top * 3 < vocab_index.length
+      build_two_pass(vocab_index, body_text, top)
+    else
+      build_full(vocab_index, body_text)
     end
   end
 
   private
+
+  # Single-pass: expand every lemma. Used when no --top limit is set.
+  def build_full(vocab_index, body_text)
+    forms_by_lemma = resolve_forms(vocab_index, vocab_index.keys)
+    results = vocab_index.each_with_index.map do |(lemma, info), i|
+      forms = forms_by_lemma[lemma] || [lemma]
+      r = Result.new(
+        lemma: lemma, pos: info[:pos], definition: info[:definition],
+        vocab_count: info[:episode_count],
+        body_count: count_occurrences(body_text, forms),
+        forms: forms
+      )
+      progress_inline("counting", i + 1, vocab_index.length)
+      r
+    end
+    progress_finish
+    results
+  end
+
+  # Two-pass: count using base forms first, then expand only top candidates.
+  def build_two_pass(vocab_index, body_text, top)
+    base_forms_by_lemma = vocab_index.each_with_object({}) do |(lemma, info), h|
+      set = Set.new
+      set.add(lemma)
+      info[:originals].each { |o| set.add(o) }
+      h[lemma] = set.to_a
+    end
+
+    progress("Pass 1: counting base forms for #{vocab_index.length} lemma(s)")
+    base_counts = {}
+    vocab_index.each_with_index do |(lemma, _info), i|
+      base_counts[lemma] = count_occurrences(body_text, base_forms_by_lemma[lemma])
+      progress_inline("pass 1", i + 1, vocab_index.length)
+    end
+    progress_finish
+
+    buffer = [top * 3, 200].max
+    candidates = vocab_index.keys
+                            .sort_by { |l| [-base_counts[l], -vocab_index[l][:episode_count], l] }
+                            .first(buffer)
+    progress("Pass 2: expanding top #{candidates.length} candidate(s)")
+
+    forms_by_lemma = resolve_forms(vocab_index, candidates)
+    candidate_set = candidates.to_set
+
+    results = vocab_index.each_with_index.map do |(lemma, info), i|
+      forms = forms_by_lemma[lemma] || base_forms_by_lemma[lemma]
+      body_count = candidate_set.include?(lemma) ?
+                     count_occurrences(body_text, forms) :
+                     base_counts[lemma]
+      r = Result.new(
+        lemma: lemma, pos: info[:pos], definition: info[:definition],
+        vocab_count: info[:episode_count],
+        body_count: body_count,
+        forms: forms
+      )
+      progress_inline("pass 2 count", i + 1, vocab_index.length)
+      r
+    end
+    progress_finish
+    results
+  end
 
   def collect_transcripts
     dir = @config.episodes_dir
@@ -101,11 +169,14 @@ class WordStats
     index
   end
 
-  def resolve_forms(vocab_index)
-    lemmas = vocab_index.keys.sort
+  # Returns { lemma => [forms] } for the given target_lemmas. Cache hash is
+  # keyed on the FULL vocab lemma set (so the cache file stays consistent
+  # across two-pass and full builds), but only target lemmas are expanded.
+  def resolve_forms(vocab_index, target_lemmas)
+    all_lemmas = vocab_index.keys.sort
     lang = language_code
     hunspell_ok = Tell::Hunspell.supports?(lang) if lang
-    cache_hash = compute_cache_hash(lemmas, lang, hunspell_ok)
+    cache_hash = compute_cache_hash(all_lemmas, lang, hunspell_ok)
 
     cache = load_cache
     if cache && cache["hash"] == cache_hash
@@ -121,9 +192,17 @@ class WordStats
           "copy <lang>/index.{dic,aff} to ~/Library/Spelling/<LANG_CODE>.{dic,aff}")
     end
 
-    log("Generating word forms for #{lemmas.length} lemma(s)#{hunspell_ok ? " (hunspell)" : ''}")
+    progress("Generating word forms for #{target_lemmas.length} lemma(s)#{hunspell_ok ? ' (hunspell)' : ''}")
     forms = {}
-    lemmas.each do |lemma|
+    # Non-target lemmas: keep base forms (lemma + originals) without hunspell expansion.
+    (all_lemmas - target_lemmas).each do |lemma|
+      set = Set.new
+      set.add(lemma)
+      vocab_index[lemma][:originals].each { |o| set.add(o) }
+      forms[lemma] = set.to_a
+    end
+    # Target lemmas: full expansion.
+    target_lemmas.each_with_index do |lemma, i|
       set = Set.new
       set.add(lemma)
       vocab_index[lemma][:originals].each { |o| set.add(o) }
@@ -136,7 +215,9 @@ class WordStats
         expanded.each { |f| set.add(f.downcase) }
       end
       forms[lemma] = set.to_a
+      progress_inline("expanding", i + 1, target_lemmas.length)
     end
+    progress_finish
 
     save_cache(hash: cache_hash, forms: forms, language: lang, hunspell: hunspell_ok)
     forms
@@ -181,5 +262,28 @@ class WordStats
 
   def log(msg)
     @logger&.log("[WordStats] #{msg}")
+  end
+
+  def progress(msg)
+    return unless $stderr.tty?
+    $stderr.puts msg
+  end
+
+  def progress_inline(label, current, total)
+    return unless $stderr.tty?
+    # Only refresh on milestones to avoid flooding the terminal
+    return unless current == 1 || current == total || current % progress_step(total) == 0
+    pct = (current * 100.0 / total).round(1)
+    $stderr.print "\r  #{label}: #{current}/#{total} (#{pct}%)"
+    $stderr.flush
+  end
+
+  def progress_finish
+    return unless $stderr.tty?
+    $stderr.puts
+  end
+
+  def progress_step(total)
+    [(total / 50.0).ceil, 1].max
   end
 end
