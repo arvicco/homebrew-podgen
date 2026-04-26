@@ -49,6 +49,25 @@ class TestWordStats < Minitest::Test
     assert_equal 1, by_lemma["castello"].body_count
   end
 
+  def test_rejects_original_forms_that_are_lone_lemma_particles
+    # An LLM-generated vocab entry with a comma between word and reflexive
+    # particle (e.g. "*ozrl, se*" when meant "*ozrl se*") would otherwise
+    # add bare "se" to the forms set, matching every reflexive "se" in
+    # the body. Reject single-word originals that are also one of the
+    # multi-word lemma's own words.
+    write_transcript("ep1",
+      body: "Ozrl se nazaj. Pelje se domov. Vrača se k mami. Igra se zunaj.",
+      vocabulary: <<~MD)
+        - **ozreti se** (B2 verb) *ozrl, se* — to look back
+      MD
+
+    stats = WordStats.new(config: stub_config(language: "xx")).build
+    s = stats.first
+    refute_includes s.forms, "se", "particle 'se' must not leak into forms"
+    # body has 4 occurrences of "se" but none should count for this lemma
+    assert s.body_count <= 1, "expected ≤1 (only literal 'ozrl se' if present), got #{s.body_count}"
+  end
+
   def test_uses_historical_original_surface_forms
     write_transcript("ep1",
       body: "Le principesse cantavano.",
