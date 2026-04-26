@@ -63,6 +63,7 @@ class TTSAgent
   def synthesize(segments)
     audio_paths = []
     previous_request_ids = []
+    log("Model: #{@model_id}, voice: #{@voice_id} (max #{max_chars_for_model(@model_id)} chars/chunk)")
 
     segments.each_with_index do |segment, idx|
       log("Synthesizing segment #{idx + 1}/#{segments.length}: #{segment[:name]} (#{segment[:text].length} chars)")

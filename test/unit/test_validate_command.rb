@@ -323,7 +323,9 @@ class TestValidateCommand < Minitest::Test
     :base_url, :image, :languages, :sources, :cover_base_image,
     :transcription_engines, :lingq_config,
     keyword_init: true
-  )
+  ) do
+    def parser_warnings = []
+  end
 
   def stub_config(**overrides)
     defaults = {

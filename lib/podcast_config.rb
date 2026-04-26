@@ -45,6 +45,12 @@ class PodcastConfig
     parser.text
   end
 
+  # Warnings collected during guidelines parsing (e.g. misindented Audio
+  # section keys that were silently dropped). Surfaced by the validator.
+  def parser_warnings
+    parser.warnings
+  end
+
   # --- Delegated to GuidelinesParser ---
 
   def sources

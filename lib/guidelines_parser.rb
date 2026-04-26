@@ -5,9 +5,12 @@ require_relative "time_value"
 # Parses guidelines.md sections into structured config hashes.
 # Extracted from PodcastConfig to isolate parsing logic.
 class GuidelinesParser
+  attr_reader :warnings
+
   def initialize(text, podcast_dir:)
     @text = text.gsub(/<!--.*?-->/m, "")
     @podcast_dir = podcast_dir
+    @warnings = []
   end
 
   def podcast_section
@@ -184,6 +187,10 @@ class GuidelinesParser
         entry = line.strip.sub(/^- /, "").strip
         config[:engines] ||= []
         config[:engines] << entry unless entry.empty?
+      elsif line.match?(/^\s+- \S/)
+        # Indented item not under an `engine:` block — likely a misindented
+        # top-level key. Record a warning instead of silently dropping it.
+        @warnings << "Audio section: indented line '#{line.strip}' is ignored (top-level keys must start at column 0 with '- ')"
       end
     end
 
