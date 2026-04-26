@@ -3,6 +3,7 @@
 require "set"
 require "yaml"
 require "digest"
+require "anthropic"
 require_relative "transcript_parser"
 require_relative "transcript_renderer"
 require_relative "atomic_writer"
@@ -49,6 +50,9 @@ class WordStats
     transcripts = collect_transcripts
     return [] if transcripts.empty?
     progress("Read #{transcripts.length} transcript(s)")
+
+    @working_language = resolve_working_language(transcripts)
+    progress("Working language: #{@working_language}") if @working_language
 
     vocab_index = aggregate_vocab(transcripts)
     return [] if vocab_index.empty?
@@ -151,12 +155,18 @@ class WordStats
         next if lemma.empty?
         seen_in_episode.add(lemma)
 
-        slot = (index[lemma] ||= {
-          pos: entry[:pos],
-          definition: entry[:definition] || (entry[:definitions] && entry[:definitions].values.compact.first),
-          episode_count: 0,
-          originals: Set.new
-        })
+        new_definition = pick_definition(entry)
+        slot = index[lemma]
+        if slot.nil?
+          slot = index[lemma] = {
+            pos: entry[:pos],
+            definition: new_definition,
+            episode_count: 0,
+            originals: Set.new
+          }
+        elsif slot[:definition].to_s.empty? && !new_definition.to_s.empty?
+          slot[:definition] = new_definition
+        end
 
         if entry[:original]
           lemma_words = lemma.split(/\s+/)
@@ -235,6 +245,96 @@ class WordStats
     @config.respond_to?(:transcription_language) ? @config.transcription_language : nil
   end
 
+  # Determines the working language for definition display:
+  #   - latest transcript's vocab languages = candidates
+  #   - if 0 or 1 candidate: no detection needed
+  #   - if multiple AND old unmarked entries exist: ask Claude (cached) which
+  #     language those unmarked defs are in; that's the working language
+  #   - if multiple but all marked: pick the first listed
+  def resolve_working_language(transcripts)
+    candidates = latest_vocab_languages(transcripts)
+    return nil if candidates.empty?
+    return candidates.first if candidates.length == 1
+
+    sample = unmarked_definition_sample(transcripts)
+    return candidates.first if sample.nil? || sample.empty?
+
+    detect_language_via_claude(sample, candidates) || candidates.first
+  end
+
+  def latest_vocab_languages(transcripts)
+    transcripts.reverse_each do |t|
+      next unless t[:vocab_entries].any?
+      first_entry = t[:vocab_entries].values.first
+      langs = first_entry[:languages]
+      return langs if langs && langs.any?
+    end
+    []
+  end
+
+  def unmarked_definition_sample(transcripts)
+    transcripts.each do |t|
+      t[:vocab_entries].each_value do |entry|
+        next if entry[:languages] && entry[:languages].any?
+        def_text = entry[:definition].to_s.strip
+        return def_text unless def_text.empty?
+      end
+    end
+    nil
+  end
+
+  def detect_language_via_claude(sample, candidates)
+    cache = load_cache
+    detection_hash = Digest::SHA256.hexdigest([candidates.sort.join("|"), sample[0, 200]].join("\x00"))
+    if cache && cache["language_detection_hash"] == detection_hash && cache["working_language"]
+      return cache["working_language"]
+    end
+
+    progress("Asking Claude which of #{candidates.join('/')} the legacy definitions are in...")
+    answer = ask_claude_for_language(sample, candidates)
+    matched = candidates.find { |c| answer.to_s.casecmp?(c) }
+    save_language_detection(detection_hash, matched) if matched
+    matched
+  rescue => e
+    log("Warning: language detection failed: #{e.class}: #{e.message}")
+    nil
+  end
+
+  def ask_claude_for_language(sample, candidates)
+    client = Anthropic::Client.new
+    prompt = "Which of these languages is the following text written in? " \
+             "Reply with EXACTLY ONE WORD from this list, no punctuation:\n\n" \
+             "#{candidates.join("\n")}\n\nText:\n#{sample[0, 500]}"
+    response = client.messages.create(
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 30,
+      messages: [{ role: "user", content: prompt }]
+    )
+    response.content.first.text.to_s.strip.split(/\s+/).first
+  end
+
+  def save_language_detection(detection_hash, working_language)
+    existing = load_cache || {}
+    existing["language_detection_hash"] = detection_hash
+    existing["working_language"] = working_language
+    AtomicWriter.write_yaml(cache_path, existing)
+  end
+
+  # Picks the definition for a single vocab entry honoring the working language.
+  # For multi-language entries, prefers @working_language. For single-language
+  # legacy entries, returns the untagged :definition (assumed to be in the
+  # working language).
+  def pick_definition(entry)
+    defs = entry[:definitions]
+    if defs && !defs.empty?
+      if @working_language && defs[@working_language] && !defs[@working_language].to_s.empty?
+        return defs[@working_language]
+      end
+      return defs.values.find { |v| !v.to_s.empty? }
+    end
+    entry[:definition]
+  end
+
   def cache_path
     File.join(File.dirname(@config.episodes_dir), CACHE_FILENAME)
   end
@@ -247,13 +347,14 @@ class WordStats
   end
 
   def save_cache(hash:, forms:, language:, hunspell:)
-    data = {
+    existing = load_cache || {}
+    existing.merge!(
       "hash" => hash,
       "language" => language,
       "hunspell" => hunspell,
       "forms" => forms.transform_values(&:uniq)
-    }
-    AtomicWriter.write_yaml(cache_path, data)
+    )
+    AtomicWriter.write_yaml(cache_path, existing)
   end
 
   def compute_cache_hash(lemmas, lang, hunspell_ok)

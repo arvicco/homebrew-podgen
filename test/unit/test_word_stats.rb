@@ -49,6 +49,69 @@ class TestWordStats < Minitest::Test
     assert_equal 1, by_lemma["castello"].body_count
   end
 
+  def test_picks_working_language_definition_for_multi_lang_entries
+    # Latest episode has multi-language vocab. Old episode is unmarked
+    # (single-language English in this case). Working language must be
+    # detected as English so multi-lang entries also surface English defs.
+    write_transcript("ep_old",
+      body: "x.",
+      vocabulary: <<~MD)
+        - **kot** (B1 noun) — corner. A point or area where two lines meet.
+      MD
+
+    write_transcript("ep_new",
+      body: "x.",
+      vocabulary: <<~MD)
+        (Russian, English)
+
+        - **poleti** (B1 adv)
+          - летом. В летнее время года.
+          - in summer. During the summer season.
+      MD
+
+    # Stub Claude — return "English" since old def is ASCII Latin.
+    fake_response = Struct.new(:content).new([Struct.new(:text).new("English")])
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_kw| fake_response }
+    fake_client = Struct.new(:messages).new(fake_messages)
+
+    Anthropic::Client.stub(:new, fake_client) do
+      stats = WordStats.new(config: stub_config(language: "sl")).build
+      by_lemma = stats.each_with_object({}) { |s, h| h[s.lemma] = s }
+      assert_match(/corner/, by_lemma["kot"].definition)
+      assert_match(/in summer/, by_lemma["poleti"].definition)
+    end
+  end
+
+  def test_caches_working_language_detection_to_disk
+    write_transcript("ep_old", body: "x.",
+      vocabulary: "- **kot** (B1 noun) — corner.\n")
+    write_transcript("ep_new", body: "x.", vocabulary: <<~MD)
+      (Russian, English)
+
+      - **poleti** (B1 adv)
+        - летом.
+        - in summer.
+    MD
+
+    fake_response = Struct.new(:content).new([Struct.new(:text).new("English")])
+    fake_messages = Object.new
+    call_count = 0
+    fake_messages.define_singleton_method(:create) do |**_kw|
+      call_count += 1
+      fake_response
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+
+    Anthropic::Client.stub(:new, fake_client) do
+      WordStats.new(config: stub_config(language: "sl")).build
+      assert_equal 1, call_count, "first run should call Claude once"
+
+      WordStats.new(config: stub_config(language: "sl")).build
+      assert_equal 1, call_count, "second run must use cached working_language"
+    end
+  end
+
   def test_rejects_original_forms_that_are_lone_lemma_particles
     # An LLM-generated vocab entry with a comma between word and reflexive
     # particle (e.g. "*ozrl, se*" when meant "*ozrl se*") would otherwise
