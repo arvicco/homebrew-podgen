@@ -159,8 +159,16 @@ class WordStats
         })
 
         if entry[:original]
-          entry[:original].to_s.split(/,\s*/).each do |form|
-            slot[:originals].add(form.downcase.strip) unless form.strip.empty?
+          lemma_words = lemma.split(/\s+/)
+          entry[:original].to_s.split(/,\s*/).each do |raw|
+            form = raw.downcase.strip
+            next if form.empty?
+            # Reject originals that match a single word from a multi-word
+            # lemma — typically caused by stray commas in LLM-generated
+            # entries like "*ozrl, se*" (meant "*ozrl se*"). Bare "se"
+            # would otherwise match every reflexive in the corpus.
+            next if lemma_words.length > 1 && lemma_words.include?(form)
+            slot[:originals].add(form)
           end
         end
       end
