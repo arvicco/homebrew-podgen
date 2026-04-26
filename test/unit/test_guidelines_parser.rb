@@ -176,6 +176,27 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal 20, s[:text_y_offset]
   end
 
+  def test_audio_section_warns_on_misindented_lines
+    parser = build_parser(<<~MD)
+      ## Audio
+        - tts_model: eleven_v3
+    MD
+    parser.audio_section
+    refute_empty parser.warnings, "expected a warning for the misindented line"
+    assert(parser.warnings.any? { |w| w.include?("tts_model: eleven_v3") })
+  end
+
+  def test_audio_section_no_warning_for_engine_subitems
+    parser = build_parser(<<~MD)
+      ## Audio
+      - engine:
+        - elab
+        - groq
+    MD
+    parser.audio_section
+    assert_empty parser.warnings
+  end
+
   def test_image_section_parses_auto_cover_keys
     parser = build_parser(<<~MD)
       ## Image
