@@ -37,6 +37,10 @@ class TTSAgent
   }.freeze
   DEFAULT_MODEL_ID = "eleven_multilingual_v2"
   MAX_RETRIES = 3
+  # Models that don't accept previous_request_ids / next_request_ids
+  # (the API returns HTTP 400 unsupported_model). Cross-chunk continuity
+  # is silently disabled for these.
+  MODELS_WITHOUT_REQUEST_CONTINUITY = %w[eleven_v3].freeze
   # Backwards-compat alias for callers/tests that referenced the constant.
   MAX_CHARS = DEFAULT_MAX_CHARS
 
@@ -109,7 +113,9 @@ class TTSAgent
         use_speaker_boost: true
       }
     }
-    body[:previous_request_ids] = previous_request_ids unless previous_request_ids.empty?
+    if !previous_request_ids.empty? && !MODELS_WITHOUT_REQUEST_CONTINUITY.include?(@model_id)
+      body[:previous_request_ids] = previous_request_ids
+    end
     body[:pronunciation_dictionary_locators] = @pronunciation_locators unless @pronunciation_locators.empty?
 
     with_retries(max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do

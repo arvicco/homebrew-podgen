@@ -42,6 +42,37 @@ class TestTTSAgent < Minitest::Test
     assert_equal 4_500, splitter.instance_variable_get(:@max_chars)
   end
 
+  def test_v3_omits_previous_request_ids_in_request_body
+    require "tempfile"
+    require "base64"
+    fake = fake_tts_response
+    captured = nil
+    HTTParty.stub :post, ->(_url, opts) { captured = JSON.parse(opts[:body]); fake } do
+      Tempfile.create(["t", ".mp3"]) do |f|
+        TTSAgent.new(model_id_override: "eleven_v3").send(
+          :synthesize_chunk, text: "hi", path: f.path, previous_request_ids: ["a", "b"]
+        )
+      end
+    end
+    refute captured.key?("previous_request_ids"),
+           "v3 must not receive previous_request_ids (API returns 400 unsupported_model)"
+  end
+
+  def test_v2_includes_previous_request_ids_when_provided
+    require "tempfile"
+    require "base64"
+    fake = fake_tts_response
+    captured = nil
+    HTTParty.stub :post, ->(_url, opts) { captured = JSON.parse(opts[:body]); fake } do
+      Tempfile.create(["t", ".mp3"]) do |f|
+        TTSAgent.new(model_id_override: "eleven_multilingual_v2").send(
+          :synthesize_chunk, text: "hi", path: f.path, previous_request_ids: ["a", "b"]
+        )
+      end
+    end
+    assert_equal ["a", "b"], captured["previous_request_ids"]
+  end
+
   def test_unknown_model_falls_back_to_default_max_chars
     agent = TTSAgent.new(model_id_override: "eleven_future_model")
     splitter = agent.instance_variable_get(:@splitter)
@@ -206,6 +237,15 @@ class TestTTSAgent < Minitest::Test
   end
 
   private
+
+  def fake_tts_response
+    response = Object.new
+    body = JSON.generate("audio_base64" => Base64.strict_encode64(""))
+    response.define_singleton_method(:code) { 200 }
+    response.define_singleton_method(:body) { body }
+    response.define_singleton_method(:headers) { { "request-id" => "test-rid" } }
+    response
+  end
 
   def build_agent
     agent = TTSAgent.allocate
