@@ -758,6 +758,34 @@ class TestPodcastConfig < Minitest::Test
     assert_equal 50, opts[:y_offset]
   end
 
+  def test_tts_model_id_reads_from_audio_section
+    write_guidelines(<<~MD)
+      ## Format
+      x.
+
+      ## Tone
+      x.
+
+      ## Audio
+      - tts_model: eleven_v3
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal "eleven_v3", config.tts_model_id
+  end
+
+  def test_tts_model_id_returns_nil_when_unset
+    write_guidelines(<<~MD)
+      ## Format
+      x.
+
+      ## Tone
+      x.
+    MD
+    config = PodcastConfig.new("myshow")
+    assert_nil config.tts_model_id
+  end
+
   def test_min_length_seconds_parses_mm_ss
     write_guidelines(<<~MD)
       ## Format

@@ -23,18 +23,40 @@ class TTSAgent
   BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech"
   DICT_API_URL = "https://api.elevenlabs.io/v1/pronunciation-dictionaries"
   TRIM_THRESHOLD = 0.5 # seconds of trailing audio before we trim
-  MAX_CHARS = 9_500 # Safety margin below eleven_multilingual_v2's 10,000 limit
+  DEFAULT_MAX_CHARS = 9_500 # Safety margin below v2's 10,000 char limit
+  # Per-model character limits per request (with safety margin).
+  # eleven_v3 has a tighter ~5k limit; v2/turbo allow ~10k.
+  MODEL_MAX_CHARS = {
+    "eleven_v3"              => 4_500,
+    "eleven_multilingual_v2" => 9_500,
+    "eleven_multilingual_v1" => 9_500,
+    "eleven_turbo_v2_5"      => 9_500,
+    "eleven_turbo_v2"        => 9_500,
+    "eleven_flash_v2_5"      => 9_500,
+    "eleven_flash_v2"        => 9_500
+  }.freeze
+  DEFAULT_MODEL_ID = "eleven_multilingual_v2"
   MAX_RETRIES = 3
+  # Backwards-compat alias for callers/tests that referenced the constant.
+  MAX_CHARS = DEFAULT_MAX_CHARS
 
-  def initialize(logger: nil, voice_id_override: nil, pronunciation_pls_path: nil)
+  def initialize(logger: nil, voice_id_override: nil, model_id_override: nil, pronunciation_pls_path: nil)
     @logger = logger
     @api_key = ENV.fetch("ELEVENLABS_API_KEY") { raise "ELEVENLABS_API_KEY environment variable is not set" }
     @voice_id = voice_id_override || ENV.fetch("ELEVENLABS_VOICE_ID") { raise "ELEVENLABS_VOICE_ID environment variable is not set" }
-    @model_id = ENV.fetch("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+    @model_id = model_id_override || ENV.fetch("ELEVENLABS_MODEL_ID", DEFAULT_MODEL_ID)
     @output_format = ENV.fetch("ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128")
     @pronunciation_locators = resolve_pronunciation_dictionary(pronunciation_pls_path)
-    @splitter = TextSplitter.new(max_chars: MAX_CHARS)
+    @splitter = TextSplitter.new(max_chars: max_chars_for_model(@model_id))
   end
+
+  private
+
+  def max_chars_for_model(model_id)
+    MODEL_MAX_CHARS[model_id] || DEFAULT_MAX_CHARS
+  end
+
+  public
 
   # Input: array of { name:, text: } segment hashes
   # Output: ordered array of file paths to MP3 files

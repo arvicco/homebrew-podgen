@@ -310,10 +310,19 @@ topics:
 Configure in `.env`:
 
 ```
-ELEVENLABS_MODEL_ID=eleven_multilingual_v2    # Multilingual, best quality
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2    # Default TTS model (long-form stable)
 ELEVENLABS_VOICE_ID=cjVigY5qzO86Huf0OWal     # Eric - Smooth, Trustworthy
 CLAUDE_MODEL=claude-opus-4-7                   # Script generation model
 ```
+
+Per-podcast override of the TTS model goes in `## Audio`:
+
+```markdown
+## Audio
+- tts_model: eleven_v3        # opt in to ElevenLabs v3 for this podcast
+```
+
+Precedence: per-podcast `tts_model` → `ELEVENLABS_MODEL_ID` env → `eleven_multilingual_v2` default. Per-model character limits (used for chunking) are tracked in `TTSAgent::MODEL_MAX_CHARS` (`eleven_v3` → 4500, others → 9500).
 
 ### Intro/Outro Music
 
