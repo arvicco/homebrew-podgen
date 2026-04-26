@@ -67,7 +67,7 @@ module PodgenCLI
       end
 
       config = PodcastConfig.new(@podcast_name)
-      stats = WordStats.new(config: config, logger: nil).build
+      stats = WordStats.new(config: config, logger: nil).build(top: @top)
       if stats.empty?
         puts "#{@podcast_name}: no vocabulary data found"
         return 0

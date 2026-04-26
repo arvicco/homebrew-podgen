@@ -90,6 +90,28 @@ class TestWordStats < Minitest::Test
     assert_equal ["principe"], cache["forms"]["principe"]
   end
 
+  def test_two_pass_top_matches_full_run
+    # Build a small corpus where the top by base count is also the top by
+    # expanded count (so two-pass and full agree). Sufficient to verify
+    # the optimization branch produces consistent ordering for top-N.
+    %w[a b c d e f g h i j].each do |basename|
+      vocab = ""
+      %w[alpha beta gamma delta].each do |w|
+        vocab += "- **#{w}** (A1 noun) — #{w}\n"
+      end
+      body = "alpha alpha alpha beta beta gamma other words"
+      write_transcript(basename, body: body, vocabulary: vocab)
+    end
+
+    full = WordStats.new(config: stub_config(language: "xx")).build
+    File.delete(File.join(@tmpdir, "word_forms.yml")) if File.exist?(File.join(@tmpdir, "word_forms.yml"))
+    two_pass = WordStats.new(config: stub_config(language: "xx")).build(top: 2)
+
+    full_top2 = full.sort_by { |s| [-s.body_count, s.lemma] }.first(2).map(&:lemma)
+    two_pass_top2 = two_pass.sort_by { |s| [-s.body_count, s.lemma] }.first(2).map(&:lemma)
+    assert_equal full_top2, two_pass_top2
+  end
+
   def test_skips_hunspell_for_multi_word_lemmas
     # Multi-word phrases would have hunspell expand individual tokens
     # (e.g. "andare" alone), producing false matches. Verify only the
