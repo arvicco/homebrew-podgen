@@ -1095,9 +1095,10 @@ Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env`. See [docs
 For language podcasts, find which vocabulary words come up most often:
 
 ```bash
-podgen stats fiabe --words            # top 50 by body occurrences
-podgen stats fiabe --words --top 100  # top 100
-podgen stats fiabe --words --top 0    # all
+podgen stats fiabe --words                       # top 50 by body occurrences (default)
+podgen stats fiabe --words --top 100             # top 100
+podgen stats fiabe --words --top 0               # all
+podgen stats fiabe --words --sort vocab          # sort by per-episode vocab frequency instead
 ```
 
 Two columns: `BODY` is the number of times the lemma (or any inflected form) appears across all transcript bodies; `VOCAB` is the number of episodes that listed the lemma in their `## Vocabulary` section.

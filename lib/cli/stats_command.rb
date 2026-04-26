@@ -21,6 +21,7 @@ module PodgenCLI
       @days = 30
       @words = false
       @top = 50
+      @sort = "body"
       OptionParser.new do |opts|
         opts.on("--all", "Show stats for all podcasts") { @all = true }
         opts.on("--downloads", "Show download analytics from Cloudflare") { @downloads = true }
@@ -30,6 +31,7 @@ module PodgenCLI
         opts.on("--month", "Downloads for last 30 days") { @downloads = true; @days = 30 }
         opts.on("--words", "Vocabulary frequency across all episodes") { @words = true }
         opts.on("--top N", Integer, "Limit --words to top N rows (default 50, 0 = all)") { |n| @top = n }
+        opts.on("--sort COL", %w[body vocab], "Sort --words by 'body' (default) or 'vocab' frequency") { |s| @sort = s }
       end.parse!(args)
       @podcast_name = args.shift
     end
@@ -73,7 +75,10 @@ module PodgenCLI
         return 0
       end
 
-      sorted = stats.sort_by { |s| [-s.body_count, -s.vocab_count, s.lemma] }
+      sorted = case @sort
+               when "vocab" then stats.sort_by { |s| [-s.vocab_count, -s.body_count, s.lemma] }
+               else              stats.sort_by { |s| [-s.body_count, -s.vocab_count, s.lemma] }
+               end
       sorted = sorted.first(@top) if @top.positive?
 
       puts "Vocabulary frequency for '#{@podcast_name}' (#{stats.length} unique lemma(s)):"
