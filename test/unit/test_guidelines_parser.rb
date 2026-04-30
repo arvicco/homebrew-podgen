@@ -77,6 +77,72 @@ class TestGuidelinesParser < Minitest::Test
     assert_nil langs[0]["voice_id"]
   end
 
+  def test_parses_language_inline_translator
+    parser = build_parser(<<~MD)
+      ## Podcast
+      - name: Test
+      - language:
+        - en
+        - jp: voice_jp translator: openai
+    MD
+
+    langs = parser.podcast_section[:languages]
+    assert_equal "jp", langs[1]["code"]
+    assert_equal "voice_jp", langs[1]["voice_id"]
+    assert_equal "openai", langs[1]["translator"]
+  end
+
+  def test_parses_language_inline_translator_and_model
+    parser = build_parser(<<~MD)
+      ## Podcast
+      - name: Test
+      - language:
+        - jp: voice_jp translator: openai translation_model: gpt-5
+    MD
+
+    lang = parser.podcast_section[:languages].first
+    assert_equal "jp", lang["code"]
+    assert_equal "voice_jp", lang["voice_id"]
+    assert_equal "openai", lang["translator"]
+    assert_equal "gpt-5", lang["translation_model"]
+  end
+
+  def test_parses_language_inline_options_in_legacy_section
+    parser = build_parser(<<~MD)
+      ## Language
+      - en
+      - jp: voice_jp translator: openai translation_model: gpt-5
+    MD
+
+    lang = parser.languages[1]
+    assert_equal "openai", lang["translator"]
+    assert_equal "gpt-5", lang["translation_model"]
+  end
+
+  def test_language_entry_without_voice_id_but_with_options
+    parser = build_parser(<<~MD)
+      ## Language
+      - jp: translator: openai
+    MD
+
+    # When no voice_id is present, only options
+    lang = parser.languages.first
+    assert_equal "jp", lang["code"]
+    assert_equal "openai", lang["translator"]
+    assert_nil lang["voice_id"]
+  end
+
+  def test_language_entry_ignores_unknown_inline_keys
+    parser = build_parser(<<~MD)
+      ## Language
+      - jp: voice_jp foo: bar translator: openai
+    MD
+
+    lang = parser.languages.first
+    assert_equal "openai", lang["translator"]
+    refute lang.key?("foo")
+  end
+
   def test_podcast_section_empty_when_missing
     parser = build_parser("## Format\nShort.\n")
     assert_equal({}, parser.podcast_section)
@@ -765,6 +831,94 @@ class TestGuidelinesParser < Minitest::Test
     MD
 
     assert_nil parser.vocabulary_config[:target]
+  end
+
+  # --- twitter ---
+
+  def test_twitter_section_parses_template_and_since
+    parser = build_parser(<<~MD)
+      ## Twitter
+      - template: "New episode: {title}"
+      - since: 14
+    MD
+
+    assert_equal "\"New episode: {title}\"", parser.twitter_config[:template]
+    assert_equal 14, parser.twitter_config[:since]
+    refute parser.twitter_config.key?(:languages)
+  end
+
+  def test_twitter_languages_parsed_as_normalized_list
+    parser = build_parser(<<~MD)
+      ## Twitter
+      - languages: EN, IT
+    MD
+
+    assert_equal %w[en it], parser.twitter_config[:languages]
+  end
+
+  def test_twitter_languages_all_yields_special_token
+    parser = build_parser(<<~MD)
+      ## Twitter
+      - languages: all
+    MD
+
+    assert_equal :all, parser.twitter_config[:languages]
+  end
+
+  def test_twitter_section_returns_nil_when_absent
+    parser = build_parser("## Podcast\n- name: Test\n")
+    assert_nil parser.twitter_config
+  end
+
+  # --- translation glossary ---
+
+  def test_translation_glossary_parses_per_language_pairs
+    parser = build_parser(<<~MD)
+      ## Translation Glossary
+      - jp:
+        - Bitcoin: ビットコイン
+        - GitHub: GitHub
+        - mining: マイニング
+      - es:
+        - mining: minería
+        - covered call: covered call
+    MD
+
+    glossary = parser.translation_glossary
+    assert_equal "ビットコイン", glossary["jp"]["Bitcoin"]
+    assert_equal "GitHub", glossary["jp"]["GitHub"]
+    assert_equal "minería", glossary["es"]["mining"]
+    assert_equal "covered call", glossary["es"]["covered call"]
+  end
+
+  def test_translation_glossary_normalizes_lang_codes_to_lowercase
+    parser = build_parser(<<~MD)
+      ## Translation Glossary
+      - JP:
+        - Bitcoin: ビットコイン
+    MD
+
+    assert_equal "ビットコイン", parser.translation_glossary["jp"]["Bitcoin"]
+  end
+
+  def test_translation_glossary_returns_empty_when_section_missing
+    parser = build_parser("## Podcast\n- name: Test")
+    assert_equal({}, parser.translation_glossary)
+  end
+
+  def test_translation_glossary_skips_malformed_entries
+    parser = build_parser(<<~MD)
+      ## Translation Glossary
+      - jp:
+        - Bitcoin: ビットコイン
+        - just_a_word_no_colon
+        - : empty_term
+        - empty_translation:
+    MD
+
+    pairs = parser.translation_glossary["jp"]
+    assert_equal 1, pairs.length
+    assert_equal "ビットコイン", pairs["Bitcoin"]
   end
 
   # --- text accessor ---

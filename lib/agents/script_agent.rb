@@ -6,6 +6,8 @@ require_relative "../anthropic_client"
 require_relative "../loggable"
 require_relative "../retryable"
 require_relative "../usage_logger"
+require_relative "../script_artifact"
+require_relative "../script_renderer"
 
 class Source < Anthropic::BaseModel
   required :title, String
@@ -183,18 +185,8 @@ class ScriptAgent
 
   def save_script_debug(script)
     FileUtils.mkdir_p(File.dirname(@script_path))
-
-    File.open(@script_path, "w") do |f|
-      f.puts "# #{script[:title]}"
-      f.puts
-      script[:segments].each do |seg|
-        f.puts "## #{seg[:name]}"
-        f.puts
-        f.puts seg[:text]
-        f.puts
-      end
-    end
-
+    File.write(@script_path, ScriptRenderer.render(script))
+    ScriptArtifact.write(ScriptArtifact.json_path_for(@script_path), script)
     log("Script saved to #{@script_path}")
   end
 

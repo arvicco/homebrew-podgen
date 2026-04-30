@@ -260,9 +260,43 @@ class PodcastConfig
     parser.twitter_config
   end
 
+  # Returns the per-language glossary Hash for a language code, or {} if no
+  # glossary is configured for that language.
+  def translation_glossary_for(lang_code)
+    parser.translation_glossary[lang_code.to_s] || {}
+  end
+
   def twitter_enabled?
     twitter_config && %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET
       TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET].all? { |k| ENV[k] && !ENV[k].empty? }
+  end
+
+  # Extracts the language code from an episode basename. Basenames with a
+  # trailing `-xx` (two-letter ISO code) are non-primary; otherwise the
+  # episode is in the primary language.
+  def language_for_episode(basename)
+    match = basename.match(/-([a-z]{2})\z/)
+    return primary_language unless match
+    code = match[1]
+    # Defensive: the regex accepts any two-letter suffix, but only a code
+    # actually configured for this podcast counts as a language.
+    configured = languages.map { |l| l["code"] }
+    configured.include?(code) ? code : primary_language
+  end
+
+  def primary_language
+    languages.first&.dig("code") || "en"
+  end
+
+  # Builds the public URL of an episode's HTML page on the published site,
+  # inserting `/<lang>/` for non-primary languages so the URL points at the
+  # actual rendered file (site_generator places non-primary pages under
+  # `<root>/<lang>/episodes/`).
+  def site_episode_url(basename)
+    return nil unless base_url
+    lang = language_for_episode(basename)
+    prefix = lang == primary_language ? "" : "/#{lang}"
+    "#{base_url}/site#{prefix}/episodes/#{basename}.html"
   end
 
   def cover_generation_enabled?

@@ -45,9 +45,8 @@ module PodgenCLI
       tc = @config.twitter_config
       template = @options[:template] || tc[:template]
       title, description, = parse_transcript(episode[:transcript_path])
-      base = File.basename(episode[:mp3_path], ".mp3")
       mp3_url = @config.base_url ? "#{@config.base_url}/episodes/#{File.basename(episode[:mp3_path])}" : ""
-      site_url = @config.base_url ? "#{@config.base_url}/site/episodes/#{base}.html" : ""
+      site_url = @config.site_episode_url(episode[:base_name]) || ""
 
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "twitter_agent")
       text = TwitterAgent.new(skip_auth: true).expand_template(

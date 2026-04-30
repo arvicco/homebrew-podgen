@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "cli/generate_command"
+require "script_artifact"
 
 class TestGenerateCommand < Minitest::Test
   def setup
@@ -247,40 +248,35 @@ class TestGenerateCommand < Minitest::Test
     assert_empty priority_urls
   end
 
-  # --- write_sources ---
+  # parse_saved_script + strip_trailing_link_list extracted into LegacyScriptParser;
+  # see test_legacy_script_parser.rb
 
-  def test_write_sources_writes_markdown_links
+  # --- save_script_debug writes JSON alongside markdown ---
+
+  def test_save_script_debug_writes_canonical_json_alongside_md
     cmd = build_command
-    path = File.join(@tmpdir, "sources.md")
-    sources = [
-      { title: "Article A", url: "https://example.com/a?utm_source=test" },
-      { title: "Article B", url: "https://example.com/b" }
-    ]
+    script = {
+      title: "Episode",
+      segments: [
+        { name: "News", text: "Big story.", sources: [{ title: "S1", url: "https://example.com/1" }] },
+        { name: "Wrap-Up", text: "Thanks." }
+      ],
+      sources: [{ title: "S1", url: "https://example.com/1" }]
+    }
+    md_path = File.join(@episodes_dir, "ep_script.md")
+    cmd.send(:save_script_debug, script, md_path, StubGenLogger.new,
+             links_config: { show: true, position: "inline" })
 
-    File.open(path, "w") { |f| cmd.send(:write_sources, f, sources) }
-    content = File.read(path)
+    json_path = ScriptArtifact.json_path_for(md_path)
+    assert File.exist?(json_path), "Expected JSON written next to markdown"
 
-    assert_includes content, "- [Article A](https://example.com/a)"
-    assert_includes content, "- [Article B](https://example.com/b)"
-    refute_includes content, "utm_source"
+    parsed = ScriptArtifact.read(json_path)
+    assert_equal "Episode", parsed[:title]
+    # Per-segment sources preserved in JSON (not stripped like markdown round-trip)
+    assert_equal [{ title: "S1", url: "https://example.com/1" }], parsed[:segments][0][:sources]
   end
 
-  def test_write_sources_respects_max
-    cmd = build_command
-    path = File.join(@tmpdir, "sources.md")
-    sources = [
-      { title: "A", url: "https://a.com" },
-      { title: "B", url: "https://b.com" },
-      { title: "C", url: "https://c.com" }
-    ]
-
-    File.open(path, "w") { |f| cmd.send(:write_sources, f, sources, max: 2) }
-    content = File.read(path)
-
-    assert_includes content, "A"
-    assert_includes content, "B"
-    refute_includes content, "C"
-  end
+  # write_sources extracted into ScriptRenderer; see test_script_renderer.rb
 
   private
 

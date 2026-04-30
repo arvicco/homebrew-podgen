@@ -1,4 +1,7 @@
-<a class="back-link" href="<%= index_path %>">&larr; All episodes</a>
+<div class="back-row">
+  <a class="back-link" href="<%= index_path %>">&larr; All episodes</a>
+  <%= render_template("_lang_switcher.erb", lang: lang, languages: languages) %>
+</div>
 <div class="episode-header">
   <div class="header-row">
 <% if episode_cover_url %>

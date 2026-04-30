@@ -156,6 +156,14 @@ module PodgenCLI
         date && date >= cutoff
       end
 
+      # Per-language announce filter. Default (key absent): only the primary
+      # language is announced. `languages: all` skips the filter entirely.
+      allowed_langs = tc[:languages]
+      unless allowed_langs == :all
+        allowed = Array(allowed_langs).empty? ? [@config.primary_language] : allowed_langs
+        episodes.select! { |ep| allowed.include?(@config.language_for_episode(ep[:base_name])) }
+      end
+
       return if episodes.empty?
 
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "twitter_agent")
@@ -163,9 +171,8 @@ module PodgenCLI
 
       episodes.each do |ep|
         title, description, = parse_transcript(ep[:transcript_path])
-        base = File.basename(ep[:mp3_path], ".mp3")
         mp3_url = @config.base_url ? "#{@config.base_url}/episodes/#{File.basename(ep[:mp3_path])}" : ""
-        site_url = @config.base_url ? "#{@config.base_url}/site/episodes/#{base}.html" : ""
+        site_url = @config.site_episode_url(ep[:base_name]) || ""
 
         tweet_id = agent.post_episode(title: title, description: description, site_url: site_url, mp3_url: mp3_url, template: template)
         tracker.record(:twitter, "posts", ep[:base_name], tweet_id) if tweet_id

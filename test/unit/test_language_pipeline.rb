@@ -222,6 +222,41 @@ class TestLanguagePipeline < Minitest::Test
     assert_includes desc, "feed base_image"
   end
 
+  # --- --image auto regression ---
+
+  def test_resolve_cover_with_image_auto_returns_winner_path
+    # Regression: --image auto used to be misread as a literal file path
+    # (File.expand_path("auto") → /Users/.../auto), crashing ImageMagick.
+    pipeline = build_pipeline(options: { image: "auto" })
+    winner = "/tmp/podgen_auto_winner.jpg"
+    pipeline.define_singleton_method(:try_auto_cover_for_feed) { |_title| winner }
+
+    path, desc = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal winner, path
+    assert_includes desc, "--image auto"
+    refute_match(%r{/auto\z}, path.to_s, "must not treat 'auto' as a relative path")
+  end
+
+  def test_resolve_cover_with_image_auto_falls_through_when_no_winner
+    pipeline = build_pipeline(options: { image: "auto" })
+    pipeline.define_singleton_method(:try_auto_cover_for_feed) { |_title| nil }
+    pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
+
+    path, = pipeline.send(:resolve_episode_cover, "Title")
+    # No winner → falls through to next chain step (here: youtube thumbnail)
+    assert_equal "/tmp/thumb.jpg", path
+  end
+
+  def test_resolve_cover_with_image_auto_falls_through_to_rss_image_when_no_winner
+    pipeline = build_pipeline(options: { image: "auto" })
+    pipeline.define_singleton_method(:try_auto_cover_for_feed) { |_title| nil }
+    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
+
+    path, desc = pipeline.send(:resolve_episode_cover, "Title")
+    assert_equal "/tmp/rss_cover.jpg", path
+    assert_includes desc, "RSS"
+  end
+
   # --- enforce_length_post_download ---
 
   def test_enforce_length_returns_nil_when_in_range

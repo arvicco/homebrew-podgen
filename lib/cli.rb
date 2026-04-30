@@ -7,6 +7,8 @@ module PodgenCLI
   COMMANDS = {
     "generate"  => ["Run the full podcast pipeline",       "cli/generate_command",    "GenerateCommand"],
     "translate" => ["Translate episodes to new languages",  "cli/translate_command",   "TranslateCommand"],
+    "render"    => ["Re-render script markdown from JSON",   "cli/render_command",      "RenderCommand"],
+    "voice"     => ["Voice or re-voice an episode from JSON", "cli/voice_command",       "VoiceCommand"],
     "scrap"     => ["Remove episode and history entry",     "cli/scrap_command",       "ScrapCommand"],
     "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",         "RssCommand"],
     "site"      => ["Generate static HTML website",        "cli/site_command",        "SiteCommand"],
@@ -41,6 +43,8 @@ module PodgenCLI
       opts.separator "Commands:"
       opts.separator "  generate <podcast>             Run the full pipeline (news or language)"
       opts.separator "  translate <podcast>            Translate episodes to new languages"
+      opts.separator "  render <podcast> [--date|--lang] Re-render script markdown from canonical JSON"
+      opts.separator "  voice <podcast> [--date|--lang|--force] Voice/re-voice from script JSON (recover from TTS failure)"
       opts.separator "  scrap <podcast> [episode|path]  Remove episode files + history entry"
       opts.separator "  rss <podcast>                  Generate RSS feed"
       opts.separator "  site <podcast>                 Generate static HTML website"

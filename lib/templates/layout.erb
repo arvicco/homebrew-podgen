@@ -46,17 +46,6 @@
 </head>
 <body>
   <div class="container">
-<% if languages.length > 1 %>
-    <nav class="lang-switcher">
-<% languages.each do |l| %>
-<% if l[:code] == lang %>
-      <span class="current"><%= l[:name] %></span>
-<% else %>
-      <a href="<%= l[:index_path] %>"><%= l[:name] %></a>
-<% end %>
-<% end %>
-    </nav>
-<% end %>
     <%= content %>
     <footer class="site-footer">
       <%= footer_text %>

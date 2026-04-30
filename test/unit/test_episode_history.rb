@@ -253,6 +253,69 @@ class TestEpisodeHistory < Minitest::Test
     assert_nil @history.remove_by_basename!("pod-2026-03-99")
   end
 
+  # --- per-language history ---
+
+  def test_record_with_languages_stores_per_language_metadata
+    @history.record!(
+      date: Date.today,
+      title: "Ep",
+      topics: ["t"],
+      urls: [],
+      basename: "pod-2026-04-26",
+      languages: {
+        "en" => { "duration" => 1234.5, "voiced_at" => "2026-04-26T17:32:00Z" },
+        "jp" => { "duration" => 1456.0, "voiced_at" => "2026-04-26T17:45:00Z" }
+      }
+    )
+
+    entry = YAML.load_file(@history_path).first
+    assert_equal 1234.5, entry["languages"]["en"]["duration"]
+    assert_equal "2026-04-26T17:45:00Z", entry["languages"]["jp"]["voiced_at"]
+  end
+
+  def test_record_omits_languages_when_nil_or_empty
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: [], basename: "b")
+    entry = YAML.load_file(@history_path).first
+    refute entry.key?("languages")
+
+    @history.record!(date: Date.today, title: "Ep2", topics: [], urls: [], basename: "b2", languages: {})
+    entry = YAML.load_file(@history_path).last
+    refute entry.key?("languages")
+  end
+
+  def test_record_language_updates_existing_entry
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: [], basename: "pod-2026-04-26",
+                     languages: { "en" => { "duration" => 1234.5 } })
+
+    @history.record_language!(
+      basename: "pod-2026-04-26",
+      language_code: "jp",
+      duration: 1456.0,
+      voiced_at: "2026-04-26T17:45:00Z"
+    )
+
+    entry = YAML.load_file(@history_path).first
+    assert_equal 1234.5, entry["languages"]["en"]["duration"]
+    assert_equal 1456.0, entry["languages"]["jp"]["duration"]
+    assert_equal "2026-04-26T17:45:00Z", entry["languages"]["jp"]["voiced_at"]
+  end
+
+  def test_record_language_creates_languages_field_if_missing
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: [], basename: "pod-2026-04-26")
+
+    @history.record_language!(basename: "pod-2026-04-26", language_code: "en", duration: 100.0)
+
+    entry = YAML.load_file(@history_path).first
+    assert_equal 100.0, entry["languages"]["en"]["duration"]
+  end
+
+  def test_record_language_raises_when_basename_missing
+    err = assert_raises(RuntimeError) {
+      @history.record_language!(basename: "nonexistent", language_code: "jp")
+    }
+    assert_includes err.message, "No history entry"
+  end
+
   def test_record_omits_nil_duration_and_timestamp
     @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
 

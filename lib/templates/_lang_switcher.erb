@@ -1,0 +1,13 @@
+<% if languages.length > 1 %>
+<nav class="lang-switcher">
+<% languages.each do |l| %>
+<% if l[:code] == lang %>
+<span class="current"><%= l[:name] %></span>
+<% elsif l[:available] == false %>
+<span class="unavailable" title="Not available for this episode"><%= l[:name] %></span>
+<% else %>
+<a href="<%= l[:index_path] %>"><%= l[:name] %></a>
+<% end %>
+<% end %>
+</nav>
+<% end %>

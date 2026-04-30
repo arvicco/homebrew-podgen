@@ -817,20 +817,27 @@ module PodgenCLI
     # 7.  YouTube thumbnail → fallback
     # 8.  nil → no cover
     def resolve_episode_cover(title, skip_auto: false)
-      # Auto path: try first, recurse with skip_auto if no winner
-      if !skip_auto && @current_episode_feed_image == "auto"
+      # Auto path: --image auto (CLI) or feed image: auto. Try first, on
+      # no-winner recurse with skip_auto=true so we fall through to the rest
+      # of the chain (base_image, feed_image, thumbnail, …) instead of
+      # treating the literal string "auto" as a path.
+      cli_auto = @options[:image] == "auto"
+      feed_auto = @current_episode_feed_image == "auto"
+      if !skip_auto && (cli_auto || feed_auto)
         winner = try_auto_cover_for_feed(title)
-        return [winner, "feed image: auto (winner)"] if winner
+        label = cli_auto ? "--image auto (winner)" : "feed image: auto (winner)"
+        return [winner, label] if winner
         return resolve_episode_cover(title, skip_auto: true)
       end
 
-      feed_image = @current_episode_feed_image == "auto" ? nil : @current_episode_feed_image
+      feed_image = feed_auto ? nil : @current_episode_feed_image
+      cli_image = cli_auto ? nil : @options[:image]
 
-      if @options[:image]
-        if @options[:image] == "thumb"
+      if cli_image
+        if cli_image == "thumb"
           [@youtube_thumbnail, "--image thumb (YouTube thumbnail)"]
         else
-          [File.expand_path(@options[:image]), "--image #{@options[:image]}"]
+          [File.expand_path(cli_image), "--image #{cli_image}"]
         end
       elsif @current_episode_image_none
         [@youtube_thumbnail, "feed image: none (YouTube thumbnail fallback)"]

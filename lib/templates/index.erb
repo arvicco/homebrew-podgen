@@ -8,6 +8,7 @@
 <% if podcast_description %>
       <p class="description"><%= podcast_description %></p>
 <% end %>
+      <%= render_template("_lang_switcher.erb", lang: lang, languages: languages) %>
     </div>
   </div>
 </header>

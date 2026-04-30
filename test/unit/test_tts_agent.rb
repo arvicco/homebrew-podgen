@@ -236,6 +236,70 @@ class TestTTSAgent < Minitest::Test
     agent.send(:trim_trailing_audio, "/fake/path.mp3", { "character_end_times_seconds" => [5.0, 10.0] })
   end
 
+  def test_trim_trailing_audio_skips_when_alignment_appears_truncated
+    # Regression: ElevenLabs eleven_v3 sometimes returns
+    # character_end_times_seconds that under-reports the actual speech end
+    # by tens of seconds for long chunks. Trusting it silences real speech.
+    # Anything above MAX_TRIM_SECONDS is treated as bad alignment data.
+    agent = build_agent
+    agent.define_singleton_method(:probe_duration) { |_| 171.92 }
+
+    # Force a failure if ffmpeg is invoked (it shouldn't be).
+    ffmpeg_called = false
+    Open3.stub :capture3, ->(*_args) { ffmpeg_called = true; ["", "", Struct.new(:success?).new(true)] } do
+      agent.send(:trim_trailing_audio, "/fake/path.mp3",
+                 { "character_end_times_seconds" => [10.0, 96.03] })
+    end
+
+    refute ffmpeg_called, "Trim must NOT silence audio when alignment claims >5s trailing — alignment is incomplete"
+  end
+
+  # --- pronunciation dictionary upload content-type ---
+
+  def test_upload_pronunciation_dictionary_sends_octet_stream_not_pls_xml
+    # Regression: MiniMime maps .pls → "application/pls+xml" which ElevenLabs'
+    # /add-from-file parser rejects with HTTP 400 "Lexicon file formatted
+    # incorrectly". Curl sends application/octet-stream and the API accepts
+    # the same file. Wrap the File so HTTParty uses our content-type.
+    require "tempfile"
+    Tempfile.create(["test_dict", ".pls"]) do |f|
+      f.write('<?xml version="1.0"?><lexicon/>')
+      f.flush
+      agent = build_agent
+
+      captured_body = nil
+      fake_response = Object.new
+      fake_response.define_singleton_method(:code) { 200 }
+      fake_response.define_singleton_method(:body) { '{"id":"d1","version_id":"v1"}' }
+
+      HTTParty.stub :post, ->(_url, opts) { captured_body = opts[:body]; fake_response } do
+        agent.send(:upload_pronunciation_dictionary, f.path)
+      end
+
+      file_value = captured_body[:file]
+      assert_respond_to file_value, :content_type,
+        "wrapped file must expose content_type so HTTParty doesn't fall back to MiniMime"
+      assert_equal "application/octet-stream", file_value.content_type,
+        "ElevenLabs rejects application/pls+xml — must send octet-stream"
+    end
+  end
+
+  def test_trim_trailing_audio_does_trim_small_legitimate_tail
+    # Sub-MAX-TRIM trailing (e.g. 0.89s of TTS artifact) should still be trimmed.
+    agent = build_agent
+    agent.define_singleton_method(:probe_duration) { |_| 132.32 }
+
+    ffmpeg_called = false
+    Open3.stub :capture3, ->(*_args) { ffmpeg_called = true; ["", "", Struct.new(:success?).new(true)] } do
+      FileUtils.stub :mv, ->(_src, _dst) { } do
+        agent.send(:trim_trailing_audio, "/fake/path.mp3",
+                   { "character_end_times_seconds" => [10.0, 131.43] })
+      end
+    end
+
+    assert ffmpeg_called, "Small legitimate tail (0.89s) should still be trimmed"
+  end
+
   private
 
   def fake_tts_response

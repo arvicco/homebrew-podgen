@@ -53,6 +53,10 @@ class GuidelinesParser
     @vocabulary_config ||= parse_vocabulary_section
   end
 
+  def translation_glossary
+    @translation_glossary ||= parse_translation_glossary_section
+  end
+
   def languages
     @languages ||= podcast_section[:languages] || parse_language_section
   end
@@ -139,12 +143,7 @@ class GuidelinesParser
       elsif current_key == "language" && line.match?(/^\s+- \S/)
         entry = line.strip.sub(/^- /, "").strip
         config[:languages] ||= []
-        if entry.include?(":")
-          code, voice_id = entry.split(":", 2).map(&:strip)
-          config[:languages] << { "code" => code, "voice_id" => voice_id }
-        else
-          config[:languages] << { "code" => entry }
-        end
+        config[:languages] << parse_language_entry(entry)
       end
     end
 
@@ -245,15 +244,43 @@ class GuidelinesParser
       next unless line.start_with?("- ")
 
       entry = line.sub(/^- /, "").strip
-      if entry.include?(":")
-        code, voice_id = entry.split(":", 2).map(&:strip)
-        languages << { "code" => code, "voice_id" => voice_id }
-      else
-        languages << { "code" => entry }
-      end
+      languages << parse_language_entry(entry)
     end
 
     languages.empty? ? default : languages
+  end
+
+  # Parses a single language list entry into a config hash.
+  # Supports inline options after voice_id, e.g.:
+  #   "en"                                     → { "code" => "en" }
+  #   "es: VOICE_ES"                           → { "code" => "es", "voice_id" => "VOICE_ES" }
+  #   "jp: VOICE_JP translator: openai"        → adds "translator" => "openai"
+  #   "jp: VOICE_JP translation_model: gpt-5"  → adds "translation_model" => "gpt-5"
+  LANGUAGE_INLINE_KEYS = %w[translator translation_model].freeze
+
+  def parse_language_entry(entry)
+    return { "code" => entry } unless entry.include?(":")
+
+    code, rest = entry.split(":", 2).map(&:strip)
+    config = { "code" => code }
+    return config if rest.nil? || rest.empty?
+
+    parts = rest.split(/\s+(?=[a-z_]\w*:)/, -1)
+    # First part is voice_id only when it doesn't itself look like a key:value pair.
+    if parts.first && !parts.first.include?(":")
+      voice_id = parts.shift
+      config["voice_id"] = voice_id unless voice_id.empty?
+    end
+
+    parts.each do |part|
+      k, v = part.split(":", 2)
+      next unless k && v
+      k = k.strip
+      v = v.strip
+      config[k] = v if LANGUAGE_INLINE_KEYS.include?(k)
+    end
+
+    config
   end
 
   def parse_transcription_engine_section
@@ -314,12 +341,47 @@ class GuidelinesParser
   def parse_twitter_section
     config = parse_kv_section("Twitter") do |key, value|
       case key
-      when "template" then { template: value }
-      when "since"    then { since: value.to_i }
+      when "template"  then { template: value }
+      when "since"     then { since: value.to_i }
+      when "languages"
+        normalized = value.split(",").map { |c| c.strip.downcase }.reject(&:empty?)
+        next nil if normalized.empty?
+        # "all" disables filtering — every configured language gets announced
+        next { languages: :all } if normalized.include?("all")
+        { languages: normalized }
       end
     end
     return nil if config.nil? || config.empty?
     config
+  end
+
+  # Parses ## Translation Glossary into { "jp" => { "Bitcoin" => "ビットコイン", ... }, "es" => {...} }.
+  # Format:
+  #   ## Translation Glossary
+  #   - jp:
+  #     - Bitcoin: ビットコイン
+  #     - mining: マイニング
+  #   - es:
+  #     - mining: minería
+  def parse_translation_glossary_section
+    body = extract_section("Translation Glossary")
+    return {} unless body
+
+    glossary = {}
+    current_lang = nil
+    body.each_line do |line|
+      if line.match?(/^- [a-z]{2,3}:\s*$/i)
+        current_lang = line.strip.sub(/^- /, "").chomp(":").strip.downcase
+        glossary[current_lang] ||= {}
+      elsif line.match?(/^\s+- \S/) && current_lang
+        entry = line.strip.sub(/^- /, "")
+        # Split on the FIRST colon — translations may themselves contain colons.
+        next unless entry.include?(":")
+        term, translation = entry.split(":", 2).map(&:strip)
+        glossary[current_lang][term] = translation if !term.empty? && translation && !translation.empty?
+      end
+    end
+    glossary
   end
 
   def parse_vocabulary_section
