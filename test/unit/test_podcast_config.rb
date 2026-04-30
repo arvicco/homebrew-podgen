@@ -1263,6 +1263,63 @@ class TestPodcastConfig < Minitest::Test
     refute config.twitter_enabled?
   end
 
+  # --- language_for_episode + site_episode_url ---
+
+  def test_language_for_episode_detects_lang_suffix
+    write_guidelines(<<~MD)
+      ## Podcast
+      - name: Test
+      - language:
+        - en
+        - jp
+        - it
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal "jp", config.language_for_episode("myshow-2026-04-26-jp")
+    assert_equal "it", config.language_for_episode("myshow-2026-04-26-it")
+    # No suffix → primary
+    assert_equal "en", config.language_for_episode("myshow-2026-04-26")
+  end
+
+  def test_language_for_episode_unknown_two_letter_suffix_falls_back_to_primary
+    write_guidelines(<<~MD)
+      ## Podcast
+      - name: Test
+      - language:
+        - en
+        - jp
+    MD
+
+    config = PodcastConfig.new("myshow")
+    # `xx` isn't configured, so it's not actually a language suffix —
+    # treat as primary so we don't generate broken URLs.
+    assert_equal "en", config.language_for_episode("myshow-2026-04-26-xx")
+  end
+
+  def test_site_episode_url_inserts_lang_for_non_primary
+    write_guidelines(<<~MD)
+      ## Podcast
+      - name: Test
+      - base_url: https://media.example.com/test
+      - language:
+        - en
+        - it
+    MD
+
+    config = PodcastConfig.new("myshow")
+    assert_equal "https://media.example.com/test/site/episodes/myshow-2026-04-26.html",
+                 config.site_episode_url("myshow-2026-04-26")
+    assert_equal "https://media.example.com/test/site/it/episodes/myshow-2026-04-26-it.html",
+                 config.site_episode_url("myshow-2026-04-26-it")
+  end
+
+  def test_site_episode_url_nil_when_base_url_missing
+    write_guidelines("## Podcast\n- name: Test")
+    config = PodcastConfig.new("myshow")
+    assert_nil config.site_episode_url("myshow-2026-04-26")
+  end
+
   private
 
   def write_guidelines(content)

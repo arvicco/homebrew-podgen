@@ -96,6 +96,10 @@ GEM
       racc (~> 1.4)
     nokogiri (1.19.2-x86_64-linux-gnu)
       racc (~> 1.4)
+    openai (0.59.0)
+      base64
+      cgi
+      connection_pool
     os (1.1.4)
     pstore (0.2.1)
     public_suffix (7.0.5)
@@ -173,6 +177,7 @@ DEPENDENCIES
   httparty (~> 0.24)
   logger (~> 1.6)
   minitest (~> 5.25)
+  openai (~> 0.59)
   pstore (~> 0.1)
   puma (~> 6.5)
   rack-test (~> 2.2)
@@ -227,6 +232,7 @@ CHECKSUMS
   nio4r (2.7.5) sha256=6c90168e48fb5f8e768419c93abb94ba2b892a1d0602cb06eef16d8b7df1dca1
   nokogiri (1.19.2-arm64-darwin) sha256=58d8ea2e31a967b843b70487a44c14c8ba1866daa1b9da9be9dbdf1b43dee205
   nokogiri (1.19.2-x86_64-linux-gnu) sha256=fa8feca882b73e871a9845f3817a72e9734c8e974bdc4fbad6e4bc6e8076b94f
+  openai (0.59.0) sha256=63000fcd58c8cdbd1c52666d9fe1a0709eabe179db085b1112f8a7add75cfbab
   os (1.1.4) sha256=57816d6a334e7bd6aed048f4b0308226c5fb027433b67d90a9ab435f35108d3f
   pstore (0.2.1) sha256=03904d0f2c66579e96d1e6704cdabc0c88df7ea8ed8782d9f3569f6f6c702c1a
   public_suffix (7.0.5) sha256=1a8bb08f1bbea19228d3bed6e5ed908d1cb4f7c2726d18bd9cadf60bc676f623

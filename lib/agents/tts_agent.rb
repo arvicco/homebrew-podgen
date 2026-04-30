@@ -23,6 +23,12 @@ class TTSAgent
   BASE_URL = "https://api.elevenlabs.io/v1/text-to-speech"
   DICT_API_URL = "https://api.elevenlabs.io/v1/pronunciation-dictionaries"
   TRIM_THRESHOLD = 0.5 # seconds of trailing audio before we trim
+  # Upper bound on trim. ElevenLabs eleven_v3 sometimes returns
+  # character_end_times_seconds that under-reports the real speech end by
+  # tens of seconds for long chunks (alignment array truncated). Trusting
+  # that and silencing everything past it wipes real speech. Anything above
+  # this is treated as bad alignment data — skip the trim with a warning.
+  MAX_TRIM_SECONDS = 5.0
   DEFAULT_MAX_CHARS = 9_500 # Safety margin below v2's 10,000 char limit
   # Per-model character limits per request (with safety margin).
   # eleven_v3 has a tighter ~5k limit; v2/turbo allow ~10k.
@@ -159,6 +165,12 @@ class TTSAgent
 
     return unless trailing > TRIM_THRESHOLD
 
+    if trailing > MAX_TRIM_SECONDS
+      log("  WARNING: alignment data appears truncated (claims #{trailing.round(2)}s trailing). " \
+          "Skipping trim to avoid silencing real speech.")
+      return
+    end
+
     silenced_path = "#{path}.silenced.mp3"
     af = "volume=enable='gt(t,#{speech_end})':volume=0"
     cmd = ["ffmpeg", "-y", "-i", path, "-af", af, "-c:a", "libmp3lame", "-b:a", "192k", silenced_path]
@@ -210,7 +222,7 @@ class TTSAgent
         multipart: true,
         body: {
           name: name,
-          file: File.open(pls_path, "rb")
+          file: octet_stream_file_part(pls_path)
         },
         timeout: 30
       )
@@ -225,6 +237,19 @@ class TTSAgent
         raise "Upload failed: HTTP #{response.code}: #{parse_error(response)}"
       end
     end
+  end
+
+  # Wraps a file for HTTParty multipart upload with an explicit Content-Type.
+  # MiniMime maps .pls → "application/pls+xml", which ElevenLabs'
+  # /add-from-file parser rejects with HTTP 400 "Lexicon file formatted
+  # incorrectly". Curl sends application/octet-stream by default and the
+  # API accepts it; we mirror that behavior.
+  def octet_stream_file_part(path)
+    require "delegate"
+    file = File.open(path, "rb")
+    wrapper = SimpleDelegator.new(file)
+    wrapper.define_singleton_method(:content_type) { "application/octet-stream" }
+    wrapper
   end
 
   def load_dict_cache(path)

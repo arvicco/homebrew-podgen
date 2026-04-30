@@ -89,7 +89,9 @@ class EpisodeHistory
 
   # Append a new episode entry.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
-  def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil, basename: nil)
+  # `languages:` is an optional Hash mapping language code to per-language metadata
+  # (e.g. { "en" => { "duration" => 1234.5, "voiced_at" => "2026-04-26T17:32:00Z" } })
+  def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil, basename: nil, languages: nil)
     entries = YamlLoader.load(@path, default: [])
     entry = {
       "date" => date.to_s,
@@ -100,12 +102,35 @@ class EpisodeHistory
     entry["duration"] = duration if duration
     entry["timestamp"] = timestamp if timestamp
     entry["basename"] = basename if basename
+    entry["languages"] = stringify_language_keys(languages) if languages && !languages.empty?
 
     entries << entry
     write_entries!(entries)
   end
 
+  # Record (or update) per-language voicing metadata on an existing episode.
+  # Looks up the entry by basename. Raises if no matching entry exists.
+  # Used by `podgen voice` to mark a language as voiced after a successful run.
+  def record_language!(basename:, language_code:, duration: nil, voiced_at: nil)
+    entries = YamlLoader.load(@path, default: [])
+    idx = entries.index { |e| e["basename"] == basename }
+    raise "No history entry for basename #{basename.inspect}" unless idx
+
+    entry = entries[idx]
+    entry["languages"] ||= {}
+    lang_meta = entry["languages"][language_code.to_s] ||= {}
+    lang_meta["duration"] = duration if duration
+    lang_meta["voiced_at"] = voiced_at if voiced_at
+
+    entries[idx] = entry
+    write_entries!(entries)
+  end
+
   private
+
+  def stringify_language_keys(languages)
+    languages.each_with_object({}) { |(k, v), h| h[k.to_s] = v }
+  end
 
   def write_entries!(entries)
     AtomicWriter.write_yaml(@path, entries)

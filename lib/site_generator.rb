@@ -116,6 +116,8 @@ class SiteGenerator
       languages: lang_nav,
       feed_url: feed_url(lang_code),
       content: render_template("index.erb",
+        lang: lang_code,
+        languages: lang_nav,
         podcast_title: @config.title,
         podcast_description: @config.description ? linkify_markdown(@config.description) : nil,
         cover_url: cover_url(is_primary),
@@ -147,6 +149,8 @@ class SiteGenerator
         languages: build_lang_nav_episode(lang_code, ep),
         feed_url: feed_url(lang_code),
         content: render_template("episode.erb",
+          lang: lang_code,
+          languages: build_lang_nav_episode(lang_code, ep),
           episode_title: ep[:title],
           episode_date: ep[:date].strftime("%B %d, %Y"),
           episode_duration: ep[:duration] ? format_duration(ep[:duration]) : nil,
@@ -343,7 +347,7 @@ class SiteGenerator
         "../#{code}/index.html"
       end
 
-      { code: code, name: LANGUAGE_NAMES[code] || code.upcase, index_path: index_path }
+      { code: code, name: LANGUAGE_NATIVE_NAMES[code] || LANGUAGE_NAMES[code] || code.upcase, index_path: index_path }
     end
   end
 
@@ -355,23 +359,37 @@ class SiteGenerator
 
       # Derive the episode basename for the target language
       base = episode[:basename]
-      if current_code != "en"
+      if current_code != primary_language
         # Strip current language suffix to get the English base
         base = base.sub(/-#{current_code}$/, "")
       end
-      target_basename = code == "en" ? base : "#{base}-#{code}"
+      target_basename = code == primary_language ? base : "#{base}-#{code}"
 
-      index_path = if code == current_code
+      # The episode is "available" in this language when its MP3 exists on
+      # disk. The current language itself is always considered available
+      # (it's the page we're rendering).
+      available = code == current_code ||
+                  File.exist?(File.join(@episodes_dir, "#{target_basename}.mp3"))
+
+      # Episode pages live at:
+      #   primary:    <root>/episodes/<base>.html
+      #   non-primary: <root>/<code>/episodes/<base>-<code>.html
+      # So crossing language boundaries requires two `..` (out of episodes/ and out of <code>/)
+      # whenever we're starting from a non-primary page.
+      index_path = if code == current_code || !available
         nil
       elsif is_primary && !is_current_primary
-        "../episodes/#{target_basename}.html"
+        # non-primary → primary: <root>/<current>/episodes/X → <root>/episodes/Y
+        "../../episodes/#{target_basename}.html"
       elsif !is_primary && is_current_primary
+        # primary → non-primary: <root>/episodes/X → <root>/<code>/episodes/Y
         "../#{code}/episodes/#{target_basename}.html"
       else
+        # non-primary → non-primary: <root>/<current>/episodes/X → <root>/<code>/episodes/Y
         "../../#{code}/episodes/#{target_basename}.html"
       end
 
-      { code: code, name: LANGUAGE_NAMES[code] || code.upcase, index_path: index_path }
+      { code: code, name: LANGUAGE_NATIVE_NAMES[code] || LANGUAGE_NAMES[code] || code.upcase, index_path: index_path, available: available }
     end
   end
 

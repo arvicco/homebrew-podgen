@@ -21,6 +21,9 @@ require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "priority_links")
+require_relative File.join(root, "lib", "script_artifact")
+require_relative File.join(root, "lib", "script_renderer")
+require_relative File.join(root, "lib", "voicer")
 require_relative File.join(root, "lib", "cli", "language_pipeline")
 
 module PodgenCLI
@@ -44,12 +47,13 @@ module PodgenCLI
         opts.on("--ask-trim", "--ask-skip", "Download audio, play it, then prompt for skip and cut values") { @options[:ask_trim] = true }
         opts.on("--no-cut", "Disable cut even if configured") { @options[:no_cut] = true }
         opts.on("--force", "Process even if already in history (skip dedup check)") { @options[:force] = true }
-        opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), or 'last' (~/Desktop screenshot)") { |p| @options[:image] = p }
+        opts.on("--image PATH", "Cover: file path, 'thumb' (YouTube), 'last' (~/Desktop screenshot), or 'auto' (DDG search)") { |p| @options[:image] = p }
         opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| @options[:base_image] = p }
         opts.on("--lingq", "Enable LingQ upload during generation") { @options[:lingq] = true }
         opts.on("--youtube", "Enable YouTube upload during generation") { @options[:youtube] = true }
         opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") { |d| @options[:date] = Date.parse(d) }
         opts.on("--include WORDS", "Force-include vocabulary lemmas (comma-separated)") { |v| @options[:include_words] = Set.new(v.split(",").map { |w| w.strip.downcase }) }
+        opts.on("--from-script", "DEPRECATED: prefer 'podgen voice <pod> [--lang LANG]'. Resumes voicing from saved script JSON.") { @options[:from_script] = true; @options[:force] = true }
         opts.on("--dry-run", "Validate config, skip API calls") { @options[:dry_run] = true }
       end.parse!(args)
 
@@ -72,17 +76,28 @@ module PodgenCLI
 
         @logger.log("Pipeline type: news")
 
-        topics = generate_topics
-        research_data = research_topics(topics)
-        research_data, priority_urls = inject_priority_links(research_data)
-        script = generate_script(topics, research_data, priority_urls)
-        script = review_script(script, research_data, priority_urls) unless @dry_run
-
-        if @dry_run
-          log_dry_run_summary(topics, research_data, script)
-        else
+        if @options[:from_script]
+          @logger.log("--from-script is deprecated. Prefer: podgen voice #{@podcast_name} [--lang LANG]")
+          $stderr.puts "Note: --from-script is deprecated. Prefer: podgen voice #{@podcast_name} [--lang LANG]" unless @options[:verbosity] == :quiet
+          script = load_script_for_resume
+          research_data = []
+          priority_urls = []
+          @logger.log("--from-script: skipping topics/research/script/review/translation phases")
           output_paths = produce_episodes(script, research_data)
           finalize(output_paths, script, research_data, priority_urls)
+        else
+          topics = generate_topics
+          research_data = research_topics(topics)
+          research_data, priority_urls = inject_priority_links(research_data)
+          script = generate_script(topics, research_data, priority_urls)
+          script = review_script(script, research_data, priority_urls) unless @dry_run
+
+          if @dry_run
+            log_dry_run_summary(topics, research_data, script)
+          else
+            output_paths = produce_episodes(script, research_data)
+            finalize(output_paths, script, research_data, priority_urls)
+          end
         end
 
         0
@@ -379,48 +394,78 @@ module PodgenCLI
       lang_script = if lang_code == "en"
         script
       else
-        @logger.phase_start("Translation (#{lang_code})")
-        translator = TranslationAgent.new(target_language: lang_code, logger: @logger)
-        translated = translator.translate(script)
-        @logger.phase_end("Translation (#{lang_code})")
-        translated
-      end
-
-      # Merge English sources into translated script (sources aren't translated)
-      lang_script_with_sources = lang_script.merge(sources: script[:sources])
-      script[:segments].each_with_index do |en_seg, i|
-        if en_seg[:sources]&.any? && lang_script_with_sources[:segments][i]
-          lang_script_with_sources[:segments][i][:sources] = en_seg[:sources]
+        translated_path = File.join(@config.episodes_dir, "#{lang_basename}_script.md")
+        translated_script, translated_source = ScriptArtifact.read_with_fallback(translated_path)
+        if @options[:from_script] && translated_script
+          @logger.log("--from-script: loaded translated script for #{lang_code} from #{translated_path} (#{translated_source == :json ? 'JSON' : 'legacy markdown'})")
+          translated_script
+        else
+          @logger.log("--from-script: no saved #{lang_code} script, translating from English") if @options[:from_script]
+          @logger.phase_start("Translation (#{lang_code})")
+          translator = TranslationAgent.new(
+            target_language: lang_code,
+            backend: lang["translator"] || "claude",
+            model_override: lang["translation_model"],
+            glossary: @config.translation_glossary_for(lang_code),
+            logger: @logger
+          )
+          translated = translator.translate(script)
+          @logger.phase_end("Translation (#{lang_code})")
+          translated
         end
       end
+
+      # TranslationAgent#carry_over_sources already attaches English sources
+      # (top-level + per-segment) to the translated script — they're URL+title
+      # pairs that don't need translation.
       lang_script_path = File.join(@config.episodes_dir, "#{lang_basename}_script.md")
-      save_script_debug(lang_script_with_sources, lang_script_path, @logger,
+      save_script_debug(lang_script, lang_script_path, @logger,
                         links_config: @config.links_enabled? ? @config.links_config : nil)
 
-      @logger.phase_start("TTS (#{lang_code})")
-      tts_agent = TTSAgent.new(
-        logger: @logger,
-        voice_id_override: voice_id,
-        model_id_override: @config.tts_model_id,
-        pronunciation_pls_path: @config.pronunciation_pls_path
-      )
-      audio_paths = tts_agent.synthesize(lang_script[:segments])
-      @logger.log("TTS complete (#{lang_code}): #{audio_paths.length} audio files")
-      @logger.phase_end("TTS (#{lang_code})")
-
-      @logger.phase_start("Assembly (#{lang_code})")
       output_path = File.join(@config.episodes_dir, "#{lang_basename}.mp3")
-      assembler = AudioAssembler.new(logger: @logger)
-      assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path,
-        metadata: { title: lang_script[:title], artist: @config.author },
-        segment_pause: 2.0)
-      @logger.phase_end("Assembly (#{lang_code})")
-
-      audio_paths.each { |p| File.delete(p) if File.exist?(p) }
+      Voicer.new(logger: @logger).voice(
+        segments: lang_script[:segments],
+        output_path: output_path,
+        voice_id: voice_id,
+        title: lang_script[:title],
+        author: @config.author,
+        tts_model_id: @config.tts_model_id,
+        pronunciation_pls_path: @config.pronunciation_pls_path,
+        intro_path: intro_path,
+        outro_path: outro_path,
+        lang_code: lang_code
+      )
       output_path
     end
 
+    # Resumes from a previously-saved English script. Prefers the canonical
+    # JSON artifact (preserves per-segment sources); falls back to the
+    # markdown view (legacy, lossy) for older runs.
+    def load_script_for_resume
+      @base_name ||= @config.episode_basename(@today)
+      md_path = File.join(@config.episodes_dir, "#{@base_name}_script.md")
+      script, source = ScriptArtifact.read_with_fallback(md_path)
+
+      unless script
+        raise "--from-script: expected #{md_path} or its .json sibling but neither exists. " \
+              "Run a full pipeline first, or pass --date YYYY-MM-DD to resume an older run."
+      end
+
+      @logger.log("--from-script: loaded English script from #{md_path} (#{source == :json ? 'JSON' : 'legacy markdown'})")
+      script
+    end
+
     def finalize(output_paths, script, research_data, priority_urls)
+      languages_meta = output_paths.each_with_object({}) do |path, h|
+        # Filename: <basename>.mp3 (en) or <basename>-<lang>.mp3
+        match = File.basename(path, ".mp3").match(/-([a-z]{2})\z/)
+        code = match ? match[1] : "en"
+        h[code] = {
+          "duration" => AudioAssembler.probe_duration(path),
+          "voiced_at" => Time.now.iso8601
+        }
+      end
+
       @history.record!(
         date: @today,
         title: script[:title],
@@ -428,6 +473,7 @@ module PodgenCLI
         urls: research_data.flat_map { |r| r[:findings].map { |f| f[:url] } },
         duration: AudioAssembler.probe_duration(output_paths.first),
         timestamp: Time.now.iso8601,
+        languages: languages_meta,
         basename: @base_name
       )
       @logger.log("Episode recorded in history: #{@config.history_path}")
@@ -483,43 +529,9 @@ module PodgenCLI
 
     def save_script_debug(script, path, logger, links_config: nil)
       FileUtils.mkdir_p(File.dirname(path))
-      position = links_config&.dig(:position) || "bottom"
-      max = links_config&.dig(:max)
-
-      File.open(path, "w") do |f|
-        f.puts "# #{script[:title]}"
-        f.puts
-        script[:segments].each do |seg|
-          f.puts "## #{seg[:name]}"
-          f.puts
-          f.puts seg[:text]
-          f.puts
-
-          if links_config && position == "inline" && seg[:sources]&.any?
-            write_sources(f, seg[:sources], max: max)
-          end
-        end
-
-        if links_config && position == "bottom"
-          sources = script[:sources]
-          if sources && !sources.empty?
-            title = links_config[:title] || "More info"
-            f.puts "## #{title}"
-            f.puts
-            write_sources(f, sources, max: max)
-          end
-        end
-      end
+      File.write(path, ScriptRenderer.render(script, links_config: links_config))
+      ScriptArtifact.write(ScriptArtifact.json_path_for(path), script)
       logger.log("Script saved to #{path}")
-    end
-
-    def write_sources(f, sources, max: nil)
-      sources = sources.first(max) if max
-      sources.each do |src|
-        clean_url = UrlCleaner.clean(src[:url])
-        f.puts "- [#{src[:title]}](#{clean_url})"
-      end
-      f.puts
     end
   end
 end

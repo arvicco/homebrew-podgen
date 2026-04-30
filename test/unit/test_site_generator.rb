@@ -228,11 +228,115 @@ class TestSiteGenerator < Minitest::Test
     assert File.exist?(File.join(site_dir, "es", "index.html"))
     assert File.exist?(File.join(site_dir, "es", "episodes", "mypod-2026-01-15-es.html"))
 
-    # Language switcher present
+    # Language switcher present, with native-script names
     index = File.read(File.join(site_dir, "index.html"))
     assert_includes index, "lang-switcher"
     assert_includes index, "English"
-    assert_includes index, "Spanish"
+    assert_includes index, "Español"     # native, not "Spanish"
+    refute_includes index, "Spanish"
+  end
+
+  def test_lang_switcher_uses_native_script_names
+    create_mp3("mypod-2026-01-15.mp3")
+    create_mp3("mypod-2026-01-15-jp.mp3")
+    create_mp3("mypod-2026-01-15-it.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15-jp_script.md"), "# T\n\nC.")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15-it_script.md"), "# T\n\nC.")
+    write_history([{ "date" => "2026-01-15", "title" => "Test", "duration" => 60.0 }])
+
+    build_generator(languages: [{ "code" => "en" }, { "code" => "jp" }, { "code" => "it" }]).generate
+
+    site_dir = File.join(@podcast_dir, "site")
+    en_index = File.read(File.join(site_dir, "index.html"))
+    en_episode = File.read(File.join(site_dir, "episodes", "mypod-2026-01-15.html"))
+
+    [en_index, en_episode].each do |html|
+      assert_includes html, "日本語", "expected native Japanese name"
+      assert_includes html, "Italiano", "expected native Italian name"
+      refute_includes html, "Japanese", "should not show English name 'Japanese'"
+      refute_includes html, ">Italian<", "should not show English name 'Italian'"
+    end
+  end
+
+  def test_episode_lang_switcher_links_resolve_both_directions
+    create_mp3("mypod-2026-01-15.mp3")
+    create_mp3("mypod-2026-01-15-es.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15-es_script.md"), "# Titulo\n\nContenido.")
+    write_history([{ "date" => "2026-01-15", "title" => "English Title", "duration" => 60.0 }])
+
+    build_generator(languages: [{ "code" => "en" }, { "code" => "es" }]).generate
+
+    site_dir = File.join(@podcast_dir, "site")
+
+    # EN episode (primary) → ES button: relative path resolves under es/episodes/
+    en_html = File.read(File.join(site_dir, "episodes", "mypod-2026-01-15.html"))
+    assert_includes en_html, %{href="../es/episodes/mypod-2026-01-15-es.html"}
+
+    # ES episode (non-primary) → EN button: must include `../../` to escape
+    # both episodes/ and es/, otherwise the link resolves inside /es/episodes/.
+    es_html = File.read(File.join(site_dir, "es", "episodes", "mypod-2026-01-15-es.html"))
+    assert_includes es_html, %{href="../../episodes/mypod-2026-01-15.html"}
+    refute_includes es_html, %{href="../episodes/mypod-2026-01-15.html"},
+      "../episodes/ would resolve to /es/episodes/ — wrong directory"
+  end
+
+  def test_episode_lang_switcher_greys_out_when_target_episode_missing
+    # English episode exists but Spanish translation hasn't been produced yet.
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "English Title", "duration" => 60.0 }])
+
+    build_generator(languages: [{ "code" => "en" }, { "code" => "es" }]).generate
+
+    en_html = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    # Spanish button should render as a non-clickable span, not an <a>
+    assert_includes en_html, %{<span class="unavailable"}
+    assert_includes en_html, "Español"
+    refute_includes en_html, %{href="../es/episodes/mypod-2026-01-15-es.html"}
+  end
+
+  def test_episode_lang_switcher_keeps_link_when_both_languages_present
+    create_mp3("mypod-2026-01-15.mp3")
+    create_mp3("mypod-2026-01-15-es.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15-es_script.md"), "# T\n\nC.")
+    write_history([{ "date" => "2026-01-15", "title" => "English Title", "duration" => 60.0 }])
+
+    build_generator(languages: [{ "code" => "en" }, { "code" => "es" }]).generate
+
+    en_html = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    refute_includes en_html, %{<span class="unavailable"}
+    assert_includes en_html, %{href="../es/episodes/mypod-2026-01-15-es.html"}
+  end
+
+  def test_episode_lang_switcher_per_episode_partial_translations
+    # 3 langs configured (en, jp, it). Episode A has en+it, episode B has en+jp+it.
+    # Switcher should reflect ACTUAL per-episode availability, not the podcast-level config.
+    create_mp3("mypod-2026-01-15.mp3")
+    create_mp3("mypod-2026-01-15-it.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15-it_script.md"), "# T\n\nC.")
+    create_mp3("mypod-2026-01-16.mp3")
+    create_mp3("mypod-2026-01-16-jp.mp3")
+    create_mp3("mypod-2026-01-16-it.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-16-jp_script.md"), "# T\n\nC.")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-16-it_script.md"), "# T\n\nC.")
+    write_history([
+      { "date" => "2026-01-15", "title" => "Ep A", "duration" => 60.0 },
+      { "date" => "2026-01-16", "title" => "Ep B", "duration" => 60.0 }
+    ])
+
+    build_generator(languages: [{ "code" => "en" }, { "code" => "jp" }, { "code" => "it" }]).generate
+
+    site_dir = File.join(@podcast_dir, "site")
+
+    # Episode A: jp not produced → greyed; it produced → linked.
+    a_en = File.read(File.join(site_dir, "episodes", "mypod-2026-01-15.html"))
+    assert_match(/<span class="unavailable"[^>]*>日本語<\/span>/, a_en)
+    assert_includes a_en, %{href="../it/episodes/mypod-2026-01-15-it.html"}
+
+    # Episode B: both translations exist → both linked, no unavailable spans.
+    b_en = File.read(File.join(site_dir, "episodes", "mypod-2026-01-16.html"))
+    refute_includes b_en, %{<span class="unavailable"}
+    assert_includes b_en, %{href="../jp/episodes/mypod-2026-01-16-jp.html"}
+    assert_includes b_en, %{href="../it/episodes/mypod-2026-01-16-it.html"}
   end
 
   def test_generate_with_base_url_uses_absolute_audio_urls

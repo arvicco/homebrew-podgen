@@ -87,6 +87,19 @@ class TestTranslateCommand < Minitest::Test
     assert_empty pending
   end
 
+  def test_pending_translations_includes_existing_mp3s_when_forced
+    create_mp3("a-es.mp3")
+    episodes = [{ script_path: "/path/a_script.md", basename: "a" }]
+    languages = [{ "code" => "es", "voice_id" => "v1" }]
+
+    cmd = build_command
+    cmd.instance_variable_set(:@force, true)
+    pending = cmd.send(:pending_translations, episodes, languages, @episodes_dir)
+
+    assert_equal 1, pending.length
+    assert_equal "es", pending.first[:lang_code]
+  end
+
   def test_pending_translations_multiple_languages
     episodes = [{ script_path: "/path/a_script.md", basename: "a" }]
     languages = [

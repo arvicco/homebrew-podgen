@@ -9,7 +9,11 @@ require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "audio_assembler")
+require_relative File.join(root, "lib", "voicer")
 require_relative File.join(root, "lib", "rss_generator")
+require_relative File.join(root, "lib", "script_artifact")
+require_relative File.join(root, "lib", "script_renderer")
+require_relative File.join(root, "lib", "legacy_script_parser")
 
 module PodgenCLI
   class TranslateCommand
@@ -19,10 +23,12 @@ module PodgenCLI
       @options = options
       @last_n = nil
       @lang_filter = nil
+      @force = false
 
       OptionParser.new do |opts|
         opts.on("--last N", Integer, "Only translate the N most recent episodes") { |n| @last_n = n }
-        opts.on("--lang LANG", "Only translate to this language (e.g. it)") { |l| @lang_filter = l }
+        opts.on("--lang LANG", "Only translate to this language (e.g. it)") { |l| @lang_filter = l.downcase }
+        opts.on("--force", "Re-translate even if the language MP3 already exists") { @force = true }
         opts.on("--dry-run", "Show what would be translated") { @options[:dry_run] = true }
       end.parse!(args)
 
@@ -93,6 +99,9 @@ module PodgenCLI
             basename: item[:basename],
             lang_code: item[:lang_code],
             voice_id: item[:voice_id],
+            translator: item[:translator],
+            translation_model: item[:translation_model],
+            glossary: config.translation_glossary_for(item[:lang_code]),
             episodes_dir: config.episodes_dir,
             intro_path: intro_path,
             outro_path: outro_path,
@@ -143,66 +152,61 @@ module PodgenCLI
         languages.each do |lang|
           lang_code = lang["code"]
           mp3_path = File.join(episodes_dir, "#{ep[:basename]}-#{lang_code}.mp3")
-          next if File.exist?(mp3_path)
+          next if File.exist?(mp3_path) && !@force
 
           pending << {
             script_path: ep[:script_path],
             basename: ep[:basename],
             lang_code: lang_code,
-            voice_id: lang["voice_id"]
+            voice_id: lang["voice_id"],
+            translator: lang["translator"],
+            translation_model: lang["translation_model"]
           }
         end
       end
       pending
     end
 
-    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, pronunciation_pls_path: nil, logger: nil)
+    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, translator: nil, translation_model: nil, glossary: nil, pronunciation_pls_path: nil, logger: nil)
       script = parse_script(script_path)
 
       # Translate
-      translator = TranslationAgent.new(target_language: lang_code, logger: logger)
-      lang_script = translator.translate(script)
+      translator_agent = TranslationAgent.new(
+        target_language: lang_code,
+        backend: translator || "claude",
+        model_override: translation_model,
+        glossary: glossary,
+        logger: logger
+      )
+      lang_script = translator_agent.translate(script)
 
       # Save translated script
       lang_script_path = File.join(episodes_dir, "#{basename}-#{lang_code}_script.md")
       save_script(lang_script, lang_script_path)
 
-      # TTS
-      tts_agent = TTSAgent.new(logger: logger, voice_id_override: voice_id, pronunciation_pls_path: pronunciation_pls_path)
-      audio_paths = tts_agent.synthesize(lang_script[:segments])
-
-      # Assemble
       output_path = File.join(episodes_dir, "#{basename}-#{lang_code}.mp3")
-      assembler = AudioAssembler.new(logger: logger)
-      assembler.assemble(audio_paths, output_path, intro_path: intro_path, outro_path: outro_path,
-        metadata: { title: lang_script[:title], artist: author })
-
-      # Cleanup TTS temp files
-      audio_paths.each { |p| File.delete(p) if File.exist?(p) }
+      Voicer.new(logger: logger).voice(
+        segments: lang_script[:segments],
+        output_path: output_path,
+        voice_id: voice_id,
+        title: lang_script[:title],
+        author: author,
+        pronunciation_pls_path: pronunciation_pls_path,
+        intro_path: intro_path,
+        outro_path: outro_path,
+        lang_code: lang_code
+      )
     end
 
     def parse_script(path)
-      content = File.read(path)
-      title = content[/^# (.+)$/, 1]
-      segments = []
-      content.scan(/^## (.+?)\n\n(.*?)(?=\n## |\z)/m) do |name, text|
-        segments << { name: name.strip, text: text.strip }
-      end
-      { title: title, segments: segments }
+      script, _source = ScriptArtifact.read_with_fallback(path)
+      script || raise("Could not read script at #{path} (or its .json sibling)")
     end
 
     def save_script(script, path)
       FileUtils.mkdir_p(File.dirname(path))
-      File.open(path, "w") do |f|
-        f.puts "# #{script[:title]}"
-        f.puts
-        script[:segments].each do |seg|
-          f.puts "## #{seg[:name]}"
-          f.puts
-          f.puts seg[:text]
-          f.puts
-        end
-      end
+      File.write(path, ScriptRenderer.render(script))
+      ScriptArtifact.write(ScriptArtifact.json_path_for(path), script)
     end
 
     def regenerate_rss(config, logger)

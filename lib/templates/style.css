@@ -53,6 +53,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .lang-switcher { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; font-size: 0.875rem; }
 .lang-switcher a, .lang-switcher span { padding: 0.25rem 0.625rem; border-radius: var(--radius); border: 1px solid var(--border); }
 .lang-switcher .current { background: var(--accent); color: #fff; border-color: var(--accent); }
+.lang-switcher .unavailable { color: var(--fg-muted); opacity: 0.4; cursor: not-allowed; }
 
 /* Episode list */
 .episode-list { list-style: none; }
@@ -79,7 +80,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .transcript h2 { font-size: 1.25rem; margin: 1.75rem 0 0.75rem; }
 .transcript p { margin-bottom: 1rem; }
 
-.back-link { display: inline-block; margin-bottom: 1.5rem; font-size: 0.9rem; }
+.back-link { display: inline-block; font-size: 0.9rem; }
+.back-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.back-row .lang-switcher { margin-bottom: 0; }
+.site-header .lang-switcher { margin-top: 0.75rem; margin-bottom: 0; }
 
 /* Vocabulary */
 .vocab-word { color: var(--fg); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; text-decoration-color: var(--accent); position: relative; }

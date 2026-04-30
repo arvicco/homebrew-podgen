@@ -94,6 +94,8 @@ ruby bin/podgen <command> [options]
 | ------------------------------------- | -------------------------------------------------------- |
 | `podgen generate <podcast>`           | Run the pipeline (news or language)                      |
 | `podgen translate <podcast>`          | Translate existing episodes to new languages             |
+| `podgen voice <podcast>`              | Re-voice an episode from saved script JSON (recover from TTS failure) |
+| `podgen render <podcast>`             | Re-render script markdown from saved JSON (after `## Links` change) |
 | `podgen scrap <podcast> [episode]`    | Remove episode + history entry (default: latest)         |
 | `podgen exclude <podcast> <url>...`   | Skip URLs in future research and RSS episode collection  |
 | `podgen rss <podcast>`                | Generate RSS feed from existing episodes                 |
@@ -222,6 +224,27 @@ podgen test hn
 | `--lingq`           | Upload to LingQ after generation (language pipeline)                         |
 | `--youtube`         | Upload to YouTube after generation (language pipeline)                       |
 | `--force`           | Process even if the episode is already in history                            |
+
+News pipeline only:
+
+| Flag             | Description                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `--from-script`  | DEPRECATED: prefer `podgen voice <pod> [--lang LANG]`. Skip topics/research/script/review; re-voice from saved JSON. |
+
+**Recovering from a partial pipeline failure** (e.g. TTS fails for one language after the script is already generated): prefer the per-stage commands. Each stage reads the previous stage's persisted artifact and is idempotent, so failures don't lose work or tokens. The canonical artifact is the JSON sibling of `<basename>[_<lang>]_script.md`; for older episodes that pre-date the JSON, the markdown is parsed back (inline source links recovered from bullet lists; bottom-mode "More info" sections recovered as script-level sources).
+
+```bash
+# Just retry the failed Japanese voicing — script + translation already on disk
+podgen voice fulgur_news --lang jp
+
+# Re-voice everything for a specific date (e.g. after switching voice_id)
+podgen voice fulgur_news --date 2026-04-26 --force
+
+# Re-render markdown views after changing ## Links config (free, no API calls)
+podgen render fulgur_news --date 2026-04-26
+```
+
+`--from-script` still works for backwards compatibility (it now reads the canonical JSON when present), but emits a deprecation notice pointing at `podgen voice`.
 
 Language pipeline only:
 
@@ -415,16 +438,37 @@ Add a `language` list to the `## Podcast` section in `podcasts/<name>/guidelines
 - language:
   - en
   - it: CITWdMEsnRduEUkNWXQv
-  - ja: rrBxvYLJSqEU0KHpFpRp
+  - ja: rrBxvYLJSqEU0KHpFpRp translator: openai translation_model: gpt-5
 ```
 
 - Each sub-item is a 2-letter language code (ISO 639-1)
 - Optionally append `: <voice_id>` to use a different ElevenLabs voice for that language
+- After the voice_id, append space-separated inline options:
+  - `translator: openai` — translate via the OpenAI API instead of Claude (recommended for Japanese; requires `OPENAI_API_KEY`). Default `claude`.
+  - `translation_model: <model>` — override the translation model for that language (e.g. `gpt-5`, `claude-haiku-4-5-20251001`). Default: `OPENAI_TRANSLATION_MODEL` env var (default `gpt-5`) for `openai`; `CLAUDE_MODEL` for `claude`.
 - If `language` is omitted, only English (`en`) is produced
 - English is never re-translated — the original script is used directly
 - Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
 
 Supported languages (matching ElevenLabs `eleven_multilingual_v2`): Arabic, Chinese, Czech, Danish, Dutch, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, Vietnamese.
+
+#### Translation Glossary (per-language term overrides)
+
+By default the translator follows natural conventions of the target language for brand names and loanwords (Latin-script languages keep most brand names verbatim; non-Latin scripts apply standard transliteration — e.g. ビットコイン in Japanese). Add a `## Translation Glossary` section to pin specific term translations per language:
+
+```markdown
+## Translation Glossary
+- jp:
+  - Bitcoin: ビットコイン
+  - GitHub: GitHub
+  - mining: マイニング
+  - sovereign wealth fund: 政府系ファンド
+- es:
+  - mining: minería
+  - covered call: covered call
+```
+
+Each top-level item is a 2-letter language code (matching `## Podcast → language:`). Nested items are `term: translation` pairs. Only the active target language's pairs are injected into the translation prompt. Terms not listed fall back to the natural-conventions rule.
 
 ### Language Learning Pipeline
 
@@ -924,12 +968,14 @@ TWITTER_ACCESS_SECRET=...
 ## Twitter
 - template: New episode: {title}\n{site_url}
 - since: 7
+- languages: en, it
 ```
 
 - `template`: Tweet text with `{title}`, `{description}`, `{site_url}`, `{mp3_url}` variables (default: `🎙 {title}\n\n{site_url}`). Use `\n` for line breaks
 - `since`: Only tweet episodes from the last N days (default: 7). Prevents tweeting the entire backlog when first enabling
+- `languages`: Comma-separated list of language codes whose episodes get announced. Default when omitted: only the primary language. Use `languages: all` to announce every configured language. Older builds tweeted every language MP3 indiscriminately — set `languages: all` if you want that back.
 
-Tweets fire automatically after a successful `podgen publish` to R2. Each episode is tweeted once — tracked in `uploads.yml` under the `twitter` platform. Tweeting is non-fatal: if it fails, publish still succeeds.
+Tweets fire automatically after a successful `podgen publish` to R2. Each episode is tweeted once — tracked in `uploads.yml` under the `twitter` platform. The site URL in the tweet correctly points at the language-specific page (e.g. `/site/it/episodes/...` for Italian). Tweeting is non-fatal: if it fails, publish still succeeds.
 
 To manually tweet about a specific (e.g. older) episode:
 
