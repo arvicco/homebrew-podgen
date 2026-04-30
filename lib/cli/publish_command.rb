@@ -27,6 +27,7 @@ module PodgenCLI
         opts.on("--youtube", "Publish to YouTube") { @options[:youtube] = true }
         opts.on("--force", "Re-upload even if already tracked") { @options[:force] = true }
         opts.on("--newest", "Publish newest episodes first") { @options[:newest] = true }
+        opts.on("--max N", Integer, "Cap number of YouTube uploads per invocation") { |n| @options[:max] = n }
         opts.on("--dry-run", "Show what would be published") { @options[:dry_run] = true }
         opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
       end.parse!(args)
@@ -269,6 +270,7 @@ module PodgenCLI
       episodes = scan_episodes
       uploaded = @options[:force] ? {} : upload_tracker.entries_for(:youtube, playlist)
       pending = episodes.reject { |ep| uploaded.key?(ep[:base_name]) }
+      pending = pending.first(@options[:max]) if @options[:max]
 
       if pending.empty?
         puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless @options[:verbosity] == :quiet

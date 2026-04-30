@@ -22,6 +22,7 @@ class DescriptionAgent
   def clean_title(title:)
     return title if title.to_s.strip.empty?
 
+    title = normalize_screaming_title(title)
     log("Cleaning title: \"#{title}\"")
 
     message, elapsed = measure_time do
@@ -158,6 +159,25 @@ class DescriptionAgent
   end
 
   private
+
+  # YouTube/RSS source titles are often screamed in all caps. Detect and downcase
+  # to sentence case so the LLM (which is told to preserve capitalization) can't
+  # echo the screaming back. Triggers only on long, mostly-uppercase strings.
+  # Proper nouns past the first word will be lowercased — acceptable trade-off
+  # versus an extra LLM call for smart casing.
+  def normalize_screaming_title(title)
+    return title if title.length < 5
+
+    letters = title.scan(/\p{L}/)
+    return title if letters.empty?
+
+    upper_count = letters.count { |c| c == c.upcase && c != c.downcase }
+    return title if (upper_count.to_f / letters.length) < 0.7
+
+    downcased = title.downcase
+    # Capitalize first letter (Unicode-safe via single-char upcase).
+    downcased.sub(/\p{L}/) { |c| c.upcase }
+  end
 
   def clean_title_system_prompt
     <<~PROMPT
