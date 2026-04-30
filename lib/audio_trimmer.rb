@@ -10,6 +10,11 @@ class AudioTrimmer
 
   MIN_OUTRO_SAVINGS = 5 # minimum seconds saved to bother trimming outro
   MIN_PREFIX = 3 # minimum chars for fuzzy word prefix matching
+  # Max seconds the matched anchor may be before groq's last known word.
+  # Larger gap → engines disagree on the ending, anchor is unreliable.
+  # Bajke-2026-04-30 wrongly cut 48s under the old single-word fallback;
+  # this guardrail catches that pattern.
+  MAX_TAIL_GAP_SECONDS = 10.0
 
   attr_reader :temp_files
 
@@ -95,13 +100,18 @@ class AudioTrimmer
   end
 
   # Maps the last words of reconciled text back to Groq's word-level timestamps.
-  # Tries matching last 5 words, then 4, 3, 2, 1.
-  # Returns the end timestamp of the matched word, or nil if no match.
+  # Tries matching last 5 words, then 4, 3, 2 (n=1 dropped — too brittle).
+  # If the matched anchor is more than MAX_TAIL_GAP_SECONDS before groq's last
+  # word, refuses the match (engines disagree on ending, autotrim unreliable).
+  # Returns the end timestamp of the matched word, or nil if no safe match.
   def find_speech_end_timestamp(reconciled_text, groq_words)
     reconciled_words = reconciled_text.split(/\s+/).reject(&:empty?)
     return nil if reconciled_words.empty?
+    return nil if groq_words.nil? || groq_words.empty?
 
-    [5, 4, 3, 2, 1].each do |n|
+    groq_end = groq_words.last[:end]
+
+    [5, 4, 3, 2].each do |n|
       next if reconciled_words.length < n
 
       target = reconciled_words.last(n).map { |w| normalize_word(w) }
@@ -109,11 +119,18 @@ class AudioTrimmer
 
       (groq_words.length - n).downto(0) do |i|
         candidate = groq_words[i, n].map { |w| normalize_word(w[:word]) }
-        if words_match?(target, candidate)
-          matched_end = groq_words[i + n - 1][:end]
-          log("Matched last #{n} words at Groq timestamp #{matched_end.round(1)}s: #{candidate.join(' ')} ~ #{target.join(' ')}")
-          return matched_end
+        next unless words_match?(target, candidate)
+
+        matched_end = groq_words[i + n - 1][:end]
+        gap = groq_end - matched_end
+        if gap > MAX_TAIL_GAP_SECONDS
+          log("Match for last #{n} words at #{matched_end.round(1)}s is #{gap.round(1)}s before " \
+              "groq's last word (#{groq_end.round(1)}s) — anchor unreliable, skipping autotrim")
+          return nil
         end
+
+        log("Matched last #{n} words at Groq timestamp #{matched_end.round(1)}s: #{candidate.join(' ')} ~ #{target.join(' ')}")
+        return matched_end
       end
     end
 
