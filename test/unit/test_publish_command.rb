@@ -301,6 +301,39 @@ class TestPublishCommand < Minitest::Test
     assert_includes err, "Playlist not found"
   end
 
+  def test_publish_to_youtube_caps_uploads_at_max
+    %w[ep-2026-01-15 ep-2026-01-16 ep-2026-01-17].each do |b|
+      create_mp3("#{b}.mp3")
+      File.write(File.join(@episodes_dir, "#{b}.mp4"), "x" * 100) # pre-existing video, skips cover lookup
+      File.write(File.join(@episodes_dir, "#{b}_transcript.md"), "# Title\n\n## Transcript\n\nHello.")
+    end
+
+    yt_config = { privacy: "unlisted", category: "27", tags: [] }
+    cmd = build_command(youtube_config: yt_config)
+    cmd.instance_variable_get(:@options)[:max] = 1
+
+    uploaded = []
+    stub_uploader = Object.new
+    stub_uploader.define_singleton_method(:authorize!) { nil }
+    stub_uploader.define_singleton_method(:verify_playlist!) { |_| nil }
+    stub_uploader.define_singleton_method(:upload_video) { |*args, **kw| uploaded << args.first; "vid_#{uploaded.length}" }
+    stub_uploader.define_singleton_method(:upload_captions) { |*args, **kw| nil }
+    stub_uploader.define_singleton_method(:add_to_playlist) { |*args| nil }
+
+    cmd.define_singleton_method(:build_youtube_uploader) { stub_uploader }
+    tmp_uploads = File.join(@tmpdir, "uploads.yml")
+    cmd.define_singleton_method(:upload_tracker) { @ut ||= UploadTracker.new(tmp_uploads) }
+
+    capture_io { cmd.send(:publish_to_youtube) }
+
+    assert_equal 1, uploaded.length, "should upload at most --max episodes (got #{uploaded.length})"
+  end
+
+  def test_max_flag_parsed_from_cli
+    cmd = PodgenCLI::PublishCommand.new(["testpod", "--youtube", "--max", "2"], {})
+    assert_equal 2, cmd.instance_variable_get(:@options)[:max]
+  end
+
   def test_publish_to_youtube_skips_verification_when_no_playlist
     create_mp3("ep-2026-01-15.mp3")
     File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# Title\n\n## Transcript\n\nHello.")

@@ -32,6 +32,43 @@ class TestDescriptionAgent < Minitest::Test
     assert_equal "Original Title", result
   end
 
+  # --- ALL CAPS normalization (pre-LLM) ---
+  # We assert on what the LLM RECEIVES, not the response, because the LLM is
+  # mocked. The point of normalization is to denormalize at input so the LLM's
+  # "preserve capitalization" rule can't echo screaming caps back.
+
+  def test_clean_title_sends_normalized_title_to_llm_when_all_caps
+    agent = build_agent("ignored")
+    client = agent.instance_variable_get(:@client)
+    agent.clean_title(title: "UNA NOTTE FANTASMAGORICA")
+    sent = client.last_call[:messages].first[:content]
+    assert_equal "Una notte fantasmagorica", sent
+  end
+
+  def test_clean_title_normalizes_all_caps_unicode_preserving_accents
+    agent = build_agent("ignored")
+    client = agent.instance_variable_get(:@client)
+    agent.clean_title(title: "PRAVLJICA O ČRNI OVCI")
+    sent = client.last_call[:messages].first[:content]
+    assert_equal "Pravljica o črni ovci", sent
+  end
+
+  def test_clean_title_leaves_mixed_case_unchanged
+    agent = build_agent("ignored")
+    client = agent.instance_variable_get(:@client)
+    agent.clean_title(title: "Una notte FANTASMAGORICA")
+    sent = client.last_call[:messages].first[:content]
+    assert_equal "Una notte FANTASMAGORICA", sent
+  end
+
+  def test_clean_title_does_not_normalize_short_uppercase
+    agent = build_agent("ignored")
+    client = agent.instance_variable_get(:@client)
+    agent.clean_title(title: "AI")
+    sent = client.last_call[:messages].first[:content]
+    assert_equal "AI", sent
+  end
+
   # --- clean ---
 
   def test_clean_returns_cleaned_description

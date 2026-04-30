@@ -28,6 +28,10 @@ module PodgenCLI
       @test = false
       @remove = false
       @status = false
+      @yt_batch = false
+      @yt_batch_pods = nil
+      @yt_batch_mode = :priority
+      @max = nil
 
       OptionParser.new do |opts|
         opts.on("--time HH:MM", "Time to run in 24h format (default: 06:00)") { |t| parse_time!(t) }
@@ -36,6 +40,14 @@ module PodgenCLI
         opts.on("--test", "Send a test Telegram message and exit") { @test = true }
         opts.on("--remove", "Remove an installed scheduler") { @remove = true }
         opts.on("--status", "Show scheduler status") { @status = true }
+        opts.on("--youtube-batch [PODS]", "Schedule batched YT uploads across PODS (comma-sep)") do |pods|
+          @yt_batch = true
+          @yt_batch_pods = pods if pods && !pods.empty?
+        end
+        opts.on("--mode MODE", "yt-batch mode: priority (default) or round-robin") do |m|
+          @yt_batch_mode = m.tr("-", "_").to_sym
+        end
+        opts.on("--max N", Integer, "yt-batch: cap uploads per tick (default: no cap)") { |n| @max = n }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -58,6 +70,12 @@ module PodgenCLI
       if [@remove, @status, @test].count(true) > 1
         $stderr.puts "Error: --remove, --status, and --test are mutually exclusive"
         return 1
+      end
+
+      if @yt_batch
+        return remove_scheduler! if @remove
+        return show_status       if @status
+        return install_yt_batch!
       end
 
       if (@remove || @status) && (@podcast_name.nil? || @podcast_name.empty?)
@@ -89,9 +107,25 @@ module PodgenCLI
       m ? m[1].to_i : nil
     end
 
+    # launchctl reports raw wait(2) status, not the exit code. Decode:
+    #   - 0     → 0 (success)
+    #   - 256   → exit 1 (high byte is exit code: status >> 8)
+    #   - 1792  → exit 7
+    #   - 9     → killed by signal 9 (low byte nonzero, POSIX convention)
+    #   - -15   → killed by signal 15 (legacy launchctl: negative = signal)
+    # Returns Integer for normal exits, String for signal kills, nil for missing.
+    def self.decode_wait_status(raw)
+      return nil if raw.nil?
+      return 0 if raw == 0
+      return "killed (signal #{-raw})" if raw < 0
+      return "killed (signal #{raw & 0x7F})" if (raw & 0xFF) != 0
+      raw >> 8
+    end
+
     private
 
     def label
+      return "#{LABEL_PREFIX}.youtube_batch" if @yt_batch
       "#{LABEL_PREFIX}.#{@podcast_name}"
     end
 
@@ -101,6 +135,85 @@ module PodgenCLI
 
     def plist_exists?
       File.exist?(plist_path)
+    end
+
+    # --- --youtube-batch install ---
+
+    POD_NAME_RE = /\A[\w.-]+\z/.freeze
+
+    def install_yt_batch!
+      if @yt_batch_pods.nil? || @yt_batch_pods.empty?
+        $stderr.puts "Usage: podgen schedule --youtube-batch <pod1,pod2,...> [--time HH:MM] [--mode priority|round-robin]"
+        return 2
+      end
+
+      bad = @yt_batch_pods.split(",").map(&:strip).reject { |p| p.match?(POD_NAME_RE) }
+      unless bad.empty?
+        $stderr.puts "Invalid pod name(s): #{bad.join(', ')} (must match #{POD_NAME_RE.source})"
+        return 2
+      end
+
+      return 1 unless valid_time?
+
+      plist_content = build_yt_batch_plist
+      FileUtils.mkdir_p(LAUNCH_AGENTS_DIR)
+
+      do_launchctl_unload(plist_path) if File.exist?(plist_path)
+      File.write(plist_path, plist_content)
+      unless do_launchctl_load(plist_path)
+        $stderr.puts "Warning: launchctl load may have failed; check #{plist_path} and `launchctl list #{label}`"
+      end
+
+      puts "yt-batch scheduler installed at #{format('%02d:%02d', @hour, @minute)} for: #{@yt_batch_pods}"
+      0
+    end
+
+    def do_launchctl_load(path)
+      system("launchctl", "load", path, out: File::NULL, err: File::NULL)
+    end
+
+    def build_yt_batch_plist
+      project_dir = File.expand_path("../..", __dir__)
+      mode_str = @yt_batch_mode.to_s.tr("_", "-")
+      max_args = @max ? "    <string>--max</string>\n    <string>#{@max}</string>\n" : ""
+      <<~PLIST
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>Label</key>
+          <string>#{label}</string>
+          <key>ProgramArguments</key>
+          <array>
+            <string>/bin/bash</string>
+            <string>#{project_dir}/scripts/run_yt_batch.sh</string>
+            <string>#{@yt_batch_pods}</string>
+            <string>--mode</string>
+            <string>#{mode_str}</string>
+        #{max_args}  </array>
+          <key>StartCalendarInterval</key>
+          <dict>
+            <key>Hour</key>
+            <integer>#{@hour}</integer>
+            <key>Minute</key>
+            <integer>#{@minute}</integer>
+          </dict>
+          <key>StandardOutPath</key>
+          <string>#{project_dir}/logs/yt_batch_stdout.log</string>
+          <key>StandardErrorPath</key>
+          <string>#{project_dir}/logs/yt_batch_stderr.log</string>
+          <key>WorkingDirectory</key>
+          <string>#{project_dir}</string>
+          <key>EnvironmentVariables</key>
+          <dict>
+            <key>PATH</key>
+            <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+            <key>LANG</key>
+            <string>en_US.UTF-8</string>
+          </dict>
+        </dict>
+        </plist>
+      PLIST
     end
 
     # --- --remove ---
@@ -127,24 +240,60 @@ module PodgenCLI
     # --- --status ---
 
     def show_status
+      display_name = @yt_batch ? "youtube_batch" : @podcast_name
+
       unless plist_exists?
-        puts "#{@podcast_name}: no scheduler installed."
+        puts "#{display_name}: no scheduler installed."
         return 0
       end
 
       output = launchctl_list_output(label)
       loaded = !output.nil?
       pid = loaded ? self.class.parse_pid(output) : nil
-      exit_code = loaded ? self.class.parse_last_exit_status(output) : nil
       mtime = log_mtime(plist_log_path)
+      # launchctl reports LastExitStatus=0 by default for never-run jobs.
+      # If the log file doesn't exist, treat as never-run so we don't claim
+      # a successful run that didn't happen.
+      raw_status = loaded && mtime ? self.class.parse_last_exit_status(output) : nil
+      exit_code = self.class.decode_wait_status(raw_status)
 
-      puts "#{@podcast_name}:"
+      puts "#{display_name}:"
       puts "  scheduled:       #{format('%02d:%02d', plist_hour, plist_minute)} daily"
+      if @yt_batch
+        pods_str, mode_str, max_str = parse_yt_batch_args(plist_program_arguments)
+        puts "  podcasts:        #{pods_str.split(',').map(&:strip).join(', ')}" if pods_str
+        puts "  mode:            #{mode_str || 'priority'} (#{max_str ? "max #{max_str}" : 'no max'})"
+      end
       puts "  loaded:          #{loaded ? 'yes' : 'no'}"
       puts "  running:         #{pid ? "yes (PID #{pid})" : 'no'}"
       puts "  last run:        #{format_last_run(mtime)}"
       puts "  last exit code:  #{exit_code.nil? ? 'n/a' : exit_code}"
       0
+    end
+
+    # Returns ProgramArguments as an array of strings via PlistBuddy.
+    def plist_program_arguments
+      out, _, status = Open3.capture3(PLIST_BUDDY, "-c", "Print :ProgramArguments", plist_path)
+      return [] unless status.success?
+      # PlistBuddy emits "Array {\n    val1\n    val2\n}\n" — pull the inner lines.
+      out.lines[1..-2].to_a.map(&:strip).reject(&:empty?)
+    end
+
+    # ProgramArguments format: ["/bin/bash", "<run_yt_batch.sh>", pods, "--mode", mode, "--max", max?]
+    # Returns [pods, mode, max] strings (max may be nil).
+    def parse_yt_batch_args(args)
+      pods = args[2]
+      mode = nil
+      max = nil
+      i = 3
+      while i < args.length
+        case args[i]
+        when "--mode" then mode = args[i + 1]; i += 2
+        when "--max"  then max  = args[i + 1]; i += 2
+        else i += 1
+        end
+      end
+      [pods, mode, max]
     end
 
     def plist_hour
