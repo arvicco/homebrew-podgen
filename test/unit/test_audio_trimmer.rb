@@ -44,14 +44,58 @@ class TestAudioTrimmer < Minitest::Test
     assert_nil result
   end
 
-  def test_find_speech_end_single_word
+  def test_find_speech_end_single_word_fallback_disabled
+    # Single-word matching is too brittle — common words match mid-audio.
+    # Regression: bajke-2026-04-30 wrongly cut 48s because last 5..2 words
+    # didn't match groq, fell back to "dekleta" which appears throughout.
     groq_words = [
       { word: "Hello", start: 0.0, end: 0.5 },
       { word: "world", start: 0.6, end: 1.0 }
     ]
-
     result = trimmer.find_speech_end_timestamp("world", groq_words)
-    assert_in_delta 1.0, result
+    assert_nil result, "n=1 fallback must be disabled"
+  end
+
+  def test_find_speech_end_two_word_fallback_still_works
+    groq_words = [
+      { word: "Once", start: 0.0, end: 0.4 },
+      { word: "upon", start: 0.4, end: 0.7 },
+      { word: "a",    start: 0.7, end: 0.9 },
+      { word: "time", start: 0.9, end: 1.4 }
+    ]
+    result = trimmer.find_speech_end_timestamp("a time", groq_words)
+    assert_in_delta 1.4, result
+  end
+
+  def test_find_speech_end_skips_match_too_far_from_groq_end
+    # The bajke scenario: last reconciled words don't appear in groq, falls
+    # back to a shorter target that matches MID-AUDIO, far from groq's actual
+    # last word. Should refuse (return nil) so autotrim is skipped.
+    groq_words = []
+    # "the end" appears at second 5.0 — and we want it to match here naively
+    groq_words << { word: "the",  start: 5.0, end: 5.3 }
+    groq_words << { word: "end",  start: 5.3, end: 5.7 }
+    # ...but groq has many more words after (audio actually goes to 60s)
+    (6..59).each do |t|
+      groq_words << { word: "filler#{t}", start: t.to_f, end: t + 0.5 }
+    end
+    groq_words << { word: "kraj", start: 59.0, end: 59.6 } # groq's last word
+
+    # Reconciled text last 2 words ("the end") match at 5.7s, but groq's
+    # last word is at 59.6s — that's a 53.9s gap, way over the threshold.
+    result = trimmer.find_speech_end_timestamp("once upon a time the end", groq_words)
+    assert_nil result, "should refuse match that's too far before groq's last word"
+  end
+
+  def test_find_speech_end_accepts_match_near_groq_end
+    groq_words = [
+      { word: "filler", start: 0.0,  end: 0.5  },
+      { word: "the",    start: 58.0, end: 58.4 },
+      { word: "end",    start: 58.4, end: 58.9 }
+    ]
+    # Last "the end" matches at 58.9s, groq's last word ends at 58.9s → gap 0.
+    result = trimmer.find_speech_end_timestamp("once the end", groq_words)
+    assert_in_delta 58.9, result
   end
 
   def test_find_speech_end_ignores_punctuation
@@ -183,10 +227,16 @@ class TestAudioTrimmer < Minitest::Test
   end
 
   def test_trim_outro_tracks_temp_files
-    groq_words = [{ word: "hello", start: 0.0, end: 1.0 }]
+    # Mock probe_duration returns 100.0s; savings must exceed MIN_OUTRO_SAVINGS (5s).
+    groq_words = [
+      { word: "hello", start: 0.0,  end: 1.0  },
+      { word: "world", start: 1.0,  end: 2.0  },
+      { word: "the",   start: 89.0, end: 89.4 },
+      { word: "end",   start: 89.4, end: 90.0 }
+    ]
     trimmer.trim_outro(
       "/input.mp3",
-      reconciled_text: "hello",
+      reconciled_text: "hello world the end",
       groq_words: groq_words,
       base_name: "ep",
       tails_dir: @tmpdir
