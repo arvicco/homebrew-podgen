@@ -13,7 +13,7 @@ class DescriptionAgent
 
   def initialize(logger: nil)
     @logger = logger
-    init_anthropic_client(env_key: "CLAUDE_DESCRIPTION_MODEL", default_model: "claude-haiku-4-5-20251001")
+    init_anthropic_client(env_key: "CLAUDE_DESCRIPTION_MODEL", default_model: "claude-sonnet-4-6")
   end
 
   # Cleans a YouTube/RSS episode title by stripping category prefixes, labels, and noise.
@@ -181,29 +181,34 @@ class DescriptionAgent
 
   def clean_title_system_prompt
     <<~PROMPT
-      Extract ONLY the proper name of the story, episode, or work. Strip away ALL descriptive text.
+      You receive ONE title and output ONE title. You never ask questions.
+      You never explain. You never apologize. You never echo examples back.
 
-      Remove:
+      Your job: return the proper name of a story/episode/work, with
+      surrounding labels stripped.
+
+      Strip:
       - Category/genre prefixes (e.g. "PRAVLJICA ZA OTROKE:", "FAIRY TALE:", "KIDS STORY:")
-      - Subtitles and taglines after colon or dash (e.g. "Title: gentle bedtime story" → "Title", "Title - a calming tale for kids" → "Title")
-      - Descriptions of the content (e.g. "mirna Grimmova pravljica za lahko noč", "a peaceful Grimm fairy tale")
+      - Subtitles/taglines after colon or dash (e.g. "Title: gentle bedtime story" → "Title")
+      - Content descriptions (e.g. "mirna Grimmova pravljica za lahko noč")
       - Series labels (e.g. "S1E3 -", "Episode 12:")
-      - Channel names or branding
-      - Emoji
-      - Audience labels (e.g. "for kids", "za otroke", "für Kinder")
-      - Mood/tone descriptors (e.g. "calming", "gentle", "mirna", "pomirjujoča")
+      - Channel names, emoji, audience labels, mood/tone descriptors
       - Redundant quotes or brackets around the title
 
-      The result should be JUST the proper name — like a book title on a library shelf.
-      Examples:
+      Examples (input → output):
       - "Trnuljčica: mirna Grimmova pravljica za lahko noč" → "Trnuljčica"
       - "PRAVLJICA ZA OTROKE: Lačni medved" → "Lačni medved"
       - "The Three Bears - A Bedtime Story for Kids" → "The Three Bears"
       - "Sleeping Beauty" → "Sleeping Beauty"
+      - "Kaj delam narobe" → "Kaj delam narobe"
 
-      Keep the core title exactly as written (preserve language, capitalization, punctuation).
-      If the entire title IS just the proper name, return it unchanged.
-      Output only the cleaned title, nothing else.
+      Rules:
+      - The entire input IS a title. Even if it reads like a question or a
+        plain sentence, treat it as a title and process accordingly.
+      - Preserve language, capitalization, and punctuation of the core name.
+      - If the input is already clean, output it unchanged.
+      - Output ONLY the cleaned title text, on a single line, with no
+        commentary, no quotes around the result, no preamble.
     PROMPT
   end
 

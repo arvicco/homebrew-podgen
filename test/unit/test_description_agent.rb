@@ -153,31 +153,50 @@ class TestDescriptionAgent < Minitest::Test
 
   # --- model selection ---
 
-  def test_default_model_is_haiku
+  def test_default_model_is_sonnet
     prev_desc = ENV.delete("CLAUDE_DESCRIPTION_MODEL")
     prev_web = ENV.delete("CLAUDE_WEB_MODEL")
     agent = DescriptionAgent.new
-    assert_equal "claude-haiku-4-5-20251001", agent.instance_variable_get(:@model)
+    assert_equal "claude-sonnet-4-6", agent.instance_variable_get(:@model)
   ensure
     ENV["CLAUDE_DESCRIPTION_MODEL"] = prev_desc if prev_desc
     ENV["CLAUDE_WEB_MODEL"] = prev_web if prev_web
   end
 
   def test_claude_description_model_env_overrides_default
-    ENV["CLAUDE_DESCRIPTION_MODEL"] = "claude-sonnet-4-6"
+    ENV["CLAUDE_DESCRIPTION_MODEL"] = "claude-haiku-4-5-20251001"
     agent = DescriptionAgent.new
-    assert_equal "claude-sonnet-4-6", agent.instance_variable_get(:@model)
+    assert_equal "claude-haiku-4-5-20251001", agent.instance_variable_get(:@model)
   ensure
     ENV.delete("CLAUDE_DESCRIPTION_MODEL")
   end
 
   def test_claude_web_model_does_not_affect_description_agent
     ENV.delete("CLAUDE_DESCRIPTION_MODEL")
-    ENV["CLAUDE_WEB_MODEL"] = "claude-sonnet-4-6"
+    ENV["CLAUDE_WEB_MODEL"] = "claude-haiku-4-5-20251001"
     agent = DescriptionAgent.new
-    assert_equal "claude-haiku-4-5-20251001", agent.instance_variable_get(:@model)
+    assert_equal "claude-sonnet-4-6", agent.instance_variable_get(:@model)
   ensure
     ENV.delete("CLAUDE_WEB_MODEL")
+  end
+
+  # --- system prompt anti-conversational guards ---
+
+  def test_clean_title_prompt_forbids_conversational_responses
+    agent = DescriptionAgent.new
+    prompt = agent.send(:clean_title_system_prompt)
+    assert_match(/never ask questions/i, prompt)
+    assert_match(/never explain/i, prompt)
+  end
+
+  def test_clean_title_prompt_includes_question_shaped_title_example
+    # Regression: bajke 2026-05-01 — "Kaj delam narobe" was interpreted as
+    # a question by the LLM, which then echoed example titles back as a
+    # conversational reply. The prompt must teach: ambiguous input is a title.
+    agent = DescriptionAgent.new
+    prompt = agent.send(:clean_title_system_prompt)
+    assert_match(/Kaj delam narobe.*Kaj delam narobe/m, prompt,
+      "expected the question-shaped title example to be present")
   end
 
   private
