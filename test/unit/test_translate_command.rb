@@ -158,6 +158,44 @@ class TestTranslateCommand < Minitest::Test
     assert_includes content, "Bienvenidos."
   end
 
+  def test_save_script_renders_links_when_config_provided
+    # Regression: translate command was rendering markdown without links_config,
+    # producing markdown inconsistent with generate command. Sources existed in
+    # the JSON artifact but never made it into the rendered _script.md.
+    cmd = build_command
+    script = {
+      title: "T",
+      segments: [
+        { name: "Open", text: "Hello.",
+          sources: [{ url: "https://example.com/a", title: "Article A" }] }
+      ],
+      sources: []
+    }
+    path = File.join(@episodes_dir, "ep_script.md")
+    links_config = { show: true, position: "inline", title: "Links", max: 5 }
+    cmd.send(:save_script, script, path, links_config: links_config)
+
+    content = File.read(path)
+    assert_includes content, "https://example.com/a", "expected source URL when links_config given"
+    assert_includes content, "Article A"
+  end
+
+  def test_save_script_omits_links_when_config_nil
+    cmd = build_command
+    script = {
+      title: "T",
+      segments: [
+        { name: "Open", text: "Hello.",
+          sources: [{ url: "https://example.com/a", title: "Article A" }] }
+      ],
+      sources: []
+    }
+    path = File.join(@episodes_dir, "ep2_script.md")
+    cmd.send(:save_script, script, path, links_config: nil)
+
+    refute_includes File.read(path), "https://example.com/a"
+  end
+
   def test_save_script_creates_parent_directory
     cmd = build_command
     script = {

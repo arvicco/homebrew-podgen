@@ -110,6 +110,7 @@ class AudioTrimmer
     return nil if groq_words.nil? || groq_words.empty?
 
     groq_end = groq_words.last[:end]
+    return nil if groq_end.nil?
 
     [5, 4, 3, 2].each do |n|
       next if reconciled_words.length < n

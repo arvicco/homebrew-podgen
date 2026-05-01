@@ -369,6 +369,7 @@ class GuidelinesParser
 
     glossary = {}
     current_lang = nil
+    flat_entries_seen = false
     body.each_line do |line|
       if line.match?(/^- [a-z]{2,3}:\s*$/i)
         current_lang = line.strip.sub(/^- /, "").chomp(":").strip.downcase
@@ -379,8 +380,17 @@ class GuidelinesParser
         next unless entry.include?(":")
         term, translation = entry.split(":", 2).map(&:strip)
         glossary[current_lang][term] = translation if !term.empty? && translation && !translation.empty?
+      elsif line.match?(/^- \S.*:\s*\S/)
+        # Flat `- term: translation` line at top level — no language wrapper.
+        flat_entries_seen = true
       end
     end
+
+    if flat_entries_seen && glossary.empty?
+      @warnings << "Translation Glossary entries must be nested under a language code " \
+                   "(e.g. `- jp:` then indented `  - term: translation`). Top-level entries are ignored."
+    end
+
     glossary
   end
 

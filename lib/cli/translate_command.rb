@@ -108,6 +108,7 @@ module PodgenCLI
             podcast_title: config.title,
             author: config.author,
             pronunciation_pls_path: config.pronunciation_pls_path,
+            links_config: config.links_enabled? ? config.links_config : nil,
             logger: logger
           )
           translated += 1
@@ -167,7 +168,7 @@ module PodgenCLI
       pending
     end
 
-    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, translator: nil, translation_model: nil, glossary: nil, pronunciation_pls_path: nil, logger: nil)
+    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, translator: nil, translation_model: nil, glossary: nil, pronunciation_pls_path: nil, links_config: nil, logger: nil)
       script = parse_script(script_path)
 
       # Translate
@@ -182,7 +183,7 @@ module PodgenCLI
 
       # Save translated script
       lang_script_path = File.join(episodes_dir, "#{basename}-#{lang_code}_script.md")
-      save_script(lang_script, lang_script_path)
+      save_script(lang_script, lang_script_path, links_config: links_config)
 
       output_path = File.join(episodes_dir, "#{basename}-#{lang_code}.mp3")
       Voicer.new(logger: logger).voice(
@@ -203,9 +204,9 @@ module PodgenCLI
       script || raise("Could not read script at #{path} (or its .json sibling)")
     end
 
-    def save_script(script, path)
+    def save_script(script, path, links_config: nil)
       FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, ScriptRenderer.render(script))
+      File.write(path, ScriptRenderer.render(script, links_config: links_config))
       ScriptArtifact.write(ScriptArtifact.json_path_for(path), script)
     end
 

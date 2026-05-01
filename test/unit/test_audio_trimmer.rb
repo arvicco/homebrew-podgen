@@ -87,6 +87,25 @@ class TestAudioTrimmer < Minitest::Test
     assert_nil result, "should refuse match that's too far before groq's last word"
   end
 
+  def test_find_speech_end_handles_nil_end_in_last_groq_word
+    # Some upstream STT outputs omit :end on the final word.
+    # Should return nil (skip autotrim) rather than raise.
+    groq_words = [
+      { word: "hello", start: 0.0, end: 1.0 },
+      { word: "world", start: 1.0, end: nil }
+    ]
+    result = nil
+    assert_silent do
+      # Don't actually need silence — just that it doesn't raise.
+    end
+    begin
+      result = trimmer.find_speech_end_timestamp("hello world", groq_words)
+    rescue NoMethodError => e
+      flunk "should not raise on nil :end (got: #{e.message})"
+    end
+    assert_nil result
+  end
+
   def test_find_speech_end_accepts_match_near_groq_end
     groq_words = [
       { word: "filler", start: 0.0,  end: 0.5  },
