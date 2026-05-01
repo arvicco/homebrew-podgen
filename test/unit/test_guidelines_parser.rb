@@ -906,6 +906,23 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal({}, parser.translation_glossary)
   end
 
+  def test_translation_glossary_warns_on_partial_flat_under_valid_language
+    # The most common typo: one entry correctly nested, another accidentally
+    # unindented. The all-flat warning would silently miss this.
+    parser = build_parser(<<~MD)
+      ## Translation Glossary
+      - jp:
+        - Bitcoin: ビットコイン
+      - mining: マイニング
+    MD
+
+    # The nested entry is parsed.
+    assert_equal "ビットコイン", parser.translation_glossary["jp"]["Bitcoin"]
+    # But the dropped flat entry must be reported.
+    assert(parser.warnings.any? { |w| w.match?(/glossary/i) && w.include?("1 top-level") },
+      "expected warning naming the dropped count, got: #{parser.warnings.inspect}")
+  end
+
   def test_translation_glossary_warns_when_entries_lack_language_wrapper
     # User forgets the per-language wrapper and writes entries flat at the
     # top level. Parser silently dropped them — should warn so the user

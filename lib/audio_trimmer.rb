@@ -123,6 +123,7 @@ class AudioTrimmer
         next unless words_match?(target, candidate)
 
         matched_end = groq_words[i + n - 1][:end]
+        next if matched_end.nil? # upstream STT may omit :end — skip this window
         gap = groq_end - matched_end
         if gap > MAX_TAIL_GAP_SECONDS
           log("Match for last #{n} words at #{matched_end.round(1)}s is #{gap.round(1)}s before " \

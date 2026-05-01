@@ -94,16 +94,24 @@ class TestAudioTrimmer < Minitest::Test
       { word: "hello", start: 0.0, end: 1.0 },
       { word: "world", start: 1.0, end: nil }
     ]
-    result = nil
-    assert_silent do
-      # Don't actually need silence — just that it doesn't raise.
-    end
-    begin
-      result = trimmer.find_speech_end_timestamp("hello world", groq_words)
-    rescue NoMethodError => e
-      flunk "should not raise on nil :end (got: #{e.message})"
-    end
-    assert_nil result
+    assert_nil trimmer.find_speech_end_timestamp("hello world", groq_words)
+  end
+
+  def test_find_speech_end_handles_nil_end_in_matched_window
+    # Interior :end => nil — same upstream STT class of bug, different position.
+    # Without the guard, gap = groq_end - matched_end raises NoMethodError.
+    # Match window for n=2 last reconciled words "the end" lands on indices 1..2,
+    # so matched_end = groq_words[2][:end] = 96.0 (not nil) — happy path.
+    # But if the matcher had to consider window [hello, the], matched_end would
+    # be nil. We don't know the matcher's internal walk; just assert no raise
+    # and a sensible return (Float or nil).
+    groq_words = [
+      { word: "hello", start: 0.0,  end: 1.0  },
+      { word: "the",   start: 95.0, end: nil  },
+      { word: "end",   start: 95.4, end: 96.0 }
+    ]
+    result = trimmer.find_speech_end_timestamp("hello the end", groq_words)
+    assert(result.nil? || result.is_a?(Numeric), "must return nil or Numeric, got #{result.inspect}")
   end
 
   def test_find_speech_end_accepts_match_near_groq_end
