@@ -906,6 +906,21 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal({}, parser.translation_glossary)
   end
 
+  def test_translation_glossary_warns_when_entries_lack_language_wrapper
+    # User forgets the per-language wrapper and writes entries flat at the
+    # top level. Parser silently dropped them — should warn so the user
+    # finds out their glossary isn't in effect.
+    parser = build_parser(<<~MD)
+      ## Translation Glossary
+      - Bitcoin: ビットコイン
+      - mining: マイニング
+    MD
+
+    assert_equal({}, parser.translation_glossary)
+    assert(parser.warnings.any? { |w| w.match?(/glossary/i) && w.match?(/language/i) },
+      "expected warning naming 'glossary' and 'language', got: #{parser.warnings.inspect}")
+  end
+
   def test_translation_glossary_skips_malformed_entries
     parser = build_parser(<<~MD)
       ## Translation Glossary
