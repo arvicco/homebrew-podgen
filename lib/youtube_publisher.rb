@@ -4,7 +4,6 @@ require_relative "regen_cache"
 require_relative "upload_tracker"
 require_relative "transcript_parser"
 require_relative "cover_resolver"
-require_relative "loggable"
 
 # Publishes pending episodes to YouTube for a single podcast configuration.
 #
@@ -16,18 +15,15 @@ require_relative "loggable"
 # per process — when run from yt-batch, the second-and-later ticks per pod
 # (round-robin) skip regen automatically.
 class YouTubePublisher
-  include Loggable
-
   Result = Struct.new(:uploaded, :attempted, :rate_limited, :errors, keyword_init: true) do
     def success? = errors.empty? && !rate_limited
   end
 
   TIMESTAMP_ENGINE_PRIORITY = %w[groq elab open].freeze
 
-  def initialize(config:, options: {}, logger: nil, uploader: nil, tracker_path: nil)
+  def initialize(config:, options: {}, uploader: nil, tracker_path: nil)
     @config = config
     @options = options
-    @logger = logger
     @uploader = uploader
     @tracker_path = tracker_path
   end
@@ -92,12 +88,12 @@ class YouTubePublisher
     errors = []
 
     pending.each do |ep|
-      attempted += 1
       begin
         title, description, _ = parse_transcript(ep[:transcript_path])
         srt_path = prepare_subtitles(ep)
 
         video_path = ensure_video(ep, errors) or next
+        attempted += 1
 
         puts "  uploading: #{ep[:base_name]} — \"#{title}\"" unless quiet?
 

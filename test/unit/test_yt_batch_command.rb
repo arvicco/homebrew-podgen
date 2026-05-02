@@ -190,6 +190,36 @@ class TestYtBatchCommand < Minitest::Test
     assert_equal %w[pod_a pod_b], invocations
   end
 
+  def test_round_robin_marks_pod_drained_when_no_progress_made
+    # Regression: a pod that returns uploaded=0 without rate_limit (e.g.
+    # missing cover, permanent per-episode error) should not be retried
+    # every round — that wastes a full pass per stuck pod.
+    cmd = stub_cmd(["--mode", "round-robin", "pod_a,pod_b"])
+    pending = { "pod_a" => 5, "pod_b" => 5 }
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
+
+    invocations = []
+    cmd.define_singleton_method(:run_publish_for) do |pod, max:|
+      invocations << pod
+      if pod == "pod_a"
+        pending[pod] -= 1
+        Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      else
+        # pod_b stuck — never makes progress, never rate-limits
+        Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                   errors: [{ type: :missing_cover, base: "x", message: "no cover" }])
+      end
+    end
+
+    capture_io { cmd.run }
+
+    pod_b_calls = invocations.count("pod_b")
+    assert_equal 1, pod_b_calls,
+      "stuck pod should be tried once and then marked drained, not retried each round"
+    pod_a_calls = invocations.count("pod_a")
+    assert_equal 5, pod_a_calls, "pod_a should still be drained fully"
+  end
+
   def test_round_robin_returns_zero_when_all_caught_up
     cmd = stub_cmd(["--mode", "round-robin", "pod_a,pod_b"])
     cmd.define_singleton_method(:pending_count_for) { |_| 0 }

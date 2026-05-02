@@ -264,12 +264,18 @@ module PodgenCLI
     end
 
     def publish_to_youtube
+      # Lazy-load the google-apis gems before constructing the uploader.
+      # build_youtube_uploader instantiates YouTubeUploader; the constant must
+      # exist at that call site, not deferred to YouTubePublisher#run.
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "youtube_uploader")
+
       publisher = YouTubePublisher.new(
         config: @config,
         options: @options,
         uploader: build_youtube_uploader
       )
       result = publisher.run
+      return 2 if result.errors.any? { |e| e[:type] == :not_configured }
       return 1 if result.errors.any? { |e| e[:type] == :playlist_verification }
       0
     end
