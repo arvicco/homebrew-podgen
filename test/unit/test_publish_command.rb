@@ -4,16 +4,19 @@ require_relative "../test_helper"
 require "json"
 require "yaml"
 require "cli/publish_command"
+require "regen_cache"
 
 class TestPublishCommand < Minitest::Test
   def setup
     @tmpdir = Dir.mktmpdir("podgen_publish_test")
     @episodes_dir = File.join(@tmpdir, "episodes")
     FileUtils.mkdir_p(@episodes_dir)
+    RegenCache.reset!
   end
 
   def teardown
     FileUtils.rm_rf(@tmpdir)
+    RegenCache.reset!
   end
 
   # --- parse_transcript ---
@@ -332,6 +335,43 @@ class TestPublishCommand < Minitest::Test
   def test_max_flag_parsed_from_cli
     cmd = PodgenCLI::PublishCommand.new(["testpod", "--youtube", "--max", "2"], {})
     assert_equal 2, cmd.instance_variable_get(:@options)[:max]
+  end
+
+  def test_publish_to_youtube_loads_youtube_uploader_constant_before_building
+    # Regression: build_youtube_uploader does YouTubeUploader.new — the
+    # constant must be loaded before that call, not deferred to a require
+    # buried inside YouTubePublisher#run.
+    create_mp3("ep-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# Title\n\n## Transcript\n\nHello.")
+
+    yt_config = { privacy: "unlisted", category: "27", tags: [] }
+    cmd = build_command(youtube_config: yt_config)
+
+    constant_seen = nil
+    cmd.define_singleton_method(:build_youtube_uploader) do
+      constant_seen = defined?(::YouTubeUploader) ? true : false
+      stub = Object.new
+      stub.define_singleton_method(:authorize!) { nil }
+      stub.define_singleton_method(:verify_playlist!) { |_| nil }
+      stub.define_singleton_method(:upload_video) { |*_, **_| "vid_x" }
+      stub.define_singleton_method(:upload_captions) { |*_, **_| nil }
+      stub.define_singleton_method(:add_to_playlist) { |*_| nil }
+      stub
+    end
+    cmd.define_singleton_method(:upload_tracker) { @ut ||= UploadTracker.new(File.join(@tmpdir_for_test, "uploads.yml")) }
+    cmd.instance_variable_set(:@tmpdir_for_test, @tmpdir)
+    File.write(File.join(@episodes_dir, "ep-2026-01-15.mp4"), "x" * 100)
+
+    capture_io { cmd.send(:publish_to_youtube) }
+
+    assert constant_seen, "YouTubeUploader constant must be loaded before build_youtube_uploader is called"
+  end
+
+  def test_publish_to_youtube_returns_2_when_youtube_not_configured
+    cmd = build_command(youtube_config: nil)
+    code = nil
+    capture_io { code = cmd.send(:publish_to_youtube) }
+    assert_equal 2, code
   end
 
   def test_publish_to_youtube_skips_verification_when_no_playlist

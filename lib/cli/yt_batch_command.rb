@@ -57,23 +57,25 @@ module PodgenCLI
       max_msg = @max ? " (max #{@max})" : ""
       puts "yt-batch: #{@mode} mode across #{pods.join(', ')}#{max_msg}"
 
-      summary = case @mode
-                when :priority    then run_priority(pods)
-                when :round_robin then run_round_robin(pods)
-                else
-                  $stderr.puts "Unknown mode: #{@mode}"
-                  return 2
-                end
+      tick = case @mode
+             when :priority    then run_priority(pods)
+             when :round_robin then run_round_robin(pods)
+             else
+               $stderr.puts "Unknown mode: #{@mode}"
+               return 2
+             end
 
-      print_summary(summary)
+      print_summary(tick)
       0
     end
 
     private
 
+    Tick = Struct.new(:per_pod, :rate_limited, keyword_init: true)
+
     def run_priority(pods)
       remaining = @max
-      summary = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
+      per_pod = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
       rate_limited = false
 
       pods.each do |pod|
@@ -81,8 +83,8 @@ module PodgenCLI
         next if pending_count_for(pod) == 0
 
         result = run_publish_for(pod, max: remaining)
-        summary[pod][:uploaded] += result.uploaded
-        summary[pod][:errors] += result.errors.length
+        per_pod[pod][:uploaded] += result.uploaded
+        per_pod[pod][:errors] += result.errors.length
         remaining -= result.uploaded if remaining
 
         if result.rate_limited
@@ -91,13 +93,12 @@ module PodgenCLI
         end
       end
 
-      summary[:rate_limited] = rate_limited
-      summary
+      Tick.new(per_pod: per_pod, rate_limited: rate_limited)
     end
 
     def run_round_robin(pods)
       remaining = @max
-      summary = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
+      per_pod = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
       rate_limited = false
       drained = {}
 
@@ -113,8 +114,8 @@ module PodgenCLI
             end
 
             result = run_publish_for(pod, max: 1)
-            summary[pod][:uploaded] += result.uploaded
-            summary[pod][:errors] += result.errors.length
+            per_pod[pod][:uploaded] += result.uploaded
+            per_pod[pod][:errors] += result.errors.length
             remaining -= result.uploaded if remaining
             uploaded_this_round += result.uploaded
 
@@ -123,14 +124,18 @@ module PodgenCLI
               throw :stop
             end
 
-            drained[pod] = true if pending_count_for(pod) == 0
+            # Drained when nothing left, OR when this round made no progress
+            # (e.g. a permanently-skipping episode like "no cover image"):
+            # avoid hammering the same broken pod every round.
+            if pending_count_for(pod) == 0 || result.uploaded == 0
+              drained[pod] = true
+            end
           end
           break if uploaded_this_round == 0
         end
       end
 
-      summary[:rate_limited] = rate_limited
-      summary
+      Tick.new(per_pod: per_pod, rate_limited: rate_limited)
     end
 
     def parse_pods(arg)
@@ -177,13 +182,12 @@ module PodgenCLI
                                    errors: [{ type: :publisher_crash, message: e.message }])
     end
 
-    def print_summary(summary)
-      rate_limited = summary.delete(:rate_limited)
-      total = summary.values.sum { |v| v[:uploaded] }
-      summary.each do |pod, v|
+    def print_summary(tick)
+      total = tick.per_pod.values.sum { |v| v[:uploaded] }
+      tick.per_pod.each do |pod, v|
         puts "  #{pod}: uploaded #{v[:uploaded]}#{v[:errors] > 0 ? " (#{v[:errors]} error(s))" : ''}"
       end
-      puts "yt-batch: total uploaded #{total}#{rate_limited ? ' — STOPPED on YouTube rate limit' : ''}"
+      puts "yt-batch: total uploaded #{total}#{tick.rate_limited ? ' — STOPPED on YouTube rate limit' : ''}"
     end
   end
 end

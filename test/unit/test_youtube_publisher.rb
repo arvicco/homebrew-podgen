@@ -150,17 +150,35 @@ class TestYouTubePublisher < Minitest::Test
     assert_empty uploader.uploads
   end
 
-  def test_calls_regen_cache_once
+  def test_calls_regen_cache_so_block_runs_once_per_pod
     seed_ep("ep-2026-01-15")
 
     config = stub_config(youtube_enabled: true)
-    regen_calls = 0
-    RegenCache.stub(:ensure_regen, ->(_cfg, &blk) { regen_calls += 1; blk&.call }) do
-      publisher = build_publisher(config: config, uploader: stub_uploader)
-      capture_io { publisher.run }
+    regen_block_calls = 0
+    publisher = build_publisher(config: config, uploader: stub_uploader)
+    publisher.define_singleton_method(:regenerate!) { regen_block_calls += 1 }
+
+    capture_io { publisher.run }
+    capture_io { build_publisher(config: config, uploader: stub_uploader).tap { |p| p.define_singleton_method(:regenerate!) { regen_block_calls += 1 } }.run }
+
+    assert_equal 1, regen_block_calls,
+      "regen block should run once across multiple publisher instances for the same pod (in-process memo)"
+  end
+
+  def test_regen_runs_again_for_different_pod
+    seed_ep("ep-2026-01-15")
+    cfg_a = stub_config(youtube_enabled: true)
+    cfg_b = stub_config(youtube_enabled: true)
+    cfg_b.name = "other_pod"
+
+    calls = []
+    [cfg_a, cfg_b].each do |cfg|
+      pub = build_publisher(config: cfg, uploader: stub_uploader)
+      pub.define_singleton_method(:regenerate!) { calls << cfg.name }
+      capture_io { pub.run }
     end
 
-    assert_equal 1, regen_calls
+    assert_equal %w[test_pod other_pod], calls
   end
 
   def test_dry_run_skips_uploads
