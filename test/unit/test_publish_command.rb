@@ -5,6 +5,7 @@ require "json"
 require "yaml"
 require "cli/publish_command"
 require "regen_cache"
+require "youtube_publisher"
 
 class TestPublishCommand < Minitest::Test
   def setup
@@ -12,11 +13,13 @@ class TestPublishCommand < Minitest::Test
     @episodes_dir = File.join(@tmpdir, "episodes")
     FileUtils.mkdir_p(@episodes_dir)
     RegenCache.reset!
+    YouTubePublisher.reset_playlist_cache!
   end
 
   def teardown
     FileUtils.rm_rf(@tmpdir)
     RegenCache.reset!
+    YouTubePublisher.reset_playlist_cache!
   end
 
   # --- parse_transcript ---
