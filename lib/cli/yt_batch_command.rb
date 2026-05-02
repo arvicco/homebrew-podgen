@@ -123,12 +123,16 @@ module PodgenCLI
               throw :stop
             end
 
-            # Drained when nothing left, OR when the publisher couldn't
-            # even attempt an upload (attempted == 0 means a non-recoverable
-            # pre-flight skip like "no cover image"). A transient upload-time
-            # error (attempted > 0, uploaded == 0) is NOT drained — the next
-            # round may pick a different pending episode that uploads fine.
-            if pending_count_for(pod) == 0 || (result.attempted == 0 && result.uploaded == 0)
+            # Drained when nothing left, OR when this round's failures are
+            # all permanent pre-flight skips (e.g. :missing_cover). Any
+            # :upload error — covering transient upload-API failures AND
+            # exceptions in parse_transcript / SubtitleGenerator /
+            # VideoGenerator — keeps the pod in rotation so the next round
+            # can pick a different pending episode.
+            permanent_skip_only = result.uploaded == 0 &&
+                                  result.errors.any? &&
+                                  result.errors.all? { |e| e[:type] == :missing_cover }
+            if pending_count_for(pod) == 0 || permanent_skip_only
               drained[pod] = true
             end
           end

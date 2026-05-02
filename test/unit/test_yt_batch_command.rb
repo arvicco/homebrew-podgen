@@ -222,6 +222,41 @@ class TestYtBatchCommand < Minitest::Test
       "transient failure must not drain pod; expected pod_a retried >=2 times, got #{pod_a_calls}"
   end
 
+  def test_round_robin_does_not_drain_pod_on_video_generator_or_parse_failure
+    # Regression: pre-upload exceptions (VideoGenerator crash,
+    # parse_transcript on corrupt file, SubtitleGenerator on bad json)
+    # surface as :upload errors with attempted=0. These should NOT drain
+    # the pod — they're per-episode transients, not pod-permanent.
+    cmd = stub_cmd(["--mode", "round-robin", "pod_a,pod_b"])
+    pending = { "pod_a" => 3, "pod_b" => 3 }
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
+
+    pod_a_calls = 0
+    cmd.define_singleton_method(:run_publish_for) do |pod, max:|
+      if pod == "pod_a"
+        pod_a_calls += 1
+        if pod_a_calls == 1
+          # Simulate VideoGenerator crash: caught by outer rescue =>,
+          # produces :upload error with attempted=0 (rescue is before
+          # `attempted += 1` for any non-Google::Apis exception path).
+          Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                     errors: [{ type: :upload, base: "ep1", message: "ffmpeg crash" }])
+        else
+          pending[pod] -= 1
+          Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+        end
+      else
+        pending[pod] -= 1
+        Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    capture_io { cmd.run }
+
+    assert pod_a_calls >= 2,
+      "VideoGenerator-style failure must not drain pod; expected pod_a retried >=2 times, got #{pod_a_calls}"
+  end
+
   def test_round_robin_marks_pod_drained_when_no_progress_made
     # Regression: a pod that returns uploaded=0 without rate_limit (e.g.
     # missing cover, permanent per-episode error) should not be retried
