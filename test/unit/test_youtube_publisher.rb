@@ -12,11 +12,13 @@ class TestYouTubePublisher < Minitest::Test
     FileUtils.mkdir_p(@episodes_dir)
     @uploads_path = File.join(@tmpdir, "uploads.yml")
     RegenCache.reset!
+    YouTubePublisher.reset_playlist_cache!
   end
 
   def teardown
     FileUtils.rm_rf(@tmpdir)
     RegenCache.reset!
+    YouTubePublisher.reset_playlist_cache!
   end
 
   def test_returns_zero_when_youtube_not_configured
@@ -179,6 +181,48 @@ class TestYouTubePublisher < Minitest::Test
     end
 
     assert_equal %w[test_pod other_pod], calls
+  end
+
+  def test_verify_playlist_cached_across_publisher_instances
+    # Regression: round-robin creates a fresh YouTubePublisher per upload.
+    # Without caching, verify_playlist! would hit YouTube's API N×M times
+    # per tick (N pods × M pending eps per pod) instead of once per pod.
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true, playlist: "PLcacheme")
+
+    verify_calls = 0
+    make_uploader = lambda do
+      u = StubUploader.new
+      u.singleton_class.send(:define_method, :verify_playlist!) { |_| verify_calls += 1 }
+      u
+    end
+
+    3.times do
+      publisher = build_publisher(config: config, uploader: make_uploader.call)
+      capture_io { publisher.run }
+    end
+
+    assert_equal 1, verify_calls,
+      "verify_playlist! should run once per (pod, playlist) per process, not once per publisher"
+  end
+
+  def test_verify_playlist_cache_segregated_by_pod
+    seed_ep("ep-2026-01-15")
+    cfg_a = stub_config(youtube_enabled: true, playlist: "PLshared")
+    cfg_b = stub_config(youtube_enabled: true, playlist: "PLshared")
+    cfg_b.name = "other_pod"
+
+    verify_keys = []
+    [cfg_a, cfg_b].each do |cfg|
+      u = StubUploader.new
+      u.singleton_class.send(:define_method, :verify_playlist!) { |id| verify_keys << "#{cfg.name}:#{id}" }
+      # force: true bypasses the upload tracker so both runs reach verify_playlist
+      capture_io { build_publisher(config: cfg, uploader: u, options: { force: true }).run }
+    end
+
+    assert_equal 2, verify_keys.length,
+      "different pods sharing the same playlist id should each verify once"
   end
 
   def test_dry_run_skips_uploads

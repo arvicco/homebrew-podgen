@@ -190,6 +190,38 @@ class TestYtBatchCommand < Minitest::Test
     assert_equal %w[pod_a pod_b], invocations
   end
 
+  def test_round_robin_does_not_drain_pod_on_transient_upload_error
+    # Regression: if an upload was actually attempted but failed transiently
+    # (attempted > 0, uploaded == 0, not rate-limited), the next round should
+    # pick the next pending episode for that pod, not retire the pod.
+    # Using two pods so the round loop keeps going on pod_b's progress.
+    cmd = stub_cmd(["--mode", "round-robin", "pod_a,pod_b"])
+    pending = { "pod_a" => 3, "pod_b" => 3 }
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
+
+    pod_a_calls = 0
+    cmd.define_singleton_method(:run_publish_for) do |pod, max:|
+      if pod == "pod_a"
+        pod_a_calls += 1
+        if pod_a_calls == 1
+          Result.new(uploaded: 0, attempted: 1, rate_limited: false,
+                     errors: [{ type: :upload, base: "ep1", message: "503 transient" }])
+        else
+          pending[pod] -= 1
+          Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+        end
+      else
+        pending[pod] -= 1
+        Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    capture_io { cmd.run }
+
+    assert pod_a_calls >= 2,
+      "transient failure must not drain pod; expected pod_a retried >=2 times, got #{pod_a_calls}"
+  end
+
   def test_round_robin_marks_pod_drained_when_no_progress_made
     # Regression: a pod that returns uploaded=0 without rate_limit (e.g.
     # missing cover, permanent per-episode error) should not be retried

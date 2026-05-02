@@ -337,19 +337,33 @@ class TestPublishCommand < Minitest::Test
     assert_equal 2, cmd.instance_variable_get(:@options)[:max]
   end
 
-  def test_publish_to_youtube_loads_youtube_uploader_constant_before_building
+  def test_publish_to_youtube_requires_youtube_uploader_before_building
     # Regression: build_youtube_uploader does YouTubeUploader.new — the
-    # constant must be loaded before that call, not deferred to a require
-    # buried inside YouTubePublisher#run.
+    # production code MUST require_relative "youtube_uploader" itself
+    # before that call. We can't rely on `defined?(::YouTubeUploader)`
+    # because other test files (test_youtube_uploader.rb) require it at
+    # file-load time, so the constant is globally defined regardless.
+    #
+    # Instead: spy on require_relative via singleton-class prepend, record
+    # call order, and assert the require precedes build_youtube_uploader.
     create_mp3("ep-2026-01-15.mp3")
     File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# Title\n\n## Transcript\n\nHello.")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15.mp4"), "x" * 100)
 
     yt_config = { privacy: "unlisted", category: "27", tags: [] }
     cmd = build_command(youtube_config: yt_config)
 
-    constant_seen = nil
+    required = []
+    spy = Module.new
+    spy.send(:define_method, :require_relative) do |path|
+      required << path
+      super(path)
+    end
+    cmd.singleton_class.prepend(spy)
+
+    build_called_at = nil
     cmd.define_singleton_method(:build_youtube_uploader) do
-      constant_seen = defined?(::YouTubeUploader) ? true : false
+      build_called_at = required.length
       stub = Object.new
       stub.define_singleton_method(:authorize!) { nil }
       stub.define_singleton_method(:verify_playlist!) { |_| nil }
@@ -358,13 +372,13 @@ class TestPublishCommand < Minitest::Test
       stub.define_singleton_method(:add_to_playlist) { |*_| nil }
       stub
     end
-    cmd.define_singleton_method(:upload_tracker) { @ut ||= UploadTracker.new(File.join(@tmpdir_for_test, "uploads.yml")) }
-    cmd.instance_variable_set(:@tmpdir_for_test, @tmpdir)
-    File.write(File.join(@episodes_dir, "ep-2026-01-15.mp4"), "x" * 100)
 
     capture_io { cmd.send(:publish_to_youtube) }
 
-    assert constant_seen, "YouTubeUploader constant must be loaded before build_youtube_uploader is called"
+    refute_nil build_called_at, "build_youtube_uploader was never called"
+    assert required[0...build_called_at].any? { |r| r.end_with?("youtube_uploader") },
+      "publish_to_youtube must require_relative 'youtube_uploader' BEFORE calling build_youtube_uploader; " \
+      "saw requires before build: #{required[0...build_called_at].inspect}"
   end
 
   def test_publish_to_youtube_returns_2_when_youtube_not_configured
