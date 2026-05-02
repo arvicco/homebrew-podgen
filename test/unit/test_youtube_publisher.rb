@@ -1,0 +1,283 @@
+# frozen_string_literal: true
+
+require_relative "../test_helper"
+require "youtube_publisher"
+require "regen_cache"
+require "google/apis/errors"
+
+class TestYouTubePublisher < Minitest::Test
+  def setup
+    @tmpdir = Dir.mktmpdir("podgen_yt_pub")
+    @episodes_dir = File.join(@tmpdir, "episodes")
+    FileUtils.mkdir_p(@episodes_dir)
+    @uploads_path = File.join(@tmpdir, "uploads.yml")
+    RegenCache.reset!
+  end
+
+  def teardown
+    FileUtils.rm_rf(@tmpdir)
+    RegenCache.reset!
+  end
+
+  def test_returns_zero_when_youtube_not_configured
+    config = stub_config(youtube_enabled: false)
+    publisher = build_publisher(config: config)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 0, result.uploaded
+    assert_equal 0, result.attempted
+    refute result.rate_limited
+    refute_empty result.errors
+    assert_equal :not_configured, result.errors.first[:type]
+  end
+
+  def test_returns_empty_result_when_nothing_pending
+    config = stub_config(youtube_enabled: true)
+    publisher = build_publisher(config: config)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 0, result.uploaded
+    assert_equal 0, result.attempted
+    refute result.rate_limited
+    assert_empty result.errors
+  end
+
+  def test_uploads_pending_episodes_returns_count
+    seed_ep("ep-2026-01-15")
+    seed_ep("ep-2026-01-16")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.upload_video_returns "vid_1" }
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 2, result.uploaded
+    assert_equal 2, result.attempted
+    refute result.rate_limited
+    assert_empty result.errors
+  end
+
+  def test_max_caps_uploads
+    %w[ep-2026-01-15 ep-2026-01-16 ep-2026-01-17].each { |b| seed_ep(b) }
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader
+    publisher = build_publisher(config: config, uploader: uploader, options: { max: 1 })
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 1, result.uploaded
+    assert_equal 1, uploader.uploads.length
+  end
+
+  def test_quota_exceeded_sets_rate_limited_and_breaks
+    seed_ep("ep-2026-01-15")
+    seed_ep("ep-2026-01-16")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader do |b|
+      b.upload_video_raises Google::Apis::ClientError.new("quotaExceeded: daily limit hit")
+    end
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert result.rate_limited
+    assert_equal 0, result.uploaded
+    assert_equal 1, result.attempted, "should stop after first rate-limited attempt"
+  end
+
+  def test_upload_limit_exceeded_sets_rate_limited
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader do |b|
+      b.upload_video_raises Google::Apis::ClientError.new("uploadLimitExceeded")
+    end
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert result.rate_limited
+  end
+
+  def test_per_episode_failure_does_not_halt_batch
+    seed_ep("ep-2026-01-15")
+    seed_ep("ep-2026-01-16")
+
+    config = stub_config(youtube_enabled: true)
+    call = 0
+    uploader = stub_uploader do |b|
+      b.upload_video_with do |*_args, **_kw|
+        call += 1
+        raise StandardError, "transient" if call == 1
+        "vid_#{call}"
+      end
+    end
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 1, result.uploaded
+    assert_equal 2, result.attempted
+    refute result.rate_limited
+    assert_equal 1, result.errors.length
+  end
+
+  def test_playlist_verification_failure_returns_error_no_uploads
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true, playlist: "PLbad")
+    uploader = stub_uploader { |b| b.verify_playlist_raises "Playlist not found" }
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 0, result.uploaded
+    refute_empty result.errors
+    assert_equal :playlist_verification, result.errors.first[:type]
+    assert_empty uploader.uploads
+  end
+
+  def test_calls_regen_cache_once
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    regen_calls = 0
+    RegenCache.stub(:ensure_regen, ->(_cfg, &blk) { regen_calls += 1; blk&.call }) do
+      publisher = build_publisher(config: config, uploader: stub_uploader)
+      capture_io { publisher.run }
+    end
+
+    assert_equal 1, regen_calls
+  end
+
+  def test_dry_run_skips_uploads
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader
+    publisher = build_publisher(config: config, uploader: uploader, options: { dry_run: true })
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 0, result.uploaded
+    assert_empty uploader.uploads
+  end
+
+  def test_records_in_upload_tracker
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.upload_video_returns "vid_xyz" }
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    capture_io { publisher.run }
+
+    require "yaml"
+    assert File.exist?(@uploads_path), "should persist tracker to #{@uploads_path}"
+    data = YAML.load_file(@uploads_path)
+    assert data["youtube"]["default"]["ep-2026-01-15"]
+  end
+
+  private
+
+  StubYouTubeConfig = Struct.new(:episodes_dir, :name, :transcription_language,
+    :target_language, :transcription_engines, :_yt, :base_url,
+    keyword_init: true) do
+    def initialize(episodes_dir:, name: "test_pod", transcription_language: nil,
+                   target_language: nil, transcription_engines: [],
+                   _yt: nil, base_url: nil)
+      super
+    end
+
+    def youtube_enabled? = !_yt.nil?
+    def youtube_config = _yt
+    def language_for_episode(_) = transcription_language || "en"
+    def primary_language = transcription_language || "en"
+    def site_episode_url(_) = nil
+    def uploads_yml_path = nil
+  end
+
+  def stub_config(youtube_enabled:, playlist: nil)
+    yt = youtube_enabled ? { playlist: playlist, privacy: "unlisted", category: "27", tags: [] } : nil
+    StubYouTubeConfig.new(
+      episodes_dir: @episodes_dir,
+      name: "test_pod",
+      transcription_language: "en",
+      _yt: yt
+    )
+  end
+
+  def seed_ep(base)
+    File.write(File.join(@episodes_dir, "#{base}.mp3"), "x" * 100)
+    File.write(File.join(@episodes_dir, "#{base}.mp4"), "x" * 100) # skip video gen
+    File.write(File.join(@episodes_dir, "#{base}_transcript.md"), "# Title #{base}\n\n## Transcript\n\nHello.\n")
+  end
+
+  def build_publisher(config:, uploader: nil, options: {})
+    YouTubePublisher.new(
+      config: config,
+      options: options,
+      uploader: uploader,
+      tracker_path: @uploads_path
+    )
+  end
+
+  def stub_uploader
+    u = StubUploader.new
+    yield(u) if block_given?
+    u
+  end
+
+  class StubUploader
+    attr_reader :uploads, :playlist_calls
+
+    def initialize
+      @uploads = []
+      @playlist_calls = []
+      @upload_video_block = ->(*_a, **_kw) { "vid_default" }
+      @verify_block = ->(_id) {}
+    end
+
+    def upload_video_returns(id)
+      @upload_video_block = ->(*_a, **_kw) { id }
+    end
+
+    def upload_video_raises(err)
+      @upload_video_block = ->(*_a, **_kw) { raise err }
+    end
+
+    def upload_video_with(&blk)
+      @upload_video_block = blk
+    end
+
+    def verify_playlist_raises(msg)
+      @verify_block = ->(id) { raise msg }
+    end
+
+    def authorize! = nil
+    def verify_playlist!(id) = @verify_block.call(id)
+    def upload_video(*args, **kw)
+      @uploads << [args, kw]
+      @upload_video_block.call(*args, **kw)
+    end
+    def upload_captions(*_a, **_kw) = nil
+    def add_to_playlist(*args)
+      @playlist_calls << args
+      nil
+    end
+  end
+end
