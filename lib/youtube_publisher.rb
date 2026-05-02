@@ -21,6 +21,27 @@ class YouTubePublisher
 
   TIMESTAMP_ENGINE_PRIORITY = %w[groq elab open].freeze
 
+  # In-process cache of (pod_name, playlist_id) verifications. Round-robin
+  # creates a fresh publisher per upload, so without this each tick would
+  # hit YouTube's playlists API N×M times (M = pending eps per pod) instead
+  # of once per pod per tick.
+  @verified_playlists = {}
+  @verify_mutex = Mutex.new
+
+  class << self
+    def playlist_verified?(key)
+      @verify_mutex.synchronize { @verified_playlists[key] }
+    end
+
+    def mark_playlist_verified(key)
+      @verify_mutex.synchronize { @verified_playlists[key] = true }
+    end
+
+    def reset_playlist_cache!
+      @verify_mutex.synchronize { @verified_playlists.clear }
+    end
+  end
+
   def initialize(config:, options: {}, uploader: nil, tracker_path: nil)
     @config = config
     @options = options
@@ -67,12 +88,16 @@ class YouTubePublisher
     uploader = active_uploader
 
     if yt_config[:playlist]
-      begin
-        uploader.verify_playlist!(yt_config[:playlist])
-      rescue => e
-        $stderr.puts "YouTube playlist verification failed: #{e.message}"
-        return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
-                          errors: [{ type: :playlist_verification, message: e.message }])
+      verify_key = "#{@config.name}:#{yt_config[:playlist]}"
+      unless self.class.playlist_verified?(verify_key)
+        begin
+          uploader.verify_playlist!(yt_config[:playlist])
+          self.class.mark_playlist_verified(verify_key)
+        rescue => e
+          $stderr.puts "YouTube playlist verification failed: #{e.message}"
+          return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                            errors: [{ type: :playlist_verification, message: e.message }])
+        end
       end
     end
 

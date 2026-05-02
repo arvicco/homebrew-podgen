@@ -48,8 +48,7 @@ module PodgenCLI
         return 2
       end
 
-      pending_pods = pods.select { |pod| pending_count_for(pod) > 0 }
-      if pending_pods.empty?
+      if pods.none? { |pod| pending_count_for(pod) > 0 }
         puts "All podcasts caught up on YouTube uploads."
         return 0
       end
@@ -124,10 +123,12 @@ module PodgenCLI
               throw :stop
             end
 
-            # Drained when nothing left, OR when this round made no progress
-            # (e.g. a permanently-skipping episode like "no cover image"):
-            # avoid hammering the same broken pod every round.
-            if pending_count_for(pod) == 0 || result.uploaded == 0
+            # Drained when nothing left, OR when the publisher couldn't
+            # even attempt an upload (attempted == 0 means a non-recoverable
+            # pre-flight skip like "no cover image"). A transient upload-time
+            # error (attempted > 0, uploaded == 0) is NOT drained — the next
+            # round may pick a different pending episode that uploads fine.
+            if pending_count_for(pod) == 0 || (result.attempted == 0 && result.uploaded == 0)
               drained[pod] = true
             end
           end
