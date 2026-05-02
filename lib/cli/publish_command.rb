@@ -14,6 +14,8 @@ require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "episode_filtering")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "cover_resolver")
+require_relative File.join(root, "lib", "regen_cache")
+require_relative File.join(root, "lib", "youtube_publisher")
 
 module PodgenCLI
   class PublishCommand
@@ -41,9 +43,13 @@ module PodgenCLI
 
       load_config!
 
-      # Regenerate RSS feed and static site before publishing
-      regenerate_rss
-      regenerate_site
+      # Regenerate RSS feed and static site before publishing.
+      # Memoized per-podcast in-process so batch flows (e.g. yt-batch) skip
+      # repeated regen when the same publisher runs against the same pod.
+      RegenCache.ensure_regen(@config) do
+        regenerate_rss
+        regenerate_site
+      end
 
       if @options[:lingq] || @options[:youtube]
         code = publish_to_lingq if @options[:lingq]
@@ -258,102 +264,13 @@ module PodgenCLI
     end
 
     def publish_to_youtube
-      unless @config.youtube_enabled?
-        $stderr.puts "YouTube not configured. Add ## YouTube section to guidelines.md and set YOUTUBE_CLIENT_ID/YOUTUBE_CLIENT_SECRET."
-        return 2
-      end
-
-      yt_config = @config.youtube_config
-      playlist = yt_config[:playlist] || "default"
-      language = @config.transcription_language || "en"
-
-      episodes = scan_episodes
-      uploaded = @options[:force] ? {} : upload_tracker.entries_for(:youtube, playlist)
-      pending = episodes.reject { |ep| uploaded.key?(ep[:base_name]) }
-      pending = pending.first(@options[:max]) if @options[:max]
-
-      if pending.empty?
-        puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless @options[:verbosity] == :quiet
-        return 0
-      end
-
-      puts "#{pending.length} episode(s) to upload to YouTube" unless @options[:verbosity] == :quiet
-
-      if @options[:dry_run]
-        pending.each { |ep| puts "  would upload: #{ep[:base_name]}" } unless @options[:verbosity] == :quiet
-        puts "(dry run)" unless @options[:verbosity] == :quiet
-        return 0
-      end
-
-      # Lazy require to avoid loading google-apis gems unless YouTube is used
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "youtube_uploader")
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_generator")
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "video_generator")
-
-      uploader = build_youtube_uploader
-
-      # Verify playlist exists before uploading any videos
-      if yt_config[:playlist]
-        begin
-          uploader.verify_playlist!(yt_config[:playlist])
-        rescue => e
-          $stderr.puts "YouTube playlist verification failed: #{e.message}"
-          return 1
-        end
-      end
-
-      pending.each do |ep|
-        title, description, _transcript = parse_transcript(ep[:transcript_path])
-        episodes_dir = @config.episodes_dir
-
-        # Generate timestamps via retranscription if missing, then SRT
-        ts_path = File.join(episodes_dir, "#{ep[:base_name]}_timestamps.json")
-        retranscribe_for_timestamps(ep[:mp3_path], ts_path, ep[:base_name]) unless File.exist?(ts_path)
-        reconcile_subtitles_if_needed(ts_path, ep[:transcript_path]) if File.exist?(ts_path)
-        srt_path = File.join(episodes_dir, "#{ep[:base_name]}.srt")
-        SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path)
-
-        # Generate video if not already present
-        video_path = File.join(episodes_dir, "#{ep[:base_name]}.mp4")
-        unless File.exist?(video_path)
-          cover_path = find_episode_cover(ep[:base_name])
-          unless cover_path
-            $stderr.puts "  ✗ #{ep[:base_name]} skipped: no cover image found"
-            next
-          end
-          puts "  generating video #{ep[:base_name]}..." unless @options[:verbosity] == :quiet
-          VideoGenerator.new.generate(ep[:mp3_path], cover_path, video_path)
-        end
-
-        puts "  uploading: #{ep[:base_name]} — \"#{title}\"" unless @options[:verbosity] == :quiet
-
-        video_id = uploader.upload_video(
-          video_path,
-          title: title,
-          description: description.to_s,
-          language: language,
-          privacy: yt_config[:privacy] || "unlisted",
-          category: yt_config[:category] || "27",
-          tags: yt_config[:tags] || []
-        )
-
-        # Record immediately so a caption/playlist failure doesn't lose the video tracking
-        upload_tracker.record(:youtube, playlist, ep[:base_name], video_id)
-
-        uploader.upload_captions(video_id, srt_path, language: language) if File.exist?(srt_path)
-        uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
-
-        puts "  ✓ #{ep[:base_name]} → https://youtu.be/#{video_id}" unless @options[:verbosity] == :quiet
-      rescue Google::Apis::ClientError => e
-        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
-        if e.message.include?("uploadLimitExceeded") || e.message.include?("quotaExceeded")
-          $stderr.puts "  YouTube quota exceeded — stopping batch. Retry after quota resets."
-          break
-        end
-      rescue => e
-        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
-      end
-
+      publisher = YouTubePublisher.new(
+        config: @config,
+        options: @options,
+        uploader: build_youtube_uploader
+      )
+      result = publisher.run
+      return 1 if result.errors.any? { |e| e[:type] == :playlist_verification }
       0
     end
 

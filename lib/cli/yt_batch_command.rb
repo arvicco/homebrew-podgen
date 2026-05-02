@@ -1,22 +1,27 @@
 # frozen_string_literal: true
 
 require "optparse"
-require "open3"
 
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "upload_tracker")
-require_relative File.join(root, "lib", "youtube_batch")
+require_relative File.join(root, "lib", "youtube_publisher")
 
 module PodgenCLI
-  # Picks one podcast from a list and uploads ONE pending YouTube episode for it,
-  # rotating across the list to spread daily quota across multiple podcasts.
-  # Designed to be invoked daily by `podgen schedule --youtube-batch`.
+  # Iterates pending YouTube uploads across multiple podcasts in one process.
   #
-  # Examples:
-  #   podgen yt-batch pod_a,pod_b,pod_c
-  #   podgen yt-batch pod_a,pod_b --mode round-robin
+  # Modes:
+  #   priority    — drain pods in list order; later pods only run when earlier
+  #                 ones are caught up (or --max bound is reached).
+  #   round-robin — upload one episode per pod per round, looping until all
+  #                 pods are drained or --max / rate-limit halts.
+  #
+  # --max caps the TOTAL uploads across the tick (not per-pod). Without it,
+  # the loop runs until everything is uploaded or YouTube rate-limits us.
+  #
+  # Replaces the old "one pod per tick, one cursor file" design which left
+  # later pods starved when earlier ones always had pending work.
   class YtBatchCommand
     def initialize(args, options)
       @options = options
@@ -28,7 +33,7 @@ module PodgenCLI
         opts.on("--mode MODE", "priority (default) or round-robin") do |m|
           @mode = m.tr("-", "_").to_sym
         end
-        opts.on("--max N", Integer, "Cap uploads per tick (default: no cap)") do |n|
+        opts.on("--max N", Integer, "Cap TOTAL uploads across the tick (default: no cap)") do |n|
           @max = n
         end
       end.parse!(args)
@@ -39,37 +44,98 @@ module PodgenCLI
     def run
       pods = parse_pods(@pods_arg)
       if pods.empty?
-        $stderr.puts "Usage: podgen yt-batch <pod1,pod2,...> [--mode priority|round-robin]"
+        $stderr.puts "Usage: podgen yt-batch <pod1,pod2,...> [--mode priority|round-robin] [--max N]"
         return 2
       end
 
-      batch = YoutubeBatch.new(
-        podcasts: pods,
-        mode: @mode,
-        cursor_path: cursor_path,
-        pending_lookup: method(:pending_count_for)
-      )
-
-      pod = batch.next_podcast
-      if pod.nil?
+      pending_pods = pods.select { |pod| pending_count_for(pod) > 0 }
+      if pending_pods.empty?
         puts "All podcasts caught up on YouTube uploads."
         return 0
       end
 
       max_msg = @max ? " (max #{@max})" : ""
-      puts "yt-batch: uploading next episode for #{pod}#{max_msg}"
-      run_publish_for(pod, max: @max)
+      puts "yt-batch: #{@mode} mode across #{pods.join(', ')}#{max_msg}"
+
+      summary = case @mode
+                when :priority    then run_priority(pods)
+                when :round_robin then run_round_robin(pods)
+                else
+                  $stderr.puts "Unknown mode: #{@mode}"
+                  return 2
+                end
+
+      print_summary(summary)
+      0
     end
 
     private
 
+    def run_priority(pods)
+      remaining = @max
+      summary = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
+      rate_limited = false
+
+      pods.each do |pod|
+        break if remaining == 0
+        next if pending_count_for(pod) == 0
+
+        result = run_publish_for(pod, max: remaining)
+        summary[pod][:uploaded] += result.uploaded
+        summary[pod][:errors] += result.errors.length
+        remaining -= result.uploaded if remaining
+
+        if result.rate_limited
+          rate_limited = true
+          break
+        end
+      end
+
+      summary[:rate_limited] = rate_limited
+      summary
+    end
+
+    def run_round_robin(pods)
+      remaining = @max
+      summary = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
+      rate_limited = false
+      drained = {}
+
+      catch(:stop) do
+        loop do
+          uploaded_this_round = 0
+          pods.each do |pod|
+            throw :stop if remaining == 0
+            next if drained[pod]
+            if pending_count_for(pod) == 0
+              drained[pod] = true
+              next
+            end
+
+            result = run_publish_for(pod, max: 1)
+            summary[pod][:uploaded] += result.uploaded
+            summary[pod][:errors] += result.errors.length
+            remaining -= result.uploaded if remaining
+            uploaded_this_round += result.uploaded
+
+            if result.rate_limited
+              rate_limited = true
+              throw :stop
+            end
+
+            drained[pod] = true if pending_count_for(pod) == 0
+          end
+          break if uploaded_this_round == 0
+        end
+      end
+
+      summary[:rate_limited] = rate_limited
+      summary
+    end
+
     def parse_pods(arg)
       return [] if arg.nil? || arg.empty?
       arg.split(",").map(&:strip).reject(&:empty?)
-    end
-
-    def cursor_path
-      File.join(PodcastConfig.root, "output", "youtube_batch_cursor.yml")
     end
 
     def pending_count_for(pod)
@@ -100,9 +166,24 @@ module PodgenCLI
     end
 
     def run_publish_for(pod, max:)
-      args = [File.join(PodcastConfig.root, "bin", "podgen"), "publish", pod, "--youtube"]
-      args.push("--max", max.to_s) if max
-      system(*args) ? 0 : 1
+      config = PodcastConfig.new(pod)
+      YouTubePublisher.new(
+        config: config,
+        options: { max: max, verbosity: @options[:verbosity] }
+      ).run
+    rescue => e
+      $stderr.puts "yt-batch: publisher error for #{pod} (#{e.message})"
+      YouTubePublisher::Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                                   errors: [{ type: :publisher_crash, message: e.message }])
+    end
+
+    def print_summary(summary)
+      rate_limited = summary.delete(:rate_limited)
+      total = summary.values.sum { |v| v[:uploaded] }
+      summary.each do |pod, v|
+        puts "  #{pod}: uploaded #{v[:uploaded]}#{v[:errors] > 0 ? " (#{v[:errors]} error(s))" : ''}"
+      end
+      puts "yt-batch: total uploaded #{total}#{rate_limited ? ' — STOPPED on YouTube rate limit' : ''}"
     end
   end
 end
