@@ -300,6 +300,32 @@ class TestTTSAgent < Minitest::Test
     assert ffmpeg_called, "Small legitimate tail (0.89s) should still be trimmed"
   end
 
+  def test_trim_trailing_audio_skips_entirely_for_eleven_v3
+    # Regression: eleven_v3 routinely under-reports character_end_times_seconds
+    # by 0.5–1.5s for full episodes. The MAX_TRIM_SECONDS guard only catches
+    # gross under-reports (10s+); subtle ones slip through and silence real
+    # speech (last sentences of segments). Observed in fulgur_news 2026-05-03:
+    # Opening Brief silenced 1.01s, AI Music Piracy silenced 1.13s.
+    # For v3 specifically, skip the trim entirely — the alignment data is
+    # too unreliable to base any silencing on.
+    agent = build_agent
+    agent.instance_variable_set(:@model_id, "eleven_v3")
+    agent.define_singleton_method(:probe_duration) { |_| 132.32 }
+
+    ffmpeg_called = false
+    Open3.stub :capture3, ->(*_args) { ffmpeg_called = true; ["", "", Struct.new(:success?).new(true)] } do
+      FileUtils.stub :mv, ->(_src, _dst) { } do
+        # Same alignment shape as the v2 "legitimate tail" test: 0.89s trailing.
+        # Under v2 it WOULD trim. Under v3 it must NOT.
+        agent.send(:trim_trailing_audio, "/fake/path.mp3",
+                   { "character_end_times_seconds" => [10.0, 131.43] })
+      end
+    end
+
+    refute ffmpeg_called,
+      "Trim must NOT run for eleven_v3 — its alignment is unreliable and silences real speech"
+  end
+
   private
 
   def fake_tts_response

@@ -29,6 +29,12 @@ class TTSAgent
   # that and silencing everything past it wipes real speech. Anything above
   # this is treated as bad alignment data — skip the trim with a warning.
   MAX_TRIM_SECONDS = 5.0
+  # Models whose `character_end_times_seconds` is too unreliable to base
+  # any trim/silence decision on. eleven_v3 routinely under-reports the
+  # real speech end by 0.5–1.5s, which falls inside the trim threshold
+  # band and silences the last words of segments. For these models, skip
+  # the trim entirely and accept any trailing room tone as-is.
+  MODELS_WITH_UNRELIABLE_ALIGNMENT = %w[eleven_v3].freeze
   DEFAULT_MAX_CHARS = 9_500 # Safety margin below v2's 10,000 char limit
   # Per-model character limits per request (with safety margin).
   # eleven_v3 has a tighter ~5k limit; v2/turbo allow ~10k.
@@ -154,6 +160,11 @@ class TTSAgent
   end
 
   def trim_trailing_audio(path, alignment)
+    if MODELS_WITH_UNRELIABLE_ALIGNMENT.include?(@model_id)
+      log("  Skipping trim: #{@model_id} alignment data is unreliable (silences real speech)")
+      return
+    end
+
     end_times = alignment["character_end_times_seconds"]
     return unless end_times&.any?
 
