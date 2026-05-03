@@ -1039,6 +1039,38 @@ podgen schedule ruby_world --remove
 
 **Note:** macOS must be awake at the scheduled time. Keep the machine plugged in and disable sleep, or use `caffeinate`.
 
+### Scheduled batch uploads across multiple pods
+
+For households running several podcasts, install a single daily upload job that walks every pod through `regen → R2 → LingQ → YouTube` in one tick:
+
+```bash
+podgen schedule --uploads bajke,fiabe,basnie --time 10:30
+```
+
+Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, upload pending LingQ episodes (if configured). YouTube uploads then run across all pods that survived the front-end phase, capped by `--max` if set.
+
+| Flag                 | Description                                                                  |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `--uploads <pods>`   | Comma-separated pod list                                                     |
+| `--time HH:MM`       | Time to run daily (default `06:00`)                                           |
+| `--mode priority`    | (default) Drain pods in list order; later pods only run when earlier are done |
+| `--mode round-robin` | One YT episode per pod per round, looping until drained / `--max` / rate-limited |
+| `--max N`            | Cap TOTAL YouTube uploads across the tick (LingQ always drains)              |
+| `--remove`           | Remove the installed `uploads` schedule                                      |
+| `--status`           | Show installed pods, mode, max, last run                                     |
+
+Failure rules:
+
+- **R2 sync fail** for a pod is fatal — that pod is skipped from LingQ + YouTube for the tick.
+- **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
+- **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
+
+Run ad-hoc (no schedule) with the same semantics:
+
+```bash
+podgen uploads bajke,fiabe,basnie --mode round-robin --max 6
+```
+
 ## RSS Feed
 
 Generate a podcast RSS feed from your episodes:

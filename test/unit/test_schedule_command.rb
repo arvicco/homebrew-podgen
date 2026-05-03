@@ -397,27 +397,27 @@ class TestScheduleCommand < Minitest::Test
     assert_match(/last exit code:\s+n\/a/, out_io)
   end
 
-  # ── --youtube-batch mode ──
+  # ── --uploads mode ──
 
   def test_yt_batch_flag_parses_pod_list
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a,pod_b"], {})
-    assert cmd.instance_variable_get(:@yt_batch)
-    assert_equal "pod_a,pod_b", cmd.instance_variable_get(:@yt_batch_pods)
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a,pod_b"], {})
+    assert cmd.instance_variable_get(:@uploads)
+    assert_equal "pod_a,pod_b", cmd.instance_variable_get(:@uploads_pods)
   end
 
   def test_yt_batch_mode_default_priority
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a"], {})
-    assert_equal :priority, cmd.instance_variable_get(:@yt_batch_mode)
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a"], {})
+    assert_equal :priority, cmd.instance_variable_get(:@uploads_mode)
   end
 
   def test_yt_batch_parses_mode_round_robin
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a,pod_b", "--mode", "round-robin"], {})
-    assert_equal :round_robin, cmd.instance_variable_get(:@yt_batch_mode)
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a,pod_b", "--mode", "round-robin"], {})
+    assert_equal :round_robin, cmd.instance_variable_get(:@uploads_mode)
   end
 
   def test_yt_batch_label_uses_singleton_name
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a"], {})
-    assert_equal "com.podcastagent.youtube_batch", cmd.send(:label)
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a"], {})
+    assert_equal "com.podcastagent.uploads", cmd.send(:label)
   end
 
   def test_yt_batch_per_pod_label_unchanged_when_no_batch_flag
@@ -427,41 +427,41 @@ class TestScheduleCommand < Minitest::Test
 
   def test_yt_batch_install_writes_plist_with_pods_mode_and_time
     cmd = PodgenCLI::ScheduleCommand.new(
-      ["--youtube-batch", "pod_a,pod_b", "--time", "14:30", "--mode", "round-robin"],
+      ["--uploads", "pod_a,pod_b", "--time", "14:30", "--mode", "round-robin"],
       {}
     )
-    plist = cmd.send(:build_yt_batch_plist)
-    assert_match(/<string>com\.podcastagent\.youtube_batch<\/string>/, plist)
+    plist = cmd.send(:build_uploads_plist)
+    assert_match(/<string>com\.podcastagent\.uploads<\/string>/, plist)
     assert_match(/<string>pod_a,pod_b<\/string>/, plist)
     assert_match(/<string>round-robin<\/string>/, plist)
     assert_match(/<integer>14<\/integer>/, plist)
     assert_match(/<integer>30<\/integer>/, plist)
-    assert_match(/run_yt_batch\.sh/, plist)
+    assert_match(/run_uploads\.sh/, plist)
   end
 
   def test_yt_batch_plist_includes_max_when_given
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a", "--max", "6"], {})
-    plist = cmd.send(:build_yt_batch_plist)
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a", "--max", "6"], {})
+    plist = cmd.send(:build_uploads_plist)
     assert_match(/<string>--max<\/string>\s*<string>6<\/string>/m, plist)
   end
 
   def test_yt_batch_plist_omits_max_when_absent
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a"], {})
-    plist = cmd.send(:build_yt_batch_plist)
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a"], {})
+    plist = cmd.send(:build_uploads_plist)
     refute_match(/<string>--max<\/string>/, plist)
   end
 
   def test_yt_batch_parses_max_flag
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a", "--max", "4"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a", "--max", "4"], {})
     assert_equal 4, cmd.instance_variable_get(:@max)
   end
 
   def test_yt_batch_plist_uses_dedicated_log_path
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a"], {})
-    plist = cmd.send(:build_yt_batch_plist)
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a"], {})
+    plist = cmd.send(:build_uploads_plist)
     # Must NOT share the per-pod scheduler's log file, else status mtime is misleading.
-    assert_match(/yt_batch_stdout\.log/, plist)
-    assert_match(/yt_batch_stderr\.log/, plist)
+    assert_match(/uploads_stdout\.log/, plist)
+    assert_match(/uploads_stderr\.log/, plist)
     refute_match(%r{/launchd_stdout\.log}, plist)
   end
 
@@ -487,16 +487,16 @@ class TestScheduleCommand < Minitest::Test
   end
 
   def test_yt_batch_install_rejects_missing_pods
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads"], {})
     code = nil
     _, err = capture_io { code = cmd.run }
     assert_equal 2, code
-    assert_includes err, "youtube-batch"
+    assert_includes err, "uploads"
   end
 
   def test_yt_batch_install_rejects_invalid_pod_names
     # Pod name with XML metacharacters would corrupt the plist.
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a,bad<name>"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a,bad<name>"], {})
     code = nil
     _, err = capture_io { code = cmd.run }
     assert_equal 2, code
@@ -504,7 +504,7 @@ class TestScheduleCommand < Minitest::Test
   end
 
   def test_yt_batch_install_warns_on_launchctl_load_failure
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "pod_a"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a"], {})
     err_out = nil
     cmd.stub :do_launchctl_unload, true do
       cmd.stub :do_launchctl_load, false do
@@ -521,7 +521,7 @@ class TestScheduleCommand < Minitest::Test
   end
 
   def test_yt_batch_status_no_install
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "--status"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "--status"], {})
     out = nil
     cmd.stub :plist_exists?, false do
       out, = capture_io { @code = cmd.run }
@@ -531,7 +531,7 @@ class TestScheduleCommand < Minitest::Test
   end
 
   def test_yt_batch_status_header_uses_youtube_batch_label
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "--status"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "--status"], {})
     out = nil
     cmd.stub :plist_exists?, true do
       cmd.stub :plist_hour, 14 do
@@ -547,11 +547,11 @@ class TestScheduleCommand < Minitest::Test
       end
     end
     refute_match(/^:\s*$/, out, "status header must not be a bare colon")
-    assert_match(/^youtube_batch:/, out)
+    assert_match(/^uploads:/, out)
   end
 
   def test_yt_batch_status_shows_podcasts_mode_no_max
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "--status"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "--status"], {})
     out = nil
     cmd.stub :plist_exists?, true do
       cmd.stub :plist_hour, 10 do
@@ -571,7 +571,7 @@ class TestScheduleCommand < Minitest::Test
   end
 
   def test_yt_batch_status_shows_max_when_set
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "--status"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "--status"], {})
     out = nil
     cmd.stub :plist_exists?, true do
       cmd.stub :plist_hour, 10 do
@@ -590,7 +590,7 @@ class TestScheduleCommand < Minitest::Test
   end
 
   def test_yt_batch_remove_unloads_singleton
-    cmd = PodgenCLI::ScheduleCommand.new(["--youtube-batch", "--remove"], {})
+    cmd = PodgenCLI::ScheduleCommand.new(["--uploads", "--remove"], {})
     actions = []
     cmd.stub :plist_exists?, true do
       cmd.stub :do_launchctl_unload, ->(*) { actions << :unload; true } do
