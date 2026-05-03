@@ -30,7 +30,7 @@ module PodgenCLI
     "fork"      => ["Fork podcast into a new namespace",    "cli/fork_command",        "ForkCommand"],
     "unpublish" => ["Remove podcast from Cloudflare R2",    "cli/unpublish_command",   "UnpublishCommand"],
     "tweet"     => ["Tweet about an episode",               "cli/tweet_command",       "TweetCommand"],
-    "yt-batch"  => ["Upload one pending YT episode rotating across podcasts", "cli/yt_batch_command", "YtBatchCommand"]
+    "uploads"   => ["Per-pod regen+R2+LingQ then YT batch across pods", "cli/uploads_command", "UploadsCommand"]
   }.freeze
 
   def self.run(argv)
@@ -55,7 +55,7 @@ module PodgenCLI
       opts.separator "  list                           List available podcasts"
       opts.separator "  test <name> [args]             Run a standalone test"
       opts.separator "  schedule <podcast>             Install launchd scheduler (--time, --publish, --telegram)"
-      opts.separator "  yt-batch <pod1,pod2,...>       Upload one pending YT episode, rotating across pods (--mode)"
+      opts.separator "  uploads <pod1,pod2,...>        Per-pod regen+R2+LingQ then YT batch (--mode, --max)"
       opts.separator "  analytics <setup|deploy|tail|status>  Manage download analytics Worker"
       opts.separator "  add <podcast> <url> [--note ...]     Queue a priority link for next episode"
       opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"

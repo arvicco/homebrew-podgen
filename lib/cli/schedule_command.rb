@@ -28,9 +28,9 @@ module PodgenCLI
       @test = false
       @remove = false
       @status = false
-      @yt_batch = false
-      @yt_batch_pods = nil
-      @yt_batch_mode = :priority
+      @uploads = false
+      @uploads_pods = nil
+      @uploads_mode = :priority
       @max = nil
 
       OptionParser.new do |opts|
@@ -40,14 +40,14 @@ module PodgenCLI
         opts.on("--test", "Send a test Telegram message and exit") { @test = true }
         opts.on("--remove", "Remove an installed scheduler") { @remove = true }
         opts.on("--status", "Show scheduler status") { @status = true }
-        opts.on("--youtube-batch [PODS]", "Schedule batched YT uploads across PODS (comma-sep)") do |pods|
-          @yt_batch = true
-          @yt_batch_pods = pods if pods && !pods.empty?
+        opts.on("--uploads [PODS]", "Schedule per-pod regen+R2+LingQ then YT batch (comma-sep)") do |pods|
+          @uploads = true
+          @uploads_pods = pods if pods && !pods.empty?
         end
-        opts.on("--mode MODE", "yt-batch mode: priority (default) or round-robin") do |m|
-          @yt_batch_mode = m.tr("-", "_").to_sym
+        opts.on("--mode MODE", "uploads mode: priority (default) or round-robin") do |m|
+          @uploads_mode = m.tr("-", "_").to_sym
         end
-        opts.on("--max N", Integer, "yt-batch: cap uploads per tick (default: no cap)") { |n| @max = n }
+        opts.on("--max N", Integer, "uploads: cap TOTAL YT uploads per tick (default: no cap)") { |n| @max = n }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -72,10 +72,10 @@ module PodgenCLI
         return 1
       end
 
-      if @yt_batch
+      if @uploads
         return remove_scheduler! if @remove
         return show_status       if @status
-        return install_yt_batch!
+        return install_uploads!
       end
 
       if (@remove || @status) && (@podcast_name.nil? || @podcast_name.empty?)
@@ -125,7 +125,7 @@ module PodgenCLI
     private
 
     def label
-      return "#{LABEL_PREFIX}.youtube_batch" if @yt_batch
+      return "#{LABEL_PREFIX}.uploads" if @uploads
       "#{LABEL_PREFIX}.#{@podcast_name}"
     end
 
@@ -137,17 +137,17 @@ module PodgenCLI
       File.exist?(plist_path)
     end
 
-    # --- --youtube-batch install ---
+    # --- --uploads install ---
 
     POD_NAME_RE = /\A[\w.-]+\z/.freeze
 
-    def install_yt_batch!
-      if @yt_batch_pods.nil? || @yt_batch_pods.empty?
-        $stderr.puts "Usage: podgen schedule --youtube-batch <pod1,pod2,...> [--time HH:MM] [--mode priority|round-robin]"
+    def install_uploads!
+      if @uploads_pods.nil? || @uploads_pods.empty?
+        $stderr.puts "Usage: podgen schedule --uploads <pod1,pod2,...> [--time HH:MM] [--mode priority|round-robin] [--max N]"
         return 2
       end
 
-      bad = @yt_batch_pods.split(",").map(&:strip).reject { |p| p.match?(POD_NAME_RE) }
+      bad = @uploads_pods.split(",").map(&:strip).reject { |p| p.match?(POD_NAME_RE) }
       unless bad.empty?
         $stderr.puts "Invalid pod name(s): #{bad.join(', ')} (must match #{POD_NAME_RE.source})"
         return 2
@@ -155,7 +155,7 @@ module PodgenCLI
 
       return 1 unless valid_time?
 
-      plist_content = build_yt_batch_plist
+      plist_content = build_uploads_plist
       FileUtils.mkdir_p(LAUNCH_AGENTS_DIR)
 
       do_launchctl_unload(plist_path) if File.exist?(plist_path)
@@ -164,7 +164,7 @@ module PodgenCLI
         $stderr.puts "Warning: launchctl load may have failed; check #{plist_path} and `launchctl list #{label}`"
       end
 
-      puts "yt-batch scheduler installed at #{format('%02d:%02d', @hour, @minute)} for: #{@yt_batch_pods}"
+      puts "uploads scheduler installed at #{format('%02d:%02d', @hour, @minute)} for: #{@uploads_pods}"
       0
     end
 
@@ -172,9 +172,9 @@ module PodgenCLI
       system("launchctl", "load", path, out: File::NULL, err: File::NULL)
     end
 
-    def build_yt_batch_plist
+    def build_uploads_plist
       project_dir = File.expand_path("../..", __dir__)
-      mode_str = @yt_batch_mode.to_s.tr("_", "-")
+      mode_str = @uploads_mode.to_s.tr("_", "-")
       max_args = @max ? "    <string>--max</string>\n    <string>#{@max}</string>\n" : ""
       <<~PLIST
         <?xml version="1.0" encoding="UTF-8"?>
@@ -186,8 +186,8 @@ module PodgenCLI
           <key>ProgramArguments</key>
           <array>
             <string>/bin/bash</string>
-            <string>#{project_dir}/scripts/run_yt_batch.sh</string>
-            <string>#{@yt_batch_pods}</string>
+            <string>#{project_dir}/scripts/run_uploads.sh</string>
+            <string>#{@uploads_pods}</string>
             <string>--mode</string>
             <string>#{mode_str}</string>
         #{max_args}  </array>
@@ -199,9 +199,9 @@ module PodgenCLI
             <integer>#{@minute}</integer>
           </dict>
           <key>StandardOutPath</key>
-          <string>#{project_dir}/logs/yt_batch_stdout.log</string>
+          <string>#{project_dir}/logs/uploads_stdout.log</string>
           <key>StandardErrorPath</key>
-          <string>#{project_dir}/logs/yt_batch_stderr.log</string>
+          <string>#{project_dir}/logs/uploads_stderr.log</string>
           <key>WorkingDirectory</key>
           <string>#{project_dir}</string>
           <key>EnvironmentVariables</key>
@@ -240,7 +240,7 @@ module PodgenCLI
     # --- --status ---
 
     def show_status
-      display_name = @yt_batch ? "youtube_batch" : @podcast_name
+      display_name = @uploads ? "uploads" : @podcast_name
 
       unless plist_exists?
         puts "#{display_name}: no scheduler installed."
@@ -259,8 +259,8 @@ module PodgenCLI
 
       puts "#{display_name}:"
       puts "  scheduled:       #{format('%02d:%02d', plist_hour, plist_minute)} daily"
-      if @yt_batch
-        pods_str, mode_str, max_str = parse_yt_batch_args(plist_program_arguments)
+      if @uploads
+        pods_str, mode_str, max_str = parse_uploads_args(plist_program_arguments)
         puts "  podcasts:        #{pods_str.split(',').map(&:strip).join(', ')}" if pods_str
         puts "  mode:            #{mode_str || 'priority'} (#{max_str ? "max #{max_str}" : 'no max'})"
       end
@@ -279,9 +279,9 @@ module PodgenCLI
       out.lines[1..-2].to_a.map(&:strip).reject(&:empty?)
     end
 
-    # ProgramArguments format: ["/bin/bash", "<run_yt_batch.sh>", pods, "--mode", mode, "--max", max?]
+    # ProgramArguments format: ["/bin/bash", "<run_uploads.sh>", pods, "--mode", mode, "--max", max?]
     # Returns [pods, mode, max] strings (max may be nil).
-    def parse_yt_batch_args(args)
+    def parse_uploads_args(args)
       pods = args[2]
       mode = nil
       max = nil

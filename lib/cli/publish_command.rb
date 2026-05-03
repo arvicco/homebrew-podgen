@@ -15,6 +15,8 @@ require_relative File.join(root, "lib", "episode_filtering")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "cover_resolver")
 require_relative File.join(root, "lib", "regen_cache")
+require_relative File.join(root, "lib", "r2_publisher")
+require_relative File.join(root, "lib", "lingq_publisher")
 require_relative File.join(root, "lib", "youtube_publisher")
 
 module PodgenCLI
@@ -76,190 +78,15 @@ module PodgenCLI
     end
 
     def publish_to_r2
-      unless rclone_available?
-        $stderr.puts "rclone is not installed. Install with: brew install rclone"
-        return 2
-      end
-
-      missing = REQUIRED_ENV.select { |var| ENV[var].nil? || ENV[var].empty? }
-      unless missing.empty?
-        $stderr.puts "Missing required environment variables: #{missing.join(', ')}"
-        $stderr.puts "Set them in .env or podcasts/#{@podcast_name}/.env"
-        return 2
-      end
-
-      source_dir = File.dirname(@config.episodes_dir) # output/<podcast>/
-      bucket = ENV["R2_BUCKET"]
-      dest = "r2:#{bucket}/#{@config.name}/"
-
-      # Only sync public-facing files (mp3, html transcripts, feed xml, cover, site)
-      includes = [
-        "episodes/*.mp3",
-        "episodes/*.html",
-        "feed.xml",
-        "feed-*.xml",
-        "site/*.html",
-        "site/**/*.html",
-        "site/**/*_cover.*",
-        "site/style.css",
-        "site/custom.css",
-        "site/favicon.*"
-      ]
-      includes << @config.image if @config.image
-
-      args = ["rclone", "sync", source_dir, dest]
-      includes.each { |f| args.push("--include", f) }
-      args.push("--dry-run") if @options[:dry_run]
-      args.push("-v") if @options[:verbosity] == :verbose
-      args.push("--progress") unless @options[:verbosity] == :quiet
-
-      rclone_env = {
-        "RCLONE_CONFIG_R2_TYPE" => "s3",
-        "RCLONE_CONFIG_R2_PROVIDER" => "Cloudflare",
-        "RCLONE_CONFIG_R2_ACCESS_KEY_ID" => ENV["R2_ACCESS_KEY_ID"],
-        "RCLONE_CONFIG_R2_SECRET_ACCESS_KEY" => ENV["R2_SECRET_ACCESS_KEY"],
-        "RCLONE_CONFIG_R2_ENDPOINT" => ENV["R2_ENDPOINT"],
-        "RCLONE_CONFIG_R2_ACL" => "private"
-      }
-
-      puts "Syncing #{source_dir} → #{dest}" unless @options[:verbosity] == :quiet
-      puts "(dry run)" if @options[:dry_run] && @options[:verbosity] != :quiet
-
-      success = system(rclone_env, *args)
-
-      unless success
-        $stderr.puts "rclone failed."
-        return 1
-      end
-
-      unless @options[:verbosity] == :quiet
-        if @config.base_url
-          puts "Feed URL: #{@config.base_url}/feed.xml"
-          puts "Site URL: #{@config.base_url}/site/index.html"
-        else
-          puts "Done. Set base_url in guidelines.md to see feed URL."
-        end
-      end
-
-      tweet_new_episodes unless @options[:dry_run]
-
+      result = R2Publisher.new(config: @config, options: @options).run
+      return 2 if result.errors.any? { |e| %i[rclone_missing missing_env].include?(e[:type]) }
+      return 1 if result.errors.any? { |e| e[:type] == :rclone_failed }
       0
     end
 
-    def tweet_new_episodes
-      return unless @config.twitter_enabled?
-
-      tc = @config.twitter_config
-      cutoff = Date.today - (tc[:since] || 7)
-      template = tc[:template]
-
-      tracker = UploadTracker.for_config(@config)
-      tweeted = tracker.entries_for(:twitter, "posts")
-      episodes = scan_episodes.reject { |ep| tweeted.key?(ep[:base_name]) }
-
-      # Filter to recent episodes only
-      episodes.select! do |ep|
-        date = EpisodeFiltering.parse_date(ep[:base_name])
-        date && date >= cutoff
-      end
-
-      # Per-language announce filter. Default (key absent): only the primary
-      # language is announced. `languages: all` skips the filter entirely.
-      allowed_langs = tc[:languages]
-      unless allowed_langs == :all
-        allowed = Array(allowed_langs).empty? ? [@config.primary_language] : allowed_langs
-        episodes.select! { |ep| allowed.include?(@config.language_for_episode(ep[:base_name])) }
-      end
-
-      return if episodes.empty?
-
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "twitter_agent")
-      agent = TwitterAgent.new(logger: nil)
-
-      episodes.each do |ep|
-        title, description, = parse_transcript(ep[:transcript_path])
-        mp3_url = @config.base_url ? "#{@config.base_url}/episodes/#{File.basename(ep[:mp3_path])}" : ""
-        site_url = @config.site_episode_url(ep[:base_name]) || ""
-
-        tweet_id = agent.post_episode(title: title, description: description, site_url: site_url, mp3_url: mp3_url, template: template)
-        tracker.record(:twitter, "posts", ep[:base_name], tweet_id) if tweet_id
-
-        puts "Tweeted: #{title}" unless @options[:verbosity] == :quiet
-      end
-    rescue => e
-      $stderr.puts "Warning: Twitter posting failed: #{e.message} (non-fatal)"
-    end
-
     def publish_to_lingq
-      unless @config.lingq_enabled?
-        $stderr.puts "LingQ not configured. Add ## LingQ section with collection to guidelines.md and set LINGQ_API_KEY."
-        return 2
-      end
-
-      unless @config.transcription_language
-        $stderr.puts "Transcription language not configured. Add language to ## Audio section in guidelines.md."
-        return 2
-      end
-
-      lc = @config.lingq_config
-      collection = lc[:collection]
-      episodes = scan_episodes
-      uploaded = @options[:force] ? {} : upload_tracker.entries_for(:lingq, collection)
-
-      pending = episodes.reject { |ep| uploaded.key?(ep[:base_name]) }
-
-      if pending.empty?
-        puts "All episodes already uploaded to LingQ collection #{collection}." unless @options[:verbosity] == :quiet
-        return 0
-      end
-
-      puts "#{pending.length} episode(s) to upload to LingQ collection #{collection}" unless @options[:verbosity] == :quiet
-
-      if @options[:dry_run]
-        pending.each { |ep| puts "  would upload: #{ep[:base_name]}" } unless @options[:verbosity] == :quiet
-        puts "(dry run)" unless @options[:verbosity] == :quiet
-        return 0
-      end
-
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "lingq_agent")
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "agents", "cover_agent")
-
-      agent = LingQAgent.new(api_key: @config.lingq_config&.[](:token))
-      language = @config.transcription_language
-
-      pending.each do |ep|
-        title, description, transcript = parse_transcript(ep[:transcript_path])
-        image_path = find_episode_cover(ep[:base_name]) || generate_cover_image(title, description: description)
-
-        puts "  uploading: #{ep[:base_name]} — \"#{title}\"" unless @options[:verbosity] == :quiet
-
-        site_url = @config.base_url ? "#{@config.base_url}/site/episodes/#{ep[:base_name]}.html" : nil
-
-        lesson_id = agent.upload(
-          title: title,
-          text: transcript,
-          audio_path: ep[:mp3_path],
-          language: language,
-          collection: collection,
-          level: lc[:level],
-          tags: lc[:tags],
-          image_path: image_path,
-          accent: lc[:accent],
-          status: lc[:status],
-          description: description,
-          original_url: site_url
-        )
-
-        upload_tracker.record(:lingq, collection, ep[:base_name], lesson_id)
-
-        puts "  ✓ #{ep[:base_name]} → lesson #{lesson_id}" unless @options[:verbosity] == :quiet
-      rescue => e
-        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
-        # Continue with remaining episodes
-      ensure
-        cleanup_cover(image_path)
-      end
-
+      result = LingQPublisher.new(config: @config, options: @options).run
+      return 2 if result.errors.any? { |e| %i[not_configured no_language].include?(e[:type]) }
       0
     end
 
