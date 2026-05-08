@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "date"
+require "json"
 require_relative "../anthropic_client"
 require_relative "../loggable"
 require_relative "../retryable"
@@ -69,6 +70,8 @@ class ScriptAgent
       log_api_usage("Script generated", message, elapsed)
 
       script = require_parsed_output!(message, PodcastScript)
+
+      save_raw_debug(script, message)
 
       result = {
         title: script.title,
@@ -181,6 +184,36 @@ class ScriptAgent
       end.join("\n")
       "## #{item[:topic] || 'Unknown topic'}\n#{findings}"
     end.join("\n\n")
+  end
+
+  # Dumps the parsed PodcastScript to <pod>/debug/<basename>_script_raw.json,
+  # preserving the nil-vs-empty distinction for per-segment sources so we can
+  # tell after-the-fact whether the model omitted the field or returned [].
+  def save_raw_debug(script, message)
+    debug_dir = File.join(File.dirname(File.dirname(@script_path)), "debug")
+    FileUtils.mkdir_p(debug_dir)
+    basename = File.basename(@script_path, "_script.md")
+    path = File.join(debug_dir, "#{basename}_script_raw.json")
+    File.write(path, JSON.pretty_generate(serialize_raw(script, message)))
+    log("Raw debug artifact saved to #{path}")
+  rescue => e
+    log("Warning: failed to save raw debug artifact: #{e.message}")
+  end
+
+  def serialize_raw(script, message)
+    {
+      stop_reason: message.stop_reason,
+      title: script.title,
+      segments: script.segments.map do |s|
+        {
+          name: s.name,
+          text: s.text,
+          sources_field_present: !s.sources.nil?,
+          sources: s.sources&.map { |src| { title: src.title, url: src.url } }
+        }
+      end,
+      top_level_sources: script.sources.map { |s| { title: s.title, url: s.url } }
+    }
   end
 
   def save_script_debug(script)

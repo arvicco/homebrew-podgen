@@ -264,6 +264,44 @@ class TestScriptAgent < Minitest::Test
     assert_includes prompt_text, "3 source links per segment"
   end
 
+  def test_generate_writes_raw_debug_artifact_capturing_sources_state
+    # Place script_path under <tmp>/podcast/episodes/<basename>_script.md so that
+    # ScriptAgent can derive <tmp>/podcast/debug/<basename>_script_raw.json.
+    pod_dir = File.join(@tmpdir, "fulgur_news")
+    episodes_dir = File.join(pod_dir, "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    script_path = File.join(episodes_dir, "fulgur_news-2026-05-08_script.md")
+
+    agent = ScriptAgent.new(guidelines: "Test", script_path: script_path)
+    agent.define_singleton_method(:sleep) { |_| }
+
+    with_sources = MockSegment.new("Story", "Body",
+                                   [MockSource.new("Article", "https://example.com/a")])
+    without_sources = MockSegment.new("Closer", "Bye", nil)
+    output = MockScript.new("Title", [with_sources, without_sources],
+                            [MockSource.new("Top", "https://example.com/t")])
+    agent.instance_variable_set(:@client, MockClient.new(output))
+
+    agent.generate(valid_research_data)
+
+    raw_path = File.join(pod_dir, "debug", "fulgur_news-2026-05-08_script_raw.json")
+    assert File.exist?(raw_path), "expected raw debug artifact at #{raw_path}"
+
+    raw = JSON.parse(File.read(raw_path))
+    assert_equal "Title", raw["title"]
+    assert_equal "end_turn", raw["stop_reason"]
+    assert_equal 2, raw["segments"].length
+
+    # Segment with sources: field present, array populated
+    assert_equal true, raw["segments"][0]["sources_field_present"]
+    assert_equal 1, raw["segments"][0]["sources"].length
+    assert_equal "Article", raw["segments"][0]["sources"][0]["title"]
+
+    # Segment without sources: field absent in API response → flagged false
+    assert_equal false, raw["segments"][1]["sources_field_present"]
+    assert_nil raw["segments"][1]["sources"]
+  end
+
   def test_priority_urls_defaults_to_empty
     agent = build_agent
     client = stub_client(agent, title: "T", segments: [])
