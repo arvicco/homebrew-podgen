@@ -28,7 +28,8 @@ class RSSSource
 
     @feeds.each do |feed_entry|
       feed_url = feed_entry.is_a?(Hash) ? feed_entry[:url] : feed_entry
-      items = fetch_feed(feed_url)
+      tag = feed_entry.is_a?(Hash) ? feed_entry[:tag] : nil
+      items = fetch_feed(feed_url, tag: tag)
       items.each do |item|
         next if exclude_urls.include?(item[:url])
         findings << item
@@ -64,7 +65,7 @@ class RSSSource
         [feed_entry, {}]
       end
 
-      items = fetch_feed_episodes(feed_url)
+      items = fetch_feed_episodes(feed_url, tag: feed_opts[:tag])
       items.each do |item|
         next if exclude_urls.include?(item[:audio_url])
         item[:skip] = feed_opts[:skip] if feed_opts[:skip]
@@ -115,14 +116,14 @@ class RSSSource
     topic.downcase.scan(/[a-z0-9]+/).select { |w| w.length >= 3 }
   end
 
-  def fetch_feed(feed_url)
-    log("Fetching RSS: #{feed_url}")
+  def fetch_feed(feed_url, tag: nil)
+    log("Fetching RSS#{tag ? " '#{tag}'" : ""}: #{feed_url}")
     with_retries(max: MAX_RETRIES, label: "RSS") do
       body = http_get_with_redirects(feed_url)
       parse_feed(body)
     end
   rescue => e
-    log("Failed to fetch #{feed_url}: #{e.message}")
+    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.message}")
     []
   end
 
@@ -180,14 +181,14 @@ class RSSSource
     html.gsub(/<[^>]+>/, " ").gsub(/\s+/, " ").strip
   end
 
-  def fetch_feed_episodes(feed_url)
-    log("Fetching RSS episodes: #{feed_url}")
+  def fetch_feed_episodes(feed_url, tag: nil)
+    log("Fetching RSS#{tag ? " '#{tag}'" : ""} episodes: #{feed_url}")
     with_retries(max: MAX_RETRIES, label: "RSS") do
       body = http_get_with_redirects(feed_url)
       parse_feed_episodes(body)
     end
   rescue => e
-    log("Failed to fetch #{feed_url}: #{e.message}")
+    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.message}")
     []
   end
 
