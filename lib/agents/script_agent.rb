@@ -193,6 +193,11 @@ class ScriptAgent
   # <basename>_script.md layout — the dirname-stepping derivation only makes
   # sense for that shape, and unit tests passing flat tmpdir paths shouldn't
   # leak files above their sandbox.
+  #
+  # TODO(2026-06-15): always-on diagnostic instrumentation added to investigate
+  # the fulgur_news 2026-05-07 missing-per-segment-sources incident. If the
+  # issue hasn't recurred by this date, drop this method or gate it on
+  # ENV["PODGEN_DEBUG_RAW_SCRIPT"].
   def save_raw_debug(script, message)
     return unless @script_path.end_with?("_script.md")
 
