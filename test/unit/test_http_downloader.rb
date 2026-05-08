@@ -46,6 +46,30 @@ class TestHttpDownloader < Minitest::Test
     assert_match(/Too many redirects/, err.message)
   end
 
+  def test_fetch_follows_four_hop_redirect_chain
+    # Real-world podcast CDN chains (podtrac → host → CDN → signed origin)
+    # routinely exceed 3 redirects. Spreaker episodes go through 4. We test
+    # `fetch` directly to bypass the `download` retry layer — production
+    # retries don't help here because each fresh attempt hits the same cap.
+    hop = 0
+
+    @downloader.define_singleton_method(:fetch) do |uri, path, redirects_left = HttpDownloader::MAX_REDIRECTS|
+      hop += 1
+      if hop <= 4
+        response = Object.new
+        response.define_singleton_method(:[]) { |_key| "http://example.com/hop#{hop + 1}" }
+        send(:follow_redirect, response, uri, path, redirects_left)
+      else
+        File.write(path, "ok")
+      end
+    end
+
+    @downloader.send(:fetch, URI.parse("http://example.com/start"), @dest)
+
+    assert_equal "ok", File.read(@dest)
+    assert_equal 5, hop, "Expected 4 redirects + 1 final response"
+  end
+
   def test_follow_redirect_resolves_relative_location
     response = Object.new
     response.define_singleton_method(:[]) { |_key| "/relative/path" }
@@ -60,7 +84,7 @@ class TestHttpDownloader < Minitest::Test
 
   def test_default_constants
     assert_equal 3, HttpDownloader::MAX_RETRIES
-    assert_equal 3, HttpDownloader::MAX_REDIRECTS
+    assert_equal 6, HttpDownloader::MAX_REDIRECTS
     assert_equal 200 * 1024 * 1024, HttpDownloader::MAX_SIZE
   end
 
