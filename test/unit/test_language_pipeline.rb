@@ -312,6 +312,28 @@ class TestLanguagePipeline < Minitest::Test
       "prompt must offer [x] for exclude (project-wide convention)")
   end
 
+  def test_enforce_length_with_ask_trim_e_no_longer_triggers_exclude
+    # Regression: "e" used to be the exclude key. After the rename to "x",
+    # "e" must NOT call exclude_url! — it should fall through to abort.
+    pipeline = build_pipeline(options: { ask_trim: true })
+    pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    pipeline.instance_variable_set(:@episode, { audio_url: "https://ex.com/ep.mp3" })
+
+    exclude_called = false
+    fake_source = Object.new
+    fake_source.define_singleton_method(:length_check) { |_d| :too_long }
+    fake_source.define_singleton_method(:exclude_url!) { |_url| exclude_called = true }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+
+    $stdin.stub :gets, "e\n" do
+      AudioAssembler.stub :probe_duration, 700.0 do
+        capture_io { pipeline.send(:enforce_length_post_download) }
+      end
+    end
+    refute exclude_called, "'e' must no longer trigger exclude_url!"
+  end
+
   def test_enforce_length_with_ask_trim_continues_on_t
     pipeline = build_pipeline(options: { ask_trim: true })
     pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")

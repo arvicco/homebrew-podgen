@@ -189,7 +189,13 @@ class ScriptAgent
   # Dumps the parsed PodcastScript to <pod>/debug/<basename>_script_raw.json,
   # preserving the nil-vs-empty distinction for per-segment sources so we can
   # tell after-the-fact whether the model omitted the field or returned [].
+  # Skipped when @script_path doesn't follow the conventional <pod>/episodes/
+  # <basename>_script.md layout — the dirname-stepping derivation only makes
+  # sense for that shape, and unit tests passing flat tmpdir paths shouldn't
+  # leak files above their sandbox.
   def save_raw_debug(script, message)
+    return unless @script_path.end_with?("_script.md")
+
     debug_dir = File.join(File.dirname(File.dirname(@script_path)), "debug")
     FileUtils.mkdir_p(debug_dir)
     basename = File.basename(@script_path, "_script.md")
