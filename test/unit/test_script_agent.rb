@@ -302,6 +302,20 @@ class TestScriptAgent < Minitest::Test
     assert_nil raw["segments"][1]["sources"]
   end
 
+  def test_generate_skips_raw_debug_when_path_does_not_end_in_script_md
+    # Existing tests use a flat <tmpdir>/script.md path. Without the guard,
+    # save_raw_debug would dirname-step out of the sandbox and write to the
+    # tmpdir parent (e.g. /var/folders/.../T/debug/). Guard skips that.
+    agent = build_agent  # @script_path = <tmpdir>/script.md
+    stub_client(agent, title: "T", segments: [{ name: "S", text: "x" }])
+
+    agent.generate(valid_research_data)
+
+    parent = File.dirname(@tmpdir)
+    leaked = File.join(parent, "debug")
+    refute File.exist?(leaked), "raw debug must not leak above the sandbox at #{leaked}"
+  end
+
   def test_priority_urls_defaults_to_empty
     agent = build_agent
     client = stub_client(agent, title: "T", segments: [])
