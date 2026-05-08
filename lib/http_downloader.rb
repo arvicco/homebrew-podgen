@@ -15,7 +15,7 @@ class HttpDownloader
   include Retryable
 
   MAX_RETRIES = 3
-  MAX_REDIRECTS = 3
+  MAX_REDIRECTS = 6
   MAX_SIZE = 200 * 1024 * 1024 # 200 MB
   USER_AGENT = "PodcastAgent/1.0"
 
