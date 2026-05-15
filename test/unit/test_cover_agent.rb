@@ -101,7 +101,7 @@ class TestCoverAgent < Minitest::Test
   end
 
   def test_defaults_has_required_keys
-    %i[font font_color font_size text_width text_height gravity x_offset y_offset].each do |key|
+    %i[font font_color font_size text_width text_height text_gravity text_x_offset text_y_offset].each do |key|
       assert CoverAgent::DEFAULTS.key?(key), "Missing default: #{key}"
     end
   end

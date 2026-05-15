@@ -13,9 +13,9 @@ class CoverAgent
     font_size: 126,
     text_width: 980,
     text_height: 560,
-    gravity: "Center",
-    x_offset: 200,
-    y_offset: 0
+    text_gravity: "Center",
+    text_x_offset: 200,
+    text_y_offset: 0
   }.freeze
 
   # Approximate characters per line at default 90px in Patrick Hand.
@@ -72,8 +72,8 @@ class CoverAgent
   def composite(base_image, text_png, output_path, opts)
     args = [
       "magick", base_image, text_png,
-      "-gravity", opts[:gravity].to_s,
-      "-geometry", "+#{opts[:x_offset]}+#{opts[:y_offset]}",
+      "-gravity", opts[:text_gravity].to_s,
+      "-geometry", "+#{opts[:text_x_offset]}+#{opts[:text_y_offset]}",
       "-composite",
       "-quality", "92",
       output_path

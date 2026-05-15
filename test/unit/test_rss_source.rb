@@ -46,6 +46,44 @@ class TestRSSSource < Minitest::Test
     assert_match(/Fetching RSS 'headlines': https:\/\/example\.com\/feed\.xml/, @logger.output)
   end
 
+  def test_fetch_episodes_transfers_overlay_options_to_episode
+    feed_xml = <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0"><channel><title>x</title><link>x</link><description>x</description>
+        <item>
+          <title>Ep</title>
+          <link>https://example.com/ep</link>
+          <description>d</description>
+          <enclosure url="https://example.com/ep.mp3" type="audio/mpeg" length="1000"/>
+        </item>
+      </channel></rss>
+    XML
+
+    feeds = [{
+      url: "https://example.com/feed.xml",
+      font: "Arial",
+      font_color: "white",
+      font_size: 42,
+      text_width: 500,
+      text_gravity: "south",
+      text_x_offset: 12,
+      text_y_offset: 24,
+      base_image: "/abs/bg.png"
+    }]
+    source = RSSSource.new(feeds: feeds, logger: @logger)
+    source.define_singleton_method(:http_get_with_redirects) { |_url, _redirects = nil| feed_xml }
+
+    episode = source.fetch_episodes.first
+    assert_equal "Arial", episode[:font]
+    assert_equal "white", episode[:font_color]
+    assert_equal 42, episode[:font_size]
+    assert_equal 500, episode[:text_width]
+    assert_equal "south", episode[:text_gravity]
+    assert_equal 12, episode[:text_x_offset]
+    assert_equal 24, episode[:text_y_offset]
+    assert_equal "/abs/bg.png", episode[:base_image]
+  end
+
   private
 
   def build_source(feeds)

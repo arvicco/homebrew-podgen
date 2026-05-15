@@ -37,9 +37,10 @@ module PodgenCLI
         opts.on("--font NAME", "Override font family") { |v| @overrides[:font] = v }
         opts.on("--font-color COLOR", "Override font color") { |v| @overrides[:font_color] = v }
         opts.on("--font-size N", Integer, "Override font size") { |v| @overrides[:font_size] = v }
-        opts.on("--gravity POS", "Override gravity (Center, South, etc.)") { |v| @overrides[:gravity] = v }
-        opts.on("--x-offset N", Integer, "Override horizontal offset") { |v| @overrides[:x_offset] = v }
-        opts.on("--y-offset N", Integer, "Override vertical offset") { |v| @overrides[:y_offset] = v }
+        opts.on("--text-width N", Integer, "Override text wrap width") { |v| @overrides[:text_width] = v }
+        opts.on("--text-gravity POS", "--gravity POS", "Override gravity (Center, South, etc.)") { |v| @overrides[:text_gravity] = v }
+        opts.on("--text-x-offset N", "--x-offset N", Integer, "Override horizontal offset") { |v| @overrides[:text_x_offset] = v }
+        opts.on("--text-y-offset N", "--y-offset N", Integer, "Override vertical offset") { |v| @overrides[:text_y_offset] = v }
         opts.on("--clean", "Remove _cover{N}.* candidate files (one podcast or all)") { @clean = true }
       end.parse!(args)
 

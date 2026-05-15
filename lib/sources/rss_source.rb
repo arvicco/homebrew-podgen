@@ -15,6 +15,8 @@ class RSSSource
   MAX_REDIRECTS = 3
   LOOKBACK_HOURS = 48
 
+  COVER_OVERLAY_KEYS = %i[font font_color font_size text_width text_gravity text_x_offset text_y_offset].freeze
+
   def initialize(feeds: [], logger: nil, **_options)
     @feeds = feeds
     @logger = logger
@@ -73,6 +75,9 @@ class RSSSource
         item[:autotrim] = feed_opts[:autotrim] if feed_opts[:autotrim]
         item[:base_image] = feed_opts[:base_image] if feed_opts[:base_image]
         item[:image] = feed_opts[:image] if feed_opts[:image]
+        COVER_OVERLAY_KEYS.each do |k|
+          item[k] = feed_opts[k] if feed_opts.key?(k)
+        end
         episodes << item
       end
     end
