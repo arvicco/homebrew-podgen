@@ -505,6 +505,13 @@ class GuidelinesParser
       when "image" then options[:image] = v
       when "tag" then options[:tag] = v
       when "weight" then options[:weight] = v.to_i
+      when "font" then options[:font] = v
+      when "font_color" then options[:font_color] = v
+      when "font_size" then options[:font_size] = v.to_i
+      when "text_width" then options[:text_width] = v.to_i
+      when "text_gravity" then options[:text_gravity] = v
+      when "text_x_offset" then options[:text_x_offset] = v.to_i
+      when "text_y_offset" then options[:text_y_offset] = v.to_i
       end
     end
 

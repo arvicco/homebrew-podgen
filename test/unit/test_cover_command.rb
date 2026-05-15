@@ -65,13 +65,28 @@ class TestCoverCommand < Minitest::Test
     assert_equal 80, overrides[:font_size]
   end
 
-  def test_option_parsing_geometry
+  def test_option_parsing_geometry_short_flags
     cmd = PodgenCLI::CoverCommand.new(
       ["--gravity", "South", "--x-offset", "50", "--y-offset", "100", "testpod"], {})
     overrides = cmd.instance_variable_get(:@overrides)
-    assert_equal "South", overrides[:gravity]
-    assert_equal 50, overrides[:x_offset]
-    assert_equal 100, overrides[:y_offset]
+    assert_equal "South", overrides[:text_gravity]
+    assert_equal 50, overrides[:text_x_offset]
+    assert_equal 100, overrides[:text_y_offset]
+  end
+
+  def test_option_parsing_geometry_long_flags
+    cmd = PodgenCLI::CoverCommand.new(
+      ["--text-gravity", "North", "--text-x-offset", "25", "--text-y-offset", "-100", "testpod"], {})
+    overrides = cmd.instance_variable_get(:@overrides)
+    assert_equal "North", overrides[:text_gravity]
+    assert_equal 25, overrides[:text_x_offset]
+    assert_equal(-100, overrides[:text_y_offset])
+  end
+
+  def test_option_parsing_text_width
+    cmd = PodgenCLI::CoverCommand.new(
+      ["--text-width", "500", "testpod"], {})
+    assert_equal 500, cmd.instance_variable_get(:@overrides)[:text_width]
   end
 
   def test_option_parsing_output

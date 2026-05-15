@@ -404,6 +404,38 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal 30.0, entry[:skip]
   end
 
+  def test_parses_rss_with_overlay_overrides
+    parser = build_parser(<<~MD)
+      ## Sources
+      - rss:
+        - https://example.com/feed font: Arial font_color: white font_size: 42 text_width: 500 text_gravity: south text_x_offset: 12 text_y_offset: 24
+    MD
+
+    entry = parser.sources["rss"][0]
+    assert_equal "https://example.com/feed", entry[:url]
+    assert_equal "Arial", entry[:font]
+    assert_equal "white", entry[:font_color]
+    assert_equal 42, entry[:font_size]
+    assert_equal 500, entry[:text_width]
+    assert_equal "south", entry[:text_gravity]
+    assert_equal 12, entry[:text_x_offset]
+    assert_equal 24, entry[:text_y_offset]
+  end
+
+  def test_parses_rss_with_partial_overlay_overrides
+    parser = build_parser(<<~MD)
+      ## Sources
+      - rss:
+        - https://example.com/feed font_size: 36 text_gravity: north
+    MD
+
+    entry = parser.sources["rss"][0]
+    assert_equal 36, entry[:font_size]
+    assert_equal "north", entry[:text_gravity]
+    refute entry.key?(:font)
+    refute entry.key?(:font_color)
+  end
+
   def test_parses_rss_with_weight
     parser = build_parser(<<~MD)
       ## Sources

@@ -105,16 +105,9 @@ class PodcastConfig
 
   def cover_options
     @cover_options ||= begin
-      opts = {}
       src = parser.image_section.any? ? parser.image_section : (lingq_config || {})
-      opts[:font] = src[:font] if src[:font]
-      opts[:font_color] = src[:font_color] if src[:font_color]
-      opts[:font_size] = src[:font_size] if src[:font_size]
-      opts[:text_width] = src[:text_width] if src[:text_width]
-      opts[:gravity] = src[:text_gravity] if src[:text_gravity]
-      opts[:x_offset] = src[:text_x_offset] if src[:text_x_offset]
-      opts[:y_offset] = src[:text_y_offset] if src[:text_y_offset]
-      opts
+      %i[font font_color font_size text_width text_gravity text_x_offset text_y_offset]
+        .each_with_object({}) { |k, h| h[k] = src[k] if src[k] }
     end
   end
 

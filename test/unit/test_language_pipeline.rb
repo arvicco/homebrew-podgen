@@ -434,6 +434,57 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal File.expand_path(image_path), path
   end
 
+  def test_generate_cover_image_merges_per_feed_overlay_opts_over_config
+    base_path = File.join(@tmpdir, "base.png")
+    FileUtils.touch(base_path)
+
+    config = build_config(
+      cover_base_image: base_path,
+      cover_generation_enabled: true,
+      cover_options: { font: "Helvetica", font_color: "black", font_size: 24, text_gravity: "Center" }
+    )
+    pipeline = build_pipeline(config: config)
+
+    feed_opts = {
+      font_size: 48,         # overrides config
+      text_gravity: "South", # overrides config
+      text_x_offset: 10      # new key, no config equivalent
+    }
+    pipeline.instance_variable_set(:@current_episode_feed_cover_opts, feed_opts)
+
+    captured = nil
+    CoverResolver.stub(:generate, ->(**kw) { captured = kw; "/tmp/cover.jpg" }) do
+      pipeline.send(:generate_cover_image, "Title", base_path)
+    end
+
+    refute_nil captured, "CoverResolver.generate should have been called"
+    opts = captured[:options]
+    assert_equal "Helvetica", opts[:font],   "unspecified key falls back to config"
+    assert_equal "black",     opts[:font_color], "unspecified key falls back to config"
+    assert_equal 48,          opts[:font_size],  "feed override wins for font_size"
+    assert_equal "South",     opts[:text_gravity], "feed override wins for text_gravity"
+    assert_equal 10,          opts[:text_x_offset], "new feed key is included"
+  end
+
+  def test_generate_cover_image_uses_config_when_no_per_feed_opts
+    base_path = File.join(@tmpdir, "base.png")
+    FileUtils.touch(base_path)
+
+    config = build_config(
+      cover_base_image: base_path,
+      cover_generation_enabled: true,
+      cover_options: { font: "Helvetica", font_size: 24 }
+    )
+    pipeline = build_pipeline(config: config)
+
+    captured = nil
+    CoverResolver.stub(:generate, ->(**kw) { captured = kw; "/tmp/cover.jpg" }) do
+      pipeline.send(:generate_cover_image, "Title", base_path)
+    end
+
+    assert_equal({ font: "Helvetica", font_size: 24 }, captured[:options])
+  end
+
   def test_resolve_cover_falls_through_to_youtube_thumbnail
     pipeline = build_pipeline
     pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/yt.jpg")
