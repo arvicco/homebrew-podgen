@@ -27,8 +27,6 @@ require_relative File.join(root, "lib", "auto_cover_resolver")
 
 module PodgenCLI
   class LanguagePipeline
-    COVER_OVERLAY_KEYS = %i[font font_color font_size text_width text_gravity text_x_offset text_y_offset].freeze
-
     def initialize(config:, options:, logger:, history:, today:)
       @config = config
       @options = options
@@ -219,7 +217,7 @@ module PodgenCLI
       @current_episode_image_none = (feed_image == "none")
       # Per-feed image: supports same values as --image (path, "last", "thumb", "none")
       @current_episode_feed_image = resolve_feed_image(feed_image) unless @current_episode_image_none
-      @current_episode_feed_cover_opts = COVER_OVERLAY_KEYS.each_with_object({}) do |k, h|
+      @current_episode_feed_cover_opts = CoverResolver::OVERLAY_KEYS.each_with_object({}) do |k, h|
         v = @episode.delete(k)
         h[k] = v unless v.nil?
       end

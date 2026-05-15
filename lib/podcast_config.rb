@@ -6,6 +6,7 @@ require_relative "yaml_loader"
 require_relative "time_value"
 require_relative "episode_filtering"
 require_relative "guidelines_parser"
+require_relative "cover_resolver"
 
 class PodcastConfig
   attr_reader :name, :podcast_dir, :guidelines_path, :queue_path, :links_path, :episodes_dir, :feed_path, :log_dir, :history_path, :excluded_urls_path
@@ -106,8 +107,7 @@ class PodcastConfig
   def cover_options
     @cover_options ||= begin
       src = parser.image_section.any? ? parser.image_section : (lingq_config || {})
-      %i[font font_color font_size text_width text_gravity text_x_offset text_y_offset]
-        .each_with_object({}) { |k, h| h[k] = src[k] if src[k] }
+      CoverResolver::OVERLAY_KEYS.each_with_object({}) { |k, h| h[k] = src[k] if src[k] }
     end
   end
 
