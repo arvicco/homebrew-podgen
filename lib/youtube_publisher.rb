@@ -220,23 +220,18 @@ class YouTubePublisher
   end
 
   def reconcile_subtitles_if_needed(ts_path, transcript_path)
-    require_relative "timestamp_persister"
-    data = TimestampPersister.load(ts_path)
-    return if data.nil? || data["reconciled"]
+    require_relative "subtitle_reconciliation_runner"
 
-    api_key = ENV["ANTHROPIC_API_KEY"]
-    return unless api_key && !api_key.empty?
-
-    _, _, transcript_text = parse_transcript(transcript_path)
-    return if transcript_text.nil? || transcript_text.strip.empty?
-
-    require_relative "subtitle_reconciler"
     print "  reconciling subtitles: #{File.basename(ts_path)}..." unless quiet?
-    segments = SubtitleReconciler.reconcile(data["segments"], transcript_text, api_key: api_key)
-    TimestampPersister.update_segments(ts_path, segments)
-    puts " done" unless quiet?
-  rescue => e
-    $stderr.puts "  Warning: subtitle reconciliation failed: #{e.message} (using raw segments)"
+    result = SubtitleReconciliationRunner.run(ts_path: ts_path, transcript_path: transcript_path)
+    case result.status
+    when :reconciled            then puts " done" unless quiet?
+    when :already_reconciled,
+         :no_api_key,
+         :no_transcript,
+         :no_timestamps         then puts " skipped (#{result.message})" unless quiet?
+    when :failed                then $stderr.puts "\n  Warning: subtitle reconciliation failed: #{result.message} (using raw segments)"
+    end
   end
 
   def retranscribe_for_timestamps(mp3_path, ts_path, base_name)
