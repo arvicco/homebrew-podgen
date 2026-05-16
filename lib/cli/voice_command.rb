@@ -164,11 +164,5 @@ module PodgenCLI
       end
     end
 
-    def english_script_basenames(config)
-      Dir.glob(File.join(config.episodes_dir, "*_script.md"))
-        .reject { |f| File.basename(f).match?(/-[a-z]{2}_script\.md\z/) }
-        .sort
-        .map { |f| File.basename(f, "_script.md") }
-    end
   end
 end

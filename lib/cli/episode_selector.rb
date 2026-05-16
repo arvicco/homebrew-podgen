@@ -144,6 +144,16 @@ module PodgenCLI
       @last_n
     end
 
+    # English (non-language-suffixed) episode basenames found under the
+    # podcast's episodes_dir, sorted chronologically. Shared by voice,
+    # regen, and any other command that needs to enumerate episodes.
+    def english_script_basenames(config)
+      Dir.glob(File.join(config.episodes_dir, "*_script.md"))
+        .reject { |f| File.basename(f).match?(/-[a-z]{2}_script\.md\z/) }
+        .sort
+        .map { |f| File.basename(f, "_script.md") }
+    end
+
     private
 
     def parse_date_arg!
