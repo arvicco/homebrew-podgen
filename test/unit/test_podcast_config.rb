@@ -752,10 +752,11 @@ class TestPodcastConfig < Minitest::Test
     assert_equal "Noto Sans", opts[:font]
     assert_equal "white", opts[:font_color]
     assert_equal 72, opts[:font_size]
-    assert_equal 900, opts[:text_width]
-    assert_equal "south", opts[:text_gravity]
-    assert_equal 10, opts[:text_x_offset]
-    assert_equal 50, opts[:text_y_offset]
+    # ## Image uses text_* aliases, but cover_options stores canonical short keys
+    assert_equal 900, opts[:width]
+    assert_equal "south", opts[:gravity]
+    assert_equal 10, opts[:x_offset]
+    assert_equal 50, opts[:y_offset]
   end
 
   def test_tts_model_id_reads_from_audio_section

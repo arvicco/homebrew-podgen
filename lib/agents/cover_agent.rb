@@ -11,11 +11,11 @@ class CoverAgent
     font: "Patrick Hand",
     font_color: "#2B3A67",
     font_size: 126,
-    text_width: 980,
-    text_height: 560,
-    text_gravity: "Center",
-    text_x_offset: 200,
-    text_y_offset: 0
+    width: 980,
+    height: 560,
+    gravity: "Center",
+    x_offset: 200,
+    y_offset: 0
   }.freeze
 
   # Approximate characters per line at default 90px in Patrick Hand.
@@ -72,8 +72,8 @@ class CoverAgent
   def composite(base_image, text_png, output_path, opts)
     args = [
       "magick", base_image, text_png,
-      "-gravity", opts[:text_gravity].to_s,
-      "-geometry", "+#{opts[:text_x_offset]}+#{opts[:text_y_offset]}",
+      "-gravity", opts[:gravity].to_s,
+      "-geometry", "+#{opts[:x_offset]}+#{opts[:y_offset]}",
       "-composite",
       "-quality", "92",
       output_path
@@ -94,11 +94,11 @@ class CoverAgent
     min_size = (font_size * 0.4).round  # don't shrink below 40% of original
 
     loop do
-      lines = wrap_text(text, opts[:text_width], font_size)
+      lines = wrap_text(text, opts[:width], font_size)
       line_spacing = (font_size * 1.15).round
       total_height = font_size + (lines.length - 1) * line_spacing
 
-      return [lines, font_size] if total_height <= opts[:text_height] || font_size <= min_size
+      return [lines, font_size] if total_height <= opts[:height] || font_size <= min_size
 
       font_size -= 10
     end
@@ -130,8 +130,8 @@ class CoverAgent
 
   # Builds an SVG document with centered, multi-line text.
   def build_svg(lines, opts)
-    width = opts[:text_width]
-    height = opts[:text_height]
+    width = opts[:width]
+    height = opts[:height]
     font_size = opts[:font_size]
     font = opts[:font]
     color = opts[:font_color]

@@ -441,14 +441,14 @@ class TestLanguagePipeline < Minitest::Test
     config = build_config(
       cover_base_image: base_path,
       cover_generation_enabled: true,
-      cover_options: { font: "Helvetica", font_color: "black", font_size: 24, text_gravity: "Center" }
+      cover_options: { font: "Helvetica", font_color: "black", font_size: 24, gravity: "Center" }
     )
     pipeline = build_pipeline(config: config)
 
     feed_opts = {
-      font_size: 48,         # overrides config
-      text_gravity: "South", # overrides config
-      text_x_offset: 10      # new key, no config equivalent
+      font_size: 48,    # overrides config
+      gravity: "South", # overrides config
+      x_offset: 10      # new key, no config equivalent
     }
     pipeline.instance_variable_set(:@current_episode_feed_cover_opts, feed_opts)
 
@@ -462,8 +462,8 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal "Helvetica", opts[:font],   "unspecified key falls back to config"
     assert_equal "black",     opts[:font_color], "unspecified key falls back to config"
     assert_equal 48,          opts[:font_size],  "feed override wins for font_size"
-    assert_equal "South",     opts[:text_gravity], "feed override wins for text_gravity"
-    assert_equal 10,          opts[:text_x_offset], "new feed key is included"
+    assert_equal "South",     opts[:gravity], "feed override wins for gravity"
+    assert_equal 10,          opts[:x_offset], "new feed key is included"
   end
 
   def test_generate_cover_image_uses_config_when_no_per_feed_opts

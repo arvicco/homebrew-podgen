@@ -223,10 +223,10 @@ class TestGuidelinesParser < Minitest::Test
       - font: Arial
       - font_color: #fff
       - font_size: 36
-      - text_width: 400
-      - text_gravity: north
-      - text_x_offset: 10
-      - text_y_offset: 20
+      - width: 400
+      - gravity: north
+      - x_offset: 10
+      - y_offset: 20
     MD
 
     s = parser.image_section
@@ -236,10 +236,28 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "Arial", s[:font]
     assert_equal "#fff", s[:font_color]
     assert_equal 36, s[:font_size]
-    assert_equal 400, s[:text_width]
-    assert_equal "north", s[:text_gravity]
-    assert_equal 10, s[:text_x_offset]
-    assert_equal 20, s[:text_y_offset]
+    assert_equal 400, s[:width]
+    assert_equal "north", s[:gravity]
+    assert_equal 10, s[:x_offset]
+    assert_equal 20, s[:y_offset]
+  end
+
+  def test_image_section_accepts_text_prefix_as_alias
+    parser = build_parser(<<~MD)
+      ## Image
+      - text_width: 500
+      - text_gravity: south
+      - text_x_offset: 12
+      - text_y_offset: 24
+    MD
+
+    s = parser.image_section
+    assert_equal 500, s[:width],   "text_width: alias should map to :width"
+    assert_equal "south", s[:gravity]
+    assert_equal 12, s[:x_offset]
+    assert_equal 24, s[:y_offset]
+    refute s.key?(:text_width)
+    refute s.key?(:text_gravity)
   end
 
   def test_audio_section_warns_on_misindented_lines
@@ -408,7 +426,7 @@ class TestGuidelinesParser < Minitest::Test
     parser = build_parser(<<~MD)
       ## Sources
       - rss:
-        - https://example.com/feed font: Arial font_color: white font_size: 42 text_width: 500 text_gravity: south text_x_offset: 12 text_y_offset: 24
+        - https://example.com/feed font: Arial font_color: white font_size: 42 width: 500 gravity: south x_offset: 12 y_offset: 24
     MD
 
     entry = parser.sources["rss"][0]
@@ -416,24 +434,40 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "Arial", entry[:font]
     assert_equal "white", entry[:font_color]
     assert_equal 42, entry[:font_size]
-    assert_equal 500, entry[:text_width]
-    assert_equal "south", entry[:text_gravity]
-    assert_equal 12, entry[:text_x_offset]
-    assert_equal 24, entry[:text_y_offset]
+    assert_equal 500, entry[:width]
+    assert_equal "south", entry[:gravity]
+    assert_equal 12, entry[:x_offset]
+    assert_equal 24, entry[:y_offset]
   end
 
   def test_parses_rss_with_partial_overlay_overrides
     parser = build_parser(<<~MD)
       ## Sources
       - rss:
-        - https://example.com/feed font_size: 36 text_gravity: north
+        - https://example.com/feed font_size: 36 gravity: north
     MD
 
     entry = parser.sources["rss"][0]
     assert_equal 36, entry[:font_size]
-    assert_equal "north", entry[:text_gravity]
+    assert_equal "north", entry[:gravity]
     refute entry.key?(:font)
     refute entry.key?(:font_color)
+  end
+
+  def test_parses_rss_with_text_prefix_aliases
+    parser = build_parser(<<~MD)
+      ## Sources
+      - rss:
+        - https://example.com/feed text_width: 500 text_gravity: south text_x_offset: 12 text_y_offset: 24
+    MD
+
+    entry = parser.sources["rss"][0]
+    assert_equal 500, entry[:width],   "text_width: alias should map to :width"
+    assert_equal "south", entry[:gravity]
+    assert_equal 12, entry[:x_offset]
+    assert_equal 24, entry[:y_offset]
+    refute entry.key?(:text_width)
+    refute entry.key?(:text_gravity)
   end
 
   def test_parses_rss_with_weight
@@ -550,10 +584,10 @@ class TestGuidelinesParser < Minitest::Test
       - font: Arial
       - font_color: white
       - font_size: 24
-      - text_width: 300
-      - text_gravity: center
-      - text_x_offset: 5
-      - text_y_offset: 10
+      - width: 300
+      - gravity: center
+      - x_offset: 5
+      - y_offset: 10
       - accent: blue
       - status: private
     MD
@@ -565,10 +599,10 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "Arial", c[:font]
     assert_equal "white", c[:font_color]
     assert_equal 24, c[:font_size]
-    assert_equal 300, c[:text_width]
-    assert_equal "center", c[:text_gravity]
-    assert_equal 5, c[:text_x_offset]
-    assert_equal 10, c[:text_y_offset]
+    assert_equal 300, c[:width]
+    assert_equal "center", c[:gravity]
+    assert_equal 5, c[:x_offset]
+    assert_equal 10, c[:y_offset]
     assert_equal "blue", c[:accent]
     assert_equal "private", c[:status]
   end
