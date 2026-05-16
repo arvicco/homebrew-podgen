@@ -6,6 +6,7 @@ require "optparse"
 require "date"
 require "fileutils"
 require_relative File.join(root, "lib", "cli", "podcast_command")
+require_relative File.join(root, "lib", "cli", "episode_selector")
 require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "script_artifact")
 require_relative File.join(root, "lib", "script_renderer")
@@ -17,44 +18,39 @@ module PodgenCLI
   # per-segment sources for legacy episodes). Free, deterministic, no API calls.
   class RenderCommand
     include PodcastCommand
+    include EpisodeSelector
 
     def initialize(args, options)
       @options = options
-      @date = nil
-      @last_n = nil
       @lang_filter = nil
 
       OptionParser.new do |opts|
-        opts.banner = "Usage: podgen render <podcast> [--date YYYY-MM-DD | --last N] [--lang LANG]"
-        opts.on("--date DATE", "Only re-render episode for this date") { |d| @date = Date.parse(d) }
-        opts.on("--last N", Integer, "Re-render N most recent episodes") { |n| @last_n = n }
+        opts.banner = "Usage: podgen render <podcast> [<date>] [--date DATE | --last N] [--lang LANG]"
+        add_episode_selection_options!(opts)
         opts.on("--lang LANG", "Only re-render this language (default: all)") { |l| @lang_filter = l.downcase }
       end.parse!(args)
 
       @podcast_name = args.shift
+      extract_positional_date!(args)
       reject_leftover_args!(args)
+      validate_episode_selection!
     end
 
     def run
       code = require_podcast!("render <podcast>")
       return code if code
 
-      if @date && @last_n
-        $stderr.puts "Error: --date and --last are mutually exclusive"
-        return 2
-      end
-
       config = load_config!
-      logger = PodcastAgent::Logger.new(log_path: config.log_path(@date || Date.today), verbosity: @options[:verbosity])
+      logger = PodcastAgent::Logger.new(log_path: config.log_path(episode_date || Date.today), verbosity: @options[:verbosity])
       PodcastAgent.logger = logger
 
       md_paths = discover_markdown_paths(config.episodes_dir)
-      md_paths = filter_by_date(md_paths, @date) if @date
-      md_paths = filter_by_last_n(md_paths, @last_n) if @last_n
+      md_paths = filter_by_date(md_paths, episode_date, episode_suffix) if episode_date
+      md_paths = filter_by_last_n(md_paths, last_n) if last_n
       md_paths = filter_by_lang(md_paths, @lang_filter) if @lang_filter
 
       if md_paths.empty?
-        msg = "No script files found#{@date ? " for #{@date}" : ''}#{@lang_filter ? " (lang=#{@lang_filter})" : ''}"
+        msg = "No script files found#{episode_date ? " for #{episode_date}#{episode_suffix}" : ''}#{@lang_filter ? " (lang=#{@lang_filter})" : ''}"
         logger.log(msg)
         $stderr.puts msg unless @options[:verbosity] == :quiet
         return 1
@@ -85,9 +81,18 @@ module PodgenCLI
       Dir.glob(File.join(episodes_dir, "*_script.md")).sort
     end
 
-    def filter_by_date(paths, date)
-      pattern = date.strftime("%Y-%m-%d")
-      paths.select { |p| File.basename(p).include?(pattern) }
+    # When suffix is given, narrow to that exact episode (plus its language
+    # variants); otherwise match every basename on the day.
+    def filter_by_date(paths, date, suffix)
+      date_str = date.strftime("%Y-%m-%d")
+      if suffix
+        paths.select do |p|
+          base = File.basename(p, "_script.md").sub(/-[a-z]{2}\z/, "")
+          base.end_with?("-#{date_str}#{suffix}")
+        end
+      else
+        paths.select { |p| File.basename(p).include?(date_str) }
+      end
     end
 
     # Group paths by English basename (strip -<lang> suffix), keep the N most
