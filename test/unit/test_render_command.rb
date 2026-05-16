@@ -22,9 +22,41 @@ class TestRenderCommand < Minitest::Test
       "/x/pod-2026-04-26-jp_script.md",
       "/x/pod-2026-04-25_script.md"
     ]
-    result = cmd.send(:filter_by_date, paths, Date.parse("2026-04-26"))
+    result = cmd.send(:filter_by_date, paths, Date.parse("2026-04-26"), nil)
     assert_equal 2, result.length
     refute_includes result, "/x/pod-2026-04-25_script.md"
+  end
+
+  def test_filter_by_date_with_suffix_narrows_to_exact_basename
+    cmd = build_command
+    paths = [
+      "/x/pod-2026-04-26_script.md",
+      "/x/pod-2026-04-26a_script.md",
+      "/x/pod-2026-04-26a-jp_script.md",
+      "/x/pod-2026-04-26b_script.md"
+    ]
+    result = cmd.send(:filter_by_date, paths, Date.parse("2026-04-26"), "a")
+    assert_equal 2, result.length
+    assert(result.all? { |p| p.include?("04-26a") })
+  end
+
+  def test_command_accepts_positional_date
+    cmd = PodgenCLI::RenderCommand.new(["mypod", "2026-04-26"], { verbosity: :normal })
+    assert_equal Date.new(2026, 4, 26), cmd.episode_date
+    assert_equal "mypod", cmd.instance_variable_get(:@podcast_name)
+  end
+
+  def test_command_accepts_positional_date_with_suffix
+    cmd = PodgenCLI::RenderCommand.new(["mypod", "0426b"], { verbosity: :normal })
+    today = Date.today
+    assert_equal Date.new(today.year, 4, 26), cmd.episode_date
+    assert_equal "b", cmd.episode_suffix
+  end
+
+  def test_command_rejects_date_and_last_together
+    assert_raises(OptionParser::ParseError) do
+      PodgenCLI::RenderCommand.new(["mypod", "--date", "2026-04-26", "--last", "3"], { verbosity: :normal })
+    end
   end
 
   def test_filter_by_lang_en_excludes_language_suffixed
