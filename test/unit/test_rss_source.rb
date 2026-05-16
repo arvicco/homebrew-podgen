@@ -64,10 +64,10 @@ class TestRSSSource < Minitest::Test
       font: "Arial",
       font_color: "white",
       font_size: 42,
-      text_width: 500,
-      text_gravity: "south",
-      text_x_offset: 12,
-      text_y_offset: 24,
+      width: 500,
+      gravity: "south",
+      x_offset: 12,
+      y_offset: 24,
       base_image: "/abs/bg.png"
     }]
     source = RSSSource.new(feeds: feeds, logger: @logger)
@@ -77,10 +77,10 @@ class TestRSSSource < Minitest::Test
     assert_equal "Arial", episode[:font]
     assert_equal "white", episode[:font_color]
     assert_equal 42, episode[:font_size]
-    assert_equal 500, episode[:text_width]
-    assert_equal "south", episode[:text_gravity]
-    assert_equal 12, episode[:text_x_offset]
-    assert_equal 24, episode[:text_y_offset]
+    assert_equal 500, episode[:width]
+    assert_equal "south", episode[:gravity]
+    assert_equal 12, episode[:x_offset]
+    assert_equal 24, episode[:y_offset]
     assert_equal "/abs/bg.png", episode[:base_image]
   end
 

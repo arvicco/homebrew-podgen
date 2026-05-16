@@ -12,7 +12,7 @@ class CoverResolver
   # - transfer per-RSS overrides onto each episode hash in `RSSSource`,
   # - extract per-RSS overrides into per-episode opts in `LanguagePipeline`.
   # Adding a new key here makes all three sites pick it up automatically.
-  OVERLAY_KEYS = %i[font font_color font_size text_width text_gravity text_x_offset text_y_offset].freeze
+  OVERLAY_KEYS = %i[font font_color font_size width gravity x_offset y_offset].freeze
 
   # Find an existing per-episode cover file (any image extension).
   # Returns the file path or nil.

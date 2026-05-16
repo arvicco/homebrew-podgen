@@ -72,7 +72,7 @@ class TestCoverAgent < Minitest::Test
 
   def test_fit_text_shrinks_font_for_long_title
     agent = agent_class.allocate
-    opts = { font_size: 220, text_width: 1400, text_height: 560 }
+    opts = { font_size: 220, width: 1400, height: 560 }
     lines, font_size = agent.send(:fit_text, "KAKO JE KMETIČ OBEDOVAL Z GRAŠČAKOM", opts)
 
     # All words must be present
@@ -87,7 +87,7 @@ class TestCoverAgent < Minitest::Test
 
   def test_fit_text_keeps_font_when_short_title
     agent = agent_class.allocate
-    opts = { font_size: 220, text_width: 1400, text_height: 560 }
+    opts = { font_size: 220, width: 1400, height: 560 }
     lines, font_size = agent.send(:fit_text, "SHORT", opts)
 
     assert_equal 220, font_size
@@ -101,7 +101,7 @@ class TestCoverAgent < Minitest::Test
   end
 
   def test_defaults_has_required_keys
-    %i[font font_color font_size text_width text_height text_gravity text_x_offset text_y_offset].each do |key|
+    %i[font font_color font_size width height gravity x_offset y_offset].each do |key|
       assert CoverAgent::DEFAULTS.key?(key), "Missing default: #{key}"
     end
   end
