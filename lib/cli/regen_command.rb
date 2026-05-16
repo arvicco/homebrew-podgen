@@ -114,11 +114,10 @@ module PodgenCLI
         $stderr.puts "  ✗ #{base}: no timestamps at #{ts_path} (run `podgen publish --youtube` first to retranscribe)"
         return false
       end
-      print "  reconciling: " unless quiet?
       result = SubtitleReconciliationRunner.run(ts_path: ts_path, transcript_path: tr_path, force: true)
       case result.status
       when :reconciled
-        puts result.message unless quiet?
+        puts "  ✓ reconciled: #{result.message}" unless quiet?
         true
       when :no_api_key, :no_transcript, :no_timestamps
         $stderr.puts "  ✗ #{base}: reconcile skipped (#{result.message})"
@@ -147,19 +146,18 @@ module PodgenCLI
 
     def run_video(config, base, mp3_path, mp4_path)
       cover_path = CoverResolver.find_episode_cover(config.episodes_dir, base)
-      print "  rebuilding video: " unless quiet?
       result = VideoBuilder.build(
         mp3_path: mp3_path, cover_path: cover_path, video_path: mp4_path, force: true
       )
       case result.status
       when :built
-        puts result.video_path unless quiet?
+        puts "  ✓ video: #{result.video_path}" unless quiet?
         true
       when :no_cover
-        $stderr.puts "\n  ✗ #{base}: #{result.message} (run `podgen cover #{@podcast_name} #{base.sub(/\A#{Regexp.escape(@podcast_name)}-/, '')}` first)"
+        $stderr.puts "  ✗ #{base}: #{result.message} (run `podgen cover #{@podcast_name} --missing-only` first)"
         false
       when :no_audio, :failed
-        $stderr.puts "\n  ✗ #{base}: video step failed (#{result.message})"
+        $stderr.puts "  ✗ #{base}: video step failed (#{result.message})"
         false
       end
     end
@@ -180,13 +178,6 @@ module PodgenCLI
       else
         [all_bases.last]
       end
-    end
-
-    def english_script_basenames(config)
-      Dir.glob(File.join(config.episodes_dir, "*_script.md"))
-        .reject { |f| File.basename(f).match?(/-[a-z]{2}_script\.md\z/) }
-        .sort
-        .map { |f| File.basename(f, "_script.md") }
     end
 
     def quiet?

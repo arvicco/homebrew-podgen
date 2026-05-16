@@ -151,16 +151,14 @@ module PodgenCLI
     def reconcile_subtitles_if_needed(ts_path, transcript_path)
       require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_reconciliation_runner")
 
-      quiet = @options[:verbosity] == :quiet
-      print "  reconciling subtitles: #{File.basename(ts_path)}..." unless quiet
       result = SubtitleReconciliationRunner.run(ts_path: ts_path, transcript_path: transcript_path)
       case result.status
-      when :reconciled            then puts " done" unless quiet
-      when :already_reconciled,
-           :no_api_key,
-           :no_transcript,
-           :no_timestamps         then puts " skipped (#{result.message})" unless quiet
-      when :failed                then $stderr.puts "\n  Warning: subtitle reconciliation failed: #{result.message} (using raw segments)"
+      when :reconciled
+        puts "  reconciled subtitles: #{File.basename(ts_path)}" unless @options[:verbosity] == :quiet
+      when :failed
+        $stderr.puts "  Warning: subtitle reconciliation failed: #{result.message} (using raw segments)"
+      # :already_reconciled, :no_api_key, :no_transcript, :no_timestamps —
+      # steady-state skips, intentionally silent to match pre-refactor behavior.
       end
     end
 

@@ -78,7 +78,8 @@ class TestRegenCommand < Minitest::Test
       end
     end
     assert captured[:force], "regen should always force reconcile"
-    assert_match(/_timestamps\.json\z/, captured[:ts_path])
+    assert_match(/mypod-2026-05-16_timestamps\.json\z/, captured[:ts_path])
+    assert_match(/mypod-2026-05-16_transcript\.md\z/, captured[:transcript_path])
   end
 
   def test_reconcile_alone_also_regenerates_srt
@@ -128,7 +129,7 @@ class TestRegenCommand < Minitest::Test
       cmd.run
     end
     assert captured[:force], "regen --video should force rebuild"
-    assert_match(/\.mp4\z/, captured[:video_path])
+    assert_match(/mypod-2026-05-16\.mp4\z/, captured[:video_path])
   end
 
   def test_video_errors_when_cover_missing
@@ -179,6 +180,54 @@ class TestRegenCommand < Minitest::Test
 
     assert_equal 1, targeted.length
     assert_match(/2026-05-16/, targeted.first)
+  end
+
+  def test_last_n_targets_n_most_recent_episodes
+    %w[mypod-2026-05-12 mypod-2026-05-14 mypod-2026-05-16].each { |b| write_episode_files(b, with_cover: true) }
+
+    targeted = []
+    fake_result = VideoBuilder::Result.new(status: :built, video_path: "/x.mp4", message: "ok")
+    VideoBuilder.stub(:build, ->(**kw) { targeted << kw[:video_path]; fake_result }) do
+      cmd = PodgenCLI::RegenCommand.new(["mypod", "--last", "2", "--video"], { verbosity: :quiet })
+      cmd.run
+    end
+
+    assert_equal 2, targeted.length
+    assert(targeted.any? { |p| p.include?("2026-05-14") })
+    assert(targeted.any? { |p| p.include?("2026-05-16") })
+    refute(targeted.any? { |p| p.include?("2026-05-12") })
+  end
+
+  def test_date_with_suffix_narrows_to_exact_basename
+    write_episode_files("mypod-2026-05-16", with_cover: true)
+    write_episode_files("mypod-2026-05-16a", with_cover: true)
+    write_episode_files("mypod-2026-05-16d", with_cover: true)
+
+    targeted = []
+    fake_result = VideoBuilder::Result.new(status: :built, video_path: "/x.mp4", message: "ok")
+    VideoBuilder.stub(:build, ->(**kw) { targeted << kw[:video_path]; fake_result }) do
+      cmd = PodgenCLI::RegenCommand.new(["mypod", "2026-05-16d", "--video"], { verbosity: :quiet })
+      cmd.run
+    end
+
+    assert_equal 1, targeted.length
+    assert_match(/mypod-2026-05-16d\.mp4\z/, targeted.first)
+  end
+
+  def test_date_without_suffix_matches_all_suffixes_on_that_date
+    write_episode_files("mypod-2026-05-16", with_cover: true)
+    write_episode_files("mypod-2026-05-16a", with_cover: true)
+    write_episode_files("mypod-2026-05-14", with_cover: true)
+
+    targeted = []
+    fake_result = VideoBuilder::Result.new(status: :built, video_path: "/x.mp4", message: "ok")
+    VideoBuilder.stub(:build, ->(**kw) { targeted << kw[:video_path]; fake_result }) do
+      cmd = PodgenCLI::RegenCommand.new(["mypod", "2026-05-16", "--video"], { verbosity: :quiet })
+      cmd.run
+    end
+
+    assert_equal 2, targeted.length
+    refute(targeted.any? { |p| p.include?("2026-05-14") })
   end
 
   private
