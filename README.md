@@ -94,9 +94,9 @@ ruby bin/podgen <command> [options]
 | ------------------------------------- | -------------------------------------------------------- |
 | `podgen generate <podcast>`           | Run the pipeline (news or language)                      |
 | `podgen translate <podcast>`          | Translate existing episodes to new languages             |
-| `podgen voice <podcast>`              | Re-voice an episode from saved script JSON (recover from TTS failure) |
-| `podgen render <podcast>`             | Re-render script markdown from saved JSON (after `## Links` change) |
-| `podgen scrap <podcast> [episode]`    | Remove episode + history entry (default: latest)         |
+| `podgen voice <podcast> [date]`       | Re-voice an episode from saved script JSON (recover from TTS failure) |
+| `podgen render <podcast> [date]`      | Re-render script markdown from saved JSON (after `## Links` change) |
+| `podgen scrap <podcast> [date]`       | Remove episode + history entry (default: latest)         |
 | `podgen exclude <podcast> <url>...`   | Skip URLs in future research and RSS episode collection  |
 | `podgen rss <podcast>`                | Generate RSS feed from existing episodes                 |
 | `podgen site <podcast>`               | Generate static HTML website                             |
@@ -112,12 +112,34 @@ ruby bin/podgen <command> [options]
 | `podgen vocab <sub> <podcast>`        | Manage known vocabulary words (`add`/`remove`/`list`)    |
 | `podgen revocab <podcast> [episode]`  | Re-annotate vocabulary on transcripts                    |
 | `podgen reformat <podcast> [episode]` | Reformat transcripts (paragraph breaks, cleanup)         |
-| `podgen cover <podcast>`              | Generate episode cover images (use --date, --title, --image flags) |
+| `podgen cover <podcast> [date]`       | Generate episode cover images (use --title, --image flags) |
 | `podgen fork <old> <new>`             | Fork podcast into a new namespace                        |
 | `podgen test <name>`                  | Run a component test (research, hn, rss, tts, etc.)      |
 | `podgen schedule <podcast>`           | Install, remove, or inspect a daily launchd scheduler    |
 
 Per-command flags are documented in the dedicated sections below (e.g. [Generate command](#generate-command-options), [Publish command](#publishing-to-cloudflare-r2)).
+
+
+### Selecting an episode
+
+`voice`, `render`, `translate`, `scrap`, and `cover` accept an episode date either as `--date` or as a trailing positional argument — the two forms are interchangeable. Recognized date shapes (all with an optional lowercase suffix `[a-z]` for multi-episode days):
+
+| Form         | Example       | Resolves to                          |
+| ------------ | ------------- | ------------------------------------ |
+| `YYYY-MM-DD` | `2026-03-31`  | as-is                                |
+| `YYYYMMDD`   | `20260331`    | as-is                                |
+| `MM-DD`      | `03-31`       | current year                         |
+| `MMDD`       | `0331`        | current year                         |
+| `DD` / `D`   | `31`, `5`     | current year + current month         |
+
+```bash
+podgen voice fulgur_news 2026-04-26          # positional, full ISO
+podgen voice fulgur_news --date 2026-04-26   # equivalent
+podgen render fulgur_news 0426               # short — current year
+podgen scrap fulgur_news 26b                 # short — current year/month, suffix "b"
+```
+
+`voice`, `render`, and `translate` also accept `--last N` (most recent N episodes), which is mutually exclusive with a date.
 
 
 ### Global flags
@@ -238,10 +260,10 @@ News pipeline only:
 podgen voice fulgur_news --lang jp
 
 # Re-voice everything for a specific date (e.g. after switching voice_id)
-podgen voice fulgur_news --date 2026-04-26 --force
+podgen voice fulgur_news 2026-04-26 --force
 
 # Re-render markdown views after changing ## Links config (free, no API calls)
-podgen render fulgur_news --date 2026-04-26
+podgen render fulgur_news 0426
 ```
 
 `--from-script` still works for backwards compatibility (it now reads the canonical JSON when present), but emits a deprecation notice pointing at `podgen voice`.
@@ -778,15 +800,15 @@ Cover generation requires `imagemagick` + `librsvg` (`brew install imagemagick l
 
 ```bash
 podgen cover lahko_noc                                        # all episodes
-podgen cover lahko_noc --date 2026-04-07                      # specific episode
-podgen cover lahko_noc --date 2026-04-07 --title "New Title"  # override the rendered title
+podgen cover lahko_noc 2026-04-07                             # specific episode (also: --date)
+podgen cover lahko_noc 2026-04-07 --title "New Title"         # override the rendered title
 podgen cover lahko_noc --missing-only                         # only episodes without a cover
 podgen cover lahko_noc --dry-run                              # preview without writing files
 podgen cover lahko_noc --title "Custom Title"                 # manual preview into <podcast_dir>/cover_preview.jpg
-podgen cover lahko_noc --date 2026-04-07 --image auto         # search web, rank with Claude vision, fall back to overlay
+podgen cover lahko_noc 2026-04-07 --image auto                # search web, rank with Claude vision, fall back to overlay
 podgen cover lahko_noc --image auto                           # batch — auto-search every episode (~$0.02 each)
-podgen cover lahko_noc --clean                     # delete _cover1/2/3.* leftovers from --image auto
-podgen cover --clean                               # same, across all podcasts
+podgen cover lahko_noc --clean                                # delete _cover1/2/3.* leftovers from --image auto
+podgen cover --clean                                          # same, across all podcasts
 ```
 
 | Flag                | Description                                          |
