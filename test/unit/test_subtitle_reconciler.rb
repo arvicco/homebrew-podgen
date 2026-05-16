@@ -17,6 +17,20 @@ class TestSubtitleReconciler < Minitest::Test
     assert_includes prompt, '"start"'
   end
 
+  # Regression: transcripts with quoted dialogue (e.g. Slovenian children's
+  # stories: `"Morala bi jima reči šc," je zakrulil Gusti.`) caused Claude
+  # to copy the literal `"` characters into JSON `text` values, breaking
+  # the parser at the early-closed string. The prompt must explicitly
+  # require escaping internal double-quotes.
+  def test_build_prompt_instructs_to_escape_internal_quotes
+    segments = [{ "start" => 0.0, "end" => 5.0, "text" => "x" }]
+    transcript = %("Morala bi jima reči šc," je zakrulil Gusti.)
+    prompt = SubtitleReconciler.build_prompt(segments, transcript)
+
+    assert_match(/escape.*double[- ]quote|double[- ]quote.*escape|\\"/i, prompt,
+      "Prompt must instruct Claude to escape internal double-quote characters in text values")
+  end
+
   # --- parse_response ---
 
   def test_parse_response_extracts_json_array

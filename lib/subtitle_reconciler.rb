@@ -47,6 +47,7 @@ module SubtitleReconciler
       - Distribute the reconciled text across segments to match what was said in each time range
       - Do not merge or split segments
       - No markdown code fences, just raw JSON
+      - Escape every double-quote character that appears inside a "text" value as \" — never break out of the string. Dialogue passages in the transcript may contain literal " marks; those MUST be escaped.
 
       Raw segments:
       #{segments_json}
