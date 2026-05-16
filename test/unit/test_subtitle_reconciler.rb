@@ -27,8 +27,18 @@ class TestSubtitleReconciler < Minitest::Test
     transcript = %("Morala bi jima reči šc," je zakrulil Gusti.)
     prompt = SubtitleReconciler.build_prompt(segments, transcript)
 
-    assert_match(/escape.*double[- ]quote|double[- ]quote.*escape|\\"/i, prompt,
+    assert_match(/escape.*double[- ]quote|double[- ]quote.*escape/i, prompt,
       "Prompt must instruct Claude to escape internal double-quote characters in text values")
+  end
+
+  # The escape instruction must contain the LITERAL example characters
+  # `\"` (backslash + quote) so Claude knows what to emit. A previous
+  # version used `\"` in a double-quoted heredoc, which Ruby reduced to
+  # just `"` — leaving Claude with a nonsensical "escape \" as \"" rule.
+  def test_build_prompt_includes_literal_backslash_quote_example
+    prompt = SubtitleReconciler.build_prompt([{ "start" => 0.0, "end" => 1.0, "text" => "x" }], "x")
+    assert_includes prompt, '\\"',
+      "Prompt must contain the literal characters backslash+quote so Claude has a concrete escape example"
   end
 
   # --- parse_response ---
