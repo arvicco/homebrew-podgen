@@ -149,23 +149,19 @@ module PodgenCLI
     end
 
     def reconcile_subtitles_if_needed(ts_path, transcript_path)
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "timestamp_persister")
-      data = TimestampPersister.load(ts_path)
-      return if data.nil? || data["reconciled"]
+      require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_reconciliation_runner")
 
-      api_key = ENV["ANTHROPIC_API_KEY"]
-      return unless api_key && !api_key.empty?
-
-      _, _, transcript_text = parse_transcript(transcript_path)
-      return if transcript_text.nil? || transcript_text.strip.empty?
-
-      require_relative File.join(File.expand_path("../..", __dir__), "lib", "subtitle_reconciler")
-      print "  reconciling subtitles: #{File.basename(ts_path)}..." unless @options[:verbosity] == :quiet
-      segments = SubtitleReconciler.reconcile(data["segments"], transcript_text, api_key: api_key)
-      TimestampPersister.update_segments(ts_path, segments)
-      puts " done" unless @options[:verbosity] == :quiet
-    rescue => e
-      $stderr.puts "  Warning: subtitle reconciliation failed: #{e.message} (using raw segments)"
+      quiet = @options[:verbosity] == :quiet
+      print "  reconciling subtitles: #{File.basename(ts_path)}..." unless quiet
+      result = SubtitleReconciliationRunner.run(ts_path: ts_path, transcript_path: transcript_path)
+      case result.status
+      when :reconciled            then puts " done" unless quiet
+      when :already_reconciled,
+           :no_api_key,
+           :no_transcript,
+           :no_timestamps         then puts " skipped (#{result.message})" unless quiet
+      when :failed                then $stderr.puts "\n  Warning: subtitle reconciliation failed: #{result.message} (using raw segments)"
+      end
     end
 
     # Parses a transcript markdown file.
