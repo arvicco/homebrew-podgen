@@ -29,14 +29,12 @@ class TestCoverCommand < Minitest::Test
     assert_includes err, "Usage:"
   end
 
-  def test_extra_positional_args_returns_error_with_hint
-    _, err = capture_io do
-      code = PodgenCLI::CoverCommand.new(["testpod", "2026-04-13"], {}).run
-      assert_equal 2, code
+  def test_extra_non_date_positional_raises_parse_error
+    # Positional dates are accepted now; only true junk should error.
+    err = assert_raises(OptionParser::ParseError) do
+      PodgenCLI::CoverCommand.new(["testpod", "random-junk"], {})
     end
-    assert_includes err, "unexpected arguments"
-    assert_includes err, "--date"
-    assert_includes err, "--title"
+    assert_includes err.message, "random-junk"
   end
 
   def test_missing_base_image_returns_error
@@ -127,10 +125,28 @@ class TestCoverCommand < Minitest::Test
   end
 
   def test_episode_not_found_returns_error
-    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-99-99"], {})
+    # Valid date that no episode exists for.
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "--date", "2099-01-01"], {})
 
     _, err = capture_io { code = cmd.run; assert_equal 1, code }
     assert_includes err, "No episodes found"
+  end
+
+  def test_positional_date_equivalent_to_flag
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "2026-04-13"], {})
+    assert_equal "2026-04-13", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_positional_short_date_with_suffix
+    cmd = PodgenCLI::CoverCommand.new(["testpod", "0413b"], {})
+    today = Date.today
+    assert_equal "#{today.year}-04-13b", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_positional_and_date_flag_together_is_error
+    assert_raises(OptionParser::ParseError) do
+      PodgenCLI::CoverCommand.new(["testpod", "2026-04-13", "--date", "2026-04-14"], {})
+    end
   end
 
   # --- batch mode ---

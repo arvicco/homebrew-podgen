@@ -6,6 +6,7 @@ require "fileutils"
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
+require_relative File.join(root, "lib", "cli", "episode_selector")
 require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "cover_resolver")
@@ -14,6 +15,7 @@ require_relative File.join(root, "lib", "auto_cover_resolver")
 module PodgenCLI
   class CoverCommand
     include PodcastCommand
+    include EpisodeSelector
 
     CANDIDATE_GLOB = "*_cover[0-9]*.*"
 
@@ -26,13 +28,13 @@ module PodgenCLI
       @overrides = {}
 
       OptionParser.new do |opts|
-        opts.banner = "Usage: podgen cover <podcast> [options]"
+        opts.banner = "Usage: podgen cover <podcast> [<date>] [options]"
         opts.separator ""
         opts.on("--missing-only", "Only generate covers for episodes without one") { @missing_only = true }
         opts.on("--image PATH", "Image file path, 'last' for latest ~/Desktop screenshot, or 'auto' to search") { |v| @image = v }
         opts.on("--base-image PATH", "Override base image") { |v| @overrides[:base_image] = v }
         opts.on("--output PATH", "Output file path") { |v| @output_path = v }
-        opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
+        opts.on("--date DATE", "Episode date YYYY-MM-DD[a-z] (also accepted as trailing positional; short forms MMDD, MM-DD, DD use current year/month)") { |v| @date_arg = v }
         opts.on("--title TEXT", "Cover title text") { |v| @title = v }
         opts.on("--font NAME", "Override font family") { |v| @overrides[:font] = v }
         opts.on("--font-color COLOR", "Override font color") { |v| @overrides[:font_color] = v }
@@ -45,7 +47,10 @@ module PodgenCLI
       end.parse!(args)
 
       @podcast_name = args.shift
-      @extra_args = args
+      extract_positional_date!(args)
+      reject_leftover_args!(args)
+      validate_episode_selection!
+      @episode_id = normalized_episode_id
       @title = nil if @title&.empty?
       @dry_run = options[:dry_run] || false
     end
@@ -55,12 +60,6 @@ module PodgenCLI
 
       code = require_podcast!("cover")
       return code if code
-
-      unless @extra_args.empty?
-        $stderr.puts "Error: unexpected arguments: #{@extra_args.join(' ')}"
-        $stderr.puts "Hint: pass episode date with --date YYYY-MM-DD and title with --title TEXT"
-        return 2
-      end
 
       if @image == "auto" && @title && !@title.empty?
         $stderr.puts "Error: --image auto cannot be combined with --title (no episode description for ranking)"
