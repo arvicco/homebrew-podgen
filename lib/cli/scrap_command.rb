@@ -5,6 +5,7 @@ root = File.expand_path("../..", __dir__)
 require "optparse"
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "episode_selector")
+require_relative File.join(root, "lib", "episode_artifacts")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "episode_filtering")
@@ -59,12 +60,7 @@ module PodgenCLI
       return 1 unless target_base
 
       # Find all files related to this episode (mp3 + scripts, all languages).
-      # Use multiple globs to avoid matching longer suffixes (e.g. -2026-02-18a for -2026-02-18).
-      related_files = %w[.* _* -*].flat_map { |pat|
-        Dir.glob(File.join(episodes_dir, "#{target_base}#{pat}"))
-      }.uniq
-        .reject { |f| File.basename(f).include?("_concat") }
-        .sort
+      related_files = EpisodeArtifacts.for_basename(episodes_dir, target_base)
 
       if related_files.empty?
         $stderr.puts "No files found for '#{target_base}'"
@@ -169,8 +165,8 @@ module PodgenCLI
       suffix_index = SUFFIXES.index(suffix) || 0
       base = "#{@podcast_name}-#{date}#{suffix}"
 
-      # Verify the episode exists (match .mp3, _script, -lang variants, not longer suffixes)
-      unless %w[.* _* -*].any? { |pat| Dir.glob(File.join(episodes_dir, "#{base}#{pat}")).any? }
+      # Verify the episode exists.
+      if EpisodeArtifacts.for_basename(episodes_dir, base).empty?
         $stderr.puts "No files found matching '#{base}' in #{episodes_dir}"
         return nil
       end
