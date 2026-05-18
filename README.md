@@ -97,6 +97,7 @@ ruby bin/podgen <command> [options]
 | `podgen voice <podcast> [date]`       | Re-voice an episode from saved script JSON (recover from TTS failure) |
 | `podgen render <podcast> [date]`      | Re-render script markdown from saved JSON (after `## Links` change) |
 | `podgen scrap <podcast> [date]`       | Remove episode + history entry (default: latest)         |
+| `podgen move <podcast> <from> <to>`   | Rename episode artifacts to a different date (`<from>+` = whole day) |
 | `podgen exclude <podcast> <url>...`   | Skip URLs in future research and RSS episode collection  |
 | `podgen rss <podcast>`                | Generate RSS feed from existing episodes                 |
 | `podgen site <podcast>`               | Generate static HTML website                             |
@@ -166,6 +167,18 @@ podgen --dry-run generate ruby_world
 
 # Generate silently (for cron/launchd)
 podgen --quiet generate ruby_world
+
+# Move an episode to a different date — renames all artifacts (mp3, mp4,
+# srt, scripts, transcripts, timestamps, covers, language variants) and
+# updates history.yml + uploads.yml. RSS is regenerated; YouTube/LingQ
+# remote URLs keep their original titles (re-publish if needed).
+podgen move bajke 2026-05-16 2026-05-18                  # bare → bare (auto-suffix on collision)
+podgen move bajke 2026-05-16d 2026-05-18                 # specific suffix → bare on 18th
+podgen move bajke 2026-05-16d 2026-05-18c                # explicit target suffix (errors if taken)
+
+# Whole-day form: '+' moves every episode on that day, suffixes preserved.
+# Strict — any artifact at the target date is a conflict (no auto-shift).
+podgen move bajke '2026-05-16+' 2026-05-18
 
 # Scrap last episode (delete files + remove from history)
 podgen scrap ruby_world
