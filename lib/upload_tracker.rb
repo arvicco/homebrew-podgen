@@ -65,6 +65,23 @@ class UploadTracker
     changed
   end
 
+  # Rename all entries from old_base_name to new_base_name across all platforms
+  # and groups. Used by `podgen move`. Returns true if anything was renamed.
+  def rename(old_base_name, new_base_name)
+    tracking = load
+    changed = false
+    tracking.each_value do |groups|
+      next unless groups.is_a?(Hash)
+      groups.each_value do |entries|
+        next unless entries.is_a?(Hash) && entries.key?(old_base_name)
+        entries[new_base_name] = entries.delete(old_base_name)
+        changed = true
+      end
+    end
+    save(tracking) if changed
+    changed
+  end
+
   # Check if a basename is already tracked for a platform/group.
   def tracked?(platform, group, base_name)
     tracking = load

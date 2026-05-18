@@ -87,6 +87,19 @@ class EpisodeHistory
     removed
   end
 
+  # Rename an entry's basename and date. Used by `podgen move`. Returns the
+  # updated entry, or nil if no entry with `old_basename` exists.
+  def rename!(old_basename, new_basename:, new_date:)
+    entries = YamlLoader.load(@path, default: [])
+    idx = entries.index { |e| e["basename"] == old_basename }
+    return nil unless idx
+
+    entries[idx]["basename"] = new_basename
+    entries[idx]["date"] = new_date.to_s
+    write_entries!(entries)
+    entries[idx]
+  end
+
   # Append a new episode entry.
   # Uses atomic write (temp file + rename) to prevent corruption from interrupted writes.
   # `languages:` is an optional Hash mapping language code to per-language metadata

@@ -10,6 +10,7 @@ module PodgenCLI
     "render"    => ["Re-render script markdown from JSON",   "cli/render_command",      "RenderCommand"],
     "voice"     => ["Voice or re-voice an episode from JSON", "cli/voice_command",       "VoiceCommand"],
     "scrap"     => ["Remove episode and history entry",     "cli/scrap_command",       "ScrapCommand"],
+    "move"      => ["Move an episode (or whole day) to a different date", "cli/move_command", "MoveCommand"],
     "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",         "RssCommand"],
     "site"      => ["Generate static HTML website",        "cli/site_command",        "SiteCommand"],
     "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",    "PublishCommand"],
@@ -48,6 +49,7 @@ module PodgenCLI
       opts.separator "  render <podcast> [--date|--lang] Re-render script markdown from canonical JSON"
       opts.separator "  voice <podcast> [--date|--lang|--force] Voice/re-voice from script JSON (recover from TTS failure)"
       opts.separator "  scrap <podcast> [episode|path]  Remove episode files + history entry"
+      opts.separator "  move <podcast> <from> <to>     Move episode to another date (suffix '+' = whole day)"
       opts.separator "  rss <podcast>                  Generate RSS feed"
       opts.separator "  site <podcast>                 Generate static HTML website"
       opts.separator "  publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)"
