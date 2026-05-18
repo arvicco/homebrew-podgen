@@ -4,6 +4,7 @@ require_relative "regen_cache"
 require_relative "upload_tracker"
 require_relative "transcript_parser"
 require_relative "cover_resolver"
+require_relative "episode_scanner"
 
 # Publishes pending episodes to YouTube for a single podcast configuration.
 #
@@ -199,25 +200,7 @@ class YouTubePublisher
   end
 
   def scan_episodes
-    episodes_dir = @config.episodes_dir
-    return [] unless Dir.exist?(episodes_dir)
-
-    Dir.glob(File.join(episodes_dir, "*.mp3"))
-      .sort
-      .filter_map do |mp3_path|
-        base_name = File.basename(mp3_path, ".mp3")
-        text_path = find_text_file(episodes_dir, base_name)
-        next unless text_path
-        { base_name: base_name, mp3_path: mp3_path, transcript_path: text_path }
-      end
-  end
-
-  def find_text_file(dir, base_name)
-    %w[_transcript.md _script.md].each do |suffix|
-      path = File.join(dir, "#{base_name}#{suffix}")
-      return path if File.exist?(path)
-    end
-    nil
+    EpisodeScanner.scan(@config.episodes_dir, episode_id: @episode_id)
   end
 
   def parse_transcript(path)
