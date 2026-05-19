@@ -619,6 +619,39 @@ class TestPodcastConfig < Minitest::Test
     assert_equal "myshow-2026-03-01a", config.episode_basename(Date.new(2026, 3, 1))
   end
 
+  # Regression for the gap-handling bug: after `podgen move` (or any other
+  # operation that frees the bare slot while leaving a suffixed variant),
+  # episode_basename used to return the suffix that was already taken
+  # because it assumed existing.length-1 was the next free slot.
+  def test_episode_basename_returns_bare_when_only_suffix_exists
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
+    eps_dir = File.join(@output_dir, "episodes")
+    File.write(File.join(eps_dir, "myshow-2026-03-01a.mp3"), "x")
+    # Bare is free; "a" is taken. Next free slot is the bare.
+    config = PodcastConfig.new("myshow")
+    assert_equal "myshow-2026-03-01", config.episode_basename(Date.new(2026, 3, 1))
+  end
+
+  def test_episode_basename_returns_b_when_bare_and_b_exist_but_a_free
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
+    eps_dir = File.join(@output_dir, "episodes")
+    File.write(File.join(eps_dir, "myshow-2026-03-01.mp3"), "x")
+    File.write(File.join(eps_dir, "myshow-2026-03-01b.mp3"), "x")
+    # "a" is the lowest free slot — pick it.
+    config = PodcastConfig.new("myshow")
+    assert_equal "myshow-2026-03-01a", config.episode_basename(Date.new(2026, 3, 1))
+  end
+
+  def test_episode_basename_handles_all_slots_taken
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
+    eps_dir = File.join(@output_dir, "episodes")
+    File.write(File.join(eps_dir, "myshow-2026-03-01.mp3"), "x")
+    ("a".."z").each { |s| File.write(File.join(eps_dir, "myshow-2026-03-01#{s}.mp3"), "x") }
+    config = PodcastConfig.new("myshow")
+    err = assert_raises(RuntimeError) { config.episode_basename(Date.new(2026, 3, 1)) }
+    assert_match(/slot/i, err.message)
+  end
+
   # --- ## Image section ---
 
   def test_cover_reads_from_image_section

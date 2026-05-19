@@ -310,6 +310,11 @@ class PodcastConfig
   # First run:  ruby_world-2026-02-18
   # Second run: ruby_world-2026-02-18a
   # Third run:  ruby_world-2026-02-18b
+  #
+  # The slot-walk picks the LOWEST free letter, not the next sequential one
+  # after the count — so `move`-ing out the bare slot frees it up cleanly,
+  # and a gap from any other operation gets filled before pushing further
+  # along the alphabet.
   def episode_basename(date = Date.today)
     date_str = date.strftime("%Y-%m-%d")
     prefix = "#{@name}-#{date_str}"
@@ -317,13 +322,13 @@ class PodcastConfig
       .reject { |f| File.basename(f).include?("_concat") }
       .select { |f| EpisodeFiltering.matches_language?(File.basename(f, ".mp3"), "en") }
       .map { |f| File.basename(f, ".mp3") }
+      .to_set
 
-    if existing.empty?
-      prefix
-    else
-      suffix_index = existing.length - 1
-      "#{prefix}#{('a'.ord + suffix_index).chr}"
+    ([""] + ("a".."z").to_a).each do |suffix|
+      candidate = "#{prefix}#{suffix}"
+      return candidate unless existing.include?(candidate)
     end
+    raise "No free episode slot for #{date_str} — all 27 suffixes are taken"
   end
 
   def episode_path(date = Date.today)

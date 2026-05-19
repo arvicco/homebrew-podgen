@@ -134,11 +134,13 @@ module PodgenCLI
       @today = @options[:date] || Date.today
       if @options[:date] && !@options[:force]
         date_str = @today.strftime("%Y-%m-%d")
-        existing = Dir.glob(File.join(@config.episodes_dir, "#{@config.name}-#{date_str}*.mp3"))
-          .reject { |f| File.basename(f).include?("_concat") }
-        unless existing.empty?
-          $stderr.puts "Error: episode already exists for #{date_str}: #{File.basename(existing.first)}"
-          $stderr.puts "Use --force to generate anyway (will create a suffixed episode)"
+        # Only the BARE slot blocks `--date X` — suffixed variants and
+        # language variants share the day but not the slot, so they shouldn't
+        # cause a false collision after `podgen move` or similar.
+        bare_mp3 = File.join(@config.episodes_dir, "#{@config.name}-#{date_str}.mp3")
+        if File.exist?(bare_mp3)
+          $stderr.puts "Error: episode already exists for #{date_str}: #{File.basename(bare_mp3)}"
+          $stderr.puts "Use --force to allocate the next free suffix slot, or `podgen scrap` first."
           return 1
         end
       end

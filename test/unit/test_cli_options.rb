@@ -175,6 +175,29 @@ class TestCLIOptions < Minitest::Test
     refute_includes err, "episode already exists"
   end
 
+  # Regression: after `podgen move` frees the bare slot, generate --date X
+  # should succeed (using the freed bare slot) — not error because of an
+  # unrelated suffixed variant left behind on the same day.
+  def test_generate_date_allows_when_only_suffixed_variant_exists
+    episodes_dir = File.join(@tmpdir, "output", "test_pod", "episodes")
+    # Bare slot is free; only the "a" variant exists.
+    File.write(File.join(episodes_dir, "test_pod-2026-01-15a.mp3"), "fake")
+
+    code, _, err = run_cli("generate", "test_pod", "--date", "2026-01-15", "--dry-run")
+    refute_includes err, "episode already exists"
+    refute_equal 1, code, "should not block when only suffixed variant exists for the date"
+  end
+
+  def test_generate_date_allows_when_language_variant_exists
+    episodes_dir = File.join(@tmpdir, "output", "test_pod", "episodes")
+    # Language variant of a previously-moved episode on the same day.
+    File.write(File.join(episodes_dir, "test_pod-2026-01-15-jp.mp3"), "fake")
+
+    code, _, err = run_cli("generate", "test_pod", "--date", "2026-01-15", "--dry-run")
+    refute_includes err, "episode already exists"
+    refute_equal 1, code, "language variants must not trigger the bare-slot collision check"
+  end
+
   # ── Valid options should be accepted ─────────────────────────────
 
   def test_generate_accepts_dry_run
