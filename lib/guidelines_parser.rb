@@ -11,6 +11,15 @@ class GuidelinesParser
     @warnings = []
   end
 
+  # Every memoized section reader. A reader that appends warnings but is
+  # missing here would make those warnings invisible to early consumers —
+  # keep this list in sync with the public accessors below.
+  SECTION_READERS = %i[
+    podcast_section audio_section image_section sources site_config
+    lingq_config youtube_config twitter_config links_config
+    vocabulary_config translation_glossary languages transcription_engines
+  ].freeze
+
   # Warnings are appended during lazy section parsing, so prime every
   # memoized section before reading — otherwise a consumer that checks
   # warnings before touching the sections sees an empty list.
@@ -19,20 +28,17 @@ class GuidelinesParser
     @warnings
   end
 
+  # A section that raises (malformed value) becomes a warning here so that
+  # `podgen validate` reports instead of crashing; the exception still
+  # surfaces at real section access since failures aren't memoized.
   def prime!
-    podcast_section
-    audio_section
-    image_section
-    sources
-    site_config
-    lingq_config
-    youtube_config
-    twitter_config
-    links_config
-    vocabulary_config
-    translation_glossary
-    languages
-    transcription_engines
+    return self if @primed
+    @primed = true
+    SECTION_READERS.each do |reader|
+      public_send(reader)
+    rescue => e
+      @warnings << "#{reader}: unparseable — #{e.class}: #{e.message}"
+    end
     self
   end
 

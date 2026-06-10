@@ -697,6 +697,21 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal ["open"], parser.transcription_engines
   end
 
+  def test_warnings_reports_unparseable_section_instead_of_raising
+    parser = build_parser(<<~MD)
+      ## Audio
+      - skip: abc
+    MD
+
+    # Priming must not let one malformed section crash the warnings read —
+    # `podgen validate` exists precisely for broken configs. The exception
+    # still surfaces at real section access (memoization doesn't cache it).
+    warns = parser.warnings
+    assert(warns.any? { |w| w.include?("audio_section") && w.include?("ArgumentError") },
+      "malformed section must become a warning, got: #{warns.inspect}")
+    assert_raises(ArgumentError) { parser.audio_section }
+  end
+
   def test_warnings_are_primed_without_prior_section_access
     parser = build_parser(<<~MD)
       ## Transcription Engine
