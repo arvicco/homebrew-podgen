@@ -76,7 +76,7 @@ class TestR2Publisher < Minitest::Test
   end
 
   def test_dry_run_does_not_tweet
-    seed_ep("ep-2026-01-15")
+    seed_ep("ep-#{recent_date(1)}")
     config = stub_config(twitter_enabled: true)
     tweets = []
     publisher = build_publisher(
@@ -92,7 +92,7 @@ class TestR2Publisher < Minitest::Test
   end
 
   def test_tweets_new_episodes_on_success_when_twitter_enabled
-    seed_ep("ep-2026-05-01")
+    seed_ep("ep-#{recent_date(1)}")
     config = stub_config(twitter_enabled: true)
     tweets = []
     publisher = build_publisher(
@@ -107,7 +107,7 @@ class TestR2Publisher < Minitest::Test
   end
 
   def test_does_not_tweet_when_twitter_disabled
-    seed_ep("ep-2026-05-01")
+    seed_ep("ep-#{recent_date(1)}")
     config = stub_config(twitter_enabled: false)
     tweets = []
     publisher = build_publisher(
@@ -122,7 +122,7 @@ class TestR2Publisher < Minitest::Test
   end
 
   def test_does_not_tweet_when_rclone_failed
-    seed_ep("ep-2026-05-01")
+    seed_ep("ep-#{recent_date(1)}")
     config = stub_config(twitter_enabled: true)
     tweets = []
     publisher = build_publisher(
@@ -141,22 +141,23 @@ class TestR2Publisher < Minitest::Test
   # but the Twitter side-effect must respect the filter — otherwise
   # `publish <pod> --date X` would tweet about every untweeted episode.
   def test_episode_id_filters_tweets_to_matching_episode
-    seed_ep("ep-2026-05-01")
-    seed_ep("ep-2026-05-02")
-    seed_ep("ep-2026-05-03")
+    target_date = recent_date(2)
+    seed_ep("ep-#{recent_date(3)}")
+    seed_ep("ep-#{target_date}")
+    seed_ep("ep-#{recent_date(1)}")
     config = stub_config(twitter_enabled: true)
     tweets = []
     publisher = build_publisher(
       config: config,
       runner: ->(*) { true },
       twitter_agent: stub_twitter_agent(tweets),
-      episode_id: "2026-05-02"
+      episode_id: target_date
     )
 
     capture_io { publisher.run }
 
     assert_equal 1, tweets.length
-    assert_match(/ep-2026-05-02/, tweets.first)
+    assert_match(/ep-#{target_date}/, tweets.first)
   end
 
   def test_calls_regen_cache_once_per_pod
@@ -196,6 +197,13 @@ class TestR2Publisher < Minitest::Test
       transcription_language: "en",
       _twitter: tw
     )
+  end
+
+  # Tweet eligibility uses a rolling window (Date.today - twitter[:since]),
+  # so tweet tests must seed dates relative to today — hardcoded dates age
+  # out of the window and turn the assertions into time bombs.
+  def recent_date(days_ago)
+    (Date.today - days_ago).iso8601
   end
 
   def seed_ep(base)
