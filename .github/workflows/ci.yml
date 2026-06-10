@@ -32,3 +32,6 @@ jobs:
         run: bundle exec rake test:unit
         env:
           COVERAGE: "1"
+
+      - name: Lint (standardrb, new violations only)
+        run: bundle exec standardrb

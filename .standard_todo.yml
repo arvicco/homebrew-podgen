@@ -1,0 +1,840 @@
+# Auto generated files with errors to ignore.
+# Remove from this list as you refactor files.
+---
+ignore:
+- Gemfile:
+  - Layout/ExtraSpacing
+- lib/agents/cover_agent.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+- lib/agents/description_agent.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/EmptyLinesAroundClassBody
+- lib/agents/lingq_agent.rb:
+  - Layout/ParameterAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+  - Layout/EmptyLinesAroundClassBody
+- lib/agents/research_agent.rb:
+  - Lint/RedundantRequireStatement
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/agents/script_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/TernaryParentheses
+  - Style/StringLiteralsInInterpolation
+  - Style/NestedFileDirname
+  - Layout/EmptyLinesAroundClassBody
+- lib/agents/script_reviewer.rb:
+  - Layout/ExtraSpacing
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RedundantAssignment
+  - Style/StderrPuts
+- lib/agents/topic_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/EmptyLinesAroundClassBody
+- lib/agents/translation_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/EmptyLinesAroundClassBody
+- lib/agents/tts_agent.rb:
+  - Layout/HashAlignment
+  - Style/FileWrite
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+  - Layout/EmptyLinesAroundClassBody
+- lib/agents/twitter_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/analytics_client.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/TrailingCommaInArrayLiteral
+- lib/audio_assembler.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Style/TernaryParentheses
+  - Layout/ArgumentAlignment
+  - Style/StringLiteralsInInterpolation
+- lib/audio_trimmer.rb:
+  - Style/UnlessLogicalOperators
+  - Style/TernaryParentheses
+  - Style/StringLiteralsInInterpolation
+- lib/auto_cover_resolver.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/cli.rb:
+  - Layout/HashAlignment
+  - Layout/ExtraSpacing
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StderrPuts
+- lib/cli/add_command.rb:
+  - Style/StderrPuts
+- lib/cli/analytics_command.rb:
+  - Style/StringLiteralsInInterpolation
+  - Layout/ExtraSpacing
+  - Style/StderrPuts
+  - Style/RedundantHeredocDelimiterQuotes
+- lib/cli/cover_command.rb:
+  - Style/StderrPuts
+  - Style/RedundantReturn
+  - Layout/MultilineMethodCallIndentation
+  - Style/EmptyStringInsideInterpolation
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/cli/episode_selector.rb:
+  - Layout/ExtraSpacing
+  - Style/StringLiteralsInInterpolation
+- lib/cli/exclude_command.rb:
+  - Style/StderrPuts
+  - Style/RedundantInterpolation
+  - Style/ComparableBetween
+- lib/cli/fork_command.rb:
+  - Style/StderrPuts
+- lib/cli/generate_command.rb:
+  - Style/Semicolon
+  - Style/EmptyStringInsideInterpolation
+  - Style/StringLiteralsInInterpolation
+  - Style/StderrPuts
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/TernaryParentheses
+  - Layout/ArgumentAlignment
+- lib/cli/init_command.rb:
+  - Style/StringLiteralsInInterpolation
+  - Style/StderrPuts
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/cli/language_pipeline.rb:
+  - Style/EmptyStringInsideInterpolation
+  - Style/StringLiteralsInInterpolation
+  - Style/StderrPuts
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RescueModifier
+  - Layout/MultilineMethodCallIndentation
+- lib/cli/links_command.rb:
+  - Style/TernaryParentheses
+  - Style/StringLiteralsInInterpolation
+- lib/cli/move_command.rb:
+  - Layout/ExtraSpacing
+  - Style/StderrPuts
+  - Style/StringLiteralsInInterpolation
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RedundantBegin
+- lib/cli/podcast_command.rb:
+  - Style/StderrPuts
+  - Style/TernaryParentheses
+  - Style/StringLiteralsInInterpolation
+- lib/cli/publish_command.rb:
+  - Layout/ExtraSpacing
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StderrPuts
+- lib/cli/reformat_command.rb:
+  - Style/StderrPuts
+  - Style/EmptyStringInsideInterpolation
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/cli/regen_command.rb:
+  - Layout/ExtraSpacing
+  - Style/StderrPuts
+- lib/cli/render_command.rb:
+  - Style/EmptyStringInsideInterpolation
+  - Style/StringLiteralsInInterpolation
+  - Style/StderrPuts
+  - Style/TernaryParentheses
+- lib/cli/revocab_command.rb:
+  - Style/StderrPuts
+  - Style/EmptyStringInsideInterpolation
+  - Style/StringLiteralsInInterpolation
+  - Layout/ArgumentAlignment
+- lib/cli/rss_command.rb:
+  - Style/StderrPuts
+- lib/cli/schedule_command.rb:
+  - Style/StderrPuts
+  - Layout/ExtraSpacing
+  - Style/RedundantFreeze
+  - Style/StringLiteralsInInterpolation
+  - Style/TernaryParentheses
+  - Style/Semicolon
+  - Performance/RangeInclude
+  - Lint/UselessAssignment
+  - Style/RescueModifier
+- lib/cli/scrap_command.rb:
+  - Style/StderrPuts
+  - Style/StringLiteralsInInterpolation
+  - Style/StringLiterals
+  - Style/TernaryParentheses
+- lib/cli/stats_command.rb:
+  - Style/Semicolon
+  - Style/StringLiteralsInInterpolation
+  - Style/RedundantReturn
+  - Style/StderrPuts
+  - Layout/ExtraSpacing
+  - Layout/EndAlignment
+  - Layout/ArgumentAlignment
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/MultilineMethodCallBraceLayout
+  - Lint/DuplicateMethods
+- lib/cli/test_command.rb:
+  - Layout/HashAlignment
+  - Style/StderrPuts
+  - Style/StringLiteralsInInterpolation
+- lib/cli/translate_command.rb:
+  - Style/StderrPuts
+  - Style/StringLiteralsInInterpolation
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/EmptyLinesAroundClassBody
+- lib/cli/tweet_command.rb:
+  - Style/StderrPuts
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/cli/unpublish_command.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StderrPuts
+  - Style/StringLiteralsInInterpolation
+- lib/cli/uploads_command.rb:
+  - Style/StringLiteralsInInterpolation
+  - Style/StderrPuts
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ExtraSpacing
+  - Layout/EndAlignment
+  - Layout/MultilineOperationIndentation
+  - Layout/ArgumentAlignment
+  - Style/EmptyStringInsideInterpolation
+  - Style/TernaryParentheses
+- lib/cli/validate_command.rb:
+  - Style/StringLiteralsInInterpolation
+  - Style/StderrPuts
+  - Style/RedundantReturn
+- lib/cli/vocab_command.rb:
+  - Layout/ExtraSpacing
+  - Style/Semicolon
+  - Style/StderrPuts
+- lib/cli/voice_command.rb:
+  - Style/RedundantParentheses
+  - Style/StderrPuts
+  - Style/TernaryParentheses
+  - Style/StringLiteralsInInterpolation
+  - Style/NestedTernaryOperator
+  - Layout/EmptyLinesAroundClassBody
+- lib/episode_history.rb:
+  - Lint/RedundantRequireStatement
+  - Style/StringLiteralsInInterpolation
+- lib/episode_scanner.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/episode_source.rb:
+  - Lint/RedundantRequireStatement
+  - Style/StderrPuts
+  - Style/RescueModifier
+  - Style/TernaryParentheses
+  - Style/EmptyStringInsideInterpolation
+  - Style/StringLiteralsInInterpolation
+- lib/guidelines_parser.rb:
+  - Style/TrivialAccessors
+  - Style/IdenticalConditionalBranches
+  - Layout/ExtraSpacing
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/TernaryParentheses
+- lib/http_retryable.rb:
+  - Style/StringLiteralsInInterpolation
+- lib/image_ranker.rb:
+  - Layout/HashAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/EmptyStringInsideInterpolation
+  - Style/TernaryParentheses
+  - Style/RescueModifier
+  - Layout/EmptyLinesAroundClassBody
+- lib/image_searcher.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+  - Layout/ArgumentAlignment
+  - Style/RescueModifier
+  - Layout/EmptyLinesAroundClassBody
+- lib/known_vocabulary.rb:
+  - Lint/RedundantRequireStatement
+- lib/legacy_script_parser.rb:
+  - Style/RedundantFreeze
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/lingq_publisher.rb:
+  - Style/StderrPuts
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/loggable.rb:
+  - Style/StringLiteralsInInterpolation
+- lib/logger.rb:
+  - Style/EmptyMethod
+  - Style/SingleLineMethods
+  - Style/StringLiteralsInInterpolation
+  - Style/StderrPuts
+- lib/podcast_config.rb:
+  - Style/StringLiteralsInInterpolation
+  - Layout/ExtraSpacing
+  - Style/RedundantBegin
+  - Style/TernaryParentheses
+- lib/podcast_validator.rb:
+  - Layout/ExtraSpacing
+- lib/priority_links.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/r2_publisher.rb:
+  - Style/StderrPuts
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+- lib/research_cache.rb:
+  - Style/RescueModifier
+  - Style/StringLiteralsInInterpolation
+- lib/retryable.rb:
+  - Style/StderrPuts
+- lib/rss_generator.rb:
+  - Style/TernaryParentheses
+  - Style/StringLiteralsInInterpolation
+  - Lint/UselessAssignment
+- lib/script_artifact.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/site_generator.rb:
+  - Style/TernaryParentheses
+  - Layout/MultilineMethodCallBraceLayout
+  - Style/StringLiteralsInInterpolation
+  - Style/RescueStandardError
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/MultilineOperationIndentation
+- lib/snip_interval.rb:
+  - Style/ComparableClamp
+  - Style/RedundantRegexpEscape
+  - Style/StringLiteralsInInterpolation
+  - Style/TernaryParentheses
+- lib/source_manager.rb:
+  - Lint/RedundantRequireStatement
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/sources/base_source.rb:
+  - Lint/RedundantRequireStatement
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/sources/bluesky_source.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+  - Style/TernaryParentheses
+- lib/sources/claude_web_source.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/NestedTernaryOperator
+- lib/sources/hn_source.rb:
+  - Style/StringLiteralsInInterpolation
+- lib/sources/rss_source.rb:
+  - Lint/RedundantRequireStatement
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/EmptyStringInsideInterpolation
+  - Style/TernaryParentheses
+  - Style/RescueModifier
+- lib/sources/x_source.rb:
+  - Style/TernaryParentheses
+- lib/subtitle_generator.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/subtitle_parser.rb:
+  - Performance/DoubleStartEndWith
+- lib/subtitle_reconciler.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+- lib/tell/colors.rb:
+  - Layout/ExtraSpacing
+  - Layout/HashAlignment
+  - Style/IdenticalConditionalBranches
+- lib/tell/config.rb:
+  - Layout/HashAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ExtraSpacing
+  - Layout/ArgumentAlignment
+  - Style/TernaryParentheses
+  - Layout/MultilineOperationIndentation
+  - Style/HashExcept
+  - Style/StringLiteralsInInterpolation
+  - Style/ConditionalAssignment
+  - Style/StderrPuts
+- lib/tell/detector.rb:
+  - Layout/HashAlignment
+  - Style/TrailingCommaInHashLiteral
+- lib/tell/engine.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ExtraSpacing
+  - Layout/ParameterAlignment
+  - Style/RedundantSelf
+  - Style/RescueModifier
+  - Layout/ArgumentAlignment
+- lib/tell/error_formatter.rb:
+  - Style/TernaryParentheses
+- lib/tell/espeak.rb:
+  - Performance/StringReplacement
+  - Lint/RedundantRequireStatement
+- lib/tell/glosser.rb:
+  - Style/StringLiteralsInInterpolation
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/MultilineMethodCallIndentation
+  - Style/RedundantFreeze
+- lib/tell/hints.rb:
+  - Layout/ExtraSpacing
+- lib/tell/history.rb:
+  - Layout/MultilineMethodCallIndentation
+- lib/tell/hunspell.rb:
+  - Lint/RedundantRequireStatement
+  - Style/TernaryParentheses
+  - Layout/ArgumentAlignment
+- lib/tell/icu_phonetic.rb:
+  - Layout/HashAlignment
+- lib/tell/japanese_brackets.rb:
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/tell/kana.rb:
+  - Layout/ExtraSpacing
+  - Style/TernaryParentheses
+  - Style/ComparableBetween
+- lib/tell/phonetic_systems.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/tell/processor.rb:
+  - Style/StderrPuts
+  - Style/TrailingCommaInHashLiteral
+  - Style/FileWrite
+  - Style/RescueModifier
+- lib/tell/translation_service.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/tell/translator.rb:
+  - Layout/EmptyLinesAroundModuleBody
+  - Layout/ExtraSpacing
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StderrPuts
+- lib/tell/tts.rb:
+  - Layout/ExtraSpacing
+  - Layout/EmptyLinesAroundClassBody
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/tell/web.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ExtraSpacing
+  - Style/TernaryParentheses
+  - Layout/EndAlignment
+  - Layout/MultilineMethodCallBraceLayout
+  - Style/RescueModifier
+  - Style/TrailingCommaInHashLiteral
+- lib/text_splitter.rb:
+  - Layout/MultilineOperationIndentation
+  - Style/TernaryParentheses
+- lib/time_value.rb:
+  - Style/RedundantParentheses
+  - Lint/SuppressedExceptionInNumberConversion
+  - Style/RescueModifier
+- lib/timestamp_persister.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/transcript_discovery.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Lint/UselessAssignment
+  - Style/RedundantRegexpArgument
+- lib/transcript_parser.rb:
+  - Style/TernaryParentheses
+  - Layout/ArgumentAlignment
+  - Style/ConditionalAssignment
+  - Style/KeywordParametersOrder
+- lib/transcript_renderer.rb:
+  - Lint/RedundantRequireStatement
+  - Style/TernaryParentheses
+  - Style/ConditionalAssignment
+  - Style/SafeNavigation
+  - Style/StringLiteralsInInterpolation
+  - Lint/UselessAssignment
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/transcription/base_engine.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Style/StringLiteralsInInterpolation
+- lib/transcription/elevenlabs_engine.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/transcription/engine_manager.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Lint/UselessAssignment
+- lib/transcription/groq_engine.rb:
+  - Style/HashSyntax
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/transcription/openai_engine.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/transcription/reconciler.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/EmptyLinesAroundClassBody
+- lib/upload_tracker.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- lib/url_cleaner.rb:
+  - Style/RedundantRegexpEscape
+- lib/validators/base_validator.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Lint/IneffectiveAccessModifier
+- lib/validators/episodes_validator.rb:
+  - Style/StringLiteralsInInterpolation
+  - Style/RescueModifier
+- lib/validators/guidelines_validator.rb:
+  - Style/StringLiteralsInInterpolation
+- lib/validators/language_pipeline_validator.rb:
+  - Style/StringLiteralsInInterpolation
+- lib/validators/orphans_validator.rb:
+  - Lint/RedundantRequireStatement
+  - Style/StringLiteralsInInterpolation
+- lib/validators/transcripts_validator.rb:
+  - Layout/MultilineOperationIndentation
+- lib/video_builder.rb:
+  - Style/EmptyStringInsideInterpolation
+- lib/vocabulary_annotator.rb:
+  - Lint/RedundantRequireStatement
+  - Style/StringLiteralsInInterpolation
+  - Style/NestedTernaryOperator
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/ConditionalAssignment
+  - Layout/EmptyLinesAroundClassBody
+- lib/voicer.rb:
+  - Layout/ParameterAlignment
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/EmptyLinesAroundClassBody
+- lib/word_stats.rb:
+  - Lint/RedundantRequireStatement
+  - Style/SafeNavigation
+  - Layout/MultilineMethodCallIndentation
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/EmptyStringInsideInterpolation
+  - Style/StringLiteralsInInterpolation
+  - Style/YAMLFileRead
+  - Style/StderrPuts
+- lib/yaml_loader.rb:
+  - Style/StringLiteralsInInterpolation
+- lib/youtube_downloader.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+- lib/youtube_publisher.rb:
+  - Style/StderrPuts
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/EmptyStringInsideInterpolation
+  - Style/RedundantBegin
+  - Layout/CommentIndentation
+- lib/youtube_uploader.rb:
+  - Style/SafeNavigation
+  - Style/RescueStandardError
+  - Layout/ParameterAlignment
+  - Style/StderrPuts
+- podgen.gemspec:
+  - Layout/ExtraSpacing
+- test/browser/test_vocab_tooltip.rb:
+  - Layout/ExtraSpacing
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+  - Style/StringLiteralsInInterpolation
+- test/integration/test_assembly.rb:
+  - Layout/ExtraSpacing
+- test/integration/test_language_pipeline_chain.rb:
+  - Style/RedundantSort
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+- test/integration/test_news_pipeline.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/EmptyLinesAroundClassBody
+- test/integration/test_pipeline_contracts.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/integration/test_stats_validate.rb:
+  - Layout/ExtraSpacing
+  - Layout/SpaceInsideHashLiteralBraces
+- test/integration/test_tell_gloss_pipeline.rb:
+  - Layout/HashAlignment
+  - Lint/DuplicateRegexpCharacterClassElement
+- test/integration/test_tell_speak_pipeline.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/integration/test_transcription_reconciliation.rb:
+  - Performance/StringReplacement
+  - Style/RedundantRegexpArgument
+- test/integration/test_tts_chain.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/tell_mocks.rb:
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ParameterAlignment
+- test/test_helper.rb:
+  - Style/StringLiteralsInInterpolation
+- test/test_helper_browser.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_ambient_logger.rb:
+  - Layout/ArgumentAlignment
+- test/unit/test_anthropic_client.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_atomic_writer.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_audio_assembler.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+- test/unit/test_audio_trimmer.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ExtraSpacing
+- test/unit/test_auto_cover_resolver.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ExtraSpacing
+  - Standard/BlockSingleLineBraces
+- test/unit/test_base_source.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_cli_commands.rb:
+  - Layout/MultilineMethodCallBraceLayout
+- test/unit/test_cli_options.rb:
+  - Lint/UselessAssignment
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_cover_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_cover_command.rb:
+  - Layout/MultilineMethodCallBraceLayout
+  - Style/Semicolon
+  - Layout/SpaceInsideHashLiteralBraces
+  - Lint/UselessAssignment
+  - Layout/ArgumentAlignment
+- test/unit/test_cover_resolver.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_engine_manager.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+- test/unit/test_episode_artifacts.rb:
+  - Layout/ArrayAlignment
+- test/unit/test_episode_history.rb:
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_episode_selector.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Layout/EmptyLinesAroundAccessModifier
+  - Style/SingleLineMethods
+- test/unit/test_episode_source.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+- test/unit/test_exclude_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_fork_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_generate_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RedundantRegexpArgument
+  - Layout/ArgumentAlignment
+- test/unit/test_guidelines_parser.rb:
+  - Layout/ExtraSpacing
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_history_maps.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_http_retryable.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+  - Style/EmptyMethod
+  - Style/SingleLineMethods
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_image_ranker.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+- test/unit/test_image_searcher.rb:
+  - Layout/ExtraSpacing
+  - Layout/EndAlignment
+  - Lint/UnderscorePrefixedVariableName
+  - Style/Semicolon
+  - Style/SingleLineMethods
+- test/unit/test_init_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Lint/UselessAssignment
+- test/unit/test_language_pipeline.rb:
+  - Style/SingleLineMethods
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+  - Style/Semicolon
+  - Layout/ExtraSpacing
+- test/unit/test_legacy_script_parser.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_lingq_agent.rb:
+  - Style/SingleLineMethods
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+- test/unit/test_lingq_publisher.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ParameterAlignment
+  - Layout/EmptyLineBetweenDefs
+  - Layout/ArgumentAlignment
+- test/unit/test_loggable.rb:
+  - Layout/EmptyLinesAfterModuleInclusion
+- test/unit/test_move_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+- test/unit/test_podcast_config.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+- test/unit/test_priority_links.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_publish_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+  - Layout/ExtraSpacing
+  - Layout/HashAlignment
+  - Layout/ParameterAlignment
+- test/unit/test_r2_publisher.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ParameterAlignment
+  - Layout/EmptyLineBetweenDefs
+- test/unit/test_reconciler.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+  - Style/TrivialAccessors
+- test/unit/test_reformat_command.rb:
+  - Layout/SpaceInLambdaLiteral
+  - Style/Semicolon
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+- test/unit/test_regen_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+- test/unit/test_render_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_research_agent.rb:
+  - Lint/RedundantRequireStatement
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/TrivialAccessors
+- test/unit/test_research_cache.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiteralsInInterpolation
+- test/unit/test_retryable.rb:
+  - Style/EmptyMethod
+  - Style/SingleLineMethods
+  - Style/RedundantException
+- test/unit/test_revocab_command.rb:
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_rss_generator.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_rss_source.rb:
+  - Style/SingleLineMethods
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_schedule_command.rb:
+  - Style/Semicolon
+- test/unit/test_scrap_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_script_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+  - Style/Semicolon
+- test/unit/test_script_artifact.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_script_renderer.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RedundantRegexpArgument
+- test/unit/test_script_reviewer.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+- test/unit/test_site_generator.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/PercentLiteralDelimiters
+- test/unit/test_source_manager.rb:
+  - Lint/RedundantRequireStatement
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_source_subclasses.rb:
+  - Lint/RedundantRequireStatement
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_stats_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_subtitle_generator.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_subtitle_reconciler.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_subtitle_reconciliation_runner.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_tell_config.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Lint/UselessAssignment
+- test/unit/test_tell_engine.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Lint/UselessAssignment
+  - Style/TrailingCommaInHashLiteral
+- test/unit/test_tell_engine_pool.rb:
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_tell_error_formatter.rb:
+  - Style/StringLiterals
+- test/unit/test_tell_glosser.rb:
+  - Layout/HashAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/StringLiterals
+  - Style/TrivialAccessors
+- test/unit/test_tell_history.rb:
+  - Lint/UselessAssignment
+- test/unit/test_tell_icu_phonetic.rb:
+  - Lint/UselessAssignment
+  - Performance/StringBytesize
+- test/unit/test_tell_processor.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+- test/unit/test_tell_translation_service.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_tell_translator.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RedundantException
+- test/unit/test_tell_tts.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_tell_web.rb:
+  - Layout/ArgumentAlignment
+  - Style/TernaryParentheses
+- test/unit/test_text_splitter.rb:
+  - Style/RedundantRegexpArgument
+  - Style/RedundantParentheses
+  - Style/StringChars
+- test/unit/test_timestamp_persister.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_topic_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+- test/unit/test_transcript_discovery.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_transcript_renderer.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_transcription_engines.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Lint/SymbolConversion
+- test/unit/test_translate_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_translation_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/PercentLiteralDelimiters
+  - Style/Semicolon
+  - Layout/EmptyLineBetweenDefs
+- test/unit/test_tts_agent.rb:
+  - Style/Semicolon
+  - Layout/ArgumentAlignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/SpaceInsideBlockBraces
+- test/unit/test_tweet_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_twitter_agent.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_unpublish_command.rb:
+  - Style/Semicolon
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_upload_tracker.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_uploads_command.rb:
+  - Style/TernaryParentheses
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_utilities.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_validate_command.rb:
+  - Lint/UselessAssignment
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RescueModifier
+  - Layout/ArrayAlignment
+- test/unit/test_validators.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/RescueModifier
+- test/unit/test_video_builder.rb:
+  - Layout/ExtraSpacing
+  - Style/Semicolon
+- test/unit/test_vocabulary_annotator.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ArgumentAlignment
+- test/unit/test_voice_command.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_voicer.rb:
+  - Layout/EmptyLineBetweenDefs
+  - Style/EmptyMethod
+  - Style/SingleLineMethods
+  - Layout/SpaceInsideHashLiteralBraces
+  - Style/Semicolon
+- test/unit/test_word_stats.rb:
+  - Style/YAMLFileRead
+- test/unit/test_yaml_loader.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/unit/test_youtube_publisher.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+  - Layout/ParameterAlignment
+  - Layout/EmptyLineBetweenDefs

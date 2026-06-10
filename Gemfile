@@ -29,4 +29,5 @@ group :test do
   gem "rack-test", "~> 2.2"   # HTTP testing for Sinatra endpoints
   gem "capybara",  "~> 3.40"  # Browser test DSL for test/browser/
   gem "cuprite",   "~> 0.15"  # Headless Chrome driver (CDP, no Selenium)
+  gem "standard",  "~> 1.54", require: false  # Linter (standardrb)
 end

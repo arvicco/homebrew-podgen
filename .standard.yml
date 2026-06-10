@@ -1,0 +1,8 @@
+ruby_version: 3.4
+
+ignore:
+  - "vendor/**/*"
+  - "Formula/**/*"
+  - "scripts/**/*"
+  - "podcasts/**/*"
+  - "output/**/*"
