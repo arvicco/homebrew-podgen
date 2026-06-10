@@ -309,7 +309,11 @@ module PodgenCLI
       plist_read(":StandardOutPath")
     end
 
+    # PlistBuddy's -c takes a single command string, so the key must be
+    # interpolated. Open3 never touches a shell, but guard the key shape so
+    # nothing can smuggle extra PlistBuddy commands into the string.
     def plist_read(key)
+      raise ArgumentError, "invalid plist key: #{key.inspect}" unless key.match?(/\A:[A-Za-z0-9:]+\z/)
       out, _, status = Open3.capture3(PLIST_BUDDY, "-c", "Print #{key}", plist_path)
       status.success? ? out.strip : nil
     end
