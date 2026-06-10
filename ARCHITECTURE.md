@@ -28,7 +28,7 @@ Vocabulary filtering for cognates (words similar enough to the target-language e
 
 ## Twitter publish is non-fatal by design
 
-`publish_command` rescues all Twitter errors and logs `"non-fatal"` (`lib/cli/publish_command.rb:175`). A failed tweet never aborts a publish.
+`R2Publisher#tweet_new_episodes` (`lib/r2_publisher.rb`) rescues all Twitter errors and logs `"non-fatal"`. A failed tweet never aborts a publish.
 
 **Why.** Publish is the critical path — R2 upload, RSS regeneration, LingQ, YouTube. A social-media side effect should not block or roll back the primary artifact shipping. The `UploadTracker` only records the tweet after success, so a failed tweet is naturally retried on the next publish.
 
