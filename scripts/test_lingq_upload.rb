@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# Manual component test, dispatched via `podgen test` (may hit live APIs).
+# Not part of the Minitest suite under test/.
+
 # Re-uploads the latest generated episode to LingQ.
 # Useful when the pipeline succeeded but the LingQ upload failed.
 # Usage: podgen test lingq_upload <podcast>

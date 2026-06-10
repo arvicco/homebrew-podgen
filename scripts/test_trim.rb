@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# Manual component test, dispatched via `podgen test` (may hit live APIs).
+# Not part of the Minitest suite under test/.
+
 # Diagnostic script: tests reconciliation-based outro detection.
 #
 # Downloads one episode, skips intro, transcribes with all 3 engines

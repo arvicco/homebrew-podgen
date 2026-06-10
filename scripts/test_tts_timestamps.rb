@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# Manual component test, dispatched via `podgen test` (may hit live APIs).
+# Not part of the Minitest suite under test/.
+
 # Experimental: TTS with timestamps endpoint
 # Reproduces the exact last segment from fulgur_news 2026-02-26 generation
 # to inspect character-level timestamps and detect trailing hallucination.

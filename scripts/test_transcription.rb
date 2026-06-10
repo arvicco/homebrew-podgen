@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# Manual component test, dispatched via `podgen test` (may hit live APIs).
+# Not part of the Minitest suite under test/.
+
 # Test: Transcription engines — transcribes an audio file via OpenAI, ElevenLabs Scribe, or Groq Whisper
 # Usage:
 #   podgen test transcription <audio_file_path> [open|elab|groq|all]
