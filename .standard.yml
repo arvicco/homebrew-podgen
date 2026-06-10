@@ -1,6 +1,10 @@
 ruby_version: 3.4
 
 ignore:
+  # Codebase convention is $stderr.puts for CLI warnings (249 call sites);
+  # don't force `warn` in new files only.
+  - "**/*":
+      - Style/StderrPuts
   - "vendor/**/*"
   - "Formula/**/*"
   - "scripts/**/*"

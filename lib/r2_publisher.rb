@@ -7,6 +7,7 @@ require_relative "upload_tracker"
 require_relative "transcript_parser"
 require_relative "episode_filtering"
 require_relative "episode_scanner"
+require_relative "publisher_shared"
 
 # Syncs a podcast's public-facing files (mp3s, feed, site) to Cloudflare R2
 # and posts tweets for newly-uploaded episodes (when Twitter is configured).
@@ -15,6 +16,11 @@ require_relative "episode_scanner"
 # UploadsCommand can drive R2/LingQ/YT through a uniform Result-returning
 # interface and so RegenCache memoization works across them in-process.
 class R2Publisher
+  include PublisherShared
+
+  # NB: scan_episodes (PublisherShared) is used only by tweet_new_episodes —
+  # the rclone sync runs against INCLUDE_GLOBS wholesale and is intentionally
+  # not episode-scoped.
   REQUIRED_ENV = %w[R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT R2_BUCKET].freeze
   INCLUDE_GLOBS = [
     "episodes/*.mp3",
@@ -82,15 +88,6 @@ class R2Publisher
   end
 
   private
-
-  def regenerate!
-    require_relative "cli/rss_command"
-    require_relative "site_generator"
-    PodgenCLI::RssCommand.new([@config.name], { verbosity: @options[:verbosity] }).run
-    SiteGenerator.new(config: @config, clean: true).generate
-  rescue => e # skippable: stale feed/site is acceptable; next publish regenerates
-    $stderr.puts "Warning: site/feed regen failed: #{e.class}: #{e.message}" if @options[:verbosity] == :verbose
-  end
 
   def rclone_available?
     return @rclone_available_override unless @rclone_available_override.nil?
@@ -191,24 +188,5 @@ class R2Publisher
     return @twitter_agent if @twitter_agent
     require_relative "agents/twitter_agent"
     TwitterAgent.new(logger: nil)
-  end
-
-  # Used only by tweet_new_episodes — the rclone sync above runs against
-  # the include-globs wholesale and is intentionally not episode-scoped.
-  def scan_episodes
-    EpisodeScanner.scan(@config.episodes_dir, episode_id: @episode_id)
-  end
-
-  def parse_transcript(path)
-    parsed = TranscriptParser.parse(path)
-    [parsed.title, parsed.description, parsed.body]
-  end
-
-  def tracker
-    @tracker ||= @tracker_path ? UploadTracker.new(@tracker_path) : UploadTracker.for_config(@config)
-  end
-
-  def quiet?
-    @options[:verbosity] == :quiet
   end
 end
