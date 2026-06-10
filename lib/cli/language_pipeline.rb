@@ -681,7 +681,11 @@ module PodgenCLI
     def upload_to_lingq(episode, transcript, audio_path, base_name)
       image_path = nil
       if @config.lingq_enabled? && !@dry_run
-        image_path, = resolve_episode_cover(episode[:title])
+        begin
+          image_path, = resolve_episode_cover(episode[:title])
+        rescue => e # skippable: episode is already committed; upload proceeds without an image
+          logger.log("Warning: cover resolution for LingQ failed: #{e.class}: #{e.message} (uploading without image)")
+        end
       end
       uploads = PostPipelineUploads.new(config: @config, logger: logger, dry_run: @dry_run)
       uploads.upload_to_lingq(episode: episode, transcript: transcript,

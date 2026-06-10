@@ -219,6 +219,31 @@ class TestGenerateCommand < Minitest::Test
     assert_empty err
   end
 
+  def test_surface_guidelines_warnings_reaches_stderr_with_real_config
+    # End-to-end through PodcastConfig → GuidelinesParser: warnings are
+    # appended during lazy section parsing, so this fails if the surfacing
+    # point reads them before the sections are primed.
+    podcast_dir = File.join(@tmpdir, "podcasts", "warnpod")
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), <<~MD)
+      ## Podcast
+      - name: Warn Pod
+
+      ## Transcription Engine
+      - whisper
+    MD
+    ENV["PODGEN_ROOT"] = @tmpdir
+    require "podcast_config"
+    config = PodcastConfig.new("warnpod")
+
+    _out, err = capture_io { build_command.send(:surface_guidelines_warnings, config) }
+
+    assert_match(/whisper/, err)
+    assert_match(/guidelines\.md/, err)
+  ensure
+    ENV.delete("PODGEN_ROOT")
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success

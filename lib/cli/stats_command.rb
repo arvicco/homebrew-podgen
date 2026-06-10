@@ -419,6 +419,8 @@ module PodgenCLI
     rescue REXML::ParseException => e
       $stderr.puts "Warning: could not parse #{File.basename(feed_path)}: #{e.message.lines.first&.strip}"
       nil
+    rescue Errno::ENOENT
+      nil # feed deleted between the exist? check and the read
     end
 
     # File.size that treats a file vanishing mid-scan as 0 instead of crashing.
