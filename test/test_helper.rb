@@ -1,6 +1,17 @@
 # frozen_string_literal: true
 
 require "bundler/setup"
+
+# Coverage is opt-in (COVERAGE=1) so everyday test runs stay fast.
+# Must start before any lib/ file is required or its lines won't count.
+if ENV["COVERAGE"] && !ENV["COVERAGE"].empty?
+  require "simplecov"
+  SimpleCov.start do
+    add_filter %r{\A/(test|scripts|vendor)/}
+    enable_coverage :branch
+  end
+end
+
 require "dotenv/load"
 require "minitest/autorun"
 require "tmpdir"

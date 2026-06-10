@@ -26,6 +26,7 @@ GEM
       ferrum (~> 0.17.0)
     declarative (0.0.20)
     deepl-rb (3.6.1)
+    docile (1.4.1)
     dotenv (3.2.0)
     exa-ai (0.8.0)
       dotenv (~> 3.0)
@@ -136,6 +137,12 @@ GEM
       faraday (>= 0.17.5, < 3.a)
       jwt (>= 1.5, < 4.0)
       multi_json (~> 1.10)
+    simplecov (0.22.0)
+      docile (~> 1.1)
+      simplecov-html (~> 0.11)
+      simplecov_json_formatter (~> 0.1)
+    simplecov-html (0.13.2)
+    simplecov_json_formatter (0.1.4)
     sinatra (4.2.1)
       logger (>= 1.6.0)
       mustermann (~> 3.0)
@@ -186,6 +193,7 @@ DEPENDENCIES
   reline (~> 0.6)
   rexml (~> 3.4)
   rss (~> 0.3)
+  simplecov (~> 0.22)
   sinatra (~> 4.1)
   x (~> 0.14)
 
@@ -202,6 +210,7 @@ CHECKSUMS
   cuprite (0.17) sha256=b140d5dc70d08b97ad54bcf45cd95d0bd430e291e9dffe76fff851fddd57c12b
   declarative (0.0.20) sha256=8021dd6cb17ab2b61233c56903d3f5a259c5cf43c80ff332d447d395b17d9ff9
   deepl-rb (3.6.1) sha256=19ca2c21201061bc216dec95330531f23d066e2e7545b6b4f3d09a6b6c8a2d1b
+  docile (1.4.1) sha256=96159be799bfa73cdb721b840e9802126e4e03dfc26863db73647204c727f21e
   dotenv (3.2.0) sha256=e375b83121ea7ca4ce20f214740076129ab8514cd81378161f11c03853fe619d
   exa-ai (0.8.0) sha256=0eee2673ef1ff96e851a8f7bad846483ecde54aa860c3d58c339a3cd49077552
   faraday (2.14.1) sha256=a43cceedc1e39d188f4d2cdd360a8aaa6a11da0c407052e426ba8d3fb42ef61c
@@ -252,6 +261,9 @@ CHECKSUMS
   rss (0.3.2) sha256=3bd0446d32d832cda00ba07f4b179401f903b52ea1fdaac0f1f08de61a501efa
   ruby2_keywords (0.0.5) sha256=ffd13740c573b7301cf7a2e61fc857b2a8e3d3aff32545d6f8300d8bae10e3ef
   signet (0.21.0) sha256=d617e9fbf24928280d39dcfefba9a0372d1c38187ffffd0a9283957a10a8cd5b
+  simplecov (0.22.0) sha256=fe2622c7834ff23b98066bb0a854284b2729a569ac659f82621fc22ef36213a5
+  simplecov-html (0.13.2) sha256=bd0b8e54e7c2d7685927e8d6286466359b6f16b18cb0df47b508e8d73c777246
+  simplecov_json_formatter (0.1.4) sha256=529418fbe8de1713ac2b2d612aa3daa56d316975d307244399fa4838c601b428
   sinatra (4.2.1) sha256=b7aeb9b11d046b552972ade834f1f9be98b185fa8444480688e3627625377080
   tilt (2.7.0) sha256=0d5b9ba69f6a36490c64b0eee9f6e9aad517e20dcc848800a06eb116f08c6ab3
   toon-ruby (0.1.1) sha256=c0395be95161f3fe2487888b4172cc6ecafdbbbb9aa2a580a0dc2d7563458428

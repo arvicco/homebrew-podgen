@@ -24,6 +24,7 @@ gem "x",         "~> 0.14"              # X (Twitter) API v2 client
 
 group :test do
   gem "minitest",  "~> 5.25"
+  gem "simplecov", "~> 0.22", require: false  # Coverage report (COVERAGE=1)
   gem "rake",      "~> 13.2"
   gem "rack-test", "~> 2.2"   # HTTP testing for Sinatra endpoints
   gem "capybara",  "~> 3.40"  # Browser test DSL for test/browser/
