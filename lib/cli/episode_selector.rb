@@ -2,6 +2,7 @@
 
 require "date"
 require "optparse"
+require_relative File.join(File.expand_path("../..", __dir__), "lib", "episode_filtering")
 
 module PodgenCLI
   # Shared episode-selection parsing for CLI commands that operate on a
@@ -162,7 +163,7 @@ module PodgenCLI
     # produced episode regardless of how it was authored — regen, cover,
     # etc. Excludes per-language MP3s like `-jp.mp3`.
     def english_episode_basenames(config)
-      Dir.glob(File.join(config.episodes_dir, "*.mp3"))
+      EpisodeFiltering.all_episodes(config.episodes_dir)
         .reject { |f| File.basename(f).match?(/-[a-z]{2}\.mp3\z/) }
         .sort
         .map { |f| File.basename(f, ".mp3") }

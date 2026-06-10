@@ -14,6 +14,24 @@ class TestEpisodeFiltering < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # --- all_transcripts ---
+
+  def test_all_transcripts_returns_sorted_transcript_paths
+    File.write(File.join(@episodes_dir, "pod-2026-01-02_transcript.md"), "x")
+    File.write(File.join(@episodes_dir, "pod-2026-01-01_transcript.md"), "x")
+    File.write(File.join(@episodes_dir, "pod-2026-01-01_script.md"), "x")
+    File.write(File.join(@episodes_dir, "pod-2026-01-01.mp3"), "x")
+
+    paths = EpisodeFiltering.all_transcripts(@episodes_dir)
+
+    assert_equal %w[pod-2026-01-01_transcript.md pod-2026-01-02_transcript.md],
+      paths.map { |p| File.basename(p) }
+  end
+
+  def test_all_transcripts_empty_for_missing_dir
+    assert_empty EpisodeFiltering.all_transcripts(File.join(@tmpdir, "nope"))
+  end
+
   # --- matches_language? ---
 
   def test_matches_language_english_no_suffix

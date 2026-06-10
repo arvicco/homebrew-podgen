@@ -5,6 +5,7 @@ require "optparse"
 root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "upload_tracker")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   class TweetCommand
@@ -91,7 +92,7 @@ module PodgenCLI
         return nil
       end
 
-      mp3s = Dir.glob(File.join(episodes_dir, "*.mp3")).sort
+      mp3s = EpisodeFiltering.all_episodes(episodes_dir).sort
       matched = mp3s.select { |f| File.basename(f, ".mp3").end_with?(@episode_id) }
 
       if matched.empty?

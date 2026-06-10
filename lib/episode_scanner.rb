@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "episode_filtering"
+
 # Enumerates publishable episodes in a podcast's episodes_dir.
 #
 # An episode is "publishable" when both its `.mp3` and a text file
@@ -16,7 +18,7 @@ module EpisodeScanner
   def scan(episodes_dir, episode_id: nil)
     return [] unless episodes_dir && Dir.exist?(episodes_dir)
 
-    episodes = Dir.glob(File.join(episodes_dir, "*.mp3"))
+    episodes = EpisodeFiltering.all_episodes(episodes_dir)
       .sort
       .filter_map do |mp3_path|
         base_name = File.basename(mp3_path, ".mp3")

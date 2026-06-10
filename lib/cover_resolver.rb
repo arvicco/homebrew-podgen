@@ -14,6 +14,13 @@ class CoverResolver
   # Adding a new key here makes all three sites pick it up automatically.
   OVERLAY_KEYS = %i[font font_color font_size width gravity x_offset y_offset].freeze
 
+  # Newest screenshot on the Desktop, for `--image last` / `image: last`.
+  # Returns nil when there are none.
+  def self.latest_screenshot
+    Dir.glob(File.join(Dir.home, "Desktop", "Screenshot *.png"))
+      .max_by { |f| File.mtime(f) }
+  end
+
   # Find an existing per-episode cover file (any image extension).
   # Returns the file path or nil.
   def self.find_episode_cover(episodes_dir, basename)
