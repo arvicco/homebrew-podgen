@@ -28,6 +28,15 @@ class TestScheduleCommand < Minitest::Test
     File.delete(TEST_PLIST) if File.exist?(TEST_PLIST)
   end
 
+  # ── plist_read key guard ──
+
+  def test_plist_read_rejects_malformed_keys
+    cmd = PodgenCLI::ScheduleCommand.allocate
+
+    assert_raises(ArgumentError) { cmd.send(:plist_read, ":Foo Delete :Bar") }
+    assert_raises(ArgumentError) { cmd.send(:plist_read, "Print; rm") }
+  end
+
   # ── Defaults ──
 
   def test_defaults_to_six_am
