@@ -232,6 +232,7 @@ class TestGenerateCommand < Minitest::Test
       ## Transcription Engine
       - whisper
     MD
+    prev_root = ENV["PODGEN_ROOT"]
     ENV["PODGEN_ROOT"] = @tmpdir
     require "podcast_config"
     config = PodcastConfig.new("warnpod")
@@ -241,7 +242,7 @@ class TestGenerateCommand < Minitest::Test
     assert_match(/whisper/, err)
     assert_match(/guidelines\.md/, err)
   ensure
-    ENV.delete("PODGEN_ROOT")
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
 
   # --- verify_ffmpeg! ---
