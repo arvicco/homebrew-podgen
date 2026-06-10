@@ -147,6 +147,26 @@ class TestStatsCommand < Minitest::Test
     assert_empty map
   end
 
+  # --- count_feed_items ---
+
+  def test_count_feed_items_counts_items_in_valid_feed
+    feed = File.join(@podcast_dir, "feed.xml")
+    File.write(feed, "<rss><channel><item/><item/><item/></channel></rss>")
+
+    assert_equal 3, build_command.send(:count_feed_items, feed)
+  end
+
+  def test_count_feed_items_warns_and_returns_nil_on_malformed_feed
+    feed = File.join(@podcast_dir, "feed.xml")
+    File.write(feed, "<rss><channel><item>broken")
+
+    count = nil
+    _out, err = capture_io { count = build_command.send(:count_feed_items, feed) }
+
+    assert_nil count
+    assert_match(/feed\.xml/, err, "malformed feed must produce a visible warning, not silent nil")
+  end
+
   private
 
   def create_mp3(name, size)

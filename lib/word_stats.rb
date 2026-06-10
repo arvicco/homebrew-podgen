@@ -344,7 +344,9 @@ class WordStats
   def load_cache
     return nil unless File.exist?(cache_path)
     YAML.safe_load(File.read(cache_path))
-  rescue
+  rescue Psych::Exception, Errno::ENOENT
+    # Corrupt or vanished cache is a cache miss; anything else (e.g. EACCES)
+    # is a real problem and should raise.
     nil
   end
 
