@@ -10,7 +10,7 @@ Runs on a daily schedule with zero human involvement.
 
 ## Prerequisites
 
-- **Ruby 3.2+** (tested with Ruby 4.0)
+- **Ruby 3.4+** (tested with Ruby 4.0)
 - **Homebrew** (macOS)
 - **System tools** (macOS):
   - Required: `brew install ffmpeg yt-dlp imagemagick librsvg`
@@ -1427,7 +1427,7 @@ Each additional language adds ~$0.10 (translation) + ElevenLabs TTS cost.
 
 ### Prerequisites
 
-- **Ruby 3.2+**
+- **Ruby 3.4+**
 - At least one TTS API: [ElevenLabs](https://elevenlabs.io/) or [Google Cloud TTS](https://cloud.google.com/text-to-speech)
 - At least one translation API: [DeepL](https://www.deepl.com/pro-api), [Anthropic](https://console.anthropic.com/) (Claude), or [OpenAI](https://platform.openai.com/)
 - **Optional phonetic engines** (fall back to Claude AI if not installed):

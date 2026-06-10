@@ -21,7 +21,7 @@ class Podgen < Formula
   depends_on "librsvg" => :recommended
   depends_on "fontconfig" => :recommended
 
-  # Ruby 3.2+ required — uses whatever ruby is on PATH (rbenv, asdf, system, etc.)
+  # Ruby 3.4+ required — uses whatever ruby is on PATH (rbenv, asdf, system, etc.)
   # No `depends_on "ruby"` to avoid pulling Homebrew's heavyweight Ruby build.
 
   def install
@@ -75,7 +75,7 @@ class Podgen < Formula
 
   def caveats
     <<~EOS
-      Requires Ruby 3.2+ on your PATH (via rbenv, asdf, or similar).
+      Requires Ruby 3.4+ on your PATH (via rbenv, asdf, or similar).
 
       podgen has created a project directory at ~/.podgen
 
