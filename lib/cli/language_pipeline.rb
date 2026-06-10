@@ -24,6 +24,7 @@ require_relative File.join(root, "lib", "transcript_discovery")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "cover_resolver")
 require_relative File.join(root, "lib", "auto_cover_resolver")
+require_relative File.join(root, "lib", "episode_cover_resolver")
 
 module PodgenCLI
   class LanguagePipeline
@@ -810,65 +811,29 @@ module PodgenCLI
       path
     end
 
-    # Priority chain for episode cover:
-    # 1.  --image PATH/last/thumb (CLI flag)
-    # 2.  Per-feed image: PATH/last/thumb/none
-    # 2a. Per-feed image: auto → AutoCoverResolver; falls through if no winner
-    # 3.  --base-image PATH → title overlay
-    # 4.  Per-feed base_image: PATH → title overlay
-    # 5.  RSS episode image → downloaded from feed
-    # 6.  ## Image base_image → title overlay
-    # 7.  YouTube thumbnail → fallback
-    # 8.  nil → no cover
-    def resolve_episode_cover(title, skip_auto: false)
-      # Auto path: --image auto (CLI) or feed image: auto. Try first, on
-      # no-winner recurse with skip_auto=true so we fall through to the rest
-      # of the chain (base_image, feed_image, thumbnail, …) instead of
-      # treating the literal string "auto" as a path.
-      cli_auto = @options[:image] == "auto"
-      feed_auto = @current_episode_feed_image == "auto"
-      if !skip_auto && (cli_auto || feed_auto)
-        winner = try_auto_cover_for_feed(title)
-        label = cli_auto ? "--image auto (winner)" : "feed image: auto (winner)"
-        return [winner, label] if winner
-        return resolve_episode_cover(title, skip_auto: true)
-      end
-
-      feed_image = feed_auto ? nil : @current_episode_feed_image
-      cli_image = cli_auto ? nil : @options[:image]
-
-      if cli_image
-        if cli_image == "thumb"
-          [@youtube_thumbnail, "--image thumb (YouTube thumbnail)"]
-        else
-          [File.expand_path(cli_image), "--image #{cli_image}"]
-        end
-      elsif @current_episode_image_none
-        [@youtube_thumbnail, "feed image: none (YouTube thumbnail fallback)"]
-      elsif feed_image
-        if feed_image == "thumb"
-          [@youtube_thumbnail, "feed image: thumb (YouTube thumbnail)"]
-        else
-          [feed_image, "feed image: #{File.basename(feed_image)}"]
-        end
-      elsif @options[:base_image]
-        path = generate_cover_image(title, File.expand_path(@options[:base_image])) || @youtube_thumbnail
-        [path, "--base-image title overlay"]
-      elsif @current_episode_feed_base_image
-        path = generate_cover_image(title, @current_episode_feed_base_image) || @youtube_thumbnail
-        [path, "feed base_image title overlay"]
-      elsif @rss_episode_image
-        [@rss_episode_image, "RSS episode image"]
-      elsif @config.cover_generation_enabled?
-        path = generate_cover_image(title) || @youtube_thumbnail
-        [path, "config base_image title overlay"]
-      else
-        bi = @config.cover_base_image
-        if bi && !File.exist?(bi)
-          logger.log("Warning: base_image configured but not found: #{bi}")
-        end
-        [@youtube_thumbnail, @youtube_thumbnail ? "YouTube thumbnail fallback" : nil]
-      end
+    # Thin delegate over EpisodeCoverResolver, which owns the cover priority
+    # chain. Builds the resolver from pipeline state and merges back the
+    # temp files / warnings it accumulated.
+    def resolve_episode_cover(title)
+      resolver = EpisodeCoverResolver.new(
+        config: @config,
+        logger: logger,
+        staging_dir: @staging_dir,
+        base_name: @base_name,
+        cli_image: @options[:image],
+        cli_base_image: @options[:base_image],
+        feed_image: @current_episode_feed_image,
+        image_none: @current_episode_image_none,
+        feed_base_image: @current_episode_feed_base_image,
+        feed_cover_opts: @current_episode_feed_cover_opts,
+        rss_episode_image: @rss_episode_image,
+        youtube_thumbnail: @youtube_thumbnail,
+        episode_description: @episode.is_a?(Hash) ? @episode[:description].to_s : ""
+      )
+      result = resolver.resolve(title)
+      @temp_files.concat(resolver.temp_files)
+      @warnings.concat(resolver.warnings)
+      result
     end
 
     def download_episode_image(url)
@@ -881,51 +846,6 @@ module PodgenCLI
       path
     rescue => e # skippable: cover chain falls through to the next strategy
       logger.log("Warning: Failed to download episode image: #{e.class}: #{e.message}")
-      nil
-    end
-
-    # Attempts an auto-cover search for a feed configured with `image: auto`.
-    # Top candidates are persisted into @staging_dir (not episodes_dir) so
-    # they participate in the pipeline's atomic commit: a crash before
-    # commit_episode wipes them along with everything else in staging.
-    # Returns the winner's path (in staging_dir) or nil — the caller falls
-    # through to the normal cover chain.
-    def try_auto_cover_for_feed(title)
-      description = @episode.is_a?(Hash) ? @episode[:description].to_s : ""
-      resolver = AutoCoverResolver.new(config: @config.auto_cover_config, logger: logger)
-      result = resolver.try(
-        title: title,
-        description: description,
-        episodes_dir: @staging_dir,
-        basename: @base_name
-      )
-      result[:winner_path]
-    rescue => e # skippable: cover chain falls through to the next strategy
-      logger.log("Warning: auto cover search failed: #{e.class}: #{e.message}")
-      nil
-    end
-
-    # Generates a per-episode cover image with the title overlaid on the base image.
-    # Returns the generated image path, or nil on failure.
-    def generate_cover_image(title, base_image = nil)
-      base_image ||= @config.cover_base_image
-      unless base_image
-        logger.log("Warning: No base_image configured for cover generation")
-        return nil
-      end
-
-      options = @config.cover_options.merge(@current_episode_feed_cover_opts || {})
-      path = CoverResolver.generate(
-        title: title,
-        base_image: base_image,
-        options: options,
-        logger: logger
-      )
-      @temp_files << path if path
-      path
-    rescue => e # skippable: cover chain falls through to the next strategy
-      logger.log("Warning: Cover generation failed: #{e.class}: #{e.message} (falling back)")
-      @warnings << "Cover generation failed (#{e.class}: #{e.message})"
       nil
     end
 

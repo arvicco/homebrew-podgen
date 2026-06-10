@@ -162,99 +162,30 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal 2, data["lingq"]["222"]["ep-b"]
   end
 
-  # --- resolve_episode_cover ---
+  # --- resolve_episode_cover (delegation wiring) ---
+  # The chain itself is tested in test_episode_cover_resolver.rb; these
+  # verify the pipeline passes its state through and merges results back.
 
-  def test_resolve_cover_with_image_path_option
-    image_path = File.join(@tmpdir, "custom.png")
-    FileUtils.touch(image_path)
-
-    pipeline = build_pipeline(options: { image: image_path })
-    result = pipeline.send(:resolve_episode_cover, "Title")
-
-    path, desc = result
-    assert_equal File.expand_path(image_path), path
-    assert_includes desc, "--image"
-  end
-
-  def test_resolve_cover_with_thumb_option
-    pipeline = build_pipeline(options: { image: "thumb" })
-    pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-
-    assert_equal "/tmp/thumb.jpg", path
-    assert_includes desc, "thumb"
-  end
-
-  def test_resolve_cover_image_none_falls_to_thumbnail
-    pipeline = build_pipeline
-    pipeline.instance_variable_set(:@current_episode_image_none, true)
-    pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/thumb.jpg", path
-    assert_includes desc, "none"
-  end
-
-  def test_resolve_cover_returns_nil_when_no_options
-    pipeline = build_pipeline
-    path, = pipeline.send(:resolve_episode_cover, "Title")
-    assert_nil path
-  end
-
-  def test_resolve_cover_uses_rss_episode_image
+  def test_resolve_cover_delegates_pipeline_state_to_resolver
     pipeline = build_pipeline
     pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
 
     path, desc = pipeline.send(:resolve_episode_cover, "Title")
+
     assert_equal "/tmp/rss_cover.jpg", path
     assert_includes desc, "RSS"
   end
 
-  def test_resolve_cover_feed_base_image_beats_rss_image
-    pipeline = build_pipeline
-    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
-    pipeline.instance_variable_set(:@current_episode_feed_base_image, "/tmp/base.jpg")
+  def test_resolve_cover_merges_resolver_warnings_into_pipeline
+    pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
 
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    # feed base_image triggers generate_cover_image which fails on fake path,
-    # but the point is it did NOT return the RSS image
-    refute_equal "/tmp/rss_cover.jpg", path
-    assert_includes desc, "feed base_image"
-  end
+    CoverResolver.stub(:generate, ->(**_) { raise "magick exploded" }) do
+      pipeline.send(:resolve_episode_cover, "Title")
+    end
 
-  # --- --image auto regression ---
-
-  def test_resolve_cover_with_image_auto_returns_winner_path
-    # Regression: --image auto used to be misread as a literal file path
-    # (File.expand_path("auto") → /Users/.../auto), crashing ImageMagick.
-    pipeline = build_pipeline(options: { image: "auto" })
-    winner = "/tmp/podgen_auto_winner.jpg"
-    pipeline.define_singleton_method(:try_auto_cover_for_feed) { |_title| winner }
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal winner, path
-    assert_includes desc, "--image auto"
-    refute_match(%r{/auto\z}, path.to_s, "must not treat 'auto' as a relative path")
-  end
-
-  def test_resolve_cover_with_image_auto_falls_through_when_no_winner
-    pipeline = build_pipeline(options: { image: "auto" })
-    pipeline.define_singleton_method(:try_auto_cover_for_feed) { |_title| nil }
-    pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
-
-    path, = pipeline.send(:resolve_episode_cover, "Title")
-    # No winner → falls through to next chain step (here: youtube thumbnail)
-    assert_equal "/tmp/thumb.jpg", path
-  end
-
-  def test_resolve_cover_with_image_auto_falls_through_to_rss_image_when_no_winner
-    pipeline = build_pipeline(options: { image: "auto" })
-    pipeline.define_singleton_method(:try_auto_cover_for_feed) { |_title| nil }
-    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/rss_cover.jpg", path
-    assert_includes desc, "RSS"
+    warnings = pipeline.instance_variable_get(:@warnings)
+    assert(warnings.any? { |w| w.include?("Cover generation failed") },
+      "resolver warnings must merge into pipeline warnings, got: #{warnings.inspect}")
   end
 
   # --- skippable-step warnings must name the exception class ---
@@ -272,112 +203,6 @@ class TestLanguagePipeline < Minitest::Test
     refute_nil warn_line, "failure must be logged"
     assert_includes warn_line, "RuntimeError",
       "warning must name the exception class so permanent failures are distinguishable from transient ones"
-  end
-
-  # --- resolve_episode_cover: characterization of the full priority chain ---
-  # These pin the documented 8-step priority order so the planned extraction
-  # of the cover chain into its own class cannot silently reorder it.
-
-  def test_resolve_cover_feed_image_literal_path
-    pipeline = build_pipeline
-    pipeline.instance_variable_set(:@current_episode_feed_image, "/tmp/feed_cover.jpg")
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/feed_cover.jpg", path
-    assert_includes desc, "feed image"
-  end
-
-  def test_resolve_cover_feed_image_thumb_uses_youtube_thumbnail
-    pipeline = build_pipeline
-    pipeline.instance_variable_set(:@current_episode_feed_image, "thumb")
-    pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/thumb.jpg", path
-    assert_includes desc, "thumb"
-  end
-
-  def test_resolve_cover_feed_image_auto_returns_winner
-    pipeline = build_pipeline
-    pipeline.instance_variable_set(:@current_episode_feed_image, "auto")
-    pipeline.define_singleton_method(:try_auto_cover_for_feed) { |_title| "/tmp/auto_winner.jpg" }
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/auto_winner.jpg", path
-    assert_includes desc, "feed image: auto"
-  end
-
-  def test_resolve_cover_cli_image_beats_feed_image
-    image_path = File.join(@tmpdir, "cli.png")
-    FileUtils.touch(image_path)
-    pipeline = build_pipeline(options: { image: image_path })
-    pipeline.instance_variable_set(:@current_episode_feed_image, "/tmp/feed_cover.jpg")
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal File.expand_path(image_path), path
-    assert_includes desc, "--image"
-  end
-
-  def test_resolve_cover_base_image_option_generates_overlay
-    pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
-    pipeline.define_singleton_method(:generate_cover_image) { |_t, _b = nil| "/tmp/generated.jpg" }
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/generated.jpg", path
-    assert_includes desc, "--base-image"
-  end
-
-  def test_resolve_cover_cli_base_image_beats_feed_base_image
-    pipeline = build_pipeline(options: { base_image: "/tmp/cli_base.png" })
-    pipeline.instance_variable_set(:@current_episode_feed_base_image, "/tmp/feed_base.png")
-    bases = []
-    pipeline.define_singleton_method(:generate_cover_image) do |_t, b = nil|
-      bases << b
-      "/tmp/generated.jpg"
-    end
-
-    _path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_includes desc, "--base-image"
-    assert_equal [File.expand_path("/tmp/cli_base.png")], bases
-  end
-
-  def test_resolve_cover_base_image_generation_failure_falls_to_thumbnail
-    pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
-    pipeline.define_singleton_method(:generate_cover_image) { |_t, _b = nil| nil }
-    pipeline.instance_variable_set(:@youtube_thumbnail, "/tmp/thumb.jpg")
-
-    path, = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/thumb.jpg", path
-  end
-
-  def test_resolve_cover_rss_image_beats_config_generation
-    @config.cover_generation_enabled = true
-    pipeline = build_pipeline
-    pipeline.instance_variable_set(:@rss_episode_image, "/tmp/rss_cover.jpg")
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/rss_cover.jpg", path
-    assert_includes desc, "RSS"
-  end
-
-  def test_resolve_cover_config_generation_when_enabled
-    @config.cover_generation_enabled = true
-    pipeline = build_pipeline
-    pipeline.define_singleton_method(:generate_cover_image) { |_t, _b = nil| "/tmp/config_generated.jpg" }
-
-    path, desc = pipeline.send(:resolve_episode_cover, "Title")
-    assert_equal "/tmp/config_generated.jpg", path
-    assert_includes desc, "config base_image"
-  end
-
-  def test_resolve_cover_warns_when_configured_base_image_missing
-    @config.cover_base_image = "/nonexistent/base.png"
-    pipeline = build_pipeline
-
-    path, = pipeline.send(:resolve_episode_cover, "Title")
-    assert_nil path
-    assert(@logger.messages.any? { |m| m.include?("base_image configured but not found") },
-      "missing configured base_image must log a warning")
   end
 
   # --- enforce_length_post_download ---
@@ -555,57 +380,6 @@ class TestLanguagePipeline < Minitest::Test
 
     path, = pipeline.send(:resolve_episode_cover, "Title")
     assert_equal File.expand_path(image_path), path
-  end
-
-  def test_generate_cover_image_merges_per_feed_overlay_opts_over_config
-    base_path = File.join(@tmpdir, "base.png")
-    FileUtils.touch(base_path)
-
-    config = build_config(
-      cover_base_image: base_path,
-      cover_generation_enabled: true,
-      cover_options: { font: "Helvetica", font_color: "black", font_size: 24, gravity: "Center" }
-    )
-    pipeline = build_pipeline(config: config)
-
-    feed_opts = {
-      font_size: 48,    # overrides config
-      gravity: "South", # overrides config
-      x_offset: 10      # new key, no config equivalent
-    }
-    pipeline.instance_variable_set(:@current_episode_feed_cover_opts, feed_opts)
-
-    captured = nil
-    CoverResolver.stub(:generate, ->(**kw) { captured = kw; "/tmp/cover.jpg" }) do
-      pipeline.send(:generate_cover_image, "Title", base_path)
-    end
-
-    refute_nil captured, "CoverResolver.generate should have been called"
-    opts = captured[:options]
-    assert_equal "Helvetica", opts[:font],   "unspecified key falls back to config"
-    assert_equal "black",     opts[:font_color], "unspecified key falls back to config"
-    assert_equal 48,          opts[:font_size],  "feed override wins for font_size"
-    assert_equal "South",     opts[:gravity], "feed override wins for gravity"
-    assert_equal 10,          opts[:x_offset], "new feed key is included"
-  end
-
-  def test_generate_cover_image_uses_config_when_no_per_feed_opts
-    base_path = File.join(@tmpdir, "base.png")
-    FileUtils.touch(base_path)
-
-    config = build_config(
-      cover_base_image: base_path,
-      cover_generation_enabled: true,
-      cover_options: { font: "Helvetica", font_size: 24 }
-    )
-    pipeline = build_pipeline(config: config)
-
-    captured = nil
-    CoverResolver.stub(:generate, ->(**kw) { captured = kw; "/tmp/cover.jpg" }) do
-      pipeline.send(:generate_cover_image, "Title", base_path)
-    end
-
-    assert_equal({ font: "Helvetica", font_size: 24 }, captured[:options])
   end
 
   def test_resolve_cover_falls_through_to_youtube_thumbnail
