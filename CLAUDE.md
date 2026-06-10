@@ -23,6 +23,7 @@ Ruby 3.4+, macOS. Two pipelines (news, language) + Tell CLI/web. See README.md a
 
 ## CRPR — default workflow for push to master / release
 
+0. Check whether the change invalidates an ARCHITECTURE.md entry; update it in the same commit.
 1. Commit.
 2. **Review** — spawn worktree agent (`isolation: "worktree"`) running `/cr` skill. Read-only; no shared context.
 3. **Resolve** — fix all BLOCKERs and WARNINGs. Re-commit, re-review until APPROVED or APPROVED WITH WARNINGS. NITs optional.
