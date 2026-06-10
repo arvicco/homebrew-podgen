@@ -211,6 +211,15 @@ class TestWordStats < Minitest::Test
     assert_includes forms, "andare d'accordo"
   end
 
+  def test_load_cache_returns_nil_on_corrupt_yaml
+    cache_path = File.join(@tmpdir, WordStats::CACHE_FILENAME)
+    File.write(cache_path, "{ not: valid: yaml: [")
+
+    stats = WordStats.new(config: stub_config(language: "sl"))
+
+    assert_nil stats.send(:load_cache)
+  end
+
   def test_cache_invalidates_on_lemma_set_change
     write_transcript("ep1", body: "x.", vocabulary: "- **alpha** (A1 n.) — first\n")
     config = stub_config

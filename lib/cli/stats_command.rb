@@ -270,7 +270,11 @@ module PodgenCLI
       puts "  Sources:    #{format_sources(config.sources)}"
 
       if stats[:feed_count]
-        feed_mtime = File.mtime(config.feed_path).strftime("%b %d") rescue nil
+        feed_mtime = begin
+          File.mtime(config.feed_path).strftime("%b %d")
+        rescue Errno::ENOENT
+          nil
+        end
         feed_info = "feed.xml (#{stats[:feed_count]} episodes"
         feed_info += ", built #{feed_mtime}" if feed_mtime
         feed_info += ")"
@@ -301,7 +305,7 @@ module PodgenCLI
         cache_dir = File.join(File.dirname(config.episodes_dir), "research_cache")
         if Dir.exist?(cache_dir)
           cache_files = Dir.glob(File.join(cache_dir, "*"))
-          cache_size = cache_files.sum { |f| File.size(f) rescue 0 }
+          cache_size = cache_files.sum { |f| file_size(f) }
           puts
           puts "  Research cache: #{cache_files.length} files (#{format_size(cache_size)})"
         end
@@ -310,7 +314,7 @@ module PodgenCLI
         tails_dir = File.join(File.dirname(config.episodes_dir), "tails")
         if Dir.exist?(tails_dir)
           tail_files = Dir.glob(File.join(tails_dir, "*.mp3"))
-          tail_size = tail_files.sum { |f| File.size(f) rescue 0 }
+          tail_size = tail_files.sum { |f| file_size(f) }
           puts "  Tails:          #{tail_files.length} files (#{format_size(tail_size)})"
         end
 
@@ -336,7 +340,7 @@ module PodgenCLI
       # Build duration map from history to avoid ffprobe calls where possible
       duration_map = build_duration_map(config)
 
-      total_size = mp3s.sum { |f| File.size(f) rescue 0 }
+      total_size = mp3s.sum { |f| file_size(f) }
       total_seconds = mp3s.sum { |f|
         duration_map[File.basename(f)] || AudioAssembler.probe_duration(f) || File.size(f) / (192_000.0 / 8)
       }
@@ -344,7 +348,12 @@ module PodgenCLI
       # Date range from filenames
       dates = mp3s.filter_map { |f|
         m = File.basename(f).match(/(\d{4}-\d{2}-\d{2})/)
-        Date.parse(m[1]) rescue nil if m
+        next unless m
+        begin
+          Date.parse(m[1])
+        rescue Date::Error
+          nil
+        end
       }.uniq.sort
 
       date_range = if dates.length >= 2
@@ -356,16 +365,7 @@ module PodgenCLI
       end
 
       # Feed episode count
-      feed_count = nil
-      if File.exist?(config.feed_path)
-        require "rexml/document"
-        begin
-          doc = REXML::Document.new(File.read(config.feed_path))
-          feed_count = doc.elements.to_a("//item").length
-        rescue
-          feed_count = nil
-        end
-      end
+      feed_count = File.exist?(config.feed_path) ? count_feed_items(config.feed_path) : nil
 
       # Cover
       output_dir = File.dirname(config.episodes_dir)
@@ -382,7 +382,7 @@ module PodgenCLI
       # Per-episode details (for verbose)
       episode_details = mp3s.map do |path|
         fname = File.basename(path)
-        size = File.size(path) rescue 0
+        size = file_size(path)
         secs = duration_map[fname] || AudioAssembler.probe_duration(path) || size / (192_000.0 / 8)
         {
           filename: fname,
@@ -409,6 +409,24 @@ module PodgenCLI
     # Build a map of MP3 filename → duration (seconds) from history entries.
     # Same suffix logic as RssGenerator to match filenames to history entries.
     SUFFIXES = [""] + ("a".."z").to_a
+
+    # Returns nil (with a visible warning) on malformed XML — a wrong count
+    # must not be reported silently.
+    def count_feed_items(feed_path)
+      require "rexml/document"
+      doc = REXML::Document.new(File.read(feed_path))
+      doc.elements.to_a("//item").length
+    rescue REXML::ParseException => e
+      $stderr.puts "Warning: could not parse #{File.basename(feed_path)}: #{e.message.lines.first&.strip}"
+      nil
+    end
+
+    # File.size that treats a file vanishing mid-scan as 0 instead of crashing.
+    def file_size(path)
+      File.size(path)
+    rescue Errno::ENOENT
+      0
+    end
 
     def build_duration_map(config)
       entries = YamlLoader.load(config.history_path, default: nil)
