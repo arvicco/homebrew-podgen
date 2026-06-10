@@ -129,7 +129,10 @@ class TestNewsPipeline < Minitest::Test
 
     skip "HN returned no findings" if research.all? { |r| r[:findings].empty? }
 
-    script_path = File.join(@tmpdir, "chain_script.md")
+    # Nest one level below @tmpdir like the production episodes/ layout —
+    # save_raw_debug writes to <parent-of-dir>/debug, which for a root-level
+    # path would leak into the global temp dir.
+    script_path = File.join(@tmpdir, "episodes", "chain_script.md")
     script_agent = ScriptAgent.new(
       guidelines: "Write a 2-segment tech podcast. Keep it under 150 words total.",
       script_path: script_path
@@ -164,7 +167,8 @@ class TestNewsPipeline < Minitest::Test
 
     require "url_cleaner"
 
-    path = File.join(@tmpdir, "links_script.md")
+    path = File.join(@tmpdir, "episodes", "links_script.md")
+    FileUtils.mkdir_p(File.dirname(path))
     # Replicate save_script_debug with links: true from generate_command.rb
     File.open(path, "w") do |f|
       f.puts "# #{script[:title]}"

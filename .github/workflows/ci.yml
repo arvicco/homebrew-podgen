@@ -35,3 +35,6 @@ jobs:
 
       - name: Lint (standardrb, new violations only)
         run: bundle exec standardrb
+
+      - name: Run integration tests (offline subset)
+        run: bundle exec rake test:integration_offline
