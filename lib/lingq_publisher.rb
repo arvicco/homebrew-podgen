@@ -5,6 +5,7 @@ require_relative "upload_tracker"
 require_relative "episode_scanner"
 require_relative "transcript_parser"
 require_relative "cover_resolver"
+require_relative "publisher_shared"
 
 # Uploads pending episodes to LingQ for a single podcast configuration.
 #
@@ -12,6 +13,8 @@ require_relative "cover_resolver"
 # the per-pod batch flow (R2 → LingQ → YT) in-process and inspect a
 # structured Result for each phase.
 class LingQPublisher
+  include PublisherShared
+
   Result = Struct.new(:uploaded, :attempted, :errors, keyword_init: true) do
     def success? = errors.empty?
     def failed? = !success?
@@ -118,28 +121,10 @@ class LingQPublisher
     Result.new(uploaded: uploaded, attempted: attempted, errors: errors)
   end
 
-  def regenerate!
-    require_relative "cli/rss_command"
-    require_relative "site_generator"
-    PodgenCLI::RssCommand.new([@config.name], { verbosity: @options[:verbosity] }).run
-    SiteGenerator.new(config: @config, clean: true).generate
-  rescue => e # skippable: stale feed/site is acceptable; next publish regenerates
-    $stderr.puts "Warning: site/feed regen failed: #{e.class}: #{e.message}" if @options[:verbosity] == :verbose
-  end
-
   def active_agent
     return @agent if @agent
     require_relative "agents/lingq_agent"
     LingQAgent.new(api_key: @config.lingq_config&.[](:token))
-  end
-
-  def scan_episodes
-    EpisodeScanner.scan(@config.episodes_dir, episode_id: @episode_id)
-  end
-
-  def parse_transcript(path)
-    parsed = TranscriptParser.parse(path)
-    [parsed.title, parsed.description, parsed.body]
   end
 
   def find_episode_cover(base_name)
@@ -158,13 +143,5 @@ class LingQPublisher
       $stderr.puts "  Warning: cover generation failed (using static image)" if @options[:verbosity] == :verbose
     end
     result || @config.cover_static_image
-  end
-
-  def tracker
-    @tracker ||= @tracker_path ? UploadTracker.new(@tracker_path) : UploadTracker.for_config(@config)
-  end
-
-  def quiet?
-    @options[:verbosity] == :quiet
   end
 end
