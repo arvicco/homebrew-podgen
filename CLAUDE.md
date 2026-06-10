@@ -1,6 +1,6 @@
 # Podgen — Claude Code Instructions
 
-Ruby 3.2+, macOS. Two pipelines (news, language) + Tell CLI/web. See README.md and ARCHITECTURE.md for details.
+Ruby 3.4+, macOS. Two pipelines (news, language) + Tell CLI/web. See README.md and ARCHITECTURE.md for details.
 
 ## Non-negotiable
 

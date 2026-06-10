@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.description   = "Researches topics, writes a script, generates TTS audio, and assembles a final MP3 podcast episode."
   spec.homepage      = "https://github.com/arvicco/homebrew-podgen"
   spec.license       = "MIT"
-  spec.required_ruby_version = ">= 3.2"
+  spec.required_ruby_version = ">= 3.4"
 
   spec.files         = Dir["lib/**/*.rb", "bin/*", "assets/.keep", "scripts/*.rb", "scripts/*.sh"]
   spec.bindir        = "bin"
