@@ -107,8 +107,8 @@ class LingQPublisher
         tracker.record(:lingq, collection, ep[:base_name], lesson_id)
         uploaded += 1
         puts "  ✓ #{ep[:base_name]} → lesson #{lesson_id}" unless quiet?
-      rescue => e
-        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
+      rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
+        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.class}: #{e.message}"
         errors << { type: :upload, base: ep[:base_name], message: e.message }
       ensure
         CoverResolver.cleanup(image_path)
@@ -123,8 +123,8 @@ class LingQPublisher
     require_relative "site_generator"
     PodgenCLI::RssCommand.new([@config.name], { verbosity: @options[:verbosity] }).run
     SiteGenerator.new(config: @config, clean: true).generate
-  rescue => e
-    $stderr.puts "Warning: site/feed regen failed: #{e.message}" if @options[:verbosity] == :verbose
+  rescue => e # skippable: stale feed/site is acceptable; next publish regenerates
+    $stderr.puts "Warning: site/feed regen failed: #{e.class}: #{e.message}" if @options[:verbosity] == :verbose
   end
 
   def active_agent

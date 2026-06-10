@@ -257,6 +257,23 @@ class TestLanguagePipeline < Minitest::Test
     assert_includes desc, "RSS"
   end
 
+  # --- skippable-step warnings must name the exception class ---
+
+  def test_annotate_vocabulary_failure_warning_names_exception_class
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@staging_dir, @tmpdir)
+    pipeline.instance_variable_set(:@base_name, "ep")
+
+    TranscriptParser.stub(:parse, ->(_) { raise "boom" }) do
+      pipeline.send(:annotate_vocabulary)
+    end
+
+    warn_line = @logger.messages.find { |m| m.include?("Vocabulary annotation failed") }
+    refute_nil warn_line, "failure must be logged"
+    assert_includes warn_line, "RuntimeError",
+      "warning must name the exception class so permanent failures are distinguishable from transient ones"
+  end
+
   # --- resolve_episode_cover: characterization of the full priority chain ---
   # These pin the documented 8-step priority order so the planned extraction
   # of the cover chain into its own class cannot silently reorder it.
@@ -780,7 +797,7 @@ class TestLanguagePipeline < Minitest::Test
 
     warnings = pipeline.instance_variable_get(:@warnings)
     assert_equal 1, warnings.size
-    assert_includes warnings.first, "Description cleanup failed (API error)"
+    assert_includes warnings.first, "Description cleanup failed (RuntimeError: API error)"
   end
 
   def test_reconciliation_failure_raises_error

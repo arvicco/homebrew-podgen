@@ -72,7 +72,7 @@ module PodgenCLI
 
       log_completion
       0
-    rescue => e
+    rescue => e # fatal: anything that escapes a pipeline step means no canonical episode was produced
       logger.error("#{e.class}: #{e.message}")
       logger.error(e.backtrace.first(5).join("\n"))
       $stderr.puts "\n\u2717 Language pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
@@ -439,9 +439,9 @@ module PodgenCLI
       TimestampPersister.update_segments(ts_path, segments)
       logger.log("Subtitles reconciled (#{segments.length} segments)")
       logger.phase_end("Subtitle Reconciliation")
-    rescue => e
-      logger.log("Warning: Subtitle reconciliation failed: #{e.message} (non-fatal, keeping raw segments)")
-      @warnings << "Subtitle reconciliation failed (#{e.message})"
+    rescue => e # skippable: canonical audio/transcript already produced; raw segments remain usable
+      logger.log("Warning: Subtitle reconciliation failed: #{e.class}: #{e.message} (non-fatal, keeping raw segments)")
+      @warnings << "Subtitle reconciliation failed (#{e.class}: #{e.message})"
       logger.phase_end("Subtitle Reconciliation") rescue nil
     end
 
@@ -513,10 +513,10 @@ module PodgenCLI
 
       logger.log("Vocabulary annotated (#{@config.vocabulary_level}+ cutoff)")
       logger.phase_end("Vocabulary")
-    rescue => e
-      logger.log("Warning: Vocabulary annotation failed: #{e.message} (non-fatal, continuing)")
+    rescue => e # skippable: annotation enriches the transcript; the unannotated episode is still shippable
+      logger.log("Warning: Vocabulary annotation failed: #{e.class}: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
-      @warnings << "Vocabulary annotation failed (#{e.message})"
+      @warnings << "Vocabulary annotation failed (#{e.class}: #{e.message})"
       logger.phase_end("Vocabulary") rescue nil
     end
 
@@ -607,9 +607,9 @@ module PodgenCLI
           episode[:description] = agent.generate(title: episode[:title], transcript: transcript)
         end
       end
-    rescue => e
-      logger.log("Warning: Description processing failed: #{e.message} (non-fatal, keeping original)")
-      @warnings << "Description cleanup failed (#{e.message})"
+    rescue => e # skippable: LLM cleanup is cosmetic; the original title/description stands
+      logger.log("Warning: Description processing failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
+      @warnings << "Description cleanup failed (#{e.class}: #{e.message})"
     end
 
     # Title is generic if it matches the podcast name or is in the wrong language.
@@ -706,10 +706,10 @@ module PodgenCLI
       record_lingq_upload(lc[:collection], base_name, lesson_id)
 
       logger.phase_end("LingQ Upload")
-    rescue => e
-      logger.log("Warning: LingQ upload failed: #{e.message} (non-fatal, continuing)")
+    rescue => e # skippable: side effect after commit; tracker-based retry on next publish
+      logger.log("Warning: LingQ upload failed: #{e.class}: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
-      @warnings << "LingQ upload failed (#{e.message})"
+      @warnings << "LingQ upload failed (#{e.class}: #{e.message})"
     end
 
     def record_lingq_upload(collection, base_name, lesson_id)
@@ -774,10 +774,10 @@ module PodgenCLI
       logger.log("Recorded YouTube upload: #{@base_name} → #{video_id}")
 
       logger.phase_end("YouTube Upload")
-    rescue => e
-      logger.log("Warning: YouTube upload failed: #{e.message} (non-fatal, continuing)")
+    rescue => e # skippable: side effect after commit; tracker-based retry on next publish
+      logger.log("Warning: YouTube upload failed: #{e.class}: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
-      @warnings << "YouTube upload failed (#{e.message})"
+      @warnings << "YouTube upload failed (#{e.class}: #{e.message})"
     end
 
     def resolve_committed_cover
@@ -879,8 +879,8 @@ module PodgenCLI
       @temp_files << path
       logger.log("Downloaded episode image: #{(File.size(path) / 1024.0).round(1)} KB")
       path
-    rescue => e
-      logger.log("Warning: Failed to download episode image: #{e.message}")
+    rescue => e # skippable: cover chain falls through to the next strategy
+      logger.log("Warning: Failed to download episode image: #{e.class}: #{e.message}")
       nil
     end
 
@@ -900,8 +900,8 @@ module PodgenCLI
         basename: @base_name
       )
       result[:winner_path]
-    rescue => e
-      logger.log("Warning: auto cover search failed: #{e.message}")
+    rescue => e # skippable: cover chain falls through to the next strategy
+      logger.log("Warning: auto cover search failed: #{e.class}: #{e.message}")
       nil
     end
 
@@ -923,9 +923,9 @@ module PodgenCLI
       )
       @temp_files << path if path
       path
-    rescue => e
-      logger.log("Warning: Cover generation failed: #{e.message} (falling back)")
-      @warnings << "Cover generation failed (#{e.message})"
+    rescue => e # skippable: cover chain falls through to the next strategy
+      logger.log("Warning: Cover generation failed: #{e.class}: #{e.message} (falling back)")
+      @warnings << "Cover generation failed (#{e.class}: #{e.message})"
       nil
     end
 
