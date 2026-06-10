@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# Manual component test, dispatched via `podgen test` (may hit live APIs).
+# Not part of the Minitest suite under test/.
+
 # Cover image generation test: generates cover images for all combinations of
 # fonts x title lengths for visual comparison.
 # Usage: podgen test cover [output_dir]
