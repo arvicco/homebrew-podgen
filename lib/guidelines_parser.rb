@@ -61,8 +61,19 @@ class GuidelinesParser
     @languages ||= podcast_section[:languages] || parse_language_section
   end
 
+  # Engine codes EngineManager understands (lib/transcription/engine_manager.rb
+  # REGISTRY). Mirrored here so the parser can validate config without
+  # requiring the transcription layer; update both when adding an engine.
+  KNOWN_ENGINE_CODES = %w[open elab groq].freeze
+
   def transcription_engines
-    @transcription_engines ||= audio_section[:engines] || parse_transcription_engine_section
+    @transcription_engines ||= begin
+      engines = audio_section[:engines] || parse_transcription_engine_section
+      (engines - KNOWN_ENGINE_CODES).each do |code|
+        @warnings << "Transcription Engine: unknown engine code '#{code}' (known: #{KNOWN_ENGINE_CODES.join(", ")})"
+      end
+      engines
+    end
   end
 
   # Extracts the first line of content under a ## heading
