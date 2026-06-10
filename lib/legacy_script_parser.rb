@@ -5,6 +5,8 @@
 #
 # Used as a fallback when the canonical <basename>_script.json doesn't
 # exist (i.e. for episodes generated before the JSON artifact was added).
+# Intentionally retained: pre-JSON episodes still exist in active podcasts
+# and may be re-rendered/translated at any time. Do not sunset.
 #
 # Recovers source link metadata from rendered link lists:
 #   - inline mode: bullet lists that follow a segment's body become that
