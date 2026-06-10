@@ -100,8 +100,8 @@ class YouTubePublisher
         begin
           uploader.verify_playlist!(yt_config[:playlist])
           self.class.mark_playlist_verified(verify_key)
-        rescue => e
-          $stderr.puts "YouTube playlist verification failed: #{e.message}"
+        rescue => e # fatal for this run: uploading into the wrong/missing playlist is worse than not uploading
+          $stderr.puts "YouTube playlist verification failed: #{e.class}: #{e.message}"
           return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
                             errors: [{ type: :playlist_verification, message: e.message }])
         end
@@ -155,8 +155,8 @@ class YouTubePublisher
           break
         end
         errors << { type: :upload, base: ep[:base_name], message: e.message }
-      rescue => e
-        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
+      rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
+        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.class}: #{e.message}"
         errors << { type: :upload, base: ep[:base_name], message: e.message }
       end
     end
@@ -201,8 +201,8 @@ class YouTubePublisher
     require_relative "site_generator"
     PodgenCLI::RssCommand.new([@config.name], { verbosity: @options[:verbosity] }).run
     SiteGenerator.new(config: @config, clean: true).generate
-  rescue => e
-    $stderr.puts "Warning: site/feed regen failed: #{e.message}"
+  rescue => e # skippable: stale feed/site is acceptable; next publish regenerates
+    $stderr.puts "Warning: site/feed regen failed: #{e.class}: #{e.message}"
   end
 
   def scan_episodes
@@ -264,8 +264,8 @@ class YouTubePublisher
     else
       puts "  ⚠ #{base_name}: transcription returned no segments" unless quiet?
     end
-  rescue => e
-    $stderr.puts "  ⚠ #{base_name}: retranscription failed (#{e.message}), uploading without subtitles"
+  rescue => e # skippable: video uploads without subtitles; regen can add them later
+    $stderr.puts "  ⚠ #{base_name}: retranscription failed (#{e.class}: #{e.message}), uploading without subtitles"
   end
 
   def pick_timestamp_engine

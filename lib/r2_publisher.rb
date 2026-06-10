@@ -88,8 +88,8 @@ class R2Publisher
     require_relative "site_generator"
     PodgenCLI::RssCommand.new([@config.name], { verbosity: @options[:verbosity] }).run
     SiteGenerator.new(config: @config, clean: true).generate
-  rescue => e
-    $stderr.puts "Warning: site/feed regen failed: #{e.message}" if @options[:verbosity] == :verbose
+  rescue => e # skippable: stale feed/site is acceptable; next publish regenerates
+    $stderr.puts "Warning: site/feed regen failed: #{e.class}: #{e.message}" if @options[:verbosity] == :verbose
   end
 
   def rclone_available?
@@ -165,8 +165,8 @@ class R2Publisher
       puts "Tweeted: #{title}" unless quiet?
     end
     posted
-  rescue => e
-    $stderr.puts "Warning: Twitter posting failed: #{e.message} (non-fatal)"
+  rescue => e # skippable: social side effect; tracker-based retry on next publish
+    $stderr.puts "Warning: Twitter posting failed: #{e.class}: #{e.message} (non-fatal)"
     0
   end
 

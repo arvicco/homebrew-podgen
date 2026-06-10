@@ -63,3 +63,17 @@ History (`episode_history.rb`), caches (`research_cache.rb`), and upload trackin
 **Why.** The canonical failure mode is a crash mid-write producing a half-written YAML that poisons all subsequent runs. `File.rename` is atomic on POSIX; temp + rename turns a partial-write failure into a no-op.
 
 **Implication.** Any new persistent state file that the pipeline depends on for correctness should use the same pattern. Import `AtomicWriter` rather than rolling a new one.
+
+---
+
+## Error severity: fatal / retryable / skippable
+
+Every `rescue` in the pipelines and publishers belongs to one of three buckets, annotated at the rescue site:
+
+- **fatal** — the canonical outputs (audio, transcript, feed, site) were not produced. The error escapes to the top-level handler, which logs the exception class and fails the run.
+- **retryable** — transient HTTP/API flakiness. Handled by `Retryable`/`HttpRetryable`; never hand-rolled.
+- **skippable** — a side effect or enrichment (tweet, LingQ/YouTube upload, vocabulary, cover, subtitle reconciliation). Logged as a warning **including the exception class** and the run continues; tracker-based retry picks it up on the next publish where applicable.
+
+**Why.** A broad `rescue => e` that prints only `e.message` makes a revoked API key (permanent) indistinguishable from a network blip (transient) — the operator sees the same "non-fatal" warning forever. Naming the class in the warning is the cheapest possible signal split. Bare `rescue`/`rescue nil` is reserved for cache reads where corrupt-or-missing genuinely means "cache miss" (`word_stats.rb`).
+
+**Implication.** New rescue sites must name their bucket in a trailing comment and include `e.class` in any warning they log. If you can't say which bucket a rescue is in, it's probably fatal — let it raise.
