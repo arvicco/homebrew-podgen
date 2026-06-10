@@ -697,6 +697,27 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal ["open"], parser.transcription_engines
   end
 
+  def test_warnings_are_primed_without_prior_section_access
+    parser = build_parser(<<~MD)
+      ## Transcription Engine
+      - whisper
+    MD
+
+    # Regression: warnings are appended during lazy section parsing, so a
+    # consumer reading #warnings before touching any section saw [] and
+    # surfaced nothing. #warnings must prime all sections first.
+    assert(parser.warnings.any? { |w| w.include?("whisper") },
+      "warnings must be populated without the caller touching transcription_engines first")
+  end
+
+  def test_known_engine_codes_match_engine_manager_registry
+    require "transcription/engine_manager"
+
+    assert_equal Transcription::EngineManager::REGISTRY.keys.sort,
+      GuidelinesParser::KNOWN_ENGINE_CODES.sort,
+      "KNOWN_ENGINE_CODES mirrors EngineManager::REGISTRY — update both together"
+  end
+
   def test_unknown_engine_code_warns_but_is_kept
     parser = build_parser(<<~MD)
       ## Transcription Engine

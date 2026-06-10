@@ -55,6 +55,8 @@ class EpisodeCoverResolver
     resolve_without_auto(title)
   end
 
+  private
+
   # The chain below the auto step — entered directly when auto produced no
   # winner, so the literal string "auto" is never treated as a file path.
   def resolve_without_auto(title)
@@ -94,8 +96,6 @@ class EpisodeCoverResolver
       [@youtube_thumbnail, @youtube_thumbnail ? "YouTube thumbnail fallback" : nil]
     end
   end
-
-  private
 
   # Attempts an auto-cover search for a feed/flag configured with `auto`.
   # Top candidates are persisted into staging_dir (not episodes_dir) so they

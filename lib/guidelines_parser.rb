@@ -5,12 +5,35 @@ require_relative "time_value"
 # Parses guidelines.md sections into structured config hashes.
 # Extracted from PodcastConfig to isolate parsing logic.
 class GuidelinesParser
-  attr_reader :warnings
-
   def initialize(text, podcast_dir:)
     @text = text.gsub(/<!--.*?-->/m, "")
     @podcast_dir = podcast_dir
     @warnings = []
+  end
+
+  # Warnings are appended during lazy section parsing, so prime every
+  # memoized section before reading — otherwise a consumer that checks
+  # warnings before touching the sections sees an empty list.
+  def warnings
+    prime!
+    @warnings
+  end
+
+  def prime!
+    podcast_section
+    audio_section
+    image_section
+    sources
+    site_config
+    lingq_config
+    youtube_config
+    twitter_config
+    links_config
+    vocabulary_config
+    translation_glossary
+    languages
+    transcription_engines
+    self
   end
 
   def podcast_section
