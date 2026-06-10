@@ -116,12 +116,19 @@ module PodgenCLI
     private
 
     # Returns exit code on failure, nil on success.
+    # Config typos otherwise surface only via `podgen validate`, which the
+    # daily scheduled run never executes — warn at generate time too.
+    def surface_guidelines_warnings(config)
+      config.parser_warnings.each { |w| $stderr.puts "Warning: guidelines.md: #{w}" }
+    end
+
     def setup_pipeline
       code = require_podcast!("generate")
       return code if code
 
       @config = load_config!
       @config.ensure_directories!
+      surface_guidelines_warnings(@config)
 
       lock_path = File.join(File.dirname(@config.episodes_dir), "run.lock")
       @lock_file = File.open(lock_path, File::RDWR | File::CREAT, 0o644)

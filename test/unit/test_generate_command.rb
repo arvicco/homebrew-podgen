@@ -198,6 +198,27 @@ class TestGenerateCommand < Minitest::Test
     assert File.exist?(path)
   end
 
+  # --- surface_guidelines_warnings ---
+
+  def test_surface_guidelines_warnings_prints_to_stderr
+    cmd = build_command
+    config = Struct.new(:parser_warnings).new(["Transcription Engine: unknown engine code 'whisper'"])
+
+    _out, err = capture_io { cmd.send(:surface_guidelines_warnings, config) }
+
+    assert_match(/guidelines\.md/, err)
+    assert_match(/whisper/, err)
+  end
+
+  def test_surface_guidelines_warnings_silent_when_clean
+    cmd = build_command
+    config = Struct.new(:parser_warnings).new([])
+
+    _out, err = capture_io { cmd.send(:surface_guidelines_warnings, config) }
+
+    assert_empty err
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success

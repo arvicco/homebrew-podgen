@@ -697,6 +697,32 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal ["open"], parser.transcription_engines
   end
 
+  def test_unknown_engine_code_warns_but_is_kept
+    parser = build_parser(<<~MD)
+      ## Transcription Engine
+      - whisper
+      - open
+    MD
+
+    # Warn only — never a hard error; the code is kept so EngineManager
+    # remains the single authority on what actually runs.
+    assert_equal %w[whisper open], parser.transcription_engines
+    assert(parser.warnings.any? { |w| w.include?("whisper") && w.include?("unknown") },
+      "unknown engine code must produce a warning, got: #{parser.warnings.inspect}")
+  end
+
+  def test_known_engine_codes_do_not_warn
+    parser = build_parser(<<~MD)
+      ## Transcription Engine
+      - open
+      - elab
+      - groq
+    MD
+
+    parser.transcription_engines
+    assert_empty parser.warnings
+  end
+
   # --- links_config ---
 
   def test_parses_links_section
