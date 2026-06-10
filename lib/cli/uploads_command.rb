@@ -9,6 +9,7 @@ require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "r2_publisher")
 require_relative File.join(root, "lib", "lingq_publisher")
 require_relative File.join(root, "lib", "youtube_publisher")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   # Per-tick batch upload across multiple podcasts.
@@ -216,7 +217,7 @@ module PodgenCLI
     def mp3_basenames_with_transcripts(episodes_dir)
       return [] unless Dir.exist?(episodes_dir)
 
-      Dir.glob(File.join(episodes_dir, "*.mp3")).filter_map do |mp3|
+      EpisodeFiltering.all_episodes(episodes_dir).filter_map do |mp3|
         base = File.basename(mp3, ".mp3")
         has_text = %w[_transcript.md _script.md].any? do |suffix|
           File.exist?(File.join(episodes_dir, "#{base}#{suffix}"))

@@ -120,7 +120,7 @@ module PodgenCLI
       end
 
       if @options[:image] == "last"
-        screenshot = Dir.glob(File.join(Dir.home, "Desktop", "Screenshot *.png")).max_by { |f| File.mtime(f) }
+        screenshot = CoverResolver.latest_screenshot
         unless screenshot
           $stderr.puts "Error: no screenshots found on ~/Desktop"
           return 1
@@ -700,8 +700,7 @@ module PodgenCLI
       return nil if value.nil? || value == "none"
 
       if value == "last"
-        screenshot = Dir.glob(File.join(Dir.home, "Desktop", "Screenshot *.png"))
-                       .max_by { |f| File.mtime(f) }
+        screenshot = CoverResolver.latest_screenshot
         if screenshot
           logger.log("Resolved per-feed image: last → #{screenshot}")
           return screenshot

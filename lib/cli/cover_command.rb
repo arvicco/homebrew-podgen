@@ -93,8 +93,7 @@ module PodgenCLI
       end
 
       if @image == "last"
-        screenshot = Dir.glob(File.join(Dir.home, "Desktop", "Screenshot *.png"))
-                       .max_by { |f| File.mtime(f) }
+        screenshot = CoverResolver.latest_screenshot
         unless screenshot
           $stderr.puts "Error: no screenshots found on ~/Desktop"
           return 1

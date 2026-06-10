@@ -8,6 +8,7 @@ require_relative File.join(root, "lib", "known_vocabulary")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "transcript_renderer")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   class RevocabCommand
@@ -125,7 +126,7 @@ module PodgenCLI
         pattern = File.join(dir, "*#{@episode_id}_transcript.md")
         Dir.glob(pattern).sort
       else
-        Dir.glob(File.join(dir, "*_transcript.md")).sort
+        EpisodeFiltering.all_transcripts(dir)
       end
     end
 

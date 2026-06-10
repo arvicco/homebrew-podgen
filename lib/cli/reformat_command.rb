@@ -7,6 +7,7 @@ require_relative File.join(root, "lib", "transcription", "reconciler")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "transcript_renderer")
+require_relative File.join(root, "lib", "episode_filtering")
 
 module PodgenCLI
   class ReformatCommand
@@ -89,7 +90,7 @@ module PodgenCLI
       if @episode_id
         Dir.glob(File.join(dir, "*#{@episode_id}_transcript.md")).sort
       else
-        Dir.glob(File.join(dir, "*_transcript.md")).sort
+        EpisodeFiltering.all_transcripts(dir)
       end
     end
 

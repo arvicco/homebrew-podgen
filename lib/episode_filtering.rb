@@ -24,6 +24,13 @@ module EpisodeFiltering
       .reject { |f| File.basename(f).include?("_concat") }
   end
 
+  # All transcript markdown files in dir, sorted.
+  def self.all_transcripts(dir)
+    return [] unless Dir.exist?(dir)
+
+    Dir.glob(File.join(dir, "*_transcript.md")).sort
+  end
+
   # English/primary episodes only (no language suffix).
   def self.english_episodes(dir)
     all_episodes(dir)

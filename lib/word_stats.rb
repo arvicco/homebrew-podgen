@@ -9,6 +9,7 @@ require_relative "transcript_renderer"
 require_relative "atomic_writer"
 require_relative "tell/hunspell"
 require_relative "loggable"
+require_relative "episode_filtering"
 
 # Aggregates vocabulary-frequency stats across all transcripts of a podcast.
 #
@@ -138,7 +139,7 @@ class WordStats
     dir = @config.episodes_dir
     return [] unless Dir.exist?(dir)
 
-    Dir.glob(File.join(dir, "*_transcript.md")).sort.map do |path|
+    EpisodeFiltering.all_transcripts(dir).map do |path|
       parsed = TranscriptParser.parse(path)
       vocab_entries = parsed.vocabulary ? parse_vocab_entries(parsed.vocabulary) : nil
       { basename: File.basename(path, "_transcript.md"),
