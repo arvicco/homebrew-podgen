@@ -1,0 +1,48 @@
+{
+  "//": "dev-loop permission profile: inside the sandbox, full freedom -- the boundary itself is hard. Review with the owner before the first unattended session.",
+  "permissions": {
+    "allow": [
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git status*)",
+      "Bash(git blame*)",
+      "Bash(git rev-parse*)",
+      "Bash(git add*)",
+      "Bash(git branch*)",
+      "Bash(git push origin phase-*)",
+      "Bash(bundle exec rake gate*)",
+      "Bash(bundle exec rake test*)",
+      "Bash(bundle exec ruby*)",
+      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin bundle exec ruby*)",
+      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin bundle exec rake*)",
+      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh run*)",
+      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh pr view*)",
+      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh pr list*)",
+      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh release list*)"
+    ],
+    "deny": [
+      "Bash(git push origin master*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git tag*)",
+      "Bash(gh release create*)",
+      "Bash(gh pr merge*)",
+      "Read(.env)",
+      "Read(**/.env)",
+      "Bash(bin/podgen publish*)",
+      "Bash(bin/podgen unpublish*)",
+      "Bash(bin/podgen uploads*)",
+      "Bash(bin/podgen tweet*)",
+      "Bash(bin/podgen schedule*)",
+      "Bash(bin/podgen analytics*)",
+      "Bash(brew install*)",
+      "Bash(gem install*)",
+      "Bash(bundle add*)"
+    ]
+  },
+  "env": {
+    "CLAUDE_LIB_GLOB": "lib/**/*.rb",
+    "CLAUDE_TEST_GLOB": "test/**/*.rb"
+  }
+}

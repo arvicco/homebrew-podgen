@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rake/testtask"
+require "open3"
 
 Rake::TestTask.new(:test) do |t|
   t.libs << "test"
@@ -40,6 +41,20 @@ namespace :test do
     t.libs << "test"
     t.test_files = FileList["test/browser/*test*.rb"]
   end
+end
+
+desc "Pre-commit gate: syntax + unit + offline integration (all green or no commit)"
+task :gate do
+  sources = FileList["lib/**/*.rb", "test/**/*.rb", "bin/podgen", "bin/tell", "Rakefile"]
+  failed = sources.reject do |f|
+    _out, err, status = Open3.capture3(RbConfig.ruby, "-c", f)
+    warn err unless status.success?
+    status.success?
+  end
+  abort "Syntax check failed: #{failed.join(', ')}" unless failed.empty?
+  puts "Syntax OK (#{sources.size} files)"
+  Rake::Task["test:unit"].invoke
+  Rake::Task["test:integration_offline"].invoke
 end
 
 task default: :test
