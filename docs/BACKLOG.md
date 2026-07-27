@@ -35,7 +35,7 @@ Done: 2026-07-27. Gate gained standardrb (matching the old CI lint
       one step. Note: COVERAGE=1 now spans the whole gate, so
       simplecov also sees the offline integration tier.
 
-## M0-3 · Module inventory memo  [tier: top] [status: ready] [deps: --]
+## M0-3 · Module inventory memo  [tier: top] [status: in-progress — memo written, awaiting owner sign-off] [deps: --]
 Goal: docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
       suspected weak spots, refactor candidates. Leans on
       ARCHITECTURE.md rather than duplicating it: the memo's value is
@@ -70,3 +70,8 @@ Acceptance: owner accepts at Gate 0.
 - D0-b Frozen domain ruling (2026-07-27): feed/site contracts +
   guid/basename scheme + history/uploads/timestamps schemas.
   RULED — encoded in CLAUDE.md golden rule 4.
+- D0-c…D0-n Suspected bugs found by the M0-3 inventory — one ruling
+  each (fix / accept / won't-fix). Full list: docs/TOOL-REVIEW.md §2.
+  AWAITING RULING.
+- D0-o Dead/orphaned code batch (10 items) — remove vs keep. Full
+  list: docs/TOOL-REVIEW.md §3. AWAITING RULING.

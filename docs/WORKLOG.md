@@ -7,6 +7,17 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-07-27 · M0-3 (memo drafted) · (this commit) · Full-lib inventory
+via four parallel read-only agents (~130 files), synthesized into
+docs/TOOL-REVIEW.md: 12 suspected-bug decision items (D0-c…D0-n), a
+10-item dead-code batch (D0-o), 8 duplication/divergence risks, the
+frozen-contract inventory seeding M0-5, and a ranked 16-entry
+pure-logic list seeding M0-4. Coverage headline: nearly every module
+already has a dedicated unit test; gaps are publisher_shared,
+usage_logger, openai_client, language_names, and the four network
+sources (live-API tests only). Packet stays in-progress until owner
+sign-off per acceptance.
+
 2026-07-27 · M0-2 · (this commit) · Gate wired into CI: rake gate now
 also runs standardrb (was CI-only, so local gate and CI agree — it
 immediately caught a quote-style violation in the gate task itself);
