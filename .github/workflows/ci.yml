@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, "phase-*"]
     paths-ignore:
       - "Formula/**"
   pull_request:
@@ -28,13 +28,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libicu-dev ffmpeg imagemagick espeak-ng
 
-      - name: Run unit tests
-        run: bundle exec rake test:unit
+      - name: Gate (syntax + lint + unit + offline integration)
+        run: bundle exec rake gate
         env:
           COVERAGE: "1"
-
-      - name: Lint (standardrb, new violations only)
-        run: bundle exec standardrb
-
-      - name: Run integration tests (offline subset)
-        run: bundle exec rake test:integration_offline

@@ -24,11 +24,16 @@ Goal: one command (`bundle exec rake gate`) = ruby syntax check over
 Acceptance: gate red on a seeded syntax violation, green on HEAD.
 Done: 2026-07-27 as part of the dev-loop migration commit.
 
-## M0-2 · Gate in CI  [tier: implementation] [status: ready] [deps: M0-1]
+## M0-2 · Gate in CI  [tier: implementation] [status: done] [deps: M0-1]
 Goal: CI runs `bundle exec rake gate` (not just unit tests) on every
       pushed head; phase branches included.
 Acceptance: a pushed commit shows the gate job green in `gh run list`;
-      a deliberately red gate fails CI.
+      a deliberately red gate fails CI (red case proven locally in
+      M0-1's seeded-violation check — same task CI invokes).
+Done: 2026-07-27. Gate gained standardrb (matching the old CI lint
+      step); ci.yml triggers on phase-* pushes and runs the gate as
+      one step. Note: COVERAGE=1 now spans the whole gate, so
+      simplecov also sees the offline integration tier.
 
 ## M0-3 · Module inventory memo  [tier: top] [status: ready] [deps: --]
 Goal: docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
