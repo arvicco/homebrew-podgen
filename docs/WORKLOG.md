@@ -7,6 +7,15 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-07-27 · M0-2 · (this commit) · Gate wired into CI: rake gate now
+also runs standardrb (was CI-only, so local gate and CI agree — it
+immediately caught a quote-style violation in the gate task itself);
+ci.yml triggers on phase-* pushes and collapses its three test steps
+into one `bundle exec rake gate` step. COVERAGE=1 scope widened from
+unit-only to the whole gate (simplecov now sees offline integration
+too). Evidence: gate green locally (305 files syntax-OK, lint clean,
+2942+48 runs); CI on pushed head checked below.
+
 2026-07-27 · M0-1 · (this commit) · Dev-loop migration: instantiated
 CLAUDE.md (arbot-style golden rules; CRPR retained as pre-PR review;
 git model moved to phase branches + owner-merged PRs per D0-a),

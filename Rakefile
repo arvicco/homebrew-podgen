@@ -51,8 +51,9 @@ task :gate do
     warn err unless status.success?
     status.success?
   end
-  abort "Syntax check failed: #{failed.join(', ')}" unless failed.empty?
+  abort "Syntax check failed: #{failed.join(", ")}" unless failed.empty?
   puts "Syntax OK (#{sources.size} files)"
+  sh "bundle exec standardrb"
   Rake::Task["test:unit"].invoke
   Rake::Task["test:integration_offline"].invoke
 end
