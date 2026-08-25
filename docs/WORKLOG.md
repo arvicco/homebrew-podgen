@@ -7,6 +7,25 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-08-25 · M00-4 · (this commit) · Freshness invariant:
+Validators::FreshnessValidator (newest content date vs wall clock,
+cadence = median history gap, OLD warning past 2× median) wired into
+PodcastValidator (array + check_freshness). TDD: 7 unit tests failed
+for the right reason first. The new check immediately caught the
+test_stats_validate "clean podcast" fixture rotting (hard-coded
+2026-01 dates) — fixture moved to relative dates. Outcome check on
+real data: lahko_noc flags OLD (newest 2026-03-21, 157d, daily
+cadence); bajke/basnie/cuentos/fiabe/fulgur_news validate fresh;
+ruby_world correctly reports cannot-infer-cadence. Gate green.
+
+2026-08-25 · M00-3 · 1c6f87d · Source registry: 14 hard-coded service
+endpoints registered with probe URLs + expectations; drift test in
+the offline gate (red on seeded unregistered host, green on HEAD);
+IGNORED_HOSTS allowlist for namespace/display URLs; rake health
+owner-run probe — 14/14 OK live (elevenlabs probe URL corrected
+after first run). Per-podcast RSS feeds ruled out of registry scope
+(config, not hard-coded).
+
 2026-08-25 · M00-1 + M00-2 · (this commit) · Phase 00 opened per
 owner ruling (conventions before Phase 0 continues). M00-1: gitignored
 .docs/ workspace created; TOOL-REVIEW.md relocated there;

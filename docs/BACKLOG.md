@@ -54,7 +54,7 @@ Acceptance: drift test red on a seeded unregistered endpoint, green
 Done: 2026-08-25. `rake health` 14/14 OK (elevenlabs probe URL fixed
       after first live run).
 
-## M00-4 · Content-progress (freshness) invariant  [tier: implementation] [status: ready] [deps: --]
+## M00-4 · Content-progress (freshness) invariant  [tier: implementation] [status: done] [deps: --]
 Goal: lib/validators/freshness_validator.rb wired into podgen
       validate: newest episode date in the generated feed vs wall
       clock against the podcast's cadence; stale output trips an OLD
@@ -63,6 +63,10 @@ Goal: lib/validators/freshness_validator.rb wired into podgen
 Acceptance: unit test with frozen clock + stale/fresh fixture feeds
       red-then-green; `podgen validate <pod>` surfaces OLD on a
       stale-dated fixture podcast; gate green.
+Done: 2026-08-25. Outcome check on REAL data: lahko_noc trips
+      "OLD — newest 2026-03-21, 157 days old (cadence ~1.0d)";
+      six other podcasts validate fresh. Cadence inferred from
+      history median gap (no config addition needed).
 
 ---
 
