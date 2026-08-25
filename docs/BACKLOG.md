@@ -37,7 +37,7 @@ Acceptance: both docs match the dev-loop skill's six-item discipline;
       gate green (docs-only).
 Done: 2026-08-25.
 
-## M00-3 · Source registry  [tier: top — first-of-family seam design] [status: ready] [deps: --]
+## M00-3 · Source registry  [tier: top — first-of-family seam design] [status: done] [deps: --]
 Goal: lib/source_registry.rb registering every hard-coded external
       endpoint (name, probe URL, expected shape); a gate-tier drift
       test that scans lib/ for known HTTP hosts and fails on any
@@ -45,9 +45,14 @@ Goal: lib/source_registry.rb registering every hard-coded external
       task (`podgen test health` or rake task) checking each probe
       URL + shape.
 Acceptance: drift test red on a seeded unregistered endpoint, green
-      on HEAD; registry covers RTVSLO/DDG/HN-Algolia/LingQ/ElevenLabs/
-      Groq/socialdata/Bluesky/Exa/OpenAI/Anthropic/Cloudflare hosts;
-      gate green; probe task exercised once by owner (network).
+      on HEAD; registry covers all 14 hard-coded service hosts
+      (Anthropic/OpenAI/ElevenLabs/Groq/GoogleTTS/YouTube/LingQ/
+      HN-Algolia/Bluesky/socialdata/Exa/Telegram/Cloudflare/DDG);
+      gate green; probe task green once. Note: per-podcast RSS feeds
+      (RTVSLO etc.) are guidelines.md config, not hard-coded — covered
+      by podgen validate + M00-4, not the registry.
+Done: 2026-08-25. `rake health` 14/14 OK (elevenlabs probe URL fixed
+      after first live run).
 
 ## M00-4 · Content-progress (freshness) invariant  [tier: implementation] [status: ready] [deps: --]
 Goal: lib/validators/freshness_validator.rb wired into podgen
