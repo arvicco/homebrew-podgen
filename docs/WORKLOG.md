@@ -7,6 +7,18 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-08-25 · M00-1 + M00-2 · (this commit) · Phase 00 opened per
+owner ruling (conventions before Phase 0 continues). M00-1: gitignored
+.docs/ workspace created; TOOL-REVIEW.md relocated there;
+.docs/DECISIONS.md registry seeded (D0-p stray-worktree salvage, D0-o,
+D0-c…D0-n, M0-3 sign-off — newest first, removed when ruled); dev-loop
+plugin skill+templates updated in its own repo (commit 34a4994) to
+encode the convention. M00-2: CLAUDE.md verification discipline
+extended to the skill's six items (specific asks; commit
+owner-session data); DEV-LOOP.md §4 gains the ring-for-owner alarm
+step. M0-3 status normalized to blocked: decision-item. Docs-only in
+podgen; gate green.
+
 2026-07-27 · M0-3 (memo drafted) · (this commit) · Full-lib inventory
 via four parallel read-only agents (~130 files), synthesized into
 docs/TOOL-REVIEW.md: 12 suspected-bug decision items (D0-c…D0-n), a

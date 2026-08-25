@@ -4,7 +4,9 @@ Autonomous podcast generation pipeline (Ruby 3.4+, macOS): two
 pipelines (news, language) + Tell CLI/web. See README.md for usage and
 ARCHITECTURE.md for design — read ARCHITECTURE.md before any
 non-trivial task. Read docs/DEV-LOOP.md before any non-trivial task;
-docs/BACKLOG.md is the coordination state.
+docs/BACKLOG.md is the coordination state. Research/planning docs and
+the open owner-decisions registry live in gitignored .docs/
+(.docs/DECISIONS.md, newest first, removed when ruled).
 
 ## Golden rules (non-negotiable)
 
@@ -106,6 +108,12 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 4. **Content-progress invariants.** Every scheduled producer
    (launchd-scheduled generates/publishes) carries a machine-checked
    invariant on its OUTPUT's progress, not its execution.
+5. **Specific verification asks.** Owner-facing verification requests
+   carry exact command lines and files, plus what good/bad looks
+   like — never a bare "take a look".
+6. **Commit owner-session data immediately** after every owner
+   apply/edit (history.yml, uploads.yml, guidelines edits made in
+   session) — cheap insurance against agent-wipe incidents.
 
 ## Code style
 
