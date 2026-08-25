@@ -47,6 +47,9 @@ checkout/reset of files the agent didn't create).
 
 docs/BACKLOG.md (see its header for the format) is the loop's entire
 coordination state — no external tracker; survives any session dying.
+Research memos, phase plans, and gate runbooks live in gitignored
+.docs/; open owner decisions in .docs/DECISIONS.md (newest first,
+removed once ruled — the ruling lands in the affected packet).
 
 ## 4. Loop mechanics
 
@@ -95,6 +98,11 @@ coordination state — no external tracker; survives any session dying.
    Releases (`gh release create`, Homebrew formula auto-update) are
    owner gate actions. Next phase's packets are elaborated only
    after the gate closes.
+9. **Ring for the owner** when the loop stops on something only the
+   owner can do (gate handoff, all-blocked, decision item) — as the
+   LAST tool call of that turn:
+   `nohup "$HOME/.claude/hooks/attention-alarm.sh" sticky >/dev/null 2>&1 &`
+   Never for informational turns.
 
 ## 5. Execution modes
 

@@ -2,16 +2,62 @@
 
 Flat, human-editable packets; the loop's entire coordination state.
 Statuses: ready → in-progress → done | blocked: <reason>.
-Packet IDs: M<phase>-<n>. Decision items: D<phase>-<letter>, ruling
-recorded inline when it lands. The executing session updates its own
-packet's status and appends one worklog paragraph per completed
-packet.
+Packet IDs: M<phase>-<n>. Decision items: D<phase>-<letter> — OPEN
+items live in .docs/DECISIONS.md (gitignored, newest first, removed
+when ruled); the ruling is recorded inline in the affected packet.
+Research/planning docs live in gitignored .docs/. The executing
+session updates its own packet's status and appends one worklog
+paragraph per completed packet.
 
 Packet format:
 
 ## M0-1 · <title>  [tier: <model-or-role>] [status: ready] [deps: --]
 Goal: <one testable outcome>
 Acceptance: <the machine-checkable oracle: which tests/checks prove it>
+
+---
+
+## Phase 00 — conventions & loop infrastructure (owner ruling 2026-08-25:
+land these before the rest of Phase 0)
+
+## M00-1 · .docs workspace + decisions registry  [tier: top] [status: done] [deps: --]
+Goal: gitignored .docs/ holding research/planning docs; open owner
+      decisions in .docs/DECISIONS.md (newest first, removed when
+      ruled); TOOL-REVIEW.md relocated; dev-loop plugin templates
+      updated to encode the convention.
+Acceptance: .docs/ ignored by git; DECISIONS.md seeded with all open
+      items; no tracked process artifacts beyond BACKLOG/WORKLOG.
+Done: 2026-08-25.
+
+## M00-2 · Verification-discipline + alarm doc sync  [tier: implementation] [status: done] [deps: --]
+Goal: CLAUDE.md gains discipline items 5 (specific verification asks)
+      and 6 (commit owner-session data immediately); DEV-LOOP.md §4
+      gains the ring-for-owner alarm step.
+Acceptance: both docs match the dev-loop skill's six-item discipline;
+      gate green (docs-only).
+Done: 2026-08-25.
+
+## M00-3 · Source registry  [tier: top — first-of-family seam design] [status: ready] [deps: --]
+Goal: lib/source_registry.rb registering every hard-coded external
+      endpoint (name, probe URL, expected shape); a gate-tier drift
+      test that scans lib/ for known HTTP hosts and fails on any
+      endpoint missing from the registry; an owner-run network probe
+      task (`podgen test health` or rake task) checking each probe
+      URL + shape.
+Acceptance: drift test red on a seeded unregistered endpoint, green
+      on HEAD; registry covers RTVSLO/DDG/HN-Algolia/LingQ/ElevenLabs/
+      Groq/socialdata/Bluesky/Exa/OpenAI/Anthropic/Cloudflare hosts;
+      gate green; probe task exercised once by owner (network).
+
+## M00-4 · Content-progress (freshness) invariant  [tier: implementation] [status: ready] [deps: --]
+Goal: lib/validators/freshness_validator.rb wired into podgen
+      validate: newest episode date in the generated feed vs wall
+      clock against the podcast's cadence; stale output trips an OLD
+      flag warning/error (machine-checked, content dates — never
+      run timestamps).
+Acceptance: unit test with frozen clock + stale/fresh fixture feeds
+      red-then-green; `podgen validate <pod>` surfaces OLD on a
+      stale-dated fixture podcast; gate green.
 
 ---
 
@@ -35,8 +81,8 @@ Done: 2026-07-27. Gate gained standardrb (matching the old CI lint
       one step. Note: COVERAGE=1 now spans the whole gate, so
       simplecov also sees the offline integration tier.
 
-## M0-3 · Module inventory memo  [tier: top] [status: in-progress — memo written, awaiting owner sign-off] [deps: --]
-Goal: docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
+## M0-3 · Module inventory memo  [tier: top] [status: blocked: decision-item (owner sign-off, see .docs/DECISIONS.md)] [deps: --]
+Goal: .docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
       suspected weak spots, refactor candidates. Leans on
       ARCHITECTURE.md rather than duplicating it: the memo's value is
       the maturity/weak-spot/refactor columns. Reviewed WITH the
@@ -63,15 +109,14 @@ Goal: README.md current and honest about what works today, including
       known-dead upstreams (e.g. zverinice feed) and manual steps.
 Acceptance: owner accepts at Gate 0.
 
-## Decision items — Phase 0
-- D0-a Git model ruling (2026-07-27): phase branches + human-merged
-  PRs close gates; no agent pushes to master; releases are owner gate
-  actions. RULED — encoded in CLAUDE.md golden rule 3.
-- D0-b Frozen domain ruling (2026-07-27): feed/site contracts +
-  guid/basename scheme + history/uploads/timestamps schemas.
-  RULED — encoded in CLAUDE.md golden rule 4.
-- D0-c…D0-n Suspected bugs found by the M0-3 inventory — one ruling
-  each (fix / accept / won't-fix). Full list: docs/TOOL-REVIEW.md §2.
-  AWAITING RULING.
-- D0-o Dead/orphaned code batch (10 items) — remove vs keep. Full
-  list: docs/TOOL-REVIEW.md §3. AWAITING RULING.
+## Decision items
+Open items: .docs/DECISIONS.md (gitignored registry, newest first —
+currently D0-p, D0-o, D0-c…D0-n, M0-3 sign-off). Landed rulings:
+- D0-a Git model (2026-07-27): phase branches + human-merged PRs
+  close gates; no agent pushes to master; releases are owner gate
+  actions. Encoded in CLAUDE.md golden rule 3.
+- D0-b Frozen domain (2026-07-27): feed/site contracts + guid/basename
+  scheme + history/uploads/timestamps schemas. Encoded in CLAUDE.md
+  golden rule 4.
+- Phase-00 ruling (2026-08-25): conventions/infrastructure packets
+  (M00-1…4) land before the rest of Phase 0.
