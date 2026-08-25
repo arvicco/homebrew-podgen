@@ -7,6 +7,12 @@ require "cli/stats_command"
 require "cli/validate_command"
 
 class TestStatsValidate < Minitest::Test
+  # Relative dates keep the "clean podcast" fixture genuinely fresh —
+  # the freshness validator (M00-4) flags stale content by wall clock,
+  # so hard-coded dates would rot.
+  NEWS_DATE1 = (Date.today - 6).iso8601
+  NEWS_DATE2 = (Date.today - 1).iso8601
+
   def setup
     @tmpdir = Dir.mktmpdir("podgen_sv_test")
     build_fixtures(@tmpdir)
@@ -31,8 +37,8 @@ class TestStatsValidate < Minitest::Test
   def test_stats_verbose_lists_episodes
     code, out, = run_stats(["test_news"], :verbose)
     assert_equal 0, code
-    assert_includes out, "test_news-2026-01-15.mp3"
-    assert_includes out, "test_news-2026-01-20.mp3"
+    assert_includes out, "test_news-#{NEWS_DATE1}.mp3"
+    assert_includes out, "test_news-#{NEWS_DATE2}.mp3"
     assert_match(/Research cache.*1 file/, out)
     assert_match(/History.*2 entries.*2 unique topics/, out)
   end
@@ -357,18 +363,18 @@ class TestStatsValidate < Minitest::Test
     fake_file(File.join(pod, "cover.jpg"), "x" * 50_000)
     fake_file(File.join(out, "cover.jpg"), "x" * 50_000)
 
-    fake_file(File.join(eps, "test_news-2026-01-15.mp3"), "x" * 5_000_000)
-    fake_file(File.join(eps, "test_news-2026-01-15_script.md"), "# Episode 1")
-    fake_file(File.join(eps, "test_news-2026-01-15_script.html"), "<h1>Episode 1</h1>")
-    fake_file(File.join(eps, "test_news-2026-01-20.mp3"), "x" * 6_000_000)
-    fake_file(File.join(eps, "test_news-2026-01-20_script.md"), "# Episode 2")
-    fake_file(File.join(eps, "test_news-2026-01-20_script.html"), "<h1>Episode 2</h1>")
+    fake_file(File.join(eps, "test_news-#{NEWS_DATE1}.mp3"), "x" * 5_000_000)
+    fake_file(File.join(eps, "test_news-#{NEWS_DATE1}_script.md"), "# Episode 1")
+    fake_file(File.join(eps, "test_news-#{NEWS_DATE1}_script.html"), "<h1>Episode 1</h1>")
+    fake_file(File.join(eps, "test_news-#{NEWS_DATE2}.mp3"), "x" * 6_000_000)
+    fake_file(File.join(eps, "test_news-#{NEWS_DATE2}_script.md"), "# Episode 2")
+    fake_file(File.join(eps, "test_news-#{NEWS_DATE2}_script.html"), "<h1>Episode 2</h1>")
 
     fake_file(File.join(out, "research_cache", "abc123.json"), '{"data":"cached"}')
 
     File.write(File.join(out, "history.yml"), YAML.dump([
-      { "date" => "2026-01-15", "title" => "Episode 1", "topics" => ["tech"] },
-      { "date" => "2026-01-20", "title" => "Episode 2", "topics" => ["science"] }
+      { "date" => NEWS_DATE1, "title" => "Episode 1", "topics" => ["tech"] },
+      { "date" => NEWS_DATE2, "title" => "Episode 2", "topics" => ["science"] }
     ]))
 
     File.write(File.join(out, "feed.xml"), <<~XML)
