@@ -68,6 +68,23 @@ Done: 2026-08-25. Outcome check on REAL data: lahko_noc trips
       six other podcasts validate fresh. Cadence inferred from
       history median gap (no config addition needed).
 
+## M00-5 · ask-trim preview player: open → ffplay  [tier: top — owner-facing UX, first-of-family interactive tooling] [status: done] [deps: --]
+Ruling D0-q (2026-08-30): owner approved the ffplay swap as specified;
+ttt.mp3 (last podgen track in Music) deleted in the same sitting.
+Goal: `--ask-trim` preview stops routing the temp mp3 to Apple Music
+      (library pollution + launch hang); ffplay preview with seek
+      controls and live position readout in seconds; prompt
+      semantics (accept/x/blank, seconds or min:sec) unchanged.
+Acceptance: unit test pins preview command = ffplay with -stats and
+      no `open`; existing ask_trim characterization tests untouched
+      and green; gate green; owner exercises one real --ask-trim run
+      and confirms the scrub-read-type workflow works (EXPECT: ffplay
+      window opens instantly, position visible in terminal, q returns
+      to prompt, Apple Music never launches).
+Done: 2026-08-30. Unit tests red-then-green; gate green (2957+50).
+Owner check outstanding: next real `--ask-trim` run should show the
+ffplay window + terminal seconds readout, Music never launching.
+
 ---
 
 ## Phase 0 — inventory, gate + safety net
