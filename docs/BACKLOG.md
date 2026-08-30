@@ -78,6 +78,21 @@ STAYS the preview player; mitigate the library pollution instead —
 research is D0-r in .docs/DECISIONS.md, implementation packet to be
 elaborated after the ruling.
 
+## M00-6 · ask-trim preview via Quick Look  [tier: top — owner-facing UX] [status: done] [deps: --]
+Ruling D0-r (2026-08-30): owner trialled `qlmanage -p` on a real
+episode and approved it (option B); Music-cleanup options A/D not
+needed since nothing is imported anymore.
+Goal: `--ask-trim` previews via Quick Look instead of `open`→Music:
+      positional scrub bar + min:sec readout, zero library imports;
+      spawned in background so the skip/cut prompts are live while
+      the preview is open; preview auto-closes when prompts finish
+      (including on `x`/exclude).
+Acceptance: unit tests pin preview command = qlmanage -p, background
+      spawn + TERM on completion and on exclude; existing ask_trim
+      characterization tests green via the start_preview seam; gate
+      green. Owner already exercised the player on the real surface.
+Done: 2026-08-30. Tests red-then-green; gate 2958+50 green.
+
 ---
 
 ## Phase 0 — inventory, gate + safety net
