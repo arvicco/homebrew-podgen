@@ -712,7 +712,7 @@ class TestLanguagePipeline < Minitest::Test
 
     $stdin.stub(:gets, "x\n") do
       AudioAssembler.stub(:new, fake_assembler) do
-        pipeline.stub(:system, nil) do
+        pipeline.stub(:start_preview, nil) do
           result = pipeline.send(:trim_source_audio)
           assert_equal :excluded, result
         end
@@ -743,7 +743,7 @@ class TestLanguagePipeline < Minitest::Test
     fake_gets = -> { r = inputs[call_count]; call_count += 1; r }
 
     AudioAssembler.stub(:new, fake_assembler) do
-      pipeline.stub(:system, nil) do
+      pipeline.stub(:start_preview, nil) do
         $stdin.stub(:gets, fake_gets) do
           result = pipeline.send(:trim_source_audio)
           assert_equal :excluded, result
@@ -779,7 +779,7 @@ class TestLanguagePipeline < Minitest::Test
 
     AudioAssembler.stub(:new, fake_assembler) do
       AudioTrimmer.stub(:new, fake_trimmer) do
-        pipeline.stub(:system, nil) do
+        pipeline.stub(:start_preview, nil) do
           $stdin.stub(:gets, fake_gets) do
             result = pipeline.send(:trim_source_audio)
             refute_equal :excluded, result
@@ -791,6 +791,70 @@ class TestLanguagePipeline < Minitest::Test
     refute File.exist?(config.excluded_urls_path)
     assert_equal 5.0, called_with[:skip]
     assert_equal 10.0, called_with[:cut]
+  end
+
+  # --- ask_trim preview via Quick Look (M00-6, D0-r ruling) ---
+
+  def test_preview_command_uses_quick_look
+    # qlmanage -p = the Finder spacebar player: positional scrubbing +
+    # min:sec readout, imports nothing (unlike `open` → Apple Music,
+    # which accumulated library copies of soon-deleted temp files).
+    pipeline = build_pipeline
+    assert_equal ["qlmanage", "-p", "/fake/audio.mp3"],
+      pipeline.send(:preview_command, "/fake/audio.mp3")
+  end
+
+  def test_ask_trim_spawns_preview_in_background_and_stops_it_after_prompts
+    pipeline = build_pipeline(options: {ask_trim: true})
+    pipeline.instance_variable_set(:@episode, {title: "Ep"})
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    fake_assembler = Minitest::Mock.new
+    fake_assembler.expect(:probe_duration, 120.0, ["/fake/audio.mp3"])
+
+    spawned = []
+    killed = []
+    pipeline.define_singleton_method(:spawn) { |*args| spawned << args; 4242 }
+
+    AudioAssembler.stub(:new, fake_assembler) do
+      Process.stub(:detach, nil) do
+        Process.stub(:kill, ->(sig, pid) { killed << [sig, pid] }) do
+          $stdin.stub(:gets, "\n") do
+            pipeline.send(:ask_trim_interactive)
+          end
+        end
+      end
+    end
+
+    assert_equal 1, spawned.size, "preview must spawn exactly once"
+    assert_equal pipeline.send(:preview_command, "/fake/audio.mp3"), spawned.first.first(3)
+    assert_equal [["TERM", 4242]], killed, "preview must be closed after the prompts"
+  end
+
+  def test_ask_trim_stops_preview_even_on_exclude
+    pipeline = build_pipeline(options: {ask_trim: true})
+    pipeline.instance_variable_set(:@episode, {title: "Ep"})
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    fake_assembler = Minitest::Mock.new
+    fake_assembler.expect(:probe_duration, 120.0, ["/fake/audio.mp3"])
+
+    killed = []
+    pipeline.define_singleton_method(:spawn) { |*_| 4242 }
+
+    result = nil
+    AudioAssembler.stub(:new, fake_assembler) do
+      Process.stub(:detach, nil) do
+        Process.stub(:kill, ->(sig, pid) { killed << [sig, pid] }) do
+          $stdin.stub(:gets, "x\n") do
+            result = pipeline.send(:ask_trim_interactive)
+          end
+        end
+      end
+    end
+
+    assert_equal :exclude, result
+    assert_equal [["TERM", 4242]], killed
   end
 
   # --- staged output lifecycle ---

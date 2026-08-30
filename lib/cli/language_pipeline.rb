@@ -318,11 +318,35 @@ module PodgenCLI
       $stderr.puts "Excluded: \"#{@episode[:title]}\""
     end
 
+    # Quick Look (qlmanage -p): positional scrubbing + min:sec readout,
+    # imports nothing. Replaces `open` → Apple Music, which copied every
+    # soon-deleted temp mp3 into the library (D0-r ruling 2026-08-30).
+    def preview_command(path)
+      ["qlmanage", "-p", path]
+    end
+
+    # Background spawn so the skip/cut prompts are usable while the
+    # preview window is open; qlmanage's chatty output is discarded.
+    def start_preview(path)
+      @preview_pid = spawn(*preview_command(path), [:out, :err] => "/dev/null")
+      Process.detach(@preview_pid)
+    rescue Errno::ENOENT
+      @preview_pid = nil # qlmanage unavailable — prompts still work
+    end
+
+    def stop_preview
+      Process.kill("TERM", @preview_pid) if @preview_pid
+    rescue Errno::ESRCH
+      # user already closed the preview window
+    ensure
+      @preview_pid = nil
+    end
+
     def ask_trim_interactive
       duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
       $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
-      $stderr.puts "Opening audio for preview..."
-      system("open", @source_audio_path)
+      $stderr.puts "Opening Quick Look preview (scrub the bar, read min:sec; Esc closes; prompt is ready now):"
+      start_preview(@source_audio_path)
 
       $stderr.print "Enter skip intro (seconds or min:sec), x to exclude, blank for none: "
       skip_input = $stdin.gets&.strip
@@ -335,6 +359,8 @@ module PodgenCLI
       cut = cut_input.nil? || cut_input.empty? ? nil : TimeValue.parse(cut_input)
 
       [skip, cut]
+    ensure
+      stop_preview
     end
 
     def discover_transcript

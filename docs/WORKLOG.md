@@ -7,6 +7,17 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-08-30 · M00-6 · (this commit) · ask-trim preview via Quick Look
+(D0-r option B, owner-trialled on a real episode and approved before
+any code changed — lesson from M00-5 applied). `open`→Music replaced
+by background `qlmanage -p`: positional scrubbing + min:sec readout,
+zero library imports, prompts live while the preview is open, TERM on
+prompt completion and on exclude (ensure block). TDD: 3 tests red
+(NoMethodError / no spawn) then green; existing ask_trim
+characterization tests repointed from the :system stub to the new
+:start_preview seam. Gate 2958+50 green. Music pollution class closed:
+nothing is imported anymore, so cleanup options A/D unnecessary.
+
 2026-08-30 · M00-5 REVERTED · (this commit) · ffplay ask-trim preview
 (5bfca6e) rejected by owner within hours: ffplay's fixed-step seeking
 and bare window are not usable for the trial-and-error hunt for
