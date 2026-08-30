@@ -318,21 +318,11 @@ module PodgenCLI
       $stderr.puts "Excluded: \"#{@episode[:title]}\""
     end
 
-    # ffplay (bundled with the ffmpeg dependency): seekable preview with a
-    # live position readout in seconds. `open` sent the temp mp3 to Apple
-    # Music, which imported it into the library (podgen then deleted the
-    # file — dead entries accumulated) and often beachballed, blocking
-    # the prompt (D0-q ruling 2026-08-30).
-    def preview_command(path)
-      ["ffplay", "-showmode", "1", "-loglevel", "quiet", "-stats", path]
-    end
-
     def ask_trim_interactive
       duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
       $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
-      $stderr.puts "Opening preview (←/→ ±10s, ↑/↓ ±60s, space pause, click waveform to jump, q done)."
-      $stderr.puts "Position shows below in seconds — type it (or min:sec) at the prompt."
-      system(*preview_command(@source_audio_path))
+      $stderr.puts "Opening audio for preview..."
+      system("open", @source_audio_path)
 
       $stderr.print "Enter skip intro (seconds or min:sec), x to exclude, blank for none: "
       skip_input = $stdin.gets&.strip
