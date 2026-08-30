@@ -793,41 +793,6 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal 10.0, called_with[:cut]
   end
 
-  # --- ask_trim preview player (M00-5) ---
-
-  def test_preview_command_uses_ffplay_with_live_position_stats
-    # ffplay (ships with the ffmpeg dependency) gives seek controls and a
-    # live position readout in seconds; `open` routed to Apple Music,
-    # which imported soon-to-be-deleted temp files and beachballed (D0-q).
-    pipeline = build_pipeline
-    cmd = pipeline.send(:preview_command, "/fake/audio.mp3")
-    assert_equal "ffplay", cmd.first
-    assert_equal "/fake/audio.mp3", cmd.last
-    assert_includes cmd, "-stats", "live position readout is the point of the swap"
-    refute_includes cmd, "open"
-  end
-
-  def test_ask_trim_previews_via_preview_command
-    pipeline = build_pipeline(options: {ask_trim: true})
-    pipeline.instance_variable_set(:@episode, {title: "Ep"})
-    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
-
-    fake_assembler = Minitest::Mock.new
-    fake_assembler.expect(:probe_duration, 120.0, ["/fake/audio.mp3"])
-
-    spawned = []
-    pipeline.define_singleton_method(:system) { |*args| spawned << args }
-
-    AudioAssembler.stub(:new, fake_assembler) do
-      $stdin.stub(:gets, "\n") do
-        pipeline.send(:ask_trim_interactive)
-      end
-    end
-
-    assert_equal 1, spawned.size
-    assert_equal pipeline.send(:preview_command, "/fake/audio.mp3"), spawned.first
-  end
-
   # --- staged output lifecycle ---
 
   def test_setup_staging_creates_directory

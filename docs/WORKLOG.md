@@ -7,17 +7,17 @@ durable fix, the lesson now enforced.
 
 ---
 
-2026-08-30 · M00-5 · (this commit) · ask-trim preview swapped from
-`system("open", …)` (routed to Apple Music, which imported the temp
-mp3 into the library — podgen deleted it, dead entries accumulated,
-Music beachballed and blocked the prompt) to ffplay with -stats: seek
-arrows, waveform click-to-jump, live position in seconds matching
-what the skip/cut prompt accepts. TDD: 2 tests red (NoMethodError)
-then green; existing ask_trim characterization tests untouched. Owner
-ruling D0-q approved same-day; the last podgen artifact in Music
-(ttt.mp3, artist "Podcast Agent") deleted + trashed — Music library
-now 100% owner content. Outstanding owner check: next real --ask-trim
-run (EXPECT: ffplay window + terminal seconds, no Music launch).
+2026-08-30 · M00-5 REVERTED · (this commit) · ffplay ask-trim preview
+(5bfca6e) rejected by owner within hours: ffplay's fixed-step seeking
+and bare window are not usable for the trial-and-error hunt for
+cut-off points — Apple Music's transport is the requirement, the
+pollution is the bug. Lesson: the D0-q proposal optimized what I
+could measure (no library imports, seconds readout) over the owner's
+actual workflow (fast interactive scrubbing); the owner check in the
+acceptance criteria fired exactly as designed. `open`→Music restored;
+mitigation research filed as D0-r (options: post-preview AppleScript
+auto-cleanup inside --ask-trim; Quick Look zero-import preview;
+periodic sweep). ttt.mp3 deletion stands (approved separately).
 
 2026-08-25 · M00-4 · (this commit) · Freshness invariant:
 Validators::FreshnessValidator (newest content date vs wall clock,
