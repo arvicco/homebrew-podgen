@@ -7,6 +7,21 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-08-31 · M00-7 · (this commit) · Preview re-wired Quick Look →
+QuickTime Player after the owner's real-run check on M00-6 found
+qlmanage takes no focus and can't autoplay (headless; keystroke
+injection would need Accessibility). QT does both natively: `open -a`
+launches frontmost with the file (avoiding the AppleScript -600
+tell-before-registered race the owner hit in the first trial), a
+backgrounded osascript waits for the document and plays it, and an
+is-running-guarded close script shuts the document after the prompts
+(incl. exclude) without relaunching a quit QT. Owner trialled the
+corrected script on a real episode before any code changed. TDD: 3 QT
+specs errored first, then green; gate 2958+50; close script verified
+against the live trial window. Third player iteration — Music
+(pollution) → ffplay (rejected) → Quick Look (no focus/autoplay) →
+QT; requirements now fully pinned in tests.
+
 2026-08-30 · M00-6 · (this commit) · ask-trim preview via Quick Look
 (D0-r option B, owner-trialled on a real episode and approved before
 any code changed — lesson from M00-5 applied). `open`→Music replaced

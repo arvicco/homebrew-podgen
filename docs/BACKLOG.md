@@ -92,6 +92,25 @@ Acceptance: unit tests pin preview command = qlmanage -p, background
       characterization tests green via the start_preview seam; gate
       green. Owner already exercised the player on the real surface.
 Done: 2026-08-30. Tests red-then-green; gate 2958+50 green.
+SUPERSEDED by M00-7: owner's real-run check found qlmanage neither
+takes focus nor auto-plays (headless tool; autoplay would need an
+Accessibility-gated keystroke hack).
+
+## M00-7 · ask-trim preview via QuickTime Player  [tier: top — owner-facing UX] [status: done] [deps: M00-6]
+Ruling (2026-08-31): owner trialled the corrected QT AppleScript
+(launch via `open -a` to dodge the -600 tell-before-registered race,
+then scripted `play`) on a real episode and approved.
+Goal: preview opens FRONTMOST and AUTO-PLAYS; scrub + min:sec as
+      before; prompts live while it plays; document auto-closes after
+      prompts (incl. exclude) without relaunching a quit QT; no
+      library imports.
+Acceptance: unit tests pin open command, background autoplay spawn,
+      and close-script invocation after prompts and on exclude;
+      existing ask_trim characterization tests green via the
+      start_preview seam; gate green; close script exercised once
+      against a live QT window.
+Done: 2026-08-31. Tests red-then-green (3 errors → green); gate
+      2958+50 green; close script verified live ("closed").
 
 ---
 

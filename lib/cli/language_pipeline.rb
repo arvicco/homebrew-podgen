@@ -318,34 +318,53 @@ module PodgenCLI
       $stderr.puts "Excluded: \"#{@episode[:title]}\""
     end
 
-    # Quick Look (qlmanage -p): positional scrubbing + min:sec readout,
-    # imports nothing. Replaces `open` → Apple Music, which copied every
-    # soon-deleted temp mp3 into the library (D0-r ruling 2026-08-30).
-    def preview_command(path)
-      ["qlmanage", "-p", path]
+    # QuickTime Player preview (M00-7): frontmost + autoplay are native
+    # AppleScript verbs — Quick Look could do neither from a spawned
+    # process. Launch via `open -a` (avoids the tell-before-registered
+    # -600 race); still imports nothing into any library.
+    PREVIEW_PLAY_SCRIPT = <<~APPLESCRIPT
+      tell application "QuickTime Player"
+        repeat 25 times
+          if (count documents) > 0 then exit repeat
+          delay 0.2
+        end repeat
+        play front document
+      end tell
+    APPLESCRIPT
+
+    PREVIEW_CLOSE_SCRIPT = <<~APPLESCRIPT
+      if application "QuickTime Player" is running then
+        tell application "QuickTime Player"
+          if (count documents) > 0 then close front document saving no
+        end tell
+      end if
+    APPLESCRIPT
+
+    def preview_open_command(path)
+      ["open", "-a", "QuickTime Player", path]
     end
 
-    # Background spawn so the skip/cut prompts are usable while the
-    # preview window is open; qlmanage's chatty output is discarded.
     def start_preview(path)
-      @preview_pid = spawn(*preview_command(path), [:out, :err] => "/dev/null")
-      Process.detach(@preview_pid)
+      return unless system(*preview_open_command(path))
+      @preview_started = true
+      # Autoplay waits for the document to load — background it so the
+      # skip/cut prompts appear immediately.
+      pid = spawn("osascript", "-e", PREVIEW_PLAY_SCRIPT, [:out, :err] => "/dev/null")
+      Process.detach(pid)
     rescue Errno::ENOENT
-      @preview_pid = nil # qlmanage unavailable — prompts still work
+      @preview_started = false # no osascript/open — prompts still work
     end
 
     def stop_preview
-      Process.kill("TERM", @preview_pid) if @preview_pid
-    rescue Errno::ESRCH
-      # user already closed the preview window
-    ensure
-      @preview_pid = nil
+      return unless @preview_started
+      system("osascript", "-e", PREVIEW_CLOSE_SCRIPT, [:out, :err] => "/dev/null")
+      @preview_started = false
     end
 
     def ask_trim_interactive
       duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
       $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
-      $stderr.puts "Opening Quick Look preview (scrub the bar, read min:sec; Esc closes; prompt is ready now):"
+      $stderr.puts "Opening QuickTime preview — auto-plays in front; scrub, read min:sec; prompt is ready now:"
       start_preview(@source_audio_path)
 
       $stderr.print "Enter skip intro (seconds or min:sec), x to exclude, blank for none: "
