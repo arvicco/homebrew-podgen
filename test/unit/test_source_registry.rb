@@ -26,7 +26,7 @@ class TestSourceRegistry < Minitest::Test
     assert_equal hosts.uniq, hosts, "duplicate hosts"
   end
 
-  def test_registered_matches_host_and_subdomain
+  def test_registered_is_exact_host_match
     assert SourceRegistry.registered?("api.elevenlabs.io")
     refute SourceRegistry.registered?("evil-elevenlabs.io")
     refute SourceRegistry.registered?("unregistered.example.org")

@@ -7,6 +7,18 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-09-01 · CRPR fixes · (this commit) · Phase-0 CRPR verdict:
+1 BLOCKER, 0 warnings, 7 nits. BLOCKER fixed: the settings.json
+allow-glob `git push origin phase-*` also matched refspec pushes to
+master (`phase-0:master`) and `--force` variants — added
+match-anywhere deny patterns (deny wins) closing golden-rule-3
+enforcement; also dropped the six dead env-PATH allow entries.
+Nits fixed same-commit: CLAUDE.md gate comment now mentions lint;
+README drift-scanner claim softened (literal URLs only); misnamed
+registry test renamed. Deferred nits queued: Q-22 freshness opt-out
+for concluded podcasts, Q-23 QT front-document targeting. Gate
+3068+50 green; re-review requested.
+
 2026-09-01 · M0-4 · (this commit) · Characterization audit + safety
 net. Read-only audit mapped the memo's 67 pure-logic targets: 37
 directly tested, 9 via thin orchestrators (accepted), 21 gaps. A

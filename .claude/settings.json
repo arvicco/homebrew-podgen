@@ -13,15 +13,13 @@
       "Bash(git push origin phase-*)",
       "Bash(bundle exec rake gate*)",
       "Bash(bundle exec rake test*)",
-      "Bash(bundle exec ruby*)",
-      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin bundle exec ruby*)",
-      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin bundle exec rake*)",
-      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh run*)",
-      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh pr view*)",
-      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh pr list*)",
-      "Bash(env PATH=/opt/homebrew/bin:/opt/homebrew/opt/ruby/bin:/usr/bin:/bin gh release list*)"
+      "Bash(bundle exec ruby*)"
     ],
     "deny": [
+      "Bash(git push*:*)",
+      "Bash(git push*master*)",
+      "Bash(git push*--force*)",
+      "Bash(git push* -f *)",
       "Bash(git push origin master*)",
       "Bash(git push --force*)",
       "Bash(git push -f*)",
