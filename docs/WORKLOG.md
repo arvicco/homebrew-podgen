@@ -7,6 +7,18 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-09-01 · rulings batch · (this commit) · Owner ruled the three
+standing registry items. D0-p: stray worktree commit 6dd5ba8
+discarded (worktree + branch removed), merged
+refactor/dry-and-test-coverage pruned local + origin — repo is down
+to master + phase-0 everywhere. D0-o: dead-code batch KEPT documented,
+periodic-review item Q-13. D0-c…D0-n: formulated as self-contained
+queue items Q-01…Q-12 in NEW docs/WORK-QUEUE.md (tracked; each with
+problem, first-failing-test sketch, acceptance, tier suggestion;
+fix packets get cut from the queue when scheduled). Registry now
+holds only the formal M0-3 sign-off. M00-7 owner-confirmed in real
+use, closed.
+
 2026-08-31 · M00-7 · (this commit) · Preview re-wired Quick Look →
 QuickTime Player after the owner's real-run check on M00-6 found
 qlmanage takes no focus and can't autoplay (headless; keystroke

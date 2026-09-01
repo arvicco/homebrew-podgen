@@ -5,9 +5,11 @@ Statuses: ready → in-progress → done | blocked: <reason>.
 Packet IDs: M<phase>-<n>. Decision items: D<phase>-<letter> — OPEN
 items live in .docs/DECISIONS.md (gitignored, newest first, removed
 when ruled); the ruling is recorded inline in the affected packet.
-Research/planning docs live in gitignored .docs/. The executing
-session updates its own packet's status and appends one worklog
-paragraph per completed packet.
+Research/planning docs live in gitignored .docs/. Ruled-but-
+unscheduled work lives in docs/WORK-QUEUE.md (Q-xx items); packets
+are cut from it when scheduled into a phase. The executing session
+updates its own packet's status and appends one worklog paragraph
+per completed packet.
 
 Packet format:
 
@@ -174,3 +176,11 @@ currently D0-p, D0-o, D0-c…D0-n, M0-3 sign-off). Landed rulings:
   golden rule 4.
 - Phase-00 ruling (2026-08-25): conventions/infrastructure packets
   (M00-1…4) land before the rest of Phase 0.
+- D0-p (2026-09-01): stray worktree commit 6dd5ba8 DISCARDED
+  (worktree + branch deleted); merged refactor/dry-and-test-coverage
+  pruned local + origin.
+- D0-o (2026-09-01): dead-code batch KEPT documented — review item
+  Q-13 in docs/WORK-QUEUE.md.
+- D0-c…D0-n (2026-09-01): twelve inventory bugs formulated as queue
+  items Q-01…Q-12 in docs/WORK-QUEUE.md (fix packets cut from the
+  queue when scheduled).
