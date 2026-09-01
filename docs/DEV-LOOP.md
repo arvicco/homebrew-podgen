@@ -96,8 +96,10 @@ removed once ruled — the ruling lands in the affected packet).
    quarantined at the end). **The owner executes the gate's human
    actions and merges the PR — the merge IS the gate-closing event.**
    Releases (`gh release create`, Homebrew formula auto-update) are
-   owner gate actions. Next phase's packets are elaborated only
-   after the gate closes.
+   owner gate actions. The next phase is elaborated only after the
+   gate closes, as a FULL plan in `.docs/pXX-plan.md` (scope, packets
+   with goals/acceptance, decision items, risks) that the owner signs
+   off BEFORE execution starts (owner ruling 2026-09-01).
 9. **Ring for the owner** when the loop stops on something only the
    owner can do (gate handoff, all-blocked, decision item) — as the
    LAST tool call of that turn:
