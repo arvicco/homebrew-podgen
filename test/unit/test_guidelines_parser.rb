@@ -1089,6 +1089,118 @@ class TestGuidelinesParser < Minitest::Test
     assert_includes parser.text, "- name: Test"
   end
 
+  # --- extract_section (characterization, private) ---
+
+  def test_extract_section_body_up_to_next_heading
+    parser = build_parser("## A\nline1\nline2\n\n## B\nother\n")
+    assert_equal "line1\nline2\n\n", parser.send(:extract_section, "A")
+  end
+
+  def test_extract_section_body_to_eof
+    parser = build_parser("## A\nline1\nline2\n")
+    assert_equal "line1\nline2\n", parser.send(:extract_section, "A")
+  end
+
+  def test_extract_section_missing_heading_returns_nil
+    parser = build_parser("## A\nline1\n")
+    assert_nil parser.send(:extract_section, "Missing")
+  end
+
+  def test_extract_section_heading_at_eof_with_newline_returns_empty
+    parser = build_parser("## A\nx\n\n## B\n")
+    assert_equal "", parser.send(:extract_section, "B")
+  end
+
+  def test_extract_section_heading_at_eof_without_newline_returns_nil
+    # Characterization: the heading regex requires a trailing newline,
+    # so a bare "## B" as the final line yields nil, not empty body.
+    parser = build_parser("## A\nx\n\n## B")
+    assert_nil parser.send(:extract_section, "B")
+  end
+
+  # --- parse_language_entry (characterization, private) ---
+
+  def test_parse_language_entry_plain_code
+    parser = build_parser("")
+    assert_equal({ "code" => "en" }, parser.send(:parse_language_entry, "en"))
+  end
+
+  def test_parse_language_entry_code_with_voice_id
+    parser = build_parser("")
+    assert_equal({ "code" => "es", "voice_id" => "VOICE_ES" },
+      parser.send(:parse_language_entry, "es: VOICE_ES"))
+  end
+
+  def test_parse_language_entry_inline_translator_and_model
+    parser = build_parser("")
+    expected = {
+      "code" => "jp",
+      "voice_id" => "VOICE_JP",
+      "translator" => "openai",
+      "translation_model" => "gpt-5"
+    }
+    assert_equal expected,
+      parser.send(:parse_language_entry, "jp: VOICE_JP translator: openai translation_model: gpt-5")
+  end
+
+  def test_parse_language_entry_inline_key_without_voice_id
+    parser = build_parser("")
+    assert_equal({ "code" => "jp", "translator" => "openai" },
+      parser.send(:parse_language_entry, "jp: translator: openai"))
+  end
+
+  def test_parse_language_entry_unknown_inline_key_dropped
+    parser = build_parser("")
+    assert_equal({ "code" => "jp", "voice_id" => "V1" },
+      parser.send(:parse_language_entry, "jp: V1 bogus: nope"))
+  end
+
+  # --- parse_source_item (characterization, private) ---
+
+  def test_parse_source_item_non_rss_returned_as_is
+    parser = build_parser("")
+    assert_equal "whatever skip: 3", parser.send(:parse_source_item, "hn", "whatever skip: 3")
+  end
+
+  def test_parse_source_item_plain_url_returned_as_string
+    parser = build_parser("")
+    assert_equal "https://example.com/feed",
+      parser.send(:parse_source_item, "rss", "https://example.com/feed")
+  end
+
+  def test_parse_source_item_inline_skip_and_cut
+    parser = build_parser("")
+    result = parser.send(:parse_source_item, "rss", "https://example.com/feed skip: 38 cut: 10")
+    assert_equal "https://example.com/feed", result[:url]
+    assert_in_delta 38.0, result[:skip]
+    assert_in_delta 10.0, result[:cut]
+    assert_equal %i[url skip cut], result.keys
+  end
+
+  def test_parse_source_item_bare_autotrim_flag
+    parser = build_parser("")
+    assert_equal({ url: "https://example.com/feed", autotrim: true },
+      parser.send(:parse_source_item, "rss", "https://example.com/feed autotrim"))
+  end
+
+  def test_parse_source_item_tag_and_weight
+    parser = build_parser("")
+    result = parser.send(:parse_source_item, "rss", "https://example.com/feed tag: cortes weight: 3")
+    assert_equal({ url: "https://example.com/feed", tag: "cortes", weight: 3 }, result)
+  end
+
+  # --- sanitize_css (characterization, private) ---
+
+  def test_sanitize_css_strips_semicolons_and_braces
+    parser = build_parser("")
+    assert_equal "red  body ", parser.send(:sanitize_css, "red; } body {")
+  end
+
+  def test_sanitize_css_leaves_clean_value_unchanged
+    parser = build_parser("")
+    assert_equal "#aabbcc", parser.send(:sanitize_css, "#aabbcc")
+  end
+
   private
 
   def build_parser(text)

@@ -150,12 +150,17 @@ Goal: .docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
       owner; agreed findings seed Phase 1.
 Acceptance: owner sign-off recorded here.
 
-## M0-4 · Characterization audit + safety net  [tier: implementation] [status: ready] [deps: M0-1, M0-3]
+## M0-4 · Characterization audit + safety net  [tier: implementation] [status: done] [deps: M0-1, M0-3]
 Goal: audit which pure logic (parsers, formatters, splitters, schema
       builders — the memo's "pure logic" list) lacks pinning tests;
       add characterization tests for the gaps. Zero production diffs.
 Acceptance: memo's pure-logic list fully covered; gate green;
       `git diff lib/` empty for the packet.
+Done: 2026-09-01. Audit: 37/67 targets directly covered, 9 acceptably
+      via thin orchestrators, 21 gaps → 76 new exact-value tests
+      across 14 files (worktree implementation agent; diff reviewed
+      by orchestrator). git diff lib/ empty. Gate 3068+50 green.
+      8 latent-bug candidates pinned and queued (Q-14…Q-21, unruled).
 
 ## M0-5 · Contract pinning tests  [tier: implementation] [status: done] [deps: M0-3]
 Goal: explicit pinning tests for the frozen domain: RSS item shape,

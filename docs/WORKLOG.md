@@ -7,6 +7,22 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-09-01 · M0-4 · (this commit) · Characterization audit + safety
+net. Read-only audit mapped the memo's 67 pure-logic targets: 37
+directly tested, 9 via thin orchestrators (accepted), 21 gaps. A
+worktree implementation agent wrote 76 exact-value tests across 14
+existing files (t.co truncation math, duration parsing, timestamp
+parsing, section/language/source guideline parsing, date-form
+defaulting, split-point priorities incl. UTF-8 fallback, interval
+merging, topic bucketing, round-robin scheduling behavior, vocab-line
+regex, URL normalization, multi_model fan-out, live truncate).
+Orchestrator reviewed the diff (tests-only, no weak assertions),
+applied, gate 3068+50 green, worktree removed. Zero production
+diffs. 8 pinned oddities recorded as unruled queue candidates
+Q-14…Q-21 — notable: priority-URL check misses uppercase-scheme
+URLs; topics like "AI" can never claim findings; TTS comma-split
+chunks start with ", ".
+
 2026-09-01 · M0-6 · (this commit) · README honesty pass: --ask-trim
 now documented as the QuickTime preview flow (flag table +
 interactive-trimming section), stale exclude-key `[e]` corrected to
