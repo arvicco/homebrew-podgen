@@ -13,11 +13,13 @@ discarded (worktree + branch removed), merged
 refactor/dry-and-test-coverage pruned local + origin — repo is down
 to master + phase-0 everywhere. D0-o: dead-code batch KEPT documented,
 periodic-review item Q-13. D0-c…D0-n: formulated as self-contained
-queue items Q-01…Q-12 in NEW docs/WORK-QUEUE.md (tracked; each with
-problem, first-failing-test sketch, acceptance, tier suggestion;
-fix packets get cut from the queue when scheduled). Registry now
-holds only the formal M0-3 sign-off. M00-7 owner-confirmed in real
-use, closed.
+queue items Q-01…Q-12 in the new work queue (each with problem,
+first-failing-test sketch, acceptance, tier suggestion; fix packets
+get cut from the queue when scheduled). Queue initially committed to
+tracked docs/ in error; owner ruled same day that dev queue + phase
+planning are internal (.docs/) and only executed work reaches the
+worklog — relocated to .docs/WORK-QUEUE.md. Registry now holds only
+the formal M0-3 sign-off. M00-7 owner-confirmed in real use, closed.
 
 2026-08-31 · M00-7 · (this commit) · Preview re-wired Quick Look →
 QuickTime Player after the owner's real-run check on M00-6 found
