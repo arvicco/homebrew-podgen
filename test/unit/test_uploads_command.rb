@@ -182,7 +182,104 @@ class TestUploadsCommand < Minitest::Test
     assert_equal 1, @code, "LingQ failure (non-rate-limit) should produce non-zero exit"
   end
 
+  # ── run_round_robin (characterization, private) ──
+
+  def test_round_robin_rotates_one_upload_per_pod_per_round
+    yt_calls = []
+    pending = { "pod_a" => 2, "pod_b" => 2 }
+    cmd = round_robin_cmd(["pod_a,pod_b"], yt_calls, pending)
+
+    tick = nil
+    capture_io { tick = cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal %w[pod_a pod_b pod_a pod_b], yt_calls
+    assert_equal 2, tick.per_pod["pod_a"][:uploaded]
+    assert_equal 2, tick.per_pod["pod_b"][:uploaded]
+    refute tick.rate_limited
+  end
+
+  def test_round_robin_stops_when_max_reached
+    yt_calls = []
+    pending = { "pod_a" => 5, "pod_b" => 5 }
+    cmd = round_robin_cmd(["--max", "3", "pod_a,pod_b"], yt_calls, pending)
+
+    tick = nil
+    capture_io { tick = cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal %w[pod_a pod_b pod_a], yt_calls
+    assert_equal 3, tick.per_pod.values.sum { |v| v[:uploaded] }
+  end
+
+  def test_round_robin_halts_on_rate_limit
+    yt_calls = []
+    cmd = stub_cmd(["pod_a,pod_b"])
+    cmd.define_singleton_method(:pending_count_for) { |_| 5 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      if pod == "pod_b"
+        YTResult.new(uploaded: 0, attempted: 1, rate_limited: true, errors: [{ type: :rate_limit }])
+      else
+        YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    tick = nil
+    capture_io { tick = cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal %w[pod_a pod_b], yt_calls, "rate limit must halt the whole YT phase"
+    assert tick.rate_limited
+  end
+
+  def test_round_robin_skips_pod_with_no_pending_without_yt_call
+    yt_calls = []
+    pending = { "pod_a" => 0, "pod_b" => 1 }
+    cmd = round_robin_cmd(["pod_a,pod_b"], yt_calls, pending)
+
+    tick = nil
+    capture_io { tick = cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal %w[pod_b], yt_calls
+    assert_equal 0, tick.per_pod["pod_a"][:uploaded]
+  end
+
+  def test_round_robin_missing_cover_only_drains_pod_permanently
+    yt_calls = []
+    cmd = stub_cmd(["pod_a,pod_b"])
+    pending = { "pod_a" => 5, "pod_b" => 1 }
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      if pod == "pod_a"
+        # uploads nothing, only missing_cover errors — permanent skip
+        YTResult.new(uploaded: 0, attempted: 1, rate_limited: false, errors: [{ type: :missing_cover }])
+      else
+        pending[pod] -= 1
+        YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    tick = nil
+    capture_io { tick = cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal %w[pod_a pod_b], yt_calls, "pod_a must not be retried after missing-cover-only round"
+    assert_equal 0, tick.per_pod["pod_a"][:uploaded]
+    assert_equal 1, tick.per_pod["pod_a"][:errors]
+    assert_equal 1, tick.per_pod["pod_b"][:uploaded]
+  end
+
   private
+
+  # Round-robin harness: each yt call uploads 1 and decrements pending.
+  def round_robin_cmd(args, yt_calls, pending)
+    cmd = stub_cmd(args)
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      pending[pod] -= 1
+      YouTubePublisher::Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+    end
+    cmd
+  end
 
   def stub_cmd(args)
     PodgenCLI::UploadsCommand.new(args, {})

@@ -201,4 +201,28 @@ class TestTellDetector < Minitest::Test
     refute Tell::Detector.explanation?(ko, "a" * 40)                  # 8x
     assert Tell::Detector.explanation?(ko, "a" * 41)                  # >8x
   end
+
+  # --- latin_language (characterization, direct calls) ---
+
+  def test_latin_language_english_stop_words
+    assert_equal "en", Tell::Detector.latin_language("the cat and the dog are in the house")
+  end
+
+  def test_latin_language_slovenian_stop_words
+    # sl stop words: je, zelo, sem, bil (4) outscore en's to/in (2)
+    assert_equal "sl", Tell::Detector.latin_language("to je zelo lepo in sem bil tam")
+  end
+
+  def test_latin_language_polish_stop_words
+    assert_equal "pl", Tell::Detector.latin_language("jest tak ale nie wiem czy ten")
+  end
+
+  def test_latin_language_under_three_words_returns_nil
+    assert_nil Tell::Detector.latin_language("hello there")
+  end
+
+  def test_latin_language_low_score_returns_nil
+    # 3+ words but fewer than 2 stop-word hits in any language
+    assert_nil Tell::Detector.latin_language("purple elephants dance quietly")
+  end
 end

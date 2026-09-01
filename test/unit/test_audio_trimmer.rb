@@ -310,6 +310,34 @@ class TestAudioTrimmer < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # --- words_match? (characterization: array-zip semantics) ---
+
+  def test_words_match_equal_arrays
+    assert trimmer.send(:words_match?, %w[hello world], %w[hello world])
+  end
+
+  def test_words_match_one_mismatch_fails
+    refute trimmer.send(:words_match?, %w[hello world], %w[hello there])
+  end
+
+  def test_words_match_shorter_target_ignores_extra_candidate_words
+    # zip truncates to target's length — extra candidate words are ignored.
+    assert trimmer.send(:words_match?, %w[hello world], %w[hello world extra])
+  end
+
+  def test_words_match_longer_target_raises
+    # Characterization: zip pads the candidate with nil, and word_match?
+    # calls nil.length — NoMethodError. Callers always pass equal-length
+    # windows (groq_words[i, n]), so this path never fires in practice.
+    assert_raises(NoMethodError) do
+      trimmer.send(:words_match?, %w[hello world extra], %w[hello world])
+    end
+  end
+
+  def test_words_match_empty_arrays_vacuously_true
+    assert trimmer.send(:words_match?, [], [])
+  end
+
   private
 
   def trimmer

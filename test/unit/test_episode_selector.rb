@@ -118,6 +118,62 @@ class TestEpisodeDateParser < Minitest::Test
     assert_match(/MMDD/, err.message)
     assert_match(/DD/, err.message)
   end
+
+  # ── extract_ymd (characterization, direct calls) ─────────────────
+
+  def test_extract_ymd_full_iso
+    assert_equal [2026, 3, 31],
+      PodgenCLI::EpisodeSelector::DateParser.extract_ymd("2026-03-31", TODAY)
+  end
+
+  def test_extract_ymd_compact_yyyymmdd
+    assert_equal [2026, 3, 31],
+      PodgenCLI::EpisodeSelector::DateParser.extract_ymd("20260331", TODAY)
+  end
+
+  def test_extract_ymd_mm_dd_defaults_year
+    assert_equal [2026, 3, 31],
+      PodgenCLI::EpisodeSelector::DateParser.extract_ymd("3-31", TODAY)
+  end
+
+  def test_extract_ymd_mmdd_defaults_year
+    assert_equal [2026, 3, 31],
+      PodgenCLI::EpisodeSelector::DateParser.extract_ymd("0331", TODAY)
+  end
+
+  def test_extract_ymd_dd_defaults_year_and_month
+    assert_equal [2026, 5, 31],
+      PodgenCLI::EpisodeSelector::DateParser.extract_ymd("31", TODAY)
+  end
+
+  def test_extract_ymd_single_digit_day
+    assert_equal [2026, 5, 5],
+      PodgenCLI::EpisodeSelector::DateParser.extract_ymd("5", TODAY)
+  end
+
+  def test_extract_ymd_unsupported_form_returns_nil
+    assert_nil PodgenCLI::EpisodeSelector::DateParser.extract_ymd("260331", TODAY)
+    assert_nil PodgenCLI::EpisodeSelector::DateParser.extract_ymd("abc", TODAY)
+  end
+
+  # ── strip_suffix (characterization, direct calls) ────────────────
+
+  def test_strip_suffix_digit_body_with_letter
+    assert_equal ["15", "a"], PodgenCLI::EpisodeSelector::DateParser.strip_suffix("15a")
+  end
+
+  def test_strip_suffix_no_suffix
+    assert_equal ["15", nil], PodgenCLI::EpisodeSelector::DateParser.strip_suffix("15")
+  end
+
+  def test_strip_suffix_bare_letter_kept_whole
+    # A lone letter has an empty body after stripping — not a date suffix.
+    assert_equal ["a", nil], PodgenCLI::EpisodeSelector::DateParser.strip_suffix("a")
+  end
+
+  def test_strip_suffix_alpha_body_kept_whole
+    assert_equal ["abc", nil], PodgenCLI::EpisodeSelector::DateParser.strip_suffix("abc")
+  end
 end
 
 class TestEpisodeSelectorMixin < Minitest::Test
