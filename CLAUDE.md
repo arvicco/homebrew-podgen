@@ -5,9 +5,10 @@ pipelines (news, language) + Tell CLI/web. See README.md for usage and
 ARCHITECTURE.md for design — read ARCHITECTURE.md before any
 non-trivial task. Read docs/DEV-LOOP.md before any non-trivial task;
 docs/BACKLOG.md is the coordination state. Research/planning docs,
-phase plans, the work queue (.docs/WORK-QUEUE.md, Q-xx items), and
-the open owner-decisions registry (.docs/DECISIONS.md, newest first,
-removed when ruled) live in gitignored .docs/ — internal
+phase plans (.docs/pXX-plan.md — full plan, owner-signed BEFORE a
+phase executes), the work queue (.docs/WORK-QUEUE.md, Q-xx items),
+and the open owner-decisions registry (.docs/DECISIONS.md, newest
+first, removed when ruled) live in gitignored .docs/ — internal
 communication never lands in the public repo; work reaches the
 tracked worklog only once executed.
 

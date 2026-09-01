@@ -138,7 +138,11 @@ Done: 2026-07-27. Gate gained standardrb (matching the old CI lint
       one step. Note: COVERAGE=1 now spans the whole gate, so
       simplecov also sees the offline integration tier.
 
-## M0-3 · Module inventory memo  [tier: top] [status: blocked: decision-item (owner sign-off, see .docs/DECISIONS.md)] [deps: --]
+## M0-3 · Module inventory memo  [tier: top] [status: done] [deps: --]
+Signed off 2026-09-01 (§2 bugs → work queue Q-01…Q-12; §3 dead code
+kept, Q-13; §8 seeds accepted unstruck). Same ruling: leaked queue
+commit stays in history ("no big deal"); future phases get a full
+plan in .docs/pXX-plan.md for owner sign-off before execution.
 Goal: .docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
       suspected weak spots, refactor candidates. Leans on
       ARCHITECTURE.md rather than duplicating it: the memo's value is
