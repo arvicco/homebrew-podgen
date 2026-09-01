@@ -7,6 +7,16 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-09-01 · M0-5 · (this commit) · Frozen-domain pinning tests
+(test/unit/test_frozen_contracts.rb): history.yml entry key set (incl.
+languages sub-schema), uploads.yml platform→group→{basename→id}
+nesting, *_timestamps.json schema (version 1, segment keys, intro
+offset, reconciled additivity), HistoryMaps basename suffix scheme
+(''+a..z, explicit basename wins), and the full RSS item shape —
+element order, m:ss duration, enclosure url/length/type, guid == bare
+mp3 filename, pubDate composition, channel element set. Oracle proven
+red on a seeded extra item element, green on HEAD. Gate 2963+50.
+
 2026-09-01 · rulings batch · (this commit) · Owner ruled the three
 standing registry items. D0-p: stray worktree commit 6dd5ba8
 discarded (worktree + branch removed), merged

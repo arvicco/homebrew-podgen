@@ -157,13 +157,18 @@ Goal: audit which pure logic (parsers, formatters, splitters, schema
 Acceptance: memo's pure-logic list fully covered; gate green;
       `git diff lib/` empty for the packet.
 
-## M0-5 · Contract pinning tests  [tier: implementation] [status: ready] [deps: M0-3]
+## M0-5 · Contract pinning tests  [tier: implementation] [status: done] [deps: M0-3]
 Goal: explicit pinning tests for the frozen domain: RSS item shape,
       episode guid/basename scheme, history.yml / uploads.yml /
       *_timestamps.json schemas. These become the oracles that let
       cheap models work safely.
 Acceptance: each frozen shape has a test that fails on any
       non-additive change; gate green.
+Done: 2026-09-01. test/unit/test_frozen_contracts.rb: 5 tests / 34
+      assertions pinning exact key sets, item element order, guid ==
+      mp3 filename, enclosure attrs, basename suffix scheme,
+      timestamps schema + reconciled-flag additivity. Oracle proven:
+      red on a seeded extra feed element, green on HEAD.
 
 ## M0-6 · README honesty pass  [tier: implementation] [status: ready] [deps: M0-3]
 Goal: README.md current and honest about what works today, including
