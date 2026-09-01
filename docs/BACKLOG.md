@@ -111,6 +111,7 @@ Acceptance: unit tests pin open command, background autoplay spawn,
       against a live QT window.
 Done: 2026-08-31. Tests red-then-green (3 errors → green); gate
       2958+50 green; close script verified live ("closed").
+      Owner confirmed in real use 2026-09-01 — packet fully closed.
 
 ---
 
