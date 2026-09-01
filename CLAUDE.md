@@ -156,5 +156,7 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 
 ## Current phase
 
-Phase 0 (brownfield hardening: gate command, inventory memo,
-characterization audit, README v1); update this line at each gate.
+Phase 0 (brownfield hardening) COMPLETE PENDING GATE 0 — all packets
+done, CRPR APPROVED, PR open; the owner's merge closes the gate.
+Phase 1 planning starts as .docs/p01-plan.md after the merge; update
+this line at each gate.
