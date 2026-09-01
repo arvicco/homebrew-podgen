@@ -51,7 +51,7 @@ tracked worklog only once executed.
 ## Commands
 
 ```
-bundle exec rake gate                 # pre-commit gate: syntax + unit + offline integration; all green or no commit
+bundle exec rake gate                 # pre-commit gate: syntax + lint + unit + offline integration; all green or no commit
 bundle exec rake test                 # full suite (incl. keyed API tiers locally)
 bundle exec rake test:unit            # fast tier only
 bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file

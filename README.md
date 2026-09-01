@@ -1390,9 +1390,10 @@ bundle exec rake test      # full suite (API-keyed tiers run only with keys pres
 bundle exec rake health    # probe every registered external endpoint (network; see lib/source_registry.rb)
 ```
 
-The gate is also what CI runs. Adding an HTTP call to a new external
-host fails the gate until the host is registered in
-`lib/source_registry.rb`. `podgen validate` includes a freshness
+The gate is also what CI runs. Adding a hard-coded URL to a new
+external host fails the gate until the host is registered in
+`lib/source_registry.rb` (constant-built or interpolated URLs escape
+the scanner — register those hosts manually). `podgen validate` includes a freshness
 check: a podcast whose newest episode is older than ~2× its usual
 cadence is flagged OLD (a stalled scheduled pipeline shows up here
 rather than silently).
