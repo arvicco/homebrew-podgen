@@ -5,11 +5,12 @@ Statuses: ready → in-progress → done | blocked: <reason>.
 Packet IDs: M<phase>-<n>. Decision items: D<phase>-<letter> — OPEN
 items live in .docs/DECISIONS.md (gitignored, newest first, removed
 when ruled); the ruling is recorded inline in the affected packet.
-Research/planning docs live in gitignored .docs/. Ruled-but-
-unscheduled work lives in docs/WORK-QUEUE.md (Q-xx items); packets
-are cut from it when scheduled into a phase. The executing session
-updates its own packet's status and appends one worklog paragraph
-per completed packet.
+Research/planning docs, the work queue (.docs/WORK-QUEUE.md, Q-xx
+items — packets are cut from it when scheduled), and phase plans
+live in gitignored .docs/ — internal communication never lands in
+the public repo; work reaches the tracked worklog only once
+executed. The executing session updates its own packet's status and
+appends one worklog paragraph per completed packet.
 
 Packet format:
 
@@ -180,7 +181,7 @@ currently D0-p, D0-o, D0-c…D0-n, M0-3 sign-off). Landed rulings:
   (worktree + branch deleted); merged refactor/dry-and-test-coverage
   pruned local + origin.
 - D0-o (2026-09-01): dead-code batch KEPT documented — review item
-  Q-13 in docs/WORK-QUEUE.md.
-- D0-c…D0-n (2026-09-01): twelve inventory bugs formulated as queue
-  items Q-01…Q-12 in docs/WORK-QUEUE.md (fix packets cut from the
-  queue when scheduled).
+  Q-13 in the work queue.
+- D0-c…D0-n (2026-09-01): twelve inventory bugs formulated as work
+  queue items Q-01…Q-12 (fix packets cut from the queue when
+  scheduled).
