@@ -7,6 +7,15 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-09-01 · M0-6 · (this commit) · README honesty pass: --ask-trim
+now documented as the QuickTime preview flow (flag table +
+interactive-trimming section), stale exclude-key `[e]` corrected to
+the real `e[x]clude`, new Development section covering rake
+gate/test/health, the source-registry drift rule, and the freshness
+OLD flag. Private-config detail (dead zverinice feed) deliberately
+kept OUT of the public README per the internal-comms ruling. Owner
+acceptance rides on Gate 0.
+
 2026-09-01 · M0-5 · (this commit) · Frozen-domain pinning tests
 (test/unit/test_frozen_contracts.rb): history.yml entry key set (incl.
 languages sub-schema), uploads.yml platform→group→{basename→id}

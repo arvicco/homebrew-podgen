@@ -299,7 +299,7 @@ Language pipeline only:
 | `--skip N`          | Seconds or `min:sec` to skip from start (`--skip-intro` is an alias)         |
 | `--cut N`           | Seconds (relative) or `min:sec` (absolute) to cut from end                   |
 | `--snip INTERVALS`  | Remove interior segments — see [Snip format](#snip-format)                   |
-| `--ask-trim`        | Preview audio then prompt for skip/cut interactively (`x` to exclude)        |
+| `--ask-trim`        | Opens a QuickTime preview (frontmost, auto-playing — scrub to find boundaries) and prompts for skip/cut; `x` to exclude. Preview closes when the prompts finish |
 | `--autotrim`        | Enable outro auto-detection from word timestamps                             |
 | `--no-skip`         | Disable skip even when configured                                            |
 | `--no-cut`          | Disable cut even when configured                                             |
@@ -576,14 +576,14 @@ Accepts the same formats as RSS `itunes_duration`: plain seconds (`120`), `MM:SS
 
 1. **Pre-download**: episodes whose `itunes_duration` falls outside `[min_length, max_length]` are dropped before download. A summary line logs how many were kept and why others were filtered (`Length filter [2:00–9:30]: 59/60 kept, 1 too long`).
 2. **Post-download**: the actual audio duration is probed (covers feeds without reliable `itunes_duration`). If outside range:
-   - With `--ask-trim`: prompt `[t]rim manually / [e]xclude / [a]bort?` — `e` writes the URL to `excluded_urls.yml` so future runs skip it.
+   - With `--ask-trim`: prompt `[t]rim manually / e[x]clude / [a]bort?` — `x` writes the URL to `excluded_urls.yml` so future runs skip it.
    - Without `--ask-trim`: log warning and abort with exit 1.
 
 Episodes with missing or unparseable `itunes_duration` pass the pre-download filter and are validated post-download.
 
 #### Interactive trimming
 
-`--ask-trim` downloads the audio, opens it for preview, then prompts for skip and cut values interactively. Mutually exclusive with `--skip`/`--no-skip`/`--cut`/`--no-cut`.
+`--ask-trim` downloads the audio, opens a QuickTime preview (frontmost, auto-playing — scrub to locate the boundaries, read the min:sec position), and prompts for skip and cut values while the preview plays. The preview closes automatically when the prompts finish. Mutually exclusive with `--skip`/`--no-skip`/`--cut`/`--no-cut`.
 
 ```bash
 podgen generate lahko_noc --ask-trim
@@ -1381,6 +1381,21 @@ podgen/
 │   └── feed.xml              # RSS feed
 └── logs/<name>/              # Run logs per podcast
 ```
+
+## Development
+
+```bash
+bundle exec rake gate      # pre-commit gate: syntax + lint (standardrb) + unit + offline integration
+bundle exec rake test      # full suite (API-keyed tiers run only with keys present)
+bundle exec rake health    # probe every registered external endpoint (network; see lib/source_registry.rb)
+```
+
+The gate is also what CI runs. Adding an HTTP call to a new external
+host fails the gate until the host is registered in
+`lib/source_registry.rb`. `podgen validate` includes a freshness
+check: a podcast whose newest episode is older than ~2× its usual
+cadence is flagged OLD (a stalled scheduled pipeline shows up here
+rather than silently).
 
 ## Testing Individual Components
 

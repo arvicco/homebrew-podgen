@@ -170,10 +170,19 @@ Done: 2026-09-01. test/unit/test_frozen_contracts.rb: 5 tests / 34
       timestamps schema + reconciled-flag additivity. Oracle proven:
       red on a seeded extra feed element, green on HEAD.
 
-## M0-6 · README honesty pass  [tier: implementation] [status: ready] [deps: M0-3]
+## M0-6 · README honesty pass  [tier: implementation] [status: done — owner acceptance at Gate 0] [deps: M0-3]
 Goal: README.md current and honest about what works today, including
-      known-dead upstreams (e.g. zverinice feed) and manual steps.
+      manual steps.
 Acceptance: owner accepts at Gate 0.
+Done: 2026-09-01. Updated: --ask-trim documented as QuickTime preview
+      (flag table + interactive-trimming section); stale `[e]xclude`
+      key corrected to the actual `e[x]clude`; new Development section
+      (rake gate/test/health, source-registry drift rule, freshness
+      OLD flag in validate). Deviation from original goal text: dead
+      per-podcast upstreams (zverinice) NOT added — that is private
+      podcast config (podcasts/ is gitignored) and per the 2026-09-01
+      ruling internal detail stays out of the public repo; it lives in
+      .docs/TOOL-REVIEW.md + guidelines instead.
 
 ## Decision items
 Open items: .docs/DECISIONS.md (gitignored registry, newest first —
