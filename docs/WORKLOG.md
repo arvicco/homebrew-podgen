@@ -7,6 +7,15 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-09-02 · GATE 0 CLOSED · owner merged PR #1 (merge 4298988) —
+the gate-closing event. Phase 0 delivered: dev-loop instantiation,
+rake gate + CI, source registry + drift test + rake health, freshness
+invariant, QuickTime ask-trim, frozen-domain oracles, 76-test
+characterization net, README refresh; CRPR 1 blocker fixed, APPROVED.
+Branch phase-1 opened from merged master. Owner directive at close:
+re-run code review on merged master BEFORE Phase 1 planning; plan
+ships as .docs/p01-plan.md for sign-off.
+
 2026-09-01 · CRPR fixes · (this commit) · Phase-0 CRPR verdict:
 1 BLOCKER, 0 warnings, 7 nits. BLOCKER fixed: the settings.json
 allow-glob `git push origin phase-*` also matched refspec pushes to

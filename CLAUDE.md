@@ -156,7 +156,6 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 
 ## Current phase
 
-Phase 0 (brownfield hardening) COMPLETE PENDING GATE 0 — all packets
-done, CRPR APPROVED, PR open; the owner's merge closes the gate.
-Phase 1 planning starts as .docs/p01-plan.md after the merge; update
-this line at each gate.
+Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Phase 1
+in planning: .docs/p01-plan.md awaits owner sign-off; work executes
+on branch phase-1 only after sign-off. Update this line at each gate.
