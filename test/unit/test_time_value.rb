@@ -129,4 +129,48 @@ class TestTimeValue < Minitest::Test
     tv = TimeValue.parse("0")
     refute tv > 0
   end
+
+  # --- parse_duration_seconds (characterization) ---
+
+  def test_parse_duration_seconds_plain_seconds
+    assert_in_delta 5.0, TimeValue.parse_duration_seconds("5")
+    assert_in_delta 90.0, TimeValue.parse_duration_seconds("90")
+  end
+
+  def test_parse_duration_seconds_fractional
+    assert_in_delta 775.9, TimeValue.parse_duration_seconds("775.9")
+  end
+
+  def test_parse_duration_seconds_minutes_seconds
+    assert_in_delta 90.0, TimeValue.parse_duration_seconds("1:30")
+  end
+
+  def test_parse_duration_seconds_hours_minutes_seconds
+    assert_in_delta 3723.0, TimeValue.parse_duration_seconds("1:02:03")
+  end
+
+  def test_parse_duration_seconds_numeric_input
+    assert_in_delta 90.0, TimeValue.parse_duration_seconds(90)
+    assert_in_delta 90.5, TimeValue.parse_duration_seconds(90.5)
+  end
+
+  def test_parse_duration_seconds_nil_returns_nil
+    assert_nil TimeValue.parse_duration_seconds(nil)
+  end
+
+  def test_parse_duration_seconds_empty_returns_nil
+    assert_nil TimeValue.parse_duration_seconds("")
+    assert_nil TimeValue.parse_duration_seconds("   ")
+  end
+
+  def test_parse_duration_seconds_garbage_returns_nil
+    assert_nil TimeValue.parse_duration_seconds("abc")
+    assert_nil TimeValue.parse_duration_seconds("12:xx")
+  end
+
+  def test_parse_duration_seconds_four_colon_parts_returns_nil
+    # Characterization: 4+ colon-separated parts fall through the
+    # case/when (only 2 and 3 handled) and return nil.
+    assert_nil TimeValue.parse_duration_seconds("1:02:03:04")
+  end
 end

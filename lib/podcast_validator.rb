@@ -9,6 +9,7 @@ require_relative "validators/feed_validator"
 require_relative "validators/cover_validator"
 require_relative "validators/base_url_validator"
 require_relative "validators/history_validator"
+require_relative "validators/freshness_validator"
 require_relative "validators/image_config_validator"
 require_relative "validators/language_pipeline_validator"
 require_relative "validators/news_pipeline_validator"
@@ -28,6 +29,7 @@ class PodcastValidator
     Validators::CoverValidator,
     Validators::BaseUrlValidator,
     Validators::HistoryValidator,
+    Validators::FreshnessValidator,
     Validators::ImageConfigValidator
   ].freeze
 
@@ -79,6 +81,7 @@ class PodcastValidator
   def check_cover            = merge_result(Validators::CoverValidator.new(@config).validate)
   def check_base_url         = merge_result(Validators::BaseUrlValidator.new(@config).validate)
   def check_history          = merge_result(Validators::HistoryValidator.new(@config).validate)
+  def check_freshness        = merge_result(Validators::FreshnessValidator.new(@config).validate)
   def check_image_config     = merge_result(Validators::ImageConfigValidator.new(@config).validate)
   def check_language_pipeline = merge_result(Validators::LanguagePipelineValidator.new(@config).validate)
   def check_news_pipeline    = merge_result(Validators::NewsPipelineValidator.new(@config).validate)

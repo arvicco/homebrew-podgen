@@ -524,4 +524,42 @@ class TestTranscriptRenderer < Minitest::Test
     assert_includes html, "cat. A feline."
     assert_includes html, "кот. Домашнее животное."
   end
+
+  # --- parse_vocab_line (characterization, private) ---
+
+  def test_parse_vocab_line_canonical_form
+    entry = @r.send(:parse_vocab_line, "- **hiša** (n) — house")
+    assert_equal(
+      { lemma: "hiša", ipa: nil, pos: "n", definition: "house", original: nil },
+      entry
+    )
+  end
+
+  def test_parse_vocab_line_all_optional_groups
+    entry = @r.send(:parse_vocab_line, "- **hiša** /ˈxìːʃa/ (n) *hiši* — house")
+    assert_equal(
+      { lemma: "hiša", ipa: "/ˈxìːʃa/", pos: "n", definition: "house", original: "hiši" },
+      entry
+    )
+  end
+
+  def test_parse_vocab_line_back_compat_original_suffix
+    entry = @r.send(:parse_vocab_line, "- **hiša** (n) — house _Original: hiši_")
+    assert_equal "house", entry[:definition]
+    assert_equal "hiši", entry[:original]
+    assert_nil entry[:ipa]
+  end
+
+  def test_parse_vocab_line_no_definition
+    entry = @r.send(:parse_vocab_line, "- **hiša** (n)")
+    assert_equal(
+      { lemma: "hiša", ipa: nil, pos: "n", definition: "", original: nil },
+      entry
+    )
+  end
+
+  def test_parse_vocab_line_unparseable_returns_nil
+    assert_nil @r.send(:parse_vocab_line, "just some text")
+    assert_nil @r.send(:parse_vocab_line, "- plain bullet without bold")
+  end
 end

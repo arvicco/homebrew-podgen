@@ -73,6 +73,52 @@ class TestTwitterAgent < Minitest::Test
     mock_client.verify
   end
 
+  # --- truncate (characterization: t.co counts any URL as 23 chars) ---
+
+  def test_truncate_under_limit_unchanged
+    agent = build_agent
+    assert_equal "short tweet", agent.send(:truncate, "short tweet", url: "")
+  end
+
+  def test_truncate_at_exactly_280_unchanged
+    agent = build_agent
+    text = "a" * 280
+    assert_equal text, agent.send(:truncate, text, url: "")
+  end
+
+  def test_truncate_over_280_but_within_tco_budget_unchanged
+    agent = build_agent
+    # 301 raw chars, but the 100-char URL counts as 23 → effective 224
+    url = "https://example.com/#{"x" * 80}"
+    text = "#{"a" * 200} #{url}"
+    assert_equal 301, text.length
+    assert_equal text, agent.send(:truncate, text, url: url)
+  end
+
+  def test_truncate_over_budget_ellipsizes_and_reappends_url
+    agent = build_agent
+    url = "https://example.com/a" # 21 chars, counts as 23
+    text = "#{"a" * 300}\n#{url}"
+    result = agent.send(:truncate, text, url: url)
+    # max_text = 280 - 23 - 4 = 253 chars of non-URL text kept
+    assert_equal "#{"a" * 253}...\n#{url}", result
+  end
+
+  def test_truncate_empty_url_ellipsizes_with_trailing_newline
+    agent = build_agent
+    result = agent.send(:truncate, "a" * 300, url: "")
+    # Characterization: with no URL the result still ends "...\n" —
+    # the "\n#{url}" tail is appended even when url is empty.
+    assert_equal "#{"a" * 276}...\n", result
+    assert_equal 280, result.length
+  end
+
+  def test_truncate_nil_url_treated_as_empty
+    agent = build_agent
+    result = agent.send(:truncate, "a" * 300, url: nil)
+    assert_equal "#{"a" * 276}...\n", result
+  end
+
   private
 
   def build_agent
