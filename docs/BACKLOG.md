@@ -1,0 +1,210 @@
+# Backlog — podgen
+
+Flat, human-editable packets; the loop's entire coordination state.
+Statuses: ready → in-progress → done | blocked: <reason>.
+Packet IDs: M<phase>-<n>. Decision items: D<phase>-<letter> — OPEN
+items live in .docs/DECISIONS.md (gitignored, newest first, removed
+when ruled); the ruling is recorded inline in the affected packet.
+Research/planning docs, the work queue (.docs/WORK-QUEUE.md, Q-xx
+items — packets are cut from it when scheduled), and phase plans
+live in gitignored .docs/ — internal communication never lands in
+the public repo; work reaches the tracked worklog only once
+executed. The executing session updates its own packet's status and
+appends one worklog paragraph per completed packet.
+
+Packet format:
+
+## M0-1 · <title>  [tier: <model-or-role>] [status: ready] [deps: --]
+Goal: <one testable outcome>
+Acceptance: <the machine-checkable oracle: which tests/checks prove it>
+
+---
+
+## Phase 00 — conventions & loop infrastructure (owner ruling 2026-08-25:
+land these before the rest of Phase 0)
+
+## M00-1 · .docs workspace + decisions registry  [tier: top] [status: done] [deps: --]
+Goal: gitignored .docs/ holding research/planning docs; open owner
+      decisions in .docs/DECISIONS.md (newest first, removed when
+      ruled); TOOL-REVIEW.md relocated; dev-loop plugin templates
+      updated to encode the convention.
+Acceptance: .docs/ ignored by git; DECISIONS.md seeded with all open
+      items; no tracked process artifacts beyond BACKLOG/WORKLOG.
+Done: 2026-08-25.
+
+## M00-2 · Verification-discipline + alarm doc sync  [tier: implementation] [status: done] [deps: --]
+Goal: CLAUDE.md gains discipline items 5 (specific verification asks)
+      and 6 (commit owner-session data immediately); DEV-LOOP.md §4
+      gains the ring-for-owner alarm step.
+Acceptance: both docs match the dev-loop skill's six-item discipline;
+      gate green (docs-only).
+Done: 2026-08-25.
+
+## M00-3 · Source registry  [tier: top — first-of-family seam design] [status: done] [deps: --]
+Goal: lib/source_registry.rb registering every hard-coded external
+      endpoint (name, probe URL, expected shape); a gate-tier drift
+      test that scans lib/ for known HTTP hosts and fails on any
+      endpoint missing from the registry; an owner-run network probe
+      task (`podgen test health` or rake task) checking each probe
+      URL + shape.
+Acceptance: drift test red on a seeded unregistered endpoint, green
+      on HEAD; registry covers all 14 hard-coded service hosts
+      (Anthropic/OpenAI/ElevenLabs/Groq/GoogleTTS/YouTube/LingQ/
+      HN-Algolia/Bluesky/socialdata/Exa/Telegram/Cloudflare/DDG);
+      gate green; probe task green once. Note: per-podcast RSS feeds
+      (RTVSLO etc.) are guidelines.md config, not hard-coded — covered
+      by podgen validate + M00-4, not the registry.
+Done: 2026-08-25. `rake health` 14/14 OK (elevenlabs probe URL fixed
+      after first live run).
+
+## M00-4 · Content-progress (freshness) invariant  [tier: implementation] [status: done] [deps: --]
+Goal: lib/validators/freshness_validator.rb wired into podgen
+      validate: newest episode date in the generated feed vs wall
+      clock against the podcast's cadence; stale output trips an OLD
+      flag warning/error (machine-checked, content dates — never
+      run timestamps).
+Acceptance: unit test with frozen clock + stale/fresh fixture feeds
+      red-then-green; `podgen validate <pod>` surfaces OLD on a
+      stale-dated fixture podcast; gate green.
+Done: 2026-08-25. Outcome check on REAL data: lahko_noc trips
+      "OLD — newest 2026-03-21, 157 days old (cadence ~1.0d)";
+      six other podcasts validate fresh. Cadence inferred from
+      history median gap (no config addition needed).
+
+## M00-5 · ask-trim preview player: open → ffplay  [tier: top] [status: done — REJECTED by owner, reverted] [deps: --]
+History: D0-q diagnosed `open`→Apple Music importing soon-deleted temp
+mp3s (394 dead library entries, beachballs). ffplay swap implemented
+2026-08-30, rejected same day: ffplay's transport is not usable for
+finding cut-off points; Music's interactive controls are the
+requirement. Commit 5bfca6e reverted. Ruling (2026-08-30): Music
+STAYS the preview player; mitigate the library pollution instead —
+research is D0-r in .docs/DECISIONS.md, implementation packet to be
+elaborated after the ruling.
+
+## M00-6 · ask-trim preview via Quick Look  [tier: top — owner-facing UX] [status: done] [deps: --]
+Ruling D0-r (2026-08-30): owner trialled `qlmanage -p` on a real
+episode and approved it (option B); Music-cleanup options A/D not
+needed since nothing is imported anymore.
+Goal: `--ask-trim` previews via Quick Look instead of `open`→Music:
+      positional scrub bar + min:sec readout, zero library imports;
+      spawned in background so the skip/cut prompts are live while
+      the preview is open; preview auto-closes when prompts finish
+      (including on `x`/exclude).
+Acceptance: unit tests pin preview command = qlmanage -p, background
+      spawn + TERM on completion and on exclude; existing ask_trim
+      characterization tests green via the start_preview seam; gate
+      green. Owner already exercised the player on the real surface.
+Done: 2026-08-30. Tests red-then-green; gate 2958+50 green.
+SUPERSEDED by M00-7: owner's real-run check found qlmanage neither
+takes focus nor auto-plays (headless tool; autoplay would need an
+Accessibility-gated keystroke hack).
+
+## M00-7 · ask-trim preview via QuickTime Player  [tier: top — owner-facing UX] [status: done] [deps: M00-6]
+Ruling (2026-08-31): owner trialled the corrected QT AppleScript
+(launch via `open -a` to dodge the -600 tell-before-registered race,
+then scripted `play`) on a real episode and approved.
+Goal: preview opens FRONTMOST and AUTO-PLAYS; scrub + min:sec as
+      before; prompts live while it plays; document auto-closes after
+      prompts (incl. exclude) without relaunching a quit QT; no
+      library imports.
+Acceptance: unit tests pin open command, background autoplay spawn,
+      and close-script invocation after prompts and on exclude;
+      existing ask_trim characterization tests green via the
+      start_preview seam; gate green; close script exercised once
+      against a live QT window.
+Done: 2026-08-31. Tests red-then-green (3 errors → green); gate
+      2958+50 green; close script verified live ("closed").
+      Owner confirmed in real use 2026-09-01 — packet fully closed.
+
+---
+
+## Phase 0 — inventory, gate + safety net
+
+## M0-1 · The gate command  [tier: implementation] [status: done] [deps: --]
+Goal: one command (`bundle exec rake gate`) = ruby syntax check over
+      lib/bin/test + test:unit + test:integration_offline; wired as
+      the pre-commit gate; CI wiring follows in M0-2.
+Acceptance: gate red on a seeded syntax violation, green on HEAD.
+Done: 2026-07-27 as part of the dev-loop migration commit.
+
+## M0-2 · Gate in CI  [tier: implementation] [status: done] [deps: M0-1]
+Goal: CI runs `bundle exec rake gate` (not just unit tests) on every
+      pushed head; phase branches included.
+Acceptance: a pushed commit shows the gate job green in `gh run list`;
+      a deliberately red gate fails CI (red case proven locally in
+      M0-1's seeded-violation check — same task CI invokes).
+Done: 2026-07-27. Gate gained standardrb (matching the old CI lint
+      step); ci.yml triggers on phase-* pushes and runs the gate as
+      one step. Note: COVERAGE=1 now spans the whole gate, so
+      simplecov also sees the offline integration tier.
+
+## M0-3 · Module inventory memo  [tier: top] [status: done] [deps: --]
+Signed off 2026-09-01 (§2 bugs → work queue Q-01…Q-12; §3 dead code
+kept, Q-13; §8 seeds accepted unstruck). Same ruling: leaked queue
+commit stays in history ("no big deal"); future phases get a full
+plan in .docs/pXX-plan.md for owner sign-off before execution.
+Goal: .docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
+      suspected weak spots, refactor candidates. Leans on
+      ARCHITECTURE.md rather than duplicating it: the memo's value is
+      the maturity/weak-spot/refactor columns. Reviewed WITH the
+      owner; agreed findings seed Phase 1.
+Acceptance: owner sign-off recorded here.
+
+## M0-4 · Characterization audit + safety net  [tier: implementation] [status: done] [deps: M0-1, M0-3]
+Goal: audit which pure logic (parsers, formatters, splitters, schema
+      builders — the memo's "pure logic" list) lacks pinning tests;
+      add characterization tests for the gaps. Zero production diffs.
+Acceptance: memo's pure-logic list fully covered; gate green;
+      `git diff lib/` empty for the packet.
+Done: 2026-09-01. Audit: 37/67 targets directly covered, 9 acceptably
+      via thin orchestrators, 21 gaps → 76 new exact-value tests
+      across 14 files (worktree implementation agent; diff reviewed
+      by orchestrator). git diff lib/ empty. Gate 3068+50 green.
+      8 latent-bug candidates pinned and queued (Q-14…Q-21, unruled).
+
+## M0-5 · Contract pinning tests  [tier: implementation] [status: done] [deps: M0-3]
+Goal: explicit pinning tests for the frozen domain: RSS item shape,
+      episode guid/basename scheme, history.yml / uploads.yml /
+      *_timestamps.json schemas. These become the oracles that let
+      cheap models work safely.
+Acceptance: each frozen shape has a test that fails on any
+      non-additive change; gate green.
+Done: 2026-09-01. test/unit/test_frozen_contracts.rb: 5 tests / 34
+      assertions pinning exact key sets, item element order, guid ==
+      mp3 filename, enclosure attrs, basename suffix scheme,
+      timestamps schema + reconciled-flag additivity. Oracle proven:
+      red on a seeded extra feed element, green on HEAD.
+
+## M0-6 · README honesty pass  [tier: implementation] [status: done — owner acceptance at Gate 0] [deps: M0-3]
+Goal: README.md current and honest about what works today, including
+      manual steps.
+Acceptance: owner accepts at Gate 0.
+Done: 2026-09-01. Updated: --ask-trim documented as QuickTime preview
+      (flag table + interactive-trimming section); stale `[e]xclude`
+      key corrected to the actual `e[x]clude`; new Development section
+      (rake gate/test/health, source-registry drift rule, freshness
+      OLD flag in validate). Deviation from original goal text: dead
+      per-podcast upstreams (zverinice) NOT added — that is private
+      podcast config (podcasts/ is gitignored) and per the 2026-09-01
+      ruling internal detail stays out of the public repo; it lives in
+      .docs/TOOL-REVIEW.md + guidelines instead.
+
+## Decision items
+Open items: .docs/DECISIONS.md (gitignored registry, newest first —
+currently D0-p, D0-o, D0-c…D0-n, M0-3 sign-off). Landed rulings:
+- D0-a Git model (2026-07-27): phase branches + human-merged PRs
+  close gates; no agent pushes to master; releases are owner gate
+  actions. Encoded in CLAUDE.md golden rule 3.
+- D0-b Frozen domain (2026-07-27): feed/site contracts + guid/basename
+  scheme + history/uploads/timestamps schemas. Encoded in CLAUDE.md
+  golden rule 4.
+- Phase-00 ruling (2026-08-25): conventions/infrastructure packets
+  (M00-1…4) land before the rest of Phase 0.
+- D0-p (2026-09-01): stray worktree commit 6dd5ba8 DISCARDED
+  (worktree + branch deleted); merged refactor/dry-and-test-coverage
+  pruned local + origin.
+- D0-o (2026-09-01): dead-code batch KEPT documented — review item
+  Q-13 in the work queue.
+- D0-c…D0-n (2026-09-01): twelve inventory bugs formulated as work
+  queue items Q-01…Q-12 (fix packets cut from the queue when
+  scheduled).

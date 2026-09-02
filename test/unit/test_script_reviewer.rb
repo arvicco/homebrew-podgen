@@ -574,6 +574,69 @@ class TestScriptReviewer < Minitest::Test
     assert_includes prompt, "Tuesday"
   end
 
+  # --- truncate_title (characterization, private) ---
+
+  def test_truncate_title_short_title_unchanged
+    reviewer = build_reviewer
+    assert_equal "Bitcoin Rally", reviewer.send(:truncate_title, "Bitcoin Rally", 40)
+  end
+
+  def test_truncate_title_drops_after_comma_separator
+    reviewer = build_reviewer
+    title = "Bitcoin Surges Today, Markets React Strongly"
+    assert_equal "Bitcoin Surges Today", reviewer.send(:truncate_title, title, 40)
+  end
+
+  def test_truncate_title_drops_after_dash_separator
+    reviewer = build_reviewer
+    title = "Bitcoin Surges Past 70K — Markets React Fast"
+    assert_equal "Bitcoin Surges Past 70K", reviewer.send(:truncate_title, title, 40)
+  end
+
+  def test_truncate_title_separator_before_index_ten_ignored
+    reviewer = build_reviewer
+    # Only separator is at idx 4 (<= 10) — falls through to the word-boundary
+    # cut, which itself is too short (<10 chars) so a hard cut at max-1 wins.
+    title = "Abcd, #{"e" * 40}"
+    assert_equal "Abcd, #{"e" * 33}…", reviewer.send(:truncate_title, title, 40)
+  end
+
+  def test_truncate_title_word_boundary_fallback_adds_ellipsis
+    reviewer = build_reviewer
+    title = "Bitcoin Ethereum Solana Cardano Dogecoin Polkadot"
+    assert_equal "Bitcoin Ethereum Solana Cardano…", reviewer.send(:truncate_title, title, 40)
+  end
+
+  # --- normalize_url / urls_match? (characterization, private) ---
+
+  def test_normalize_url_strips_scheme_trailing_slash_and_case
+    reviewer = build_reviewer
+    assert_equal "example.com/path", reviewer.send(:normalize_url, "https://Example.com/Path/")
+  end
+
+  def test_normalize_url_http_and_https_equivalent
+    reviewer = build_reviewer
+    assert_equal reviewer.send(:normalize_url, "http://example.com/a"),
+      reviewer.send(:normalize_url, "https://example.com/a")
+  end
+
+  def test_urls_match_scheme_and_trailing_slash_equivalent
+    reviewer = build_reviewer
+    assert reviewer.send(:urls_match?, "http://example.com/a", "https://example.com/a/")
+  end
+
+  def test_urls_match_different_paths_do_not_match
+    reviewer = build_reviewer
+    refute reviewer.send(:urls_match?, "https://example.com/a", "https://example.com/b")
+  end
+
+  def test_urls_match_uppercase_scheme_not_stripped
+    reviewer = build_reviewer
+    # Characterization: the scheme regex is case-sensitive, so an
+    # uppercase "HTTPS://" is not stripped and the URLs do NOT match.
+    refute reviewer.send(:urls_match?, "HTTPS://example.com/a", "https://example.com/a")
+  end
+
   private
 
   def make_script(title: "Bitcoin Hits New High", opening: nil, segments: nil, sources: nil)

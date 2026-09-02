@@ -81,4 +81,56 @@ class TestTextSplitter < Minitest::Test
     text = "a" * 100
     assert_equal [text], @splitter.split(text)
   end
+
+  # --- boundary priority (characterization: paragraph > sentence > comma > whitespace) ---
+  # The priority chain lives in #split; #find_safe_split_point is only the
+  # final UTF-8-safe fallback when no whitespace exists at all.
+
+  def test_split_prefers_paragraph_over_sentence
+    text = "First. Second.\n\n#{"x" * 100}"
+    result = @splitter.split(text)
+    assert_equal ["First. Second.", "x" * 100], result
+  end
+
+  def test_split_prefers_sentence_over_later_comma
+    # Comma boundary at index 8 is later than the sentence boundary at 4,
+    # but the sentence pattern is tried first and wins.
+    text = "Aaa. Bbb, ccc #{"z" * 91}"
+    result = @splitter.split(text)
+    assert_equal ["Aaa.", "Bbb, ccc #{"z" * 91}"], result
+  end
+
+  def test_split_prefers_comma_over_later_whitespace
+    # Characterization: the comma pattern matches AT the comma, so the
+    # first chunk ends before it and the comma leads the next chunk.
+    text = "aaa, bbb ccc #{"z" * 90}"
+    result = @splitter.split(text)
+    assert_equal ["aaa", ", bbb ccc #{"z" * 90}"], result
+  end
+
+  def test_split_falls_back_to_whitespace
+    text = "#{"a" * 50} #{"b" * 60}"
+    result = @splitter.split(text)
+    assert_equal ["a" * 50, "b" * 60], result
+  end
+
+  # --- find_safe_split_point (characterization, private) ---
+
+  def test_find_safe_split_point_walks_back_to_ascii_char
+    text = "#{"あ" * 10}a#{"あ" * 10}"
+    assert_equal 10, @splitter.send(:find_safe_split_point, text, 15)
+  end
+
+  def test_find_safe_split_point_all_multibyte_returns_max_pos
+    # No ASCII or whitespace anywhere — pos reaches 0, max_pos returned.
+    assert_equal 15, @splitter.send(:find_safe_split_point, "あ" * 30, 15)
+  end
+
+  def test_split_unbroken_multibyte_text_splits_at_max_chars
+    text = "あ" * 120
+    result = @splitter.split(text)
+    assert_equal ["あ" * 100, "あ" * 20], result
+    # String slicing is character-based, so no UTF-8 char is bisected.
+    assert result.all?(&:valid_encoding?)
+  end
 end

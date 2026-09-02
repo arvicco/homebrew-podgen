@@ -256,4 +256,80 @@ class TestSnipInterval < Minitest::Test
     assert_in_delta 10.0, keeps[0].from
     assert_in_delta 90.0, keeps[0].to
   end
+
+  # --- parse_timestamp (characterization, private) ---
+
+  def test_parse_timestamp_minsec
+    assert_in_delta 80.0, empty_si.send(:parse_timestamp, "1:20")
+  end
+
+  def test_parse_timestamp_plain_seconds
+    assert_in_delta 80.0, empty_si.send(:parse_timestamp, "80")
+  end
+
+  def test_parse_timestamp_minsec_fractional
+    assert_in_delta 62.5, empty_si.send(:parse_timestamp, "1:2.5")
+  end
+
+  def test_parse_timestamp_zero
+    assert_in_delta 0.0, empty_si.send(:parse_timestamp, "0:00")
+  end
+
+  def test_parse_timestamp_garbage_raises
+    assert_raises(ArgumentError) { empty_si.send(:parse_timestamp, "abc") }
+  end
+
+  def test_parse_timestamp_three_digit_seconds_raises
+    # "1:200" fails the m:ss regex (max 2 second digits) and then
+    # Float("1:200") raises — pinned as ArgumentError.
+    assert_raises(ArgumentError) { empty_si.send(:parse_timestamp, "1:200") }
+  end
+
+  # --- merge_intervals (characterization, private; caller pre-sorts) ---
+
+  def test_merge_intervals_overlapping_merged
+    merged = empty_si.send(:merge_intervals, [iv(0, 10), iv(5, 15)])
+    assert_equal 1, merged.length
+    assert_in_delta 0.0, merged[0].from
+    assert_in_delta 15.0, merged[0].to
+  end
+
+  def test_merge_intervals_adjacent_merged
+    merged = empty_si.send(:merge_intervals, [iv(0, 10), iv(10, 20)])
+    assert_equal 1, merged.length
+    assert_in_delta 0.0, merged[0].from
+    assert_in_delta 20.0, merged[0].to
+  end
+
+  def test_merge_intervals_disjoint_kept_separate
+    merged = empty_si.send(:merge_intervals, [iv(0, 5), iv(10, 15)])
+    assert_equal 2, merged.length
+    assert_in_delta 5.0, merged[0].to
+    assert_in_delta 10.0, merged[1].from
+  end
+
+  def test_merge_intervals_empty_returns_empty
+    assert_equal [], empty_si.send(:merge_intervals, [])
+  end
+
+  def test_merge_intervals_unsorted_input_swallows_earlier_interval
+    # Characterization: merge_intervals assumes sorted input (keep_segments
+    # sorts before calling). Given unsorted input, the second interval's
+    # from (0) is <= the first's to (15), so it is merged away entirely —
+    # the earlier [0,5] interval is silently lost.
+    merged = empty_si.send(:merge_intervals, [iv(10, 15), iv(0, 5)])
+    assert_equal 1, merged.length
+    assert_in_delta 10.0, merged[0].from
+    assert_in_delta 15.0, merged[0].to
+  end
+
+  private
+
+  def empty_si
+    SnipInterval.empty
+  end
+
+  def iv(from, to)
+    SnipInterval::Interval.new(from.to_f, to.to_f)
+  end
 end

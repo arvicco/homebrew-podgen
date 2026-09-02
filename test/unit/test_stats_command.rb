@@ -167,6 +167,26 @@ class TestStatsCommand < Minitest::Test
     assert_match(/feed\.xml/, err, "malformed feed must produce a visible warning, not silent nil")
   end
 
+  # --- truncate (characterization) ---
+  # NOTE: stats_command.rb defines truncate TWICE (once near run_vocab,
+  # once at the bottom of the class); the second definition silently
+  # overrides the first. Both happen to be behaviorally identical
+  # (cut to max-1 chars + "…"), so these tests pin the LIVE (second) def.
+
+  def test_truncate_short_string_unchanged
+    assert_equal "hello", build_command.send(:truncate, "hello", 10)
+  end
+
+  def test_truncate_at_exactly_max_unchanged
+    assert_equal "hello", build_command.send(:truncate, "hello", 5)
+  end
+
+  def test_truncate_over_max_cuts_to_max_minus_one_plus_ellipsis
+    result = build_command.send(:truncate, "hello world", 8)
+    assert_equal "hello w…", result
+    assert_equal 8, result.length
+  end
+
   private
 
   def create_mp3(name, size)

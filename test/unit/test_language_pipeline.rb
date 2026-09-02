@@ -712,7 +712,7 @@ class TestLanguagePipeline < Minitest::Test
 
     $stdin.stub(:gets, "x\n") do
       AudioAssembler.stub(:new, fake_assembler) do
-        pipeline.stub(:system, nil) do
+        pipeline.stub(:start_preview, nil) do
           result = pipeline.send(:trim_source_audio)
           assert_equal :excluded, result
         end
@@ -743,7 +743,7 @@ class TestLanguagePipeline < Minitest::Test
     fake_gets = -> { r = inputs[call_count]; call_count += 1; r }
 
     AudioAssembler.stub(:new, fake_assembler) do
-      pipeline.stub(:system, nil) do
+      pipeline.stub(:start_preview, nil) do
         $stdin.stub(:gets, fake_gets) do
           result = pipeline.send(:trim_source_audio)
           assert_equal :excluded, result
@@ -779,7 +779,7 @@ class TestLanguagePipeline < Minitest::Test
 
     AudioAssembler.stub(:new, fake_assembler) do
       AudioTrimmer.stub(:new, fake_trimmer) do
-        pipeline.stub(:system, nil) do
+        pipeline.stub(:start_preview, nil) do
           $stdin.stub(:gets, fake_gets) do
             result = pipeline.send(:trim_source_audio)
             refute_equal :excluded, result
@@ -791,6 +791,65 @@ class TestLanguagePipeline < Minitest::Test
     refute File.exist?(config.excluded_urls_path)
     assert_equal 5.0, called_with[:skip]
     assert_equal 10.0, called_with[:cut]
+  end
+
+  # --- ask_trim preview via QuickTime Player (M00-7) ---
+  # QT: frontmost + autoplay natively scriptable (Quick Look could do
+  # neither from a spawned process); still imports nothing.
+
+  def test_preview_open_command_uses_quicktime
+    pipeline = build_pipeline
+    assert_equal ["open", "-a", "QuickTime Player", "/fake/audio.mp3"],
+      pipeline.send(:preview_open_command, "/fake/audio.mp3")
+  end
+
+  def run_ask_trim(pipeline, input:)
+    calls = {system: [], spawned: []}
+    pipeline.define_singleton_method(:system) { |*args| calls[:system] << args; true }
+    pipeline.define_singleton_method(:spawn) { |*args| calls[:spawned] << args; 4242 }
+
+    fake_assembler = Minitest::Mock.new
+    fake_assembler.expect(:probe_duration, 120.0, ["/fake/audio.mp3"])
+
+    result = nil
+    AudioAssembler.stub(:new, fake_assembler) do
+      Process.stub(:detach, nil) do
+        $stdin.stub(:gets, input) do
+          result = pipeline.send(:ask_trim_interactive)
+        end
+      end
+    end
+    [result, calls]
+  end
+
+  def test_ask_trim_opens_quicktime_frontmost_and_autoplays
+    pipeline = build_pipeline(options: {ask_trim: true})
+    pipeline.instance_variable_set(:@episode, {title: "Ep"})
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    _result, calls = run_ask_trim(pipeline, input: "\n")
+
+    assert_equal pipeline.send(:preview_open_command, "/fake/audio.mp3"),
+      calls[:system].first, "must open via open -a (frontmost, no launch race)"
+    play = calls[:spawned].first
+    refute_nil play, "autoplay osascript must be spawned in background"
+    assert_equal "osascript", play.first
+    assert_includes play.join(" "), "play front document"
+  end
+
+  def test_ask_trim_closes_quicktime_document_after_prompts_and_on_exclude
+    ["\n", "x\n"].each do |input|
+      pipeline = build_pipeline(options: {ask_trim: true})
+      pipeline.instance_variable_set(:@episode, {title: "Ep"})
+      pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+      result, calls = run_ask_trim(pipeline, input: input)
+
+      assert_equal(:exclude, result) if input.start_with?("x")
+      close = calls[:system].last
+      assert_equal "osascript", close.first, "close script must run after prompts (input=#{input.inspect})"
+      assert_includes close.join(" "), "close front document saving no"
+    end
   end
 
   # --- staged output lifecycle ---

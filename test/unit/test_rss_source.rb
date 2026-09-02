@@ -84,6 +84,56 @@ class TestRSSSource < Minitest::Test
     assert_equal "/abs/bg.png", episode[:base_image]
   end
 
+  # --- distribute_by_topic (characterization, private) ---
+
+  def test_distribute_by_topic_buckets_by_keyword_match
+    findings = [
+      { title: "Bitcoin hits new high", summary: "" },
+      { title: "Heavy rain expected", summary: "" }
+    ]
+    result = build_source([]).send(:distribute_by_topic, ["Bitcoin news"], findings)
+
+    assert_equal 2, result.length
+    assert_equal "Bitcoin news", result[0][:topic]
+    assert_equal [findings[0]], result[0][:findings]
+    assert_equal "Other recent headlines (RSS)", result[1][:topic]
+    assert_equal [findings[1]], result[1][:findings]
+  end
+
+  def test_distribute_by_topic_matches_against_summary_too
+    findings = [{ title: "Daily brief", summary: "New mining hardware announced" }]
+    result = build_source([]).send(:distribute_by_topic, ["Bitcoin mining"], findings)
+
+    assert_equal [{ topic: "Bitcoin mining", findings: findings }], result
+  end
+
+  def test_distribute_by_topic_first_matching_topic_wins
+    findings = [{ title: "Bitcoin and Ethereum both rally", summary: "" }]
+    result = build_source([]).send(:distribute_by_topic, ["Ethereum news", "Bitcoin news"], findings)
+
+    assert_equal ["Ethereum news"], result.map { |b| b[:topic] }
+  end
+
+  def test_distribute_by_topic_short_only_topic_never_matches
+    # Characterization: a topic whose tokens are all <3 chars ("AI")
+    # yields an empty keyword list, so nothing can ever match it.
+    findings = [{ title: "AI breakthrough", summary: "" }]
+    result = build_source([]).send(:distribute_by_topic, ["AI"], findings)
+
+    assert_equal ["Other recent headlines (RSS)"], result.map { |b| b[:topic] }
+  end
+
+  # --- topic_keywords (characterization, private) ---
+
+  def test_topic_keywords_lowercases_and_drops_short_tokens
+    assert_equal %w[bitcoin mining 42x],
+      build_source([]).send(:topic_keywords, "Bitcoin AI-Mining 42x")
+  end
+
+  def test_topic_keywords_all_short_tokens_returns_empty
+    assert_equal [], build_source([]).send(:topic_keywords, "AI is ok")
+  end
+
   private
 
   def build_source(feeds)

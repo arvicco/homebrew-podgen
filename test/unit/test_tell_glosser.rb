@@ -660,4 +660,44 @@ class TestGlosserResolvePhoneticSystem < Minitest::Test
     assert_equal "ipa", Tell::Glosser.resolve_phonetic_system("fr", "i")
     assert_equal "simple", Tell::Glosser.resolve_phonetic_system("fr", "s")
   end
+
+  # --- multi_model (characterization) ---
+
+  def test_multi_model_single_model_calls_block_directly
+    calls = []
+    result = Tell::Glosser.multi_model("m1") do |m|
+      calls << m
+      "res-#{m}"
+    end
+    assert_equal({ "m1" => "res-m1" }, result)
+    assert_equal ["m1"], calls
+  end
+
+  def test_multi_model_scalar_wrapped_in_array
+    result = Tell::Glosser.multi_model(["m1", "m2"]) { |m| "res-#{m}" }
+    assert_equal({ "m1" => "res-m1", "m2" => "res-m2" }, result)
+  end
+
+  def test_multi_model_one_failure_returns_surviving_results
+    result = Tell::Glosser.multi_model(["bad", "good"]) do |m|
+      raise "boom" if m == "bad"
+      "ok"
+    end
+    assert_equal({ "good" => "ok" }, result)
+  end
+
+  def test_multi_model_all_failures_raises_first_error
+    err = assert_raises(RuntimeError) do
+      Tell::Glosser.multi_model(["m1", "m2"]) { |m| raise "boom-#{m}" }
+    end
+    assert_match(/\Aboom-m[12]\z/, err.message)
+  end
+
+  def test_multi_model_single_model_failure_propagates
+    # Characterization: the single-model fast path has no rescue —
+    # the block's exception propagates directly.
+    assert_raises(RuntimeError) do
+      Tell::Glosser.multi_model("m1") { |_m| raise "boom" }
+    end
+  end
 end
