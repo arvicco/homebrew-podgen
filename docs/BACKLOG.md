@@ -208,3 +208,39 @@ currently D0-p, D0-o, D0-c…D0-n, M0-3 sign-off). Landed rulings:
 - D0-c…D0-n (2026-09-01): twelve inventory bugs formulated as work
   queue items Q-01…Q-12 (fix packets cut from the queue when
   scheduled).
+
+---
+
+## Phase 1 — robustness (plan in .docs/p01-plan.md; packets land here as signed off)
+
+## M1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: ready] [deps: --]
+Signed off 2026-10-10 (priority). Model IDs are hard-coded at 11
+sites in 8 files with ad-hoc ENV overrides (three sites have none).
+Goal: lib/claude_models.rb holds LINES (opus/sonnet/haiku → current
+      undated ID, the only place a bump lands) and ROLES (each call
+      site's role → line); resolution = per-role ENV > per-line ENV
+      > default; existing keys keep working; a text-block helper
+      replaces the 11 `content.first.text` sites before the bump
+      (thinking-default models put a thinking block first).
+Acceptance: unit test greps lib/ — model literals only in
+      claude_models.rb; precedence table pinned; every role has an
+      ENV override; the generation bump is a ≤3-line diff; one
+      bajke + one news generate end to end on the bumped lines
+      (owner-run); gate + CI green.
+
+## M1-11 · Script/translation max_tokens cap + no retry on truncation  [tier: implementation] [status: done] [deps: --]
+Cut from Q-25 (incident 2026-10-09): on a thinking-default model the
+8192 output cap was consumed by thinking + JSON → truncated
+structured output → parse error → 3 identical retries per round.
+Goal: max_tokens 16384 in ScriptAgent and TranslationAgent; a
+      max_tokens stop with unparsable output raises
+      TruncatedOutputError (not retried, message names the cap).
+Acceptance: tests pin max_tokens ≥ 16384 for both agents; a
+      max_tokens fake response → exactly one API call + 
+      TruncatedOutputError; gate + CI green; one news generate on
+      the current CLAUDE_MODEL reaches end_turn on attempt 1
+      (owner-run).
+Done: 2026-10-10. Commit bdefdc8; 7 tests red-then-green; gate
+      3075+50 green; CI run 38071749573 green. Outcome check on the
+      real surface (news generate on opus-5-5) is owner-run — see
+      runbook in the handoff; not claimed here.

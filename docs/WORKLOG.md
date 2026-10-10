@@ -7,6 +7,25 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-10 · M1-11 (Q-25) · bdefdc8 · Incident 2026-10-09: fulgur_news
+died after 8 ScriptAgent attempts, all "SDK parsing failed: unexpected
+end of input". Root cause: CLAUDE_MODEL switched by hand to a
+thinking-default model (opus-5-5); thinking tokens count against
+max_tokens, so the 8192 cap — already within reach of 4.6k–7.8k
+historical script outputs — truncated the structured JSON, and
+with_retries re-issued the identical request 3× per review round
+(two rounds, ~11 min each, deterministic failure). Fix: max_tokens
+16384 in ScriptAgent and TranslationAgent (same cap, same exposure);
+require_parsed_output! raises TruncatedOutputError on a max_tokens
+stop with unusable output — a sibling of StructuredOutputError, not a
+subclass, so existing `on:` lists let it propagate after ONE call with
+a message naming the cap. 7 tests (helper error split, max_tokens pin
+and single-call pin for both agents) red-then-green; gate 3075+50;
+CI green. Lesson: this is M1-0 hazard H3 arriving early — thinking
+budget per role is decision D1-b; model defaults move to the registry
+in M1-0 (next). Outcome check at the owner's surface pending (news
+generate on the current model → end_turn on attempt 1).
+
 2026-09-02 · GATE 0 CLOSED · owner merged PR #1 (merge 4298988) —
 the gate-closing event. Phase 0 delivered: dev-loop instantiation,
 rake gate + CI, source registry + drift test + rake health, freshness
