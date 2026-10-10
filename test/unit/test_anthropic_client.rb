@@ -48,6 +48,31 @@ class TestAnthropicClient < Minitest::Test
     assert_includes error.message, "unexpected token at pos 0"
   end
 
+  # -- truncation (M1-11): a max_tokens stop is deterministic, must not be retried --
+
+  def test_require_parsed_output_raises_truncated_on_max_tokens_with_error_hash
+    message = stub_message(parsed: { error: "unexpected end of input" }, stop_reason: "max_tokens")
+
+    error = assert_raises(TruncatedOutputError) do
+      @harness.require_parsed_output!(message)
+    end
+    refute_kind_of StructuredOutputError, error
+    assert_includes error.message, "max_tokens"
+    assert_includes error.message, "8192"
+  end
+
+  def test_require_parsed_output_raises_truncated_on_max_tokens_with_nil
+    message = stub_message(parsed: nil, stop_reason: :max_tokens)
+
+    assert_raises(TruncatedOutputError) { @harness.require_parsed_output!(message) }
+  end
+
+  def test_require_parsed_output_end_turn_error_hash_stays_structured_error
+    message = stub_message(parsed: { error: "bad token" }, stop_reason: "end_turn")
+
+    assert_raises(StructuredOutputError) { @harness.require_parsed_output!(message) }
+  end
+
   def test_require_parsed_output_accepts_duck_typed_objects
     mock = Struct.new(:title).new("Duck")
     message = stub_message(parsed: mock)
@@ -58,10 +83,11 @@ class TestAnthropicClient < Minitest::Test
 
   private
 
-  def stub_message(parsed:)
-    msg = Struct.new(:stop_reason) do
+  def stub_message(parsed:, stop_reason: "end_turn")
+    usage = Struct.new(:output_tokens).new(8192)
+    msg = Struct.new(:stop_reason, :usage) do
       define_method(:parsed_output) { parsed }
     end
-    msg.new("end_turn")
+    msg.new(stop_reason, usage)
   end
 end

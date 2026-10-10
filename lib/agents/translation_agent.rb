@@ -73,7 +73,7 @@ class TranslationAgent
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
-          max_tokens: 8192,
+          max_tokens: 16384,
           system: build_system_prompt,
           messages: [
             {
