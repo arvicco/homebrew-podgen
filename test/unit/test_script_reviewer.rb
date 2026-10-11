@@ -125,6 +125,41 @@ class TestScriptReviewer < Minitest::Test
     assert_equal title, corrected[:title]
   end
 
+  # Regression (Q-32): a nil title raised NoMethodError on title.length.
+  def test_check_title_length_nil_title_reports_one_missing_blocker
+    script = make_script(title: nil)
+    reviewer = build_reviewer
+
+    _, issues = reviewer.run_deterministic_checks(script)
+
+    title_issues = issues.select { |i| i[:segment] == "title" }
+    assert_equal 1, title_issues.length
+    assert_equal({severity: ScriptReviewer::BLOCKER, check: "title_missing", segment: "title",
+                  message: "Title is missing", auto_fixed: false}, title_issues.first)
+  end
+
+  def test_check_title_length_blank_title_reports_one_missing_blocker
+    script = make_script(title: "  ")
+    reviewer = build_reviewer
+
+    _, issues = reviewer.run_deterministic_checks(script)
+
+    title_issues = issues.select { |i| i[:segment] == "title" }
+    assert_equal 1, title_issues.length
+    assert_equal "title_missing", title_issues.first[:check]
+    assert_equal ScriptReviewer::BLOCKER, title_issues.first[:severity]
+  end
+
+  def test_check_title_length_empty_title_reports_one_missing_blocker
+    script = make_script(title: "")
+    reviewer = build_reviewer
+
+    _, issues = reviewer.run_deterministic_checks(script)
+
+    title_issues = issues.select { |i| i[:segment] == "title" }
+    assert_equal ["title_missing"], title_issues.map { |i| i[:check] }
+  end
+
   # Regression (fulgur_news 2026-10-11, P1-17): a 42-char title shipped to the
   # feed as "GPT-6's Interface Bet and the CFTC…" — half a headline. The
   # reviewer never cuts a title; a listener-visible title is always whole.

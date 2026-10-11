@@ -181,7 +181,12 @@ class ScriptReviewer
     issues = []
     title = script[:title]
 
-    if title.length > TITLE_TARGET_CHARS
+    if title.to_s.strip.empty?
+      issues << {
+        severity: BLOCKER, check: "title_missing", segment: "title",
+        message: "Title is missing", auto_fixed: false
+      }
+    elsif title.length > TITLE_TARGET_CHARS
       issues << {
         severity: WARNING, check: "title_length", segment: "title",
         message: "Title is #{title.length} chars (target #{TITLE_TARGET_CHARS}): '#{title}' — kept whole",
