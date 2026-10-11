@@ -157,5 +157,5 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 ## Current phase
 
 Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Phase 1
-in planning: .docs/p01-plan.md awaits owner sign-off; work executes
-on branch phase-1 only after sign-off. Update this line at each gate.
+EXECUTING on branch phase-1 (plan .docs/p01-plan.md; M1-0 signed off
+2026-10-10, M1-11 done). Update this line at each gate.
