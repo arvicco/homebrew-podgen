@@ -1426,6 +1426,8 @@ podgen/
 bundle exec rake gate      # pre-commit gate: syntax + lint (standardrb; new files only — see .standard_todo.yml) + unit + offline integration
 bundle exec rake test      # full suite (API-keyed tiers run only with keys present)
 bundle exec rake health    # probe every registered external endpoint (network; see lib/source_registry.rb)
+bundle exec rake fixtures:record  # re-record the network sources' test fixtures (network + keys; owner-run, never in the gate)
+bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check sends this output to Telegram, so log lines must stay secret-free
 ```
 
 Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,

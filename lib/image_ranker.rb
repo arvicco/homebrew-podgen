@@ -33,7 +33,7 @@ class ImageRanker
 
   def initialize(model: nil, logger: nil)
     @model = model || ClaudeModels.for(:image_rank)
-    @client = Anthropic::Client.new
+    @client = Anthropic::Client.new(timeout: AnthropicClient::REQUEST_TIMEOUT)
     @logger = logger
   end
 

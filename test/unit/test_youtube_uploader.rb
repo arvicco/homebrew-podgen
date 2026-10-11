@@ -117,6 +117,38 @@ class TestYouTubeUploader < Minitest::Test
     assert_includes out.string, "https://accounts.example/auth?redirect_uri=http://127.0.0.1:#{consent.port}"
   end
 
+  def test_loopback_consent_skips_an_idle_preconnect_socket_and_takes_the_real_callback
+    out = StringIO.new
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
+    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false, idle_timeout: 0.2)
+
+    result = nil
+    t = Thread.new { result = consent.call(authorizer) }
+    sleep 0.05 until consent.port
+    idle = TCPSocket.new("127.0.0.1", consent.port) # browser pre-connect: opens, sends nothing
+    sleep 0.3
+    real = TCPSocket.new("127.0.0.1", consent.port)
+    real.write("GET /?code=real-code HTTP/1.1\r\n\r\n")
+    real.read
+    real.close
+    idle.close
+    t.join(5)
+
+    assert_equal "real-code", result.first
+  end
+
+  def test_loopback_consent_gives_up_after_the_overall_wait
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
+    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false, wait: 0.2)
+
+    code, redirect = consent.call(authorizer)
+
+    assert_nil code
+    assert_match(/\Ahttp:\/\/127\.0\.0\.1:\d+\z/, redirect)
+  end
+
   def test_loopback_consent_returns_nil_code_when_callback_has_no_code
     authorizer = Object.new
     authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }

@@ -24,9 +24,14 @@ class YouTubeUploader
   class LoopbackConsent
     attr_reader :port
 
-    def initialize(io: $stderr, open_browser: true)
+    # wait: overall seconds to wait for the browser callback; idle_timeout:
+    # seconds a connection may stay silent before it is dropped — browsers
+    # open speculative pre-connect sockets that never send a request.
+    def initialize(io: $stderr, open_browser: true, wait: 300, idle_timeout: 5)
       @io = io
       @open_browser = open_browser
+      @wait = wait
+      @idle_timeout = idle_timeout
       @port = nil
     end
 
@@ -39,19 +44,38 @@ class YouTubeUploader
       @io.puts url
       system("open", url, out: File::NULL, err: File::NULL) if @open_browser && RUBY_PLATFORM.include?("darwin")
 
-      client = server.accept
-      request_line = client.gets.to_s
-      code = code_from(request_line)
-      body = code ? "<html><body><p>podgen: YouTube authorized. You can close this tab.</p></body></html>" :
-                    "<html><body><p>podgen: no authorization code received.</p></body></html>"
-      client.write "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}"
-      client.close
-      [code, redirect]
+      [await_callback(server), redirect]
     ensure
       server&.close
     end
 
     private
+
+    # Accepts connections until one carries a callback (code= or error=) or
+    # the overall wait is exhausted; silent connections are dropped.
+    def await_callback(server)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @wait
+      loop do
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        return nil if remaining <= 0 || IO.select([server], nil, nil, remaining).nil?
+
+        client = server.accept
+        request_line = IO.select([client], nil, nil, @idle_timeout) ? client.gets.to_s : ""
+        if request_line.match?(/[?&](code|error)=/)
+          code = code_from(request_line)
+          respond(client, code)
+          return code
+        end
+        client.close
+      end
+    end
+
+    def respond(client, code)
+      body = code ? "<html><body><p>podgen: YouTube authorized. You can close this tab.</p></body></html>" :
+                    "<html><body><p>podgen: no authorization code received.</p></body></html>"
+      client.write "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}"
+      client.close
+    end
 
     def code_from(request_line)
       query = request_line[/\AGET \S*\?(\S*) /, 1] or return nil

@@ -141,6 +141,22 @@ class TestSubtitleReconciler < Minitest::Test
 
   # --- model resolution ---
 
+  def test_reconcile_builds_the_client_with_the_bounded_request_timeout
+    captured = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**_|
+      Struct.new(:content).new([Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))])
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+    Anthropic::Client.stub(:new, ->(**kw) {
+      captured = kw
+      fake_client
+    }) do
+      SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k", model: "m")
+    end
+    assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
+  end
+
   def test_reconcile_uses_default_model_when_no_env_or_arg
     prev = ENV.delete("CLAUDE_RECONCILER_MODEL")
     captured_model = nil

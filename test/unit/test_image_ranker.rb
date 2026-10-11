@@ -118,6 +118,12 @@ class TestImageRanker < Minitest::Test
     assert_equal "claude-haiku-4-5-20251001", captured_model
   end
 
+  def test_client_is_built_with_the_bounded_request_timeout
+    captured = nil
+    Anthropic::Client.stub(:new, ->(**kw) { captured = kw; Object.new }) { ImageRanker.new }
+    assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
+  end
+
   def test_rank_default_model_is_the_registry_image_rank_role
     ranker = ImageRanker.new
     assert_equal ClaudeModels.for(:image_rank), ranker.instance_variable_get(:@model)

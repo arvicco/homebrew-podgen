@@ -24,7 +24,7 @@ class VocabularyAnnotator
 
   def initialize(api_key, model: nil, logger: nil)
     @logger = logger
-    @client = Anthropic::Client.new(api_key: api_key)
+    @client = Anthropic::Client.new(api_key: api_key, timeout: AnthropicClient::REQUEST_TIMEOUT)
     @model = model || ClaudeModels.for(:vocab)
   end
 

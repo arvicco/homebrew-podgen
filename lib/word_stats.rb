@@ -306,7 +306,7 @@ class WordStats
   end
 
   def ask_claude_for_language(sample, candidates)
-    client = Anthropic::Client.new
+    client = Anthropic::Client.new(timeout: AnthropicClient::REQUEST_TIMEOUT)
     prompt = "Which of these languages is the following text written in? " \
              "Reply with EXACTLY ONE WORD from this list, no punctuation:\n\n" \
              "#{candidates.join("\n")}\n\nText:\n#{sample[0, 500]}"
