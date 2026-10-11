@@ -7,6 +7,19 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-5 (Q-03, Q-04) · 6d4e859 · SubtitleReconciler#validate!
+accepts timestamp drift within 0.01 s (count mismatch still fatal);
+the three STT engines open the audio file once and close it in ensure
+around the POST — one fd per attempt no longer leaks across retries;
+AudioTrimmer, Groq downsample and AtomicWriter temp names carry a
+SecureRandom suffix so threads in one process cannot collide; the
+trimmer test teardown globs the new names. Worktree agent (sonnet):
+red proven per item (mismatch error, leaked-handle counts, identical
+paths, ENOENT on shared tmp), diff reviewed and cherry-picked. Gate
+3107+50 green. Agent catch: the tool sandbox in worktrees refuses
+compound git/bundle commands with shell variables — plain commands
+only.
+
 2026-10-11 · P1-6 (Q-08, Q-09) · c6c0be3 · HttpDownloader#write_body streams
 to <dest>.part.<pid>, renames on success, deletes the temp in ensure —
 a size-cap abort leaves nothing at the destination. Voicer deletes

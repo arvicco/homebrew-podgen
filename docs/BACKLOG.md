@@ -297,12 +297,18 @@ Rulings (orchestrator, 2026-10-11): corrupt sidecar RAISES a named
       (path, mtime, size) rather than dropped. Done 2026-10-11: aff5261;
       3 tests red-then-green; gate 3097+50 green.
 
-## P1-5 · STT robustness  [tier: implementation] [status: ready] [deps: --]
+## P1-5 · STT robustness  [tier: implementation] [status: done] [deps: --]
 Goal: timestamp epsilon in SubtitleReconciler#validate!; engine file
       handles closed; temp names unique per thread in engines,
       AudioTrimmer, AtomicWriter.
 Acceptance: 1e-6-drift reconcile fixture passes; fd count stable
       across stubbed retries; concurrent temp-name uniqueness test.
+Done 2026-10-11: 6d4e859 (worktree implementation agent, diff reviewed
+      by the orchestrator). Rulings (agent, accepted): epsilon 0.01 s,
+      non-numeric falls back to ==; SecureRandom.hex(4) suffix rather
+      than a thread id (also applied to the Groq downsample temp);
+      open-then-ensure-close around each POST (minimal diff). Red for
+      the right reason on all four tests; gate 3107+50 green.
 
 ## P1-6 · File hygiene  [tier: implementation] [status: done] [deps: --]
 Goal: HttpDownloader writes temp + rename (no partial on size abort);
