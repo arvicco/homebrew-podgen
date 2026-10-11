@@ -96,6 +96,10 @@ class ScriptAgent
       You are an expert podcast scriptwriter.
       Generate a complete podcast script following the provided guidelines exactly.
 
+      The episode title is a complete, self-contained headline of at most 40 characters.
+      If a draft title runs longer, rephrase it shorter — never cut it off or end it
+      with an ellipsis.
+
       Each segment must have a short descriptive name that reflects its content
       (e.g. "Opening", "Bitcoin ETF Surge", "Rails 8 Authentication", "Wrap-Up").
       These names are internal labels, not read aloud — they serve as section titles.
