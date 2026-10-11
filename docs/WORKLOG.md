@@ -7,6 +7,20 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-6 (Q-08, Q-09) · c6c0be3 · HttpDownloader#write_body streams
+to <dest>.part.<pid>, renames on success, deletes the temp in ensure —
+a size-cap abort leaves nothing at the destination. Voicer deletes
+its TTS segment files in ensure around the assembly step, so a raise
+in AudioAssembler#assemble no longer strands them (error still
+propagates). Worktree agent (sonnet), red-then-green, diff reviewed
+and cherry-picked. Gate 3099+50 green. Note for a later look: the
+.part temp is pid-keyed (same collision class as Q-04b, harmless
+today — one download per path per process). Tooling catch: in agent
+worktrees `rake gate` stops at lint with offenses in bin/podgen and
+bin/tell that the primary checkout and CI do not report —
+path-relative .standard_todo.yml matching; agents run the tiers
+separately.
+
 2026-10-11 · P1-3 · 52fef3b · Test-hygiene batch via a worktree
 implementation agent (sonnet), diff reviewed and cherry-picked by the
 orchestrator. Four of five items changed: TWITTER_* ENV restore in
