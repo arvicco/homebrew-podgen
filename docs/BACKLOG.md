@@ -381,12 +381,19 @@ Done 2026-10-11: e94101a (worktree agent, diff reviewed). Ruling
       parts were field names and a removed veto. Q-20: bodies equivalent,
       duplicate removed, `ruby -w` warning count 2 → 0.
 
-## P1-10 · Offline fixtures for network sources  [tier: implementation] [status: ready] [deps: --]
+## P1-10 · Offline fixtures for network sources  [tier: implementation] [status: done — fixtures await owner recording] [deps: --]
 Goal: recorded, trimmed fixtures for bluesky/hn/x/claude_web parse
       paths; recording is an owner-run network task (HUMAN); parsing
       tests run in the gate.
 Acceptance: each source's parse path unit-tested offline; fixtures
       registered in a fixtures README; gate green with no network.
+Landed 2026-10-11: 139899d (worktree agent, diff reviewed). Harness,
+      recorder (lib/fixture_recorder.rb, pure trimmers unit-tested),
+      `rake fixtures:record` (network, owner-run), fixtures README
+      registry; parse-path tests skip LOUDLY until recorded, registry
+      presence test gated by PODGEN_FIXTURES_RECORDED. Owner step in the
+      Gate 1 runbook. No production change — each source already had a
+      request seam.
 
 ## P1-12 · Vocabulary enrich survives one malformed object  [tier: implementation] [status: done] [deps: --]
 Goal: enrich prompt pins literal English keys regardless of target
@@ -414,13 +421,20 @@ Done 2026-10-11: b9edf12 (orchestrator). Rulings: preflight = one DNS
       2+4+8 s backoff. Marker/status surfacing → P1-14. 7 tests
       red-then-green; gate 3126+50 green; live resolver check sub-second.
 
-## P1-14 · Scheduled content-progress check + status surface  [tier: implementation] [status: ready] [deps: P1-8]
+## P1-14 · Scheduled content-progress check + status surface  [tier: implementation] [status: done — daily install owner-run] [deps: P1-8]
 Goal: `podgen status` prints one line per scheduled podcast (OK/OLD/
       WARN from content dates, run marker, repeated non-fatal
       warnings); `podgen schedule` prepares a daily entry and prints
       the install command (HUMAN); alert only when any pod is not OK.
 Acceptance: fixtures → OLD / WARN / OK; install command printed,
       never executed by the agent.
+Done 2026-10-11: 49edbd4 (worktree agent, diff reviewed). `podgen
+      status` per-podcast OK/OLD/WARN (+--json, pinned key set, README),
+      exit 1 on any OLD/WARN; `schedule --status-check` PREPARES the
+      daily launchd job (owner installs); scripts/run_status.sh alerts via
+      Telegram on non-zero only. First real run found a live defect
+      nothing else had surfaced (cuentos reconciliation, see worklog
+      incident) — the invariant works.
 
 ## P1-15 · Language-suffix detection restricted to configured languages  [tier: implementation] [status: done] [deps: --]
 Goal: a trailing "-xx" on an episode basename counts as a language

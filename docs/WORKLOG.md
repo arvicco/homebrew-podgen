@@ -7,6 +7,29 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · INCIDENT (same day) · cuentos 2026-10-10 reconciliation ·
+Found by the first run of `podgen status` (P1-14): the owner's cuentos
+generate started 11:19 local; at 11:20 the P1-0 refactor was being
+written into THIS checkout (committed 11:22); the pipeline had loaded
+the old anthropic_client.rb at startup and lazily loaded the new
+subtitle_reconciler.rb at 11:20:26 → "undefined method 'text_of' for
+module AnthropicClient"; non-fatal, the episode shipped with raw
+(unreconciled) subtitles. Root cause: development edits land in the
+same working tree that owner and launchd runs execute from. Mitigation
+now: before touching lib/, check `pgrep -f "bin/podgen generate"` and
+wait. Durable fix needs a ruling (R1-j: separate production checkout
+or deploy-on-gate). Repair: owner-run `bin/podgen regen cuentos
+2026-10-10 --reconcile` (runbook).
+
+2026-10-11 · P1-10, P1-14 · 139899d, 49edbd4 · P1-10 (agent): offline
+fixture harness for bluesky/hn/x/claude_web parse paths with loud
+skips until the owner records (`rake fixtures:record`). P1-14 (agent):
+`podgen status` one-line verdicts with --json, daily check PREPARED
+not installed, Telegram wrapper on non-zero. Gate 3172+50 green; both
+diffs reviewed and cherry-picked. With these, every slated Phase 1
+packet is landed; remaining are owner steps (fixture recording, status
+install, YouTube re-auth, P1-0 outcome check tonight) and the gate.
+
 2026-10-11 · P1-16 (Q-07) · a62eb0a · YouTube authorization moved from the
 discontinued out-of-band flow to a loopback redirect: an ephemeral
 127.0.0.1 listener, consent URL printed/opened, code read from the
