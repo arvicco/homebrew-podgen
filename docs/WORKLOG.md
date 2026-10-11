@@ -7,6 +7,26 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · dev-loop v2 sync + P1-10 live smoke · f231e53, 0ac7e8b, (this
+commit) · Re-read the dev-loop repo at origin/main (v2.1: doctrine 17
+rules, boards, incident register, kick/stay) — the local clone was
+stale. Gaps against it: the loop had parked operations on the owner
+(fixture recording, cuentos repair) — both run by the loop now; gate
+commands were piped and mutations chained (three guard blocks) — now
+suites write to a log and commit/push ride alone; the PR opened late
+and its body carried owner-action lists — body rewritten to technical
+content; lanes ran on Sonnet — Opus-class from now; no incident
+register — minted (№I-1…I-7). The first live `rake fixtures:record`
+found two defects the lane's synthetic tests could not: an empty HN
+window and ClaudeWebSource truncating at 1024 tokens on the bumped
+model line (a production research-source defect, №I-7) — recorder now
+refuses empty/truncated bodies, window 30 d, cap 4096. Second catch:
+the recorder tests themselves reached the live claude_web endpoint
+(only one fetcher was stubbed) — every fetcher stubbed, rule 6 restored;
+and fetch-error messages are no longer printed verbatim (rule 8).
+CLAUDE.md rules 3/6/10 and DEV-LOOP.md carry the v2 wording; four
+rulings open (R1-j…R1-m).
+
 2026-10-11 · CRPR Gate 1 · 47a7ebd · Two review rounds on the whole
 phase diff (111 files, 31+ commits). Round 1: APPROVED with 3
 WARNINGS, all valid — (W1) four direct Anthropic::Client sites lacked
