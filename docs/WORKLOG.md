@@ -7,6 +7,23 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-1 · dca69d8 · Permission audit over 21 invocation paths
+(.docs/P1-1-permission-matrix.md). Finding: the deny list anchored on
+`bin/podgen <cmd>` — bundle exec / ruby / --quiet / absolute path /
+bash -c / cd && / wrapper scripts / launchctl start all slipped past
+(probe reached the publish command via bundle exec); the box's local
+settings also blanket-allow bin/podgen:*, bundle exec:*, ruby:*, git:*.
+Fix: leading-`*` deny rules (deny is evaluated first in every scope and
+inside split compound commands/subshells per the docs) + an in-process
+guard in lib/cli.rb (CLAUDECODE=1 → refuse owner actions and generate
+--youtube/--lingq, exit 2, unless --dry-run or PODGEN_OWNER=1). Allow
+`bundle exec ruby*` narrowed to -I/test forms. Catches: settings.json
+is NOT hot-reloaded (probe after edit still ran → V1 at next session
+start); an unstubbed red test run executed real owner commands and hung
+— tests now stub the command class; test_helper clears CLAUDECODE so
+the suite is session-independent. Gate 3094+50; live guard probes
+green. Owner note (not a packet): prune the local settings allows.
+
 2026-10-11 · P1-12 (Q-24) · 95893e5 · Enrich prompt now lists the exact
 English key names it requests (dynamic: pronunciation /
 similar_translations only when asked, which an existing test pins)

@@ -242,13 +242,22 @@ Landed 2026-10-11: 869f84e (registry + text_of, zero behavior change),
       generate (vocabulary present, subtitles reconciled). Status → done
       when both are read.
 
-## P1-1 · Permission-profile audit  [tier: top — guardrail security] [status: ready] [deps: --]
+## P1-1 · Permission-profile audit  [tier: top — guardrail security] [status: done] [deps: --]
 Goal: every invocation path to each HUMAN-action command (direct,
       bundle exec, ruby, ./bin, rake) is denied by settings.json;
       `bundle exec ruby*` allow narrowed to the test-runner form.
 Acceptance: written path×rule matrix in .docs; every HUMAN action
       denied on every path (rule tracing); no legit dev command newly
       blocked.
+Rulings (orchestrator, 2026-10-11): (1) a second, in-process layer is
+      required — command-text rules cannot see `ruby -e`/in-process
+      calls and the box's local settings allow bin/podgen:* wholesale;
+      guard keys on CLAUDECODE=1, exempts --dry-run, owner override
+      PODGEN_OWNER=1. (2) generate --youtube/--lingq join the owner-only
+      set (listener-facing uploads; CLAUDE.md rule 3 updated).
+      Done 2026-10-11: dca69d8; matrix .docs/P1-1-permission-matrix.md;
+      4 stubbed guard tests red-then-green; gate 3094+50; live probes
+      V2 green; V1 (deny rules applied) pending next session start.
 
 ## P1-2 · UploadsCommand boundary + observability  [tier: implementation] [status: ready] [deps: --]
 Goal: invalid --mode rejected in initialize (before any side effect);
