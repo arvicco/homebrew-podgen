@@ -213,7 +213,7 @@ currently R0-p, R0-o, R0-c…R0-n, P0-3 sign-off). Landed rulings:
 
 ## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: P1-0, P1-12, P1-1, P1-3, P1-4/5/6/9/7 (parallelizable), P1-15, P1-13, P1-2, P1-8, P1-14, P1-10, P1-16; Gate 1 = owner-merged PR)
 
-## P1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: in-progress — code landed, outcome check pending] [deps: --]
+## P1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: done] [deps: --]
 Signed off 2026-10-10 (priority). Model IDs are hard-coded at 11
 sites in 8 files with ad-hoc ENV overrides (three sites have none).
 Goal: lib/claude_models.rb holds LINES (opus/sonnet/haiku → current
@@ -241,6 +241,19 @@ Landed 2026-10-11: 869f84e (registry + text_of, zero behavior change),
       first script attempt, and an episode; plus the next owner bajke
       generate (vocabulary present, subtitles reconciled). Status → done
       when both are read.
+Done 2026-10-11 (outcome check, loop-read): news — the launchd
+      fulgur_news run 16:30 from this checkout: TopicAgent/ScriptAgent/
+      ScriptReviewer "with claude-opus-5-5", "Script generated in 77.54s
+      (end_turn)" on the first attempt, 0 "(max_tokens)", 0 ERROR, 56
+      research findings, 4 episodes ready (en/es/it/jp), history
+      recorded, 1198 s total. Language — the owner's cuentos 2026-10-11
+      generate at 12:54 (after the bump at 11:24): reconciler on
+      opus-5-5, subtitles reconciled (32 segments), vocabulary
+      classified + enriched (end_turn ×3), episode ready — stands in for
+      the bajke run (same pipeline). Sonnet/haiku lines do not print in
+      these logs (news translation is gpt-5; only the opus roles log
+      their model) — the per-role resolution is pinned by unit tests.
+      Token baseline for Q-28 (R1-b) is in the worklog entry.
 
 ## P1-1 · Permission-profile audit  [tier: top — guardrail security] [status: done] [deps: --]
 Goal: every invocation path to each HUMAN-action command (direct,

@@ -7,7 +7,28 @@ durable fix, the lesson now enforced.
 
 ---
 
-2026-10-11 · dev-loop v2 sync + P1-10 live smoke · f231e53, 0ac7e8b, (this
+2026-10-11 · P1-0 outcome check · (this commit) · The scheduled
+fulgur_news run (16:30, launchd, this checkout) is the first unattended
+generate on the registry: opus-5-5 at every logged role, script
+end_turn on attempt 1 (77 s), no max_tokens stop, no ERROR, 56
+findings, four episodes, 1198 s — P1-0, P1-11 (truncation) and P1-13
+(preflight) all exercised live. The owner's cuentos 2026-10-11
+generate (12:54) covers the language pipeline: reconciled subtitles,
+vocabulary present. Per-role token baseline on the bumped lines (R1-b,
+input/output): topics 652/173 · script 17595/8777 · script review
+22648/3151 · reconciler 4708/1330 · description 596/18 + 582/97 ·
+vocabulary classify 1658/2310 · vocabulary enrich 492/4103 and
+490/4152. Catches from the same read: (1) `podgen status` reports
+fulgur_news WARN because the ScriptReviewer's own "WARNING: [COVERAGE]"
+review lines match the status warning regex — a false positive in
+P1-14, queued as Q-30; (2) the №I-7 calendar check cannot be made from
+production logs: no podcast configures the claude_web source (all
+guidelines list exa/hackernews/rss), so the defect was latent, not a
+lost source — register row corrected; (3) hackernews returned 0
+findings for all five topics (Q-31, measure first).
+
+2026-10-11 · dev-loop v2 sync
+ + P1-10 live smoke · f231e53, 0ac7e8b, (this
 commit) · Re-read the dev-loop repo at origin/main (v2.1: doctrine 17
 rules, boards, incident register, kick/stay) — the local clone was
 stale. Gaps against it: the loop had parked operations on the owner
