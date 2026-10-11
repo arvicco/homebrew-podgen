@@ -216,7 +216,7 @@ class TestProdGuardScript < Minitest::Test
     assert_equal 2, code
   end
 
-  def test_bash_mutating_stash_forms_while_active_yield
+  def test_bash_mutating_stash_forms_while_active_yields
     hold_lock
     code1, _ = run_guard("Bash", {command: "git stash pop"})
     code2, _ = run_guard("Bash", {command: "git stash -u; git stash list"})
@@ -244,6 +244,51 @@ class TestProdGuardScript < Minitest::Test
     code, _err = run_guard("Bash", {command: "grep -rn rm lib/"})
 
     assert_equal 0, code
+  end
+
+  # CRPR Gate 2 round 4: xargs/sudo with options, compound command
+  # positions, unlisted tree- or branch-rewriting git subcommands, and the
+  # probe shapes that had no pinned test.
+  def test_bash_xargs_with_options_rm_under_lib_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "find /tmp -name x | xargs -0 rm lib/x.rb"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_rm_after_then_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "if [ -f lib/x ]; then rm lib/x.rb; fi"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_git_tree_rewriting_subcommands_while_active_yields
+    hold_lock
+    codes = ["git apply /tmp/p.diff", "git clean -fd lib/", "git branch -f phase-2 HEAD~1", "git commit --amend --no-edit"].map { |c| run_guard("Bash", {command: c}).first }
+
+    assert_equal [2, 2, 2, 2], codes
+  end
+
+  def test_bash_git_update_ref_reviewed_marker_while_active_allowed
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git update-ref refs/cr/reviewed HEAD"})
+
+    assert_equal 0, code
+  end
+
+  def test_bash_readonly_stash_with_global_option_while_active_allowed
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git --no-pager stash list"})
+
+    assert_equal 0, code
+  end
+
+  def test_bash_probe_shapes_while_active_yield
+    hold_lock
+    codes = ["/bin/rm lib/x.rb", "echo $(rm lib/x.rb)", "tee /tmp/a lib/x.rb", "git -P reset --hard", "git stash show; git stash drop", "echo x >| lib/x.rb"].map { |c| run_guard("Bash", {command: c}).first }
+
+    assert_equal [2, 2, 2, 2, 2, 2], codes
   end
 
   def test_no_output_dir_allowed
