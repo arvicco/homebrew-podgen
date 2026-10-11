@@ -7,6 +7,20 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-8, P1-2 · dfd51e3, aacc767 · P1-8 (agent): `freshness:
+off` in ## Podcast silences OLD for concluded series with a visible
+pass line; a future-dated newest episode warns instead of passing
+forever. P1-2 (agent): bogus --mode exits 2 before any R2/LingQ/
+YouTube call; round-robin capped at the initial pending sum (the old
+code looped forever on a never-draining stub — the agent's red run
+hung and had to be killed); one log line per permanently skipped pod.
+Both diffs reviewed and cherry-picked; gate 3136+50 green. Real-data
+check: validate --all shows fulgur_news OLD — newest episode 10-07,
+i.e. the DNS day, the truncation day and yesterday all produced
+nothing; today's scheduled run is the live check for P1-0/P1-11/
+P1-13 together. Q-29 filed from the agent's finding on permanent
+skip types.
+
 2026-10-11 · P1-13 (Q-26) · b9edf12 · Connectivity.preflight! (one DNS
 lookup of api.anthropic.com, 5 s cap, injectable resolver) runs after
 the ffmpeg check and before any phase in both pipelines; a dead

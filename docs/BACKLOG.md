@@ -259,12 +259,21 @@ Rulings (orchestrator, 2026-10-11): (1) a second, in-process layer is
       4 stubbed guard tests red-then-green; gate 3094+50; live probes
       V2 green; V1 (deny rules applied) pending next session start.
 
-## P1-2 · UploadsCommand boundary + observability  [tier: implementation] [status: ready] [deps: --]
+## P1-2 · UploadsCommand boundary + observability  [tier: implementation] [status: done] [deps: --]
 Goal: invalid --mode rejected in initialize (before any side effect);
       round-robin total rounds capped at the initial pending sum; one
       log line per pod on permanent-skip drain.
 Acceptance: mode typo exits 2 with zero publisher calls; round cap and
       drain log pinned by tests.
+Done 2026-10-11: aacc767 (worktree agent, diff reviewed). Rulings
+      accepted: --mode validated in initialize via OptionParser::
+      InvalidArgument (exit 2 through the dispatcher, zero collaborator
+      calls — test clears CLAUDECODE so the P1-1 guard cannot mask it);
+      round cap = initial pending sum (pinned: 2 pods × 2 pending that
+      never drain → exactly 4 rounds); one skip-drain line per pod via
+      an injectable log. Surfaced: only missing_cover counts as a
+      permanent skip; other repeating permanent failures now stop via
+      the cap but get no line → Q-29.
 
 ## P1-3 · Test-hygiene batch  [tier: implementation] [status: done] [deps: --]
 Goal: ENV save/restore for PODGEN_ROOT and TWITTER_*; audio_trimmer
@@ -340,11 +349,19 @@ Done 2026-10-11: 9f2994f (worktree agent, diff reviewed). Rulings
       RuntimeErrors, so the status path is dormant until an error carries
       a response.
 
-## P1-8 · Freshness completeness  [tier: implementation] [status: ready] [deps: --]
+## P1-8 · Freshness completeness  [tier: implementation] [status: done] [deps: --]
 Goal: guidelines flag `freshness: off` honored by FreshnessValidator;
       a future-dated newest episode warns instead of passing forever.
 Acceptance: flagged podcast validates clean; future-date fixture
       warns; existing freshness tests green.
+Done 2026-10-11: dfd51e3 (worktree agent, diff reviewed). Rulings
+      accepted: flag `- freshness: off` in ## Podcast (generic parser,
+      no parser change); only "off" disables; accessor
+      freshness_enabled? default true; future date WARNS naming the
+      date. validate --all at the primary checkout: lahko_noc still OLD
+      (204 d, not flagged — owner's call), fulgur_news OLD (newest
+      10-07: three runs without an episode; today's 16:30 run is the
+      P1-0 outcome check).
 
 ## P1-9 · Small-fix batch  [tier: implementation] [status: done] [deps: --]
 Goal: normalize_url scheme match case-insensitive; TwitterAgent#
