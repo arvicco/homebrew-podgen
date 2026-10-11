@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 
 ENV["ANTHROPIC_API_KEY"] ||= "test-key"
 require "agents/description_agent"
@@ -178,7 +179,7 @@ class TestDescriptionAgent < Minitest::Test
     prev_desc = ENV.delete("CLAUDE_DESCRIPTION_MODEL")
     prev_web = ENV.delete("CLAUDE_WEB_MODEL")
     agent = DescriptionAgent.new
-    assert_equal "claude-sonnet-4-6", agent.instance_variable_get(:@model)
+    assert_equal ClaudeModels.for(:description), agent.instance_variable_get(:@model)
   ensure
     ENV["CLAUDE_DESCRIPTION_MODEL"] = prev_desc if prev_desc
     ENV["CLAUDE_WEB_MODEL"] = prev_web if prev_web
@@ -196,7 +197,7 @@ class TestDescriptionAgent < Minitest::Test
     ENV.delete("CLAUDE_DESCRIPTION_MODEL")
     ENV["CLAUDE_WEB_MODEL"] = "claude-haiku-4-5-20251001"
     agent = DescriptionAgent.new
-    assert_equal "claude-sonnet-4-6", agent.instance_variable_get(:@model)
+    assert_equal ClaudeModels.for(:description), agent.instance_variable_get(:@model)
   ensure
     ENV.delete("CLAUDE_WEB_MODEL")
   end

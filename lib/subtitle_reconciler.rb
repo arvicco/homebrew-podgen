@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require_relative "anthropic_client"
+require_relative "claude_models"
 require "json"
 
 # Reconciles raw STT segment text with a corrected transcript using Claude.
@@ -9,12 +11,10 @@ require "json"
 module SubtitleReconciler
   class ReconciliationError < StandardError; end
 
-  DEFAULT_MODEL = "claude-sonnet-4-6"
-
   # Reconcile raw segments with a corrected transcript via Claude API.
   # Returns an array of segments with corrected text (same start/end values).
   def self.reconcile(segments, reconciled_text, api_key:, model: nil)
-    model ||= ENV.fetch("CLAUDE_RECONCILER_MODEL", DEFAULT_MODEL)
+    model ||= ClaudeModels.for(:subtitle_reconciler)
     prompt = build_prompt(segments, reconciled_text)
 
     client = Anthropic::Client.new(api_key: api_key)
@@ -25,7 +25,7 @@ module SubtitleReconciler
       messages: [{ role: "user", content: prompt }]
     )
 
-    text = response.content.first.text
+    text = AnthropicClient.text_of(response)
     result = parse_response(text)
     validate!(result, segments)
     result

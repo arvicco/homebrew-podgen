@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 ENV["ANTHROPIC_API_KEY"] ||= "test-key"
 require "image_ranker"
 
@@ -93,9 +94,9 @@ class TestImageRanker < Minitest::Test
     assert_equal "claude-haiku-4-5-20251001", captured_model
   end
 
-  def test_rank_default_model_is_sonnet_4_6
+  def test_rank_default_model_is_the_registry_image_rank_role
     ranker = ImageRanker.new
-    assert_equal "claude-sonnet-4-6", ranker.instance_variable_get(:@model)
+    assert_equal ClaudeModels.for(:image_rank), ranker.instance_variable_get(:@model)
   end
 
   private

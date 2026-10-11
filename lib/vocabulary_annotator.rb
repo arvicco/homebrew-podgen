@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require_relative "anthropic_client"
+require_relative "claude_models"
 require "json"
 require "set"
 require_relative "loggable"
@@ -20,12 +22,10 @@ class VocabularyAnnotator
   MAX_PARTICLE_LENGTH = 3
   PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
-  DEFAULT_MODEL = "claude-sonnet-4-6"
-
   def initialize(api_key, model: nil, logger: nil)
     @logger = logger
     @client = Anthropic::Client.new(api_key: api_key)
-    @model = model || ENV.fetch("CLAUDE_VOCAB_MODEL", DEFAULT_MODEL)
+    @model = model || ClaudeModels.for(:vocab)
   end
 
   # Returns [marked_body, vocabulary_md]
@@ -161,7 +161,7 @@ class VocabularyAnnotator
 
       log_api_usage("Vocabulary classified", message, elapsed)
 
-      raw = message.content.first.text.strip
+      raw = AnthropicClient.text_of(message).strip
 
       # When response is truncated, go straight to salvage — the regex often
       # matches garbage brackets in preamble text, bypassing recovery.
@@ -388,7 +388,7 @@ class VocabularyAnnotator
 
       log_api_usage("Vocabulary enriched", message, elapsed)
 
-      raw = message.content.first.text.strip
+      raw = AnthropicClient.text_of(message).strip
       json_str = if message.stop_reason == "max_tokens"
         salvage_truncated_json(raw).tap do |r|
           log(r ? "Salvaged partial enrichment" : "WARNING: Enrichment truncated and salvage failed")

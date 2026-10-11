@@ -14,7 +14,7 @@ module Transcription
     MAX_RETRIES = 3
 
     def initialize(language: "Slovenian", logger: nil)
-      init_anthropic_client
+      init_anthropic_client(role: :transcript_reconciler)
       @language = language
       @logger = logger
     end

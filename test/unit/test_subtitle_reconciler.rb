@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 require "subtitle_reconciler"
 
 class TestSubtitleReconciler < Minitest::Test
@@ -128,7 +129,7 @@ class TestSubtitleReconciler < Minitest::Test
     Anthropic::Client.stub(:new, fake_client) do
       SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k")
     end
-    assert_equal "claude-sonnet-4-6", captured_model
+    assert_equal ClaudeModels.for(:subtitle_reconciler), captured_model
   ensure
     ENV["CLAUDE_RECONCILER_MODEL"] = prev if prev
   end

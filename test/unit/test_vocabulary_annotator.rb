@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 require "vocabulary_annotator"
 require "tell/espeak"
 
@@ -14,7 +15,7 @@ class TestVocabularyAnnotator < Minitest::Test
   def test_default_model_is_sonnet_when_no_env_set
     ENV.delete("CLAUDE_VOCAB_MODEL")
     annotator = VocabularyAnnotator.new("test-key")
-    assert_equal "claude-sonnet-4-6", annotator.instance_variable_get(:@model)
+    assert_equal ClaudeModels.for(:vocab), annotator.instance_variable_get(:@model)
   end
 
   def test_claude_vocab_model_env_overrides_default
