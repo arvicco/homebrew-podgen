@@ -13,6 +13,9 @@ if ENV["COVERAGE"] && !ENV["COVERAGE"].empty?
 end
 
 require "dotenv/load"
+# The owner-action guard (lib/cli.rb) keys on CLAUDECODE; tests set it explicitly.
+ENV.delete("CLAUDECODE")
+ENV.delete("PODGEN_OWNER")
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"

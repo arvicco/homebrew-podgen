@@ -1,5 +1,5 @@
 {
-  "//": "dev-loop permission profile: inside the sandbox, full freedom -- the boundary itself is hard. Review with the owner before the first unattended session.",
+  "//": "dev-loop permission profile: inside the sandbox, full freedom -- the boundary itself is hard. Deny rules are match-anywhere (leading *) so wrappers, absolute paths, bash -c and compound commands are covered; the in-process guard in lib/cli.rb (CLAUDECODE=1) is the second layer. Matrix: .docs/P1-1-permission-matrix.md",
   "permissions": {
     "allow": [
       "Bash(git diff*)",
@@ -13,7 +13,8 @@
       "Bash(git push origin phase-*)",
       "Bash(bundle exec rake gate*)",
       "Bash(bundle exec rake test*)",
-      "Bash(bundle exec ruby*)"
+      "Bash(bundle exec ruby -I*)",
+      "Bash(bundle exec ruby test/*)"
     ],
     "deny": [
       "Bash(git push*:*)",
@@ -36,7 +37,28 @@
       "Bash(bin/podgen analytics*)",
       "Bash(brew install*)",
       "Bash(gem install*)",
-      "Bash(bundle add*)"
+      "Bash(bundle add*)",
+      "Bash(*podgen *publish*)",
+      "Bash(*podgen *uploads*)",
+      "Bash(*podgen *tweet*)",
+      "Bash(*podgen *schedule*)",
+      "Bash(*podgen *analytics*)",
+      "Bash(*podgen *--youtube*)",
+      "Bash(*podgen *--lingq*)",
+      "Bash(*scripts/run.sh *--publish*)",
+      "Bash(*run_uploads.sh*)",
+      "Bash(*launchctl start*)",
+      "Bash(*launchctl kickstart*)",
+      "Bash(*launchctl bootstrap*)",
+      "Bash(*launchctl load*)",
+      "Bash(*launchctl bootout*)",
+      "Bash(*launchctl unload*)",
+      "Bash(*git push*master*)",
+      "Bash(*git push*--force*)",
+      "Bash(*git push* -f *)",
+      "Bash(*git tag*)",
+      "Bash(*gh release create*)",
+      "Bash(*gh pr merge*)"
     ]
   },
   "env": {

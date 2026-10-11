@@ -1391,6 +1391,11 @@ bundle exec rake test      # full suite (API-keyed tiers run only with keys pres
 bundle exec rake health    # probe every registered external endpoint (network; see lib/source_registry.rb)
 ```
 
+Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
+`analytics`, and `generate --youtube/--lingq`) refuse to run inside a Claude
+Code session (`CLAUDECODE=1`) with exit 2; `--dry-run` forms still work. To run
+one deliberately from the Claude Code prompt: `! PODGEN_OWNER=1 bin/podgen publish <pod>`.
+
 The gate is also what CI runs. Adding a hard-coded URL to a new
 external host fails the gate until the host is registered in
 `lib/source_registry.rb` (constant-built or interpolated URLs escape

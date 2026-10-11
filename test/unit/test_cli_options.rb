@@ -26,6 +26,63 @@ class TestCLIOptions < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # ── P1-1: owner-action guard (second layer behind settings.json denies) ──
+  # The command class is stubbed so a red run can never execute a real
+  # publish/upload/schedule (lesson 2026-10-11: an unstubbed red run hung on one).
+
+  class FakeCommand
+    def initialize(*) = nil
+    def run = 0
+  end
+
+  def guarded_run(*argv)
+    PodgenCLI.stub(:const_get, FakeCommand) { run_cli(*argv) }
+  end
+
+  def test_owner_actions_refused_inside_a_claude_code_session
+    ENV["CLAUDECODE"] = "1"
+    %w[publish unpublish uploads tweet schedule analytics].each do |cmd|
+      code, _, err = guarded_run(cmd, "test_pod")
+      assert_equal 2, code, "#{cmd} must be refused"
+      assert_includes err, "owner action", cmd
+      assert_includes err, "PODGEN_OWNER=1", cmd
+    end
+  ensure
+    ENV.delete("CLAUDECODE")
+  end
+
+  def test_generate_upload_flags_refused_inside_a_claude_code_session
+    ENV["CLAUDECODE"] = "1"
+    [%w[generate test_pod --youtube], %w[generate test_pod --lingq], %w[--lingq generate test_pod]].each do |argv|
+      code, _, err = guarded_run(*argv)
+      assert_equal 2, code, argv.join(" ")
+      assert_includes err, "owner action", argv.join(" ")
+    end
+  ensure
+    ENV.delete("CLAUDECODE")
+  end
+
+  def test_dry_run_and_owner_override_pass_the_guard
+    ENV["CLAUDECODE"] = "1"
+    code, _, err = guarded_run("publish", "test_pod", "--dry-run")
+    assert_equal 0, code
+    refute_includes err, "owner action", "--dry-run is harmless and stays usable"
+    ENV["PODGEN_OWNER"] = "1"
+    code, _, err = guarded_run("tweet", "test_pod", "x")
+    assert_equal 0, code
+    refute_includes err, "owner action"
+  ensure
+    ENV.delete("CLAUDECODE")
+    ENV.delete("PODGEN_OWNER")
+  end
+
+  def test_guard_is_inert_outside_claude_code
+    ENV.delete("CLAUDECODE")
+    code, _, err = guarded_run("publish", "test_pod")
+    assert_equal 0, code
+    refute_includes err, "owner action"
+  end
+
   # ── Invalid options should fail with exit 2 ──────────────────────
 
   def test_generate_rejects_unknown_option
