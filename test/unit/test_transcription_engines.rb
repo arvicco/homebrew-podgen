@@ -708,3 +708,56 @@ class TestElevenlabsEngine < Minitest::Test
     assert_match(/Audio file not found/, err.message)
   end
 end
+
+# ── Engine fd hygiene (Q-04) ────────────────────────────────────────────────
+
+class TestEngineFileHandleClosing < Minitest::Test
+  def setup
+    @audio = Tempfile.new(["fd", ".mp3"])
+    @audio.write("fake audio data")
+    @audio.flush
+  end
+
+  def teardown
+    @audio.close!
+  end
+
+  def open_handles
+    ObjectSpace.each_object(File).count { |f| !f.closed? && f.path == @audio.path }
+  end
+
+  # HTTP stub failing twice (retryable 503) then succeeding.
+  def flaky_post(success_body)
+    calls = 0
+    lambda do |*_args, **_kw|
+      calls += 1
+      if calls <= 2
+        MockHTTPResponse.new(code: 503, body: "busy", "success?": false)
+      else
+        MockHTTPResponse.new(code: 200, body: success_body, "success?": true)
+      end
+    end
+  end
+
+  def assert_no_leaked_handles(engine, success_body)
+    engine.define_singleton_method(:sleep) { |_s| nil }
+    before = open_handles
+    GC.disable
+    HTTParty.stub(:post, flaky_post(success_body)) { engine.transcribe(@audio.path) }
+    assert_equal before, open_handles
+  ensure
+    GC.enable
+  end
+
+  def test_openai_closes_audio_file_across_retries
+    assert_no_leaked_handles(Transcription::OpenaiEngine.new(language: "en"), { "text" => "hi" }.to_json)
+  end
+
+  def test_groq_closes_audio_file_across_retries
+    assert_no_leaked_handles(Transcription::GroqEngine.new(language: "en"), { "text" => "hi" }.to_json)
+  end
+
+  def test_elevenlabs_closes_audio_file_across_retries
+    assert_no_leaked_handles(Transcription::ElevenlabsEngine.new(language: "en"), { "text" => "hi", "words" => [] }.to_json)
+  end
+end

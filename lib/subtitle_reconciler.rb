@@ -11,6 +11,9 @@ require "json"
 module SubtitleReconciler
   class ReconciliationError < StandardError; end
 
+  # Seconds of tolerated drift between original and LLM-returned timestamps.
+  TIMESTAMP_EPSILON = 0.01
+
   # Reconcile raw segments with a corrected transcript via Claude API.
   # Returns an array of segments with corrected text (same start/end values).
   def self.reconcile(segments, reconciled_text, api_key:, model: nil)
@@ -66,6 +69,12 @@ module SubtitleReconciler
     raise ReconciliationError, "Failed to parse reconciled segments: #{e.message}"
   end
 
+  # LLM round-trips can re-serialize floats (7.7 -> 7.700000001).
+  def self.close_enough?(a, b)
+    return a == b unless a.is_a?(Numeric) && b.is_a?(Numeric)
+    (a - b).abs <= TIMESTAMP_EPSILON
+  end
+
   # Validate that reconciled segments match original structure.
   def self.validate!(reconciled, original)
     unless reconciled.length == original.length
@@ -74,7 +83,7 @@ module SubtitleReconciler
 
     reconciled.each_with_index do |seg, i|
       orig = original[i]
-      unless seg["start"] == orig["start"] && seg["end"] == orig["end"]
+      unless close_enough?(seg["start"], orig["start"]) && close_enough?(seg["end"], orig["end"])
         raise ReconciliationError, "Timestamp mismatch at segment #{i}: " \
           "expected #{orig['start']}-#{orig['end']}, got #{seg['start']}-#{seg['end']}"
       end

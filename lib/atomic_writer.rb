@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "securerandom"
 require "yaml"
 
 # Atomic file writes via temp file + rename.
@@ -14,7 +15,7 @@ module AtomicWriter
     dir = File.dirname(path)
     FileUtils.mkdir_p(dir)
 
-    tmp = "#{path}.tmp.#{Process.pid}"
+    tmp = "#{path}.tmp.#{Process.pid}.#{SecureRandom.hex(4)}"
     begin
       File.open(tmp, "w:UTF-8", perm: perm) { |f| f.write(content) }
       File.rename(tmp, path)

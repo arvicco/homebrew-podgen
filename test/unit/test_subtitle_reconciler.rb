@@ -111,6 +111,32 @@ class TestSubtitleReconciler < Minitest::Test
     SubtitleReconciler.validate!(reconciled, original) # should not raise
   end
 
+  def test_validate_accepts_float_reserialization_drift
+    original = [{ "start" => 7.7, "end" => 12.3, "text" => "Old." }]
+    reconciled = [{ "start" => 7.7 + 1e-6, "end" => 12.3 - 1e-6, "text" => "New." }]
+
+    SubtitleReconciler.validate!(reconciled, original) # should not raise
+  end
+
+  def test_validate_rejects_drift_beyond_epsilon
+    original = [{ "start" => 7.7, "end" => 12.3, "text" => "Old." }]
+    reconciled = [{ "start" => 7.75, "end" => 12.3, "text" => "New." }]
+
+    assert_raises(SubtitleReconciler::ReconciliationError) do
+      SubtitleReconciler.validate!(reconciled, original)
+    end
+  end
+
+  def test_validate_count_mismatch_still_fails_with_matching_timestamps
+    original = [{ "start" => 0.0, "end" => 5.0, "text" => "A." }, { "start" => 5.0, "end" => 6.0, "text" => "B." }]
+    reconciled = [{ "start" => 0.0, "end" => 5.0, "text" => "A." }]
+
+    err = assert_raises(SubtitleReconciler::ReconciliationError) do
+      SubtitleReconciler.validate!(reconciled, original)
+    end
+    assert_match(/count mismatch/, err.message)
+  end
+
   # --- reconcile (stubbed API) ---
 
   # --- model resolution ---
