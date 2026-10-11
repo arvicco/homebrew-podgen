@@ -5,18 +5,64 @@ require "googleauth"
 require "googleauth/stores/file_token_store"
 require "fileutils"
 require "json"
+require "socket"
+require "cgi"
 
 # Uploads videos and captions to YouTube via the Data API v3.
 # Handles OAuth2 authentication with persistent token storage.
 class YouTubeUploader
-  OOB_URI = "urn:ietf:wg:oauth:2.0:oob"
   SCOPE = Google::Apis::YoutubeV3::AUTH_YOUTUBE_FORCE_SSL
   TOKEN_DIR = File.join(Dir.home, ".config", "podgen")
   TOKEN_FILE = File.join(TOKEN_DIR, "youtube_token.json")
 
-  def initialize(logger: nil)
+  # Loopback-redirect consent (P1-16, Q-07): Google shut off the out-of-band
+  # flow, so a fresh authorization listens on an ephemeral 127.0.0.1 port,
+  # sends the owner to the consent URL, and reads the code from the browser's
+  # callback. Returns [code, redirect_uri]; code is nil when the callback
+  # carried none (denied consent). Injected into YouTubeUploader so tests
+  # never open a browser or a real port.
+  class LoopbackConsent
+    attr_reader :port
+
+    def initialize(io: $stderr, open_browser: true)
+      @io = io
+      @open_browser = open_browser
+      @port = nil
+    end
+
+    def call(authorizer)
+      server = TCPServer.new("127.0.0.1", 0)
+      @port = server.addr[1]
+      redirect = "http://127.0.0.1:#{@port}"
+      url = authorizer.get_authorization_url(base_url: redirect)
+      @io.puts "Open the following URL in your browser and authorize the application:"
+      @io.puts url
+      system("open", url, out: File::NULL, err: File::NULL) if @open_browser && RUBY_PLATFORM.include?("darwin")
+
+      client = server.accept
+      request_line = client.gets.to_s
+      code = code_from(request_line)
+      body = code ? "<html><body><p>podgen: YouTube authorized. You can close this tab.</p></body></html>" :
+                    "<html><body><p>podgen: no authorization code received.</p></body></html>"
+      client.write "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}"
+      client.close
+      [code, redirect]
+    ensure
+      server&.close
+    end
+
+    private
+
+    def code_from(request_line)
+      query = request_line[/\AGET \S*\?(\S*) /, 1] or return nil
+      CGI.parse(query)["code"]&.first
+    end
+  end
+
+  def initialize(logger: nil, consent: nil)
     @logger = logger
     @service = nil
+    @consent = consent || LoopbackConsent.new
   end
 
   # Authorize and return a configured YouTube service.
@@ -47,14 +93,10 @@ class YouTubeUploader
     end
 
     if credentials.nil?
-      url = authorizer.get_authorization_url(base_url: OOB_URI)
-      log("Open the following URL in your browser and authorize the application:")
-      log(url)
-      $stderr.print "\nEnter the authorization code: "
-      code = $stdin.gets&.strip
+      code, redirect = @consent.call(authorizer)
       raise "No authorization code provided" if code.nil? || code.empty?
       credentials = authorizer.get_and_store_credentials_from_code(
-        user_id: "default", code: code, base_url: OOB_URI
+        user_id: "default", code: code, base_url: redirect
       )
     end
 
