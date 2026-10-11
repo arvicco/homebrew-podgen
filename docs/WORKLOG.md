@@ -7,7 +7,20 @@ durable fix, the lesson now enforced.
 
 ---
 
-2026-10-11 · P1-17 · f002314 · Owner-reported: feed titles ending in
+2026-10-11 · Gate 1 CLOSED · (this commit) · The owner merged PR #2 at
+12:57 (head 94f0123, merge 6d869e4). The loop did not check the PR
+state before its next pushes and put six more commits on the merged
+branch (0ac7e8b recorder/claude_web fixes, f231e53 v2 docs, 4aeb19a
+recorder redaction, 7384b30 P1-0 outcome, f002314 P1-17, 9192e1a
+docs) — none of them in master; the owner caught it. Per the boards
+rule the tail was cherry-picked onto phase-2 (tree identical to the old
+phase-1 head), phase-1 deleted both ends, p01-plan archived, incident
+rows advanced (I-3/I-4/I-5 CLOSED at this gate; I-7 and I-8 ride Gate
+2). Rule now enforced: `gh pr view --json state,mergedAt` before any
+push to a phase branch; after MERGED, work goes to the next branch.
+
+2026-10-11 · P1-17 · f002314
+ · Owner-reported: feed titles ending in
 "…". Not the model — ScriptReviewer's deterministic title_length check
 cut every title over 40 chars at a word boundary and appended an
 ellipsis as an auto-fixed BLOCKER, while the prompt never told the
