@@ -274,7 +274,7 @@ module PodgenCLI
         when "x", "exclude"
           @episode_source.exclude_url!(@episode[:audio_url])
           logger.log("Excluded #{@episode[:audio_url]}")
-          return 1
+          return 0
         else
           logger.log("Aborted by user")
           return 1

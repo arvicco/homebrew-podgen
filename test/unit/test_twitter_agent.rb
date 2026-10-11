@@ -104,19 +104,17 @@ class TestTwitterAgent < Minitest::Test
     assert_equal "#{"a" * 253}...\n#{url}", result
   end
 
-  def test_truncate_empty_url_ellipsizes_with_trailing_newline
+  def test_truncate_empty_url_ellipsizes_without_trailing_newline
     agent = build_agent
     result = agent.send(:truncate, "a" * 300, url: "")
-    # Characterization: with no URL the result still ends "...\n" —
-    # the "\n#{url}" tail is appended even when url is empty.
-    assert_equal "#{"a" * 276}...\n", result
-    assert_equal 280, result.length
+    assert_equal "#{"a" * 276}...", result
+    assert_equal 279, result.length
   end
 
   def test_truncate_nil_url_treated_as_empty
     agent = build_agent
     result = agent.send(:truncate, "a" * 300, url: nil)
-    assert_equal "#{"a" * 276}...\n", result
+    assert_equal "#{"a" * 276}...", result
   end
 
   private

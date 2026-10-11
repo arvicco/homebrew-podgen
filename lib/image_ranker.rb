@@ -8,16 +8,18 @@ require "json"
 require_relative "loggable"
 
 # Ranks candidate cover images using a single batched Claude vision call.
-# Each candidate gets a combined score (fits_fairytale_cover + matches_episode_description),
-# with hard veto flags (has_watermark, !composition_ok) and a tie-breaker
+# Each candidate gets a combined score (visual_quality + subject_match, each
+# 1-10), a single hard veto (has_overlay_watermark), and a tie-breaker
 # bonus for has_title_text.
 #
 # Returned candidates preserve the original metadata from ImageSearcher and
-# add: :score (Integer 2-20), :has_title_text, :has_watermark, :composition_ok,
-# :reasons (String), :vetoed (Boolean — true if watermark or bad composition).
+# add: :score (Integer 2-20), :visual_quality, :subject_match,
+# :has_title_text, :has_overlay_watermark, :reasons (String),
+# :vetoed (Boolean — true if has_overlay_watermark).
 #
-# Sort order: vetoed last; among non-vetoed, has_title_text first, then
-# score DESC.
+# Sort key: [vetoed, !has_title_text, -score, original index] ascending, i.e.
+# vetoed last; among the rest, has_title_text first, then score DESC, with
+# ties kept in input order.
 class ImageRanker
   include Loggable
 
