@@ -24,7 +24,7 @@ module PublisherShared
   end
 
   def parse_transcript(path)
-    parsed = TranscriptParser.parse(path)
+    parsed = TranscriptParser.parse_file(path)
     [parsed.title, parsed.description, parsed.body]
   end
 

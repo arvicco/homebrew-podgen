@@ -19,10 +19,17 @@ require "fileutils"
 class TranscriptParser
   Result = Struct.new(:title, :description, :header, :body, :vocabulary, :transcript_section, keyword_init: true)
 
-  # Parse a transcript file or string into its structural components.
-  def self.parse(path_or_text)
-    text = file?(path_or_text) ? File.read(path_or_text) : path_or_text
+  # Paths and text are separate entry points: the *text* methods never touch
+  # the filesystem, so a body that happens to equal an existing path is still
+  # parsed as text (Q-10).
 
+  # Parse a transcript file into its structural components.
+  def self.parse_file(path)
+    parse(File.read(path))
+  end
+
+  # Parse transcript text into its structural components.
+  def self.parse(text)
     has_transcript = text.include?("## Transcript")
 
     if has_transcript
@@ -47,23 +54,24 @@ class TranscriptParser
                vocabulary: vocabulary, transcript_section: has_transcript)
   end
 
-  # Extract just the title (efficient — reads only first line for files).
-  def self.extract_title(path_or_text)
-    if file?(path_or_text)
-      first_line = File.foreach(path_or_text).first
-    else
-      first_line = path_or_text.lines.first
-    end
-    first_line&.strip&.sub(/^#\s+/, "")
+  # Extract just the title from a file (efficient — reads only the first line).
+  def self.extract_title_from_file(path)
+    title_from_line(File.foreach(path).first)
   end
 
-  # Check if file/text contains a vocabulary section.
-  def self.has_vocabulary?(path_or_text)
-    if file?(path_or_text)
-      File.foreach(path_or_text).any? { |line| line.include?("## Vocabulary") }
-    else
-      path_or_text.include?("## Vocabulary")
-    end
+  # Extract just the title from transcript text.
+  def self.extract_title(text)
+    title_from_line(text.lines.first)
+  end
+
+  # Check if a transcript file contains a vocabulary section.
+  def self.file_has_vocabulary?(path)
+    File.foreach(path).any? { |line| line.include?("## Vocabulary") }
+  end
+
+  # Check if transcript text contains a vocabulary section.
+  def self.has_vocabulary?(text)
+    text.include?("## Vocabulary")
   end
 
   # Write a transcript file in the standard format.
@@ -87,10 +95,10 @@ class TranscriptParser
     File.write(path, content)
   end
 
-  def self.file?(path_or_text)
-    path_or_text.is_a?(String) && !path_or_text.include?("\n") && File.exist?(path_or_text)
+  def self.title_from_line(first_line)
+    first_line&.strip&.sub(/^#\s+/, "")
   end
-  private_class_method :file?
+  private_class_method :title_from_line
 
   def self.parse_header(header)
     lines = header.lines
