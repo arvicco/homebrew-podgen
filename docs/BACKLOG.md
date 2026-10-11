@@ -276,12 +276,18 @@ Ruling 2026-10-11 (R1-d): lint in the gate covers new files only;
       .standard_todo.yml in the same commit when the lint diff is small;
       one-line note in README + DEV-LOOP rides this packet.
 
-## P1-4 · Sidecar + probe reliability  [tier: implementation] [status: ready] [deps: --]
+## P1-4 · Sidecar + probe reliability  [tier: implementation] [status: done] [deps: --]
 Goal: one guarded JSON load for *_timestamps.json shared by persister
       and subtitle generator; AudioAssembler probe_duration has one
       failure contract and a cache that invalidates on mtime/size.
 Acceptance: corrupt sidecar → named error, not ParserError; rewritten
       file probes fresh.
+Rulings (orchestrator, 2026-10-11): corrupt sidecar RAISES a named
+      StandardError subclass (not nil-with-warning) so callers' rescues
+      keep their statuses; both probe contracts KEPT (nil for fallback
+      chains, raise inside assembly) and documented; memo keyed by
+      (path, mtime, size) rather than dropped. Done 2026-10-11: aff5261;
+      3 tests red-then-green; gate 3097+50 green.
 
 ## P1-5 · STT robustness  [tier: implementation] [status: ready] [deps: --]
 Goal: timestamp epsilon in SubtitleReconciler#validate!; engine file
