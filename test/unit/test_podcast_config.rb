@@ -1002,6 +1002,16 @@ class TestPodcastConfig < Minitest::Test
     assert_equal false, sc[:show_transcript]
   end
 
+  def test_freshness_enabled_defaults_true
+    write_guidelines("## Podcast\n- name: X\n")
+    assert PodcastConfig.new("myshow").freshness_enabled?
+  end
+
+  def test_freshness_enabled_false_when_flag_off
+    write_guidelines("## Podcast\n- name: X\n- freshness: off\n")
+    refute PodcastConfig.new("myshow").freshness_enabled?
+  end
+
   def test_site_config_defaults_when_section_missing
     write_guidelines(<<~MD)
       ## Format
