@@ -15,6 +15,9 @@ class FixtureRecorder
   FIXTURE_DIR = File.join(__dir__, "..", "test", "fixtures", "sources")
   README = File.join(__dir__, "..", "test", "fixtures", "README.md")
   KEEP = 3
+  # A fixture needs real SHAPE, not recency: the live 48 h window returned
+  # zero stories on 2026-10-11 and an empty fixture was written.
+  HN_RECORD_LOOKBACK_SECONDS = 30 * 86_400
 
   # source => [fixture path relative to FIXTURE_DIR, env keys required]
   TARGETS = {
@@ -66,6 +69,20 @@ class FixtureRecorder
     {"role" => body["role"], "stop_reason" => body["stop_reason"], "content" => content}
   end
 
+  # True when a trimmed body could not exercise the parse path: no items, or
+  # (claude_web) a truncated answer / no text block with citations.
+  def self.unusable?(name, trimmed)
+    case name
+    when "hn" then Array(trimmed["hits"]).empty?
+    when "bluesky" then Array(trimmed["posts"]).empty?
+    when "x" then Array(trimmed["tweets"]).empty?
+    when "claude_web"
+      trimmed["stop_reason"] != "end_turn" ||
+        Array(trimmed["content"]).none? { |b| b["type"] == "text" && Array(b["citations"]).any? }
+    else false
+    end
+  end
+
   # Replaces the recorded-at cell of the README row that registering `sources/<path>`.
   def self.stamp_readme(text, path, stamp)
     text.lines.map do |line|
@@ -90,11 +107,13 @@ class FixtureRecorder
         @out.puts format("%-11s SKIPPED (missing env: %s)", name, missing.join(", "))
         next name
       end
-      write(path, public_send(:"fetch_#{name}"))
+      trimmed = public_send(:"fetch_#{name}")
+      raise "unusable body (empty or truncated)" if self.class.unusable?(name, trimmed)
+      write(path, trimmed)
       @out.puts format("%-11s recorded %s", name, path)
       nil
     rescue => e
-      @out.puts format("%-11s FAILED (%s)", name, e.class)
+      @out.puts format("%-11s FAILED (%s)", name, e.is_a?(RuntimeError) ? e.message : e.class)
       name
     end
   end
@@ -103,7 +122,7 @@ class FixtureRecorder
   # recording is the exact body the live code parses.
   def fetch_hn
     src = HNSource.new
-    cutoff = (Time.now - (HNSource::LOOKBACK_HOURS * 3600)).to_i
+    cutoff = (Time.now - HN_RECORD_LOOKBACK_SECONDS).to_i
     body = src.send(:request_with_retry, query: "Bitcoin", tags: "story",
       numericFilters: "created_at_i>#{cutoff}", hitsPerPage: HNSource::RESULTS_PER_TOPIC)
     self.class.trim_hn(body)
