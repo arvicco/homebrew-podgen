@@ -6,18 +6,20 @@ require "yaml"
 require "validators/freshness_validator"
 
 class TestFreshnessValidator < Minitest::Test
-  FakeConfig = Struct.new(:history_path, :freshness_enabled, keyword_init: true) do
+  FakeConfig = Struct.new(:history_path, :freshness_enabled, :lead_days, keyword_init: true) do
     def freshness_enabled?
       freshness_enabled != false
     end
+
+    def freshness_lead_days = lead_days || 3
   end
 
-  def with_history(dates, freshness_enabled: true)
+  def with_history(dates, freshness_enabled: true, lead_days: nil)
     Dir.mktmpdir do |dir|
       path = File.join(dir, "history.yml")
       entries = dates.map { |d| {"date" => d, "title" => "t", "topics" => []} }
       File.write(path, entries.to_yaml)
-      yield FakeConfig.new(history_path: path, freshness_enabled: freshness_enabled)
+      yield FakeConfig.new(history_path: path, freshness_enabled: freshness_enabled, lead_days: lead_days)
     end
   end
 
@@ -54,6 +56,28 @@ class TestFreshnessValidator < Minitest::Test
     with_history(%w[2026-06-06 2026-06-13 2026-06-20 2026-06-27 2026-07-04]) do |config|
       result = validate(config, Date.new(2026, 8, 25))
       assert result[:warnings].any? { |w| w.include?("OLD") }, result.inspect
+    end
+  end
+
+  def test_check_newest_within_lead_days_passes_as_scheduled
+    with_history(%w[2026-08-23 2026-08-24 2026-08-25 2026-08-26]) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      assert_empty result[:warnings], result.inspect
+      assert result[:passes].any? { |p| p.include?("scheduled +1d") }, result.inspect
+    end
+  end
+
+  def test_check_newest_beyond_lead_days_warns_future
+    with_history(%w[2026-09-02 2026-09-03 2026-09-04]) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      assert result[:warnings].any? { |w| w.include?("dated in the future (10 days ahead)") }, result.inspect
+    end
+  end
+
+  def test_check_lead_days_zero_warns_one_day_ahead
+    with_history(%w[2026-08-24 2026-08-25 2026-08-26], lead_days: 0) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      assert result[:warnings].any? { |w| w.include?("dated in the future (1 days ahead)") }, result.inspect
     end
   end
 
