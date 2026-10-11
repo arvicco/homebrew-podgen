@@ -336,6 +336,24 @@ class TestProdGuardScript < Minitest::Test
     assert_equal Array.new(cmds.size, 2), codes
   end
 
+  # CRPR Gate 2 round 6: command lines AFTER a heredoc are still scanned —
+  # after a terminated heredoc, after a literal here-string (not a heredoc),
+  # and after a tab-indented `<<-` terminator.
+  def test_bash_commands_after_heredocs_while_active_yields
+    hold_lock
+    cmds = [
+      "cat <<EOF\nx\nEOF\nrm lib/x.rb",
+      "grep -q x <<< foo\nrm lib/x.rb",
+      "cat <<-EOF\n\tbody\n\tEOF\nrm lib/x.rb",
+      "git read-tree -um HEAD~1",
+      "git symbolic-ref HEAD refs/heads/x",
+      "sed --in-place 's/a/b/' lib/x.rb"
+    ]
+    codes = cmds.map { |c| run_guard("Bash", {command: c}).first }
+
+    assert_equal Array.new(cmds.size, 2), codes
+  end
+
   def test_no_output_dir_allowed
     FileUtils.rm_rf(File.join(@cwd, "output"))
     code, _err = run_guard("Bash", {command: "git merge x"}, now: INSIDE_WINDOW)

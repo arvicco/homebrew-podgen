@@ -39,13 +39,18 @@ cmd_pos='(^|[;|&({!]|\$\(|(^|[[:space:];])(then|do|else)[[:space:]])[[:space:]]*
 matches() { grep -qE "$1" <<<"$2"; }
 
 # Command lines only: drop every heredoc body (from the line after a
-# `<<WORD` / `<<-'WORD'` opener up to and including the WORD line).
+# `<<WORD` / `<<-'WORD'` opener up to and including the WORD line; a
+# `<<-` body ends at a tab-indented WORD too). `<<<` here-strings are not
+# heredocs. A heredoc-looking token inside quoted text or `$((1<<n))` still
+# hides the lines after it (seatbelt).
 strip_heredocs() {
   awk '
-    skip { if ($0 == term) { skip = 0 }; next }
+    skip { t = $0; if (dash) { sub(/^\t+/, "", t) }; if (t == term) { skip = 0 }; next }
     { print }
-    match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*/) {
+    match($0, /(^|[^<])<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*/) {
       term = substr($0, RSTART, RLENGTH)
+      sub(/^[^<]/, "", term)
+      dash = (term ~ /^<<-/)
       sub(/^<<-?[[:space:]]*["'"'"']?/, "", term)
       skip = 1
     }' <<<"$1"
@@ -60,10 +65,10 @@ case "$tool" in
     lines=$(strip_heredocs "$cmd")
     # Branch moves / tree and history rewrites. `update-ref refs/cr/…` (the
     # review marker) stays allowed; HEAD or refs/heads/ is a branch move.
-    if matches "${git_prefix}(merge|cherry-pick|revert|switch|checkout|rebase|pull|reset|restore|apply|am|clean|checkout-index)([^[:alnum:]_-]|\$)" "$lines" \
+    if matches "${git_prefix}(merge|cherry-pick|revert|switch|checkout|rebase|pull|reset|restore|apply|am|clean|checkout-index|read-tree)([^[:alnum:]_-]|\$)" "$lines" \
       || matches "${git_prefix}branch[[:space:]]+(-f|--force|--delete|--move|--copy|-[mMcCdD])" "$lines" \
       || matches "${git_prefix}commit[^;|&]*--amend" "$lines" \
-      || matches "${git_prefix}update-ref([[:space:]]+-[^[:space:]]+)*[[:space:]]+(HEAD|refs/heads/)" "$lines"; then
+      || matches "${git_prefix}(update-ref|symbolic-ref)([[:space:]]+-[^[:space:]]+)*[[:space:]]+(HEAD|refs/heads/)" "$lines"; then
       guarded=true
     fi
     # `git stash` mutates unless it is `stash list|show`; strip the read-only
@@ -78,9 +83,9 @@ case "$tool" in
     # options, ruby -i/-pi), patch, and cp/mv/rm at a command position whose
     # arguments name one of those trees (a source path also matches —
     # conservative).
-    if matches "(^|[^=-])>>?\\|?[[:space:]]*${target}" "$lines" \
+    if matches "(^|[^=])>>?\|?[[:space:]]*${target}" "$lines" \
       || matches "(^|[[:space:]|;&/])tee[[:space:]][^;|&]*${target}" "$lines" \
-      || matches "((sed|perl)([[:space:]]+-[^[:space:]]*)*[[:space:]]+-[[:alnum:]]*i|ruby -p?i|patch )[^;|&]*${target}" "$lines" \
+      || matches "((sed|perl)([[:space:]]+-[^[:space:]]*)*[[:space:]]+(-[[:alnum:]]*i|--in-place)|ruby -p?i|patch )[^;|&]*${target}" "$lines" \
       || matches "${cmd_pos}(cp|mv|rm)[[:space:]][^;|&]*${target}" "$lines"; then
       guarded=true
     fi
