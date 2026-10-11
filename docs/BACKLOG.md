@@ -322,7 +322,7 @@ Done 2026-10-11: c6c0be3 (worktree implementation agent, diff reviewed
       Voicer ensure covers the assembly step only (TTS raise returns no
       paths to clean). Red-then-green on both tests; gate 3099+50 green.
 
-## P1-7 · Concurrency + retry semantics  [tier: implementation] [status: ready] [deps: --]
+## P1-7 · Concurrency + retry semantics  [tier: implementation] [status: done] [deps: --]
 Goal: shared result hashes in EngineManager/SourceManager written
       under a Mutex (or merged after join); unreachable raise removed;
       retry attempt count pinned then documented consistently across
@@ -330,6 +330,15 @@ Goal: shared result hashes in EngineManager/SourceManager written
       response exists.
 Acceptance: characterization first, minimal diff; multi-engine
       offline tests green.
+Done 2026-10-11: 9f2994f (worktree agent, diff reviewed). Rulings
+      accepted: Mutex around the shared writes (smaller diff than
+      merge-after-join); unreachable raise removed and the surviving
+      message pinned; attempt counts UNCHANGED — both mixins already agree
+      that max = retries after the first attempt (max 3 → 4 attempts), now
+      documented in both; retryable? prefers response.code when present,
+      else \b429\b|\b503\b. Note: the three engines raise plain
+      RuntimeErrors, so the status path is dormant until an error carries
+      a response.
 
 ## P1-8 · Freshness completeness  [tier: implementation] [status: ready] [deps: --]
 Goal: guidelines flag `freshness: off` honored by FreshnessValidator;
@@ -337,7 +346,7 @@ Goal: guidelines flag `freshness: off` honored by FreshnessValidator;
 Acceptance: flagged podcast validates clean; future-date fixture
       warns; existing freshness tests green.
 
-## P1-9 · Small-fix batch  [tier: implementation] [status: ready] [deps: --]
+## P1-9 · Small-fix batch  [tier: implementation] [status: done] [deps: --]
 Goal: normalize_url scheme match case-insensitive; TwitterAgent#
       truncate no dangling newline when url empty; ImageRanker comment
       matches code with the sort tuple pinned.
@@ -347,6 +356,13 @@ Rulings 2026-10-11: R1-e → an excluded episode is a normal outcome:
       exit 0 on both the ask-trim and the length-check paths (test pins
       both). Q-20 (duplicate StatsCommand#truncate) joins this batch —
       it emits a Ruby warning on every gate run.
+Done 2026-10-11: e94101a (worktree agent, diff reviewed). Ruling
+      accepted from the agent on R1-e: only the interactive length-check
+      EXCLUSION exits 0; the non-interactive length ABORT (no episode,
+      nothing excluded) keeps exit 1 so a scheduled run that produced
+      nothing stays visible. Q-12: the 2–20 range was right; the stale
+      parts were field names and a removed veto. Q-20: bodies equivalent,
+      duplicate removed, `ruby -w` warning count 2 → 0.
 
 ## P1-10 · Offline fixtures for network sources  [tier: implementation] [status: ready] [deps: --]
 Goal: recorded, trimmed fixtures for bluesky/hn/x/claude_web parse
@@ -382,7 +398,7 @@ Goal: `podgen status` prints one line per scheduled podcast (OK/OLD/
 Acceptance: fixtures → OLD / WARN / OK; install command printed,
       never executed by the agent.
 
-## P1-15 · Language-suffix detection restricted to configured languages  [tier: implementation] [status: ready] [deps: --]
+## P1-15 · Language-suffix detection restricted to configured languages  [tier: implementation] [status: done] [deps: --]
 Goal: a trailing "-xx" on an episode basename counts as a language
       suffix only when xx is one of the podcast's configured
       languages. Evidence 2026-10-11: only -es/-it/-jp exist on disk,
@@ -391,6 +407,11 @@ Acceptance: `pod-2026-01-01-ai.mp3` selected as English when no `ai`
       language is configured; before/after selection over the real
       output dirs identical (owner-run, printed diff empty); P0-5
       pinning tests green.
+Done 2026-10-11: 7e18103 (orchestrator). Before/after English selection
+      over all 7 real podcast dirs identical (suffixes on disk ⊆ configured
+      codes) — not a frozen-domain change. nil/empty language list keeps
+      the legacy rule. 5 tests red-then-green; one site-generator fixture
+      now configures es for its -es file.
 
 ## P1-16 · YouTube OAuth loopback flow replaces OOB  [tier: top — auth flow, owner-visible] [status: ready] [deps: --]
 Goal: loopback-redirect authorization replaces the discontinued
