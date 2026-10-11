@@ -211,7 +211,7 @@ currently R0-p, R0-o, R0-c…R0-n, P0-3 sign-off). Landed rulings:
 
 ---
 
-## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: P1-0, P1-12, P1-1, P1-3, P1-4/5/6/9/7 (parallelizable), P1-15, P1-13, P1-2, P1-8, P1-14, P1-10, P1-16; Gate 1 = owner-merged PR)
+## Phase 1 — correctness hardening — GATE 1 CLOSED 2026-10-11 12:57 (PR #2 merged at 94f0123; the post-merge tail 0ac7e8b…9192e1a rides phase-2 as carried edits) (plan signed 2026-10-11; execution order: P1-0, P1-12, P1-1, P1-3, P1-4/5/6/9/7 (parallelizable), P1-15, P1-13, P1-2, P1-8, P1-14, P1-10, P1-16; Gate 1 = owner-merged PR)
 
 ## P1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: done] [deps: --]
 Signed off 2026-10-10 (priority). Model IDs are hard-coded at 11
@@ -505,7 +505,7 @@ Done: 2026-10-10. Commit bdefdc8; 7 tests red-then-green; gate
       real surface (news generate on opus-5-5) is owner-run — see
       runbook in the handoff; not claimed here.
 
-## P1-17 · Episode titles are never truncated  [tier: top — listener-visible, owner-reported] [status: done] [deps: --]
+## P1-17 · Episode titles are never truncated  [tier: top — listener-visible, owner-reported] [status: landed on phase-2 (carried edit, merges at Gate 2) — live in the checkout since 19:12] [deps: --]
 Owner report 2026-10-11 18:xx: feed titles "GPT-6's Interface Bet and
 the CFTC…", "NVIDIA's Credit Risk and Strategy's…" — half-cut.
 Root cause: ScriptReviewer#check_title_length (since 9b2f5e3) cut any
