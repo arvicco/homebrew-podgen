@@ -7,6 +7,7 @@
 
 require_relative "../test_helper"
 require "source_registry"
+require "pathname"
 
 class TestSourceRegistryDrift < Minitest::Test
   LIB_DIR = File.expand_path("../../lib", __dir__)

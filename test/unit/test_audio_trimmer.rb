@@ -308,6 +308,9 @@ class TestAudioTrimmer < Minitest::Test
 
   def teardown
     FileUtils.rm_rf(@tmpdir)
+    %w[podgen_trimmed podgen_autotrimmed].each do |prefix|
+      FileUtils.rm_f(File.join(Dir.tmpdir, "#{prefix}_#{Process.pid}.mp3"))
+    end
   end
 
   # --- words_match? (characterization: array-zip semantics) ---

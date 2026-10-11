@@ -122,11 +122,11 @@ class TestTwitterAgent < Minitest::Test
   private
 
   def build_agent
-    saved = %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET].map do |k|
-      [k, ENV[k] || "test-#{k}"].tap { |_, _| ENV[k] ||= "test-#{k}" }
-    end
-    agent = TwitterAgent.new
-    saved.each { |k, v| v.start_with?("test-") ? ENV.delete(k) : ENV[k] = v }
-    agent
+    keys = %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET]
+    saved = keys.map { |k| [k, ENV[k]] }
+    keys.each { |k| ENV[k] ||= "test-#{k}" }
+    TwitterAgent.new
+  ensure
+    saved&.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
 end
