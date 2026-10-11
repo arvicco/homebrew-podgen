@@ -106,6 +106,25 @@ class TestAudioAssembler < Minitest::Test
     end
   end
 
+  # P1-4 (Q-01): the memo must not outlive the file it describes
+  def test_instance_probe_duration_refreshes_after_file_is_rewritten
+    skip_unless_command("ffmpeg")
+
+    Dir.mktmpdir("assembler_test") do |dir|
+      tone = File.join(dir, "tone.mp3")
+      generate_tone(tone, duration: 1)
+      assembler = AudioAssembler.new
+      first = assembler.probe_duration(tone)
+
+      sleep 1.1 # mtime resolution on HFS+/APFS-backed tmp can be 1s
+      generate_tone(tone, duration: 3)
+      second = assembler.probe_duration(tone)
+
+      assert_in_delta 1.0, first, 0.2
+      assert_in_delta 3.0, second, 0.2, "rewritten file must be re-probed, not served from the memo"
+    end
+  end
+
   def test_instance_probe_duration_raises_for_missing_file
     skip_unless_command("ffmpeg")
 

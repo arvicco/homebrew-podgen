@@ -58,6 +58,16 @@ class TestSubtitleGenerator < Minitest::Test
     assert_equal "Second sentence.", lines[6]
   end
 
+  # P1-4 (Q-05): generate_srt shares the guarded load path
+  def test_generate_srt_raises_corrupt_sidecar_error_for_truncated_json
+    ts = File.join(@tmpdir, "ep_timestamps.json")
+    File.write(ts, '{"segments": [{"start": 0.0, "end": 1.0, "te')
+
+    assert_raises(TimestampPersister::CorruptSidecarError) do
+      SubtitleGenerator.generate_srt(ts, File.join(@tmpdir, "ep.srt"))
+    end
+  end
+
   def test_generate_srt_empty_segments
     ts_path = write_timestamps([])
     srt_path = File.join(@tmpdir, "episode.srt")

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "timestamp_persister"
 
 # Generates SRT subtitle files from persisted timestamp data.
 # SRT is the standard format accepted by YouTube for caption uploads.
@@ -12,7 +13,7 @@ module SubtitleGenerator
   def self.generate_srt(timestamps_path, output_path)
     return nil unless File.exist?(timestamps_path)
 
-    data = JSON.parse(File.read(timestamps_path))
+    data = TimestampPersister.load(timestamps_path)
     segments = data["segments"] || []
 
     entries = []
