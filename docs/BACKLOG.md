@@ -504,3 +504,30 @@ Done: 2026-10-10. Commit bdefdc8; 7 tests red-then-green; gate
       3075+50 green; CI run 38071749573 green. Outcome check on the
       real surface (news generate on opus-5-5) is owner-run — see
       runbook in the handoff; not claimed here.
+
+## P1-17 · Episode titles are never truncated  [tier: top — listener-visible, owner-reported] [status: done] [deps: --]
+Owner report 2026-10-11 18:xx: feed titles "GPT-6's Interface Bet and
+the CFTC…", "NVIDIA's Credit Risk and Strategy's…" — half-cut.
+Root cause: ScriptReviewer#check_title_length (since 9b2f5e3) cut any
+title over 40 chars at a word boundary and appended "…" as an
+auto-fixed BLOCKER; the script prompt never stated a length limit, so
+the model could not comply; the AI reviewer's own NIT ("title is
+truncated with an ellipsis — complete it") was outranked by the
+deterministic cut. 13 fulgur_news episodes since 2026-04-16 shipped
+this way (№I-8).
+Goal: a title is listener-visible and stays whole, always; the 40-char
+      target moves to where the model can act on it (the prompt).
+Acceptance: over-length title → WARNING, title unchanged, no "…"
+      anywhere in a reviewer output (regression test on the 10-11
+      title); system prompt states "at most 40 characters",
+      "self-contained", "never cut it off" (test); truncate_title and
+      its characterization tests removed; gate + CI green; next
+      scheduled news run shows a whole title in feed.xml.
+Rulings (orchestrator): the limit stays a soft 40 (WARNING) rather
+      than a BLOCKER that could stall a scheduled run over cosmetics;
+      no AI-driven title rewrite added (scope). Repairing the 13
+      published titles is owner data → R1-n.
+Landed 2026-10-11: f002314. Gate 3178+50 green. CRPR delta APPROVED
+      (no warnings; nits — constant placement, 40 written in prompt and
+      constant, one redundant assert — accepted as is; pre-existing nil
+      title NoMethodError → Q-32).

@@ -176,6 +176,6 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 ## Current phase
 
 Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Phase 1
-AT GATE 1 (2026-10-11): all 17 packets landed on phase-1, CRPR
-APPROVED (refs/cr/reviewed = 47a7ebd), PR open — the owner merges;
+AT GATE 1 (2026-10-11): all 18 packets landed on phase-1 (P1-17 added
+after an owner report), CRPR APPROVED (refs/cr/reviewed = f002314), PR open — the owner merges;
 runbook .docs/GATE-1-RUNBOOK.md. Update this line at each gate.
