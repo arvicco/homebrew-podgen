@@ -7,6 +7,24 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-15, P1-9, P1-7 · 7e18103, e94101a, 9f2994f · P1-15
+(orchestrator): a trailing -xx is a language suffix only when the
+code is configured; nil/empty list keeps the legacy rule; wired into
+episode_basename, RSS (new languages: kwarg), site, and the feed/
+history validators; real-data before/after selection identical for
+all 7 podcasts. P1-9 (agent): normalize_url scheme case-insensitive;
+tweet truncate no dangling newline; ImageRanker comment matches code
++ sort tuple pinned; duplicate StatsCommand#truncate removed (gate
+warning gone); interactive length-check exclusion exits 0 — the
+non-interactive abort deliberately stays 1. P1-7 (agent): Mutex on
+EngineManager/SourceManager result writes with concurrency
+characterization tests; dead raise removed; retry contract documented
+(max = retries after first attempt, unchanged); retryable? by status
+code when available, word-boundary message match otherwise ("error
+id 14290" no longer retries). Gate 3119+50 green after each
+cherry-pick. Two agents ran concurrently in worktrees without
+conflict; orchestrator reviewed every lib diff before landing.
+
 2026-10-11 · P1-5 (Q-03, Q-04) · 6d4e859 · SubtitleReconciler#validate!
 accepts timestamp drift within 0.01 s (count mismatch still fatal);
 the three STT engines open the audio file once and close it in ensure
