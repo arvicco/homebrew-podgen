@@ -3,14 +3,15 @@
 Autonomous podcast generation pipeline (Ruby 3.4+, macOS): two
 pipelines (news, language) + Tell CLI/web. See README.md for usage and
 ARCHITECTURE.md for design — read ARCHITECTURE.md before any
-non-trivial task. Read docs/DEV-LOOP.md before any non-trivial task;
-docs/BACKLOG.md is the coordination state. Research/planning docs,
-phase plans (.docs/pXX-plan.md — full plan, owner-signed BEFORE a
-phase executes), the work queue (.docs/WORK-QUEUE.md, Q-xx items),
-and the open owner-decisions registry (.docs/DECISIONS.md, newest
-first, removed when ruled) live in gitignored .docs/ — internal
-communication never lands in the public repo; work reaches the
-tracked worklog only once executed.
+non-trivial task. Read docs/DEV-LOOP.md before any non-trivial task.
+BOARDS profile (owner ruling R1-k, 2026-10-11): ALL coordination state
+lives in gitignored .docs/ — the phase plan (.docs/pXX-plan.md: owner-
+signed BEFORE a phase executes; packet status + the phase worklog live
+in it), the work queue (.docs/WORK-QUEUE.md, Q-nn), the open rulings
+register (.docs/DECISIONS.md, R<phase>-<nn>, removed when ruled), the
+incident register (.docs/incident-register.md, I-n), closed plans in
+.docs/old-phases/. Internal workflow state never lands in the public
+repo; git history + plan docs are the record.
 
 ## Golden rules (non-negotiable)
 
@@ -95,7 +96,8 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
    self-review checklist below.
 4. **Commit on the phase branch** (`phase-N`), conventional message
    referencing the packet ID; tests in the same commit as the code.
-   Update docs/BACKLOG.md + docs/WORKLOG.md in the same sitting.
+   Update the packet's status + worklog line in .docs/pXX-plan.md in
+   the same sitting.
    Push the phase branch and watch CI (`gh run list`) — CI is the
    authority over the local toolchain.
 5. **Review before handoff.** Before a PR goes to the owner, run CRPR:
@@ -183,6 +185,6 @@ Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Gate 1
 CLOSED 2026-10-11 12:57 (owner merged PR #2 at 94f0123, merge 6d869e4).
 Six commits pushed to phase-1 AFTER that merge (P1-10 live-smoke fixes,
 v2 docs sync, P1-0 outcome, P1-17 title fix) were carried onto phase-2
-as the Gate 1 tail — they reach master at Gate 2. Phase 2 NOT YET
-SLATED (.docs/p02-plan.md draft awaits the owner's signature); PR #3 is
-the living gate document. Update this line at each gate.
+as the Gate 1 tail — they reach master at Gate 2. Phase 2 SIGNED
+2026-10-11 (option A + riders; .docs/p02-plan.md), executing on phase-2;
+PR #3 is the living gate document. Update this line at each gate.

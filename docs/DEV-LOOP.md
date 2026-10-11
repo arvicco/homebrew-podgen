@@ -50,14 +50,15 @@ checkout/reset of files the agent didn't create).
 
 ## 3. Work packets and the boards
 
-IDs: packets P<phase>-<n>, rulings R<phase>-<letter>, queue Q-n,
-incidents I-n. docs/BACKLOG.md + WORKLOG.md (tracked) carry packet
-status and executed work; gitignored .docs/ holds the phase plan
-(p<N>-plan.md — the owner's one surface per phase), WORK-QUEUE.md,
-DECISIONS.md (open rulings only, written for the decision-maker;
-ruled items removed entirely; CALENDAR + slate matters), and
-incident-register.md (a log, newest first). Whether to drop the
-tracked pair for the pure BOARDS profile is ruling R1-k.
+IDs: packets P<phase>-<n>, rulings R<phase>-<nn>, queue Q-n, incidents
+I-n. BOARDS profile (R1-k, 2026-10-11): gitignored .docs/ holds the
+phase plan (p<N>-plan.md — the owner's one surface per phase; packet
+status and the phase worklog live in it), WORK-QUEUE.md, DECISIONS.md
+(open rulings only, written for the decision-maker; ruled items
+removed entirely; CALENDAR + slate matters), incident-register.md (a
+log, newest first) and old-phases/ (closed plans; the pre-Phase-2
+docs/BACKLOG.md and WORKLOG.md are archived there as
+backlog-2026-10-11.md / worklog-2026-10-11.md).
 
 ## 4. Loop mechanics
 
