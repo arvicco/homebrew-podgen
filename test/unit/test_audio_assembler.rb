@@ -116,8 +116,8 @@ class TestAudioAssembler < Minitest::Test
       assembler = AudioAssembler.new
       first = assembler.probe_duration(tone)
 
-      sleep 1.1 # mtime resolution on HFS+/APFS-backed tmp can be 1s
       generate_tone(tone, duration: 3)
+      File.utime(Time.now + 5, Time.now + 5, tone) # force a newer mtime without sleeping
       second = assembler.probe_duration(tone)
 
       assert_in_delta 1.0, first, 0.2

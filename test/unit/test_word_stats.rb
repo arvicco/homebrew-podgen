@@ -14,6 +14,21 @@ class TestWordStats < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  def test_language_detection_builds_the_client_with_the_bounded_request_timeout
+    captured = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_| Struct.new(:content).new([Struct.new(:text).new("Slovenian")]) }
+    fake_client = Struct.new(:messages).new(fake_messages)
+    stats = WordStats.allocate
+    Anthropic::Client.stub(:new, ->(**kw) {
+      captured = kw
+      fake_client
+    }) do
+      stats.send(:ask_claude_for_language, "dober dan", %w[Slovenian Croatian])
+    end
+    assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
+  end
+
   def test_returns_empty_when_no_transcripts
     stats = WordStats.new(config: stub_config).build
     assert_equal [], stats

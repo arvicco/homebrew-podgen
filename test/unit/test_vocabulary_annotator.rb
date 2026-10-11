@@ -10,6 +10,19 @@ class TestVocabularyAnnotator < Minitest::Test
     @annotator = VocabularyAnnotator.new("test-key", model: "claude-sonnet-4-6")
   end
 
+  # --- CRPR W1 (P1-13): direct client sites carry the bounded timeout ---
+
+  def test_client_is_built_with_the_bounded_request_timeout
+    captured = nil
+    Anthropic::Client.stub(:new, ->(**kw) {
+      captured = kw
+      Object.new
+    }) do
+      VocabularyAnnotator.new("test-key", model: "m")
+    end
+    assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
+  end
+
   # --- model resolution ---
 
   def test_default_model_is_sonnet_when_no_env_set

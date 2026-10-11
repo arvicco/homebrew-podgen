@@ -20,7 +20,7 @@ module SubtitleReconciler
     model ||= ClaudeModels.for(:subtitle_reconciler)
     prompt = build_prompt(segments, reconciled_text)
 
-    client = Anthropic::Client.new(api_key: api_key)
+    client = Anthropic::Client.new(api_key: api_key, timeout: AnthropicClient::REQUEST_TIMEOUT)
     tokens = [4096, segments.length * 80].max
     response = client.messages.create(
       model: model,
