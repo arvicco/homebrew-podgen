@@ -570,6 +570,41 @@ class TestVocabularyAnnotator < Minitest::Test
     refute_match(/similar_translations.*Polish/, prompt)
   end
 
+  # --- P1-12 (Q-24): one malformed object must not discard the whole enrichment ---
+
+  def test_enrich_prompt_pins_english_key_names_regardless_of_target_language
+    prompt = @annotator.send(:enrich_prompt, "sl", "Russian")
+
+    assert_match(/exactly these JSON keys/i, prompt)
+    assert_match(/lemma, translation, definition/, prompt)
+    assert_match(/never translate (the )?key names/i, prompt)
+  end
+
+  def test_call_enrich_api_salvages_entries_before_a_malformed_object
+    good = ->(i) { %({"lemma":"w#{i}","translation":"t#{i}","definition":"d#{i}"}) }
+    objects = (1..80).map { |i| (i == 40) ? %({лемма: "w40", "translation":"t40","definition":"d40"}) : good.call(i) }
+    raw = "[\n" + objects.join(",\n") + "\n]"
+
+    text_block = Struct.new(:type, :text).new("text", raw)
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens).new(100, 5000, 0, 0)
+    message = Struct.new(:content, :stop_reason, :model, :usage).new([text_block], "end_turn", "test", usage)
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_| message }
+    logs = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| logs << m }
+    annotator = VocabularyAnnotator.new("test-key", model: "m", logger: logger)
+    annotator.instance_variable_get(:@client).stub(:messages, fake_messages) do
+      entries = (1..80).map { |i| { lemma: "w#{i}" } }
+      result = annotator.send(:call_enrich_api, entries, language: "sl", target_language: "Russian", filters: {})
+
+      assert_equal 39, result.length, "entries before the malformed object survive"
+      assert_equal "w39", result.last[:lemma]
+    end
+    assert logs.any? { |m| m.include?("WARNING") && m.include?("malformed") && m.include?("39") },
+      "expected one warning naming the salvage count, got: #{logs.inspect}"
+  end
+
   # --- enrich_entries (merge logic) ---
 
   def test_enrich_entries_merges_translation_into_entries
