@@ -2,6 +2,7 @@
 
 require_relative "../yaml_loader"
 require_relative "colors"
+require_relative "../claude_models"
 
 module Tell
   class Config
@@ -29,11 +30,6 @@ module Tell
     }.freeze
 
     VALID_GLOSS_MODELS = %w[opus sonnet haiku].freeze
-    GLOSS_MODEL_IDS = {
-      "opus"   => "claude-opus-4-7",
-      "sonnet" => "claude-sonnet-4-6",
-      "haiku"  => "claude-haiku-4-5-20251001"
-    }.freeze
     DEFAULT_GLOSS_MODEL = "opus"
 
     attr_reader :original_language, :target_language, :voice_id,
@@ -192,15 +188,22 @@ module Tell
       raise "Missing required config keys in #{CONFIG_PATH}: #{missing.join(', ')}"
     end
 
+    # "opus"/"sonnet"/"haiku" → the registry's current ID for that line;
+    # anything else is taken as a full model ID.
+    def resolve_model_alias(m)
+      name = m.to_s
+      VALID_GLOSS_MODELS.include?(name) ? ClaudeModels.line_id(name.to_sym) : name
+    end
+
     def resolve_gloss_model!(data)
       raw = ENV["TELL_GLOSS_MODEL"] || data.fetch("gloss_model", DEFAULT_GLOSS_MODEL)
-      @gloss_model = Array(raw).map { |m| GLOSS_MODEL_IDS.fetch(m.to_s, m.to_s) }
+      @gloss_model = Array(raw).map { |m| resolve_model_alias(m) }
     end
 
     def resolve_phonetic_model!(data)
       raw = ENV["TELL_PHONETIC_MODEL"] || data.fetch("phonetic_model", nil)
       if raw
-        @phonetic_model = Array(raw).map { |m| GLOSS_MODEL_IDS.fetch(m.to_s, m.to_s) }
+        @phonetic_model = Array(raw).map { |m| resolve_model_alias(m) }
       else
         # Default: first gloss model only (single-element array)
         @phonetic_model = [@gloss_model.first]

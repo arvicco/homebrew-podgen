@@ -4,6 +4,8 @@ require_relative "colors"
 require_relative "hints"
 require_relative "error_formatter"
 require_relative "../language_names"
+require_relative "../anthropic_client"
+require_relative "../claude_models"
 
 module Tell
 
@@ -60,7 +62,7 @@ module Tell
     def initialize(api_key)
       require "anthropic"
       @client = Anthropic::Client.new(api_key: api_key, timeout: 15, max_retries: 1)
-      @model = ENV.fetch("CLAUDE_MODEL", "claude-sonnet-4-6")
+      @model = ClaudeModels.for(:tell_translate)
     end
 
     def translate(text, from:, to:, hints: nil)
@@ -72,7 +74,7 @@ module Tell
         messages: [{ role: "user", content: prompt }]
       )
 
-      Tell.extract_translation(message.content.first.text)
+      Tell.extract_translation(AnthropicClient.text_of(message))
     end
   end
 

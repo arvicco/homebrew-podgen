@@ -40,15 +40,17 @@ class Voicer
     log("TTS complete#{label}: #{audio_paths.length} audio files")
     phase_end("TTS#{label}")
 
-    phase_start("Assembly#{label}")
-    assembler = AudioAssembler.new(logger: @logger)
-    assembler.assemble(audio_paths, output_path,
-                       intro_path: intro_path, outro_path: outro_path,
-                       metadata: { title: title, artist: author },
-                       segment_pause: segment_pause)
-    phase_end("Assembly#{label}")
-
-    audio_paths.each { |p| File.delete(p) if File.exist?(p) }
+    begin
+      phase_start("Assembly#{label}")
+      assembler = AudioAssembler.new(logger: @logger)
+      assembler.assemble(audio_paths, output_path,
+                         intro_path: intro_path, outro_path: outro_path,
+                         metadata: { title: title, artist: author },
+                         segment_pause: segment_pause)
+      phase_end("Assembly#{label}")
+    ensure
+      audio_paths.each { |p| File.delete(p) if File.exist?(p) }
+    end
     output_path
   end
 

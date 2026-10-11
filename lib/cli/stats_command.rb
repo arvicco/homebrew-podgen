@@ -544,9 +544,5 @@ module PodgenCLI
     def format_size(bytes)
       FormatHelper.format_size(bytes, mb_precision: 0)
     end
-
-    def truncate(str, max)
-      str.length > max ? str[0...max - 1] + "…" : str
-    end
   end
 end

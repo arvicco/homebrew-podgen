@@ -13,6 +13,23 @@ class TestAtomicWriter < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # --- Temp name uniqueness ---
+
+  def test_write_temp_names_unique_across_threads
+    tmp_names = Queue.new
+    original = File.method(:rename)
+    recorder = lambda do |src, dst|
+      tmp_names << src
+      original.call(src, dst)
+    end
+    File.stub(:rename, recorder) do
+      2.times.map { Thread.new { AtomicWriter.write(@path, "x") } }.each(&:join)
+    end
+
+    names = Array.new(tmp_names.size) { tmp_names.pop }
+    assert_equal 2, names.uniq.length
+  end
+
   # --- Basic write ---
 
   def test_write_creates_file

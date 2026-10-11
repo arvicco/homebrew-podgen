@@ -429,6 +429,22 @@ class TestScheduleCommand < Minitest::Test
     assert_equal "com.podcastagent.uploads", cmd.send(:label)
   end
 
+  # ── --status-check mode (P1-14) ──
+
+  def test_status_check_label_uses_singleton_name
+    cmd = PodgenCLI::ScheduleCommand.new(["--status-check"], {})
+    assert_equal "com.podcastagent.status", cmd.send(:label)
+  end
+
+  def test_status_check_plist_runs_status_wrapper_at_requested_time
+    cmd = PodgenCLI::ScheduleCommand.new(["--status-check", "--time", "07:15"], {})
+    plist = cmd.send(:build_status_check_plist)
+    assert_includes plist, "scripts/run_status.sh"
+    assert_includes plist, "<string>com.podcastagent.status</string>"
+    assert_match(%r{<key>Hour</key>\s*<integer>7</integer>}, plist)
+    assert_match(%r{<key>Minute</key>\s*<integer>15</integer>}, plist)
+  end
+
   def test_yt_batch_per_pod_label_unchanged_when_no_batch_flag
     cmd = PodgenCLI::ScheduleCommand.new(["pod_a"], {})
     assert_equal "com.podcastagent.pod_a", cmd.send(:label)

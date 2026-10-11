@@ -2,6 +2,8 @@
 
 require_relative "../test_helper"
 require "youtube_uploader"
+require "socket"
+require "stringio"
 
 class TestYouTubeUploader < Minitest::Test
   def setup
@@ -39,32 +41,129 @@ class TestYouTubeUploader < Minitest::Test
     expired_cred.define_singleton_method(:expired?) { true }
     expired_cred.define_singleton_method(:refresh!) { raise Signet::AuthorizationError.new("expired") }
 
-    # Use a real temp file as token store so delete actually works
-    tmpfile = Tempfile.new("yt_token")
-    tmpfile.write(JSON.dump("default" => "fake-token"))
-    tmpfile.close
-
     mock_token_store = Minitest::Mock.new
     mock_token_store.expect(:delete, nil, ["default"])
 
     mock_authorizer = Minitest::Mock.new
     mock_authorizer.expect(:get_credentials, expired_cred, ["default"])
-    mock_authorizer.expect(:get_authorization_url, "https://example.com", base_url: String)
 
-    uploader = YouTubeUploader.new
+    # P1-16: consent is a collaborator; here it yields no code
+    uploader = YouTubeUploader.new(consent: ->(_authorizer) { [nil, "http://127.0.0.1:1"] })
     Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
       Google::Auth::Stores::FileTokenStore.stub(:new, mock_token_store) do
-        $stdin.stub(:gets, nil) do
-          assert_raises(RuntimeError, /No authorization code/) { uploader.authorize! }
-        end
+        assert_raises(RuntimeError, /No authorization code/) { uploader.authorize! }
       end
     end
     mock_token_store.verify
     mock_authorizer.verify
   ensure
-    tmpfile&.unlink
     ENV["YOUTUBE_CLIENT_ID"] = original_id
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+  end
+
+  # --- P1-16: loopback consent replaces the discontinued OOB flow ---
+
+  def test_authorize_exchanges_the_code_against_the_loopback_redirect
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+
+    exchanged = nil
+    mock_authorizer = Object.new
+    mock_authorizer.define_singleton_method(:get_credentials) { |_| nil }
+    mock_authorizer.define_singleton_method(:get_and_store_credentials_from_code) do |**kw|
+      exchanged = kw
+      :creds
+    end
+    consent = ->(_authorizer) { ["code-abc", "http://127.0.0.1:4242"] }
+
+    uploader = YouTubeUploader.new(consent: consent)
+    Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
+      Google::Auth::Stores::FileTokenStore.stub(:new, Object.new) do
+        uploader.authorize!
+      end
+    end
+
+    assert_equal "code-abc", exchanged[:code]
+    assert_equal "http://127.0.0.1:4242", exchanged[:base_url], "code must be exchanged against the SAME redirect it was issued for"
+    assert_equal "default", exchanged[:user_id]
+    refute defined?(YouTubeUploader::OOB_URI), "OOB flow is gone"
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+  end
+
+  def test_loopback_consent_serves_the_callback_and_returns_code_and_redirect
+    out = StringIO.new
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://accounts.example/auth?redirect_uri=#{base_url}" }
+    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false)
+
+    result = nil
+    t = Thread.new { result = consent.call(authorizer) }
+    sleep 0.05 until consent.port # listener is up
+    sock = TCPSocket.new("127.0.0.1", consent.port)
+    sock.write("GET /?state=x&code=4%2Fthe-code HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+    response = sock.read
+    sock.close
+    t.join(5)
+
+    code, redirect = result
+    assert_equal "4/the-code", code, "code is URL-decoded"
+    assert_equal "http://127.0.0.1:#{consent.port}", redirect
+    assert response.start_with?("HTTP/1.1 200"), "callback must answer 200"
+    assert_includes response, "authorized"
+    assert_includes out.string, "https://accounts.example/auth?redirect_uri=http://127.0.0.1:#{consent.port}"
+  end
+
+  def test_loopback_consent_skips_an_idle_preconnect_socket_and_takes_the_real_callback
+    out = StringIO.new
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
+    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false, idle_timeout: 0.2)
+
+    result = nil
+    t = Thread.new { result = consent.call(authorizer) }
+    sleep 0.05 until consent.port
+    idle = TCPSocket.new("127.0.0.1", consent.port) # browser pre-connect: opens, sends nothing
+    sleep 0.3
+    real = TCPSocket.new("127.0.0.1", consent.port)
+    real.write("GET /?code=real-code HTTP/1.1\r\n\r\n")
+    real.read
+    real.close
+    idle.close
+    t.join(5)
+
+    assert_equal "real-code", result.first
+  end
+
+  def test_loopback_consent_gives_up_after_the_overall_wait
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
+    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false, wait: 0.2)
+
+    code, redirect = consent.call(authorizer)
+
+    assert_nil code
+    assert_match(/\Ahttp:\/\/127\.0\.0\.1:\d+\z/, redirect)
+  end
+
+  def test_loopback_consent_returns_nil_code_when_callback_has_no_code
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
+    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false)
+
+    result = nil
+    t = Thread.new { result = consent.call(authorizer) }
+    sleep 0.05 until consent.port
+    sock = TCPSocket.new("127.0.0.1", consent.port)
+    sock.write("GET /?error=access_denied HTTP/1.1\r\n\r\n")
+    sock.read
+    sock.close
+    t.join(5)
+
+    assert_nil result.first
   end
 
   # --- upload_video ---

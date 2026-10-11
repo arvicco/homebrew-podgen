@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 require "subtitle_reconciler"
 
 class TestSubtitleReconciler < Minitest::Test
@@ -110,9 +111,51 @@ class TestSubtitleReconciler < Minitest::Test
     SubtitleReconciler.validate!(reconciled, original) # should not raise
   end
 
+  def test_validate_accepts_float_reserialization_drift
+    original = [{ "start" => 7.7, "end" => 12.3, "text" => "Old." }]
+    reconciled = [{ "start" => 7.7 + 1e-6, "end" => 12.3 - 1e-6, "text" => "New." }]
+
+    SubtitleReconciler.validate!(reconciled, original) # should not raise
+  end
+
+  def test_validate_rejects_drift_beyond_epsilon
+    original = [{ "start" => 7.7, "end" => 12.3, "text" => "Old." }]
+    reconciled = [{ "start" => 7.75, "end" => 12.3, "text" => "New." }]
+
+    assert_raises(SubtitleReconciler::ReconciliationError) do
+      SubtitleReconciler.validate!(reconciled, original)
+    end
+  end
+
+  def test_validate_count_mismatch_still_fails_with_matching_timestamps
+    original = [{ "start" => 0.0, "end" => 5.0, "text" => "A." }, { "start" => 5.0, "end" => 6.0, "text" => "B." }]
+    reconciled = [{ "start" => 0.0, "end" => 5.0, "text" => "A." }]
+
+    err = assert_raises(SubtitleReconciler::ReconciliationError) do
+      SubtitleReconciler.validate!(reconciled, original)
+    end
+    assert_match(/count mismatch/, err.message)
+  end
+
   # --- reconcile (stubbed API) ---
 
   # --- model resolution ---
+
+  def test_reconcile_builds_the_client_with_the_bounded_request_timeout
+    captured = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**_|
+      Struct.new(:content).new([Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))])
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+    Anthropic::Client.stub(:new, ->(**kw) {
+      captured = kw
+      fake_client
+    }) do
+      SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k", model: "m")
+    end
+    assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
+  end
 
   def test_reconcile_uses_default_model_when_no_env_or_arg
     prev = ENV.delete("CLAUDE_RECONCILER_MODEL")
@@ -128,7 +171,7 @@ class TestSubtitleReconciler < Minitest::Test
     Anthropic::Client.stub(:new, fake_client) do
       SubtitleReconciler.reconcile([{ "start" => 0.0, "end" => 1.0, "text" => "y" }], "x", api_key: "k")
     end
-    assert_equal "claude-sonnet-4-6", captured_model
+    assert_equal ClaudeModels.for(:subtitle_reconciler), captured_model
   ensure
     ENV["CLAUDE_RECONCILER_MODEL"] = prev if prev
   end

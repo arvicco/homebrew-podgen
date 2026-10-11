@@ -28,12 +28,17 @@ module Transcription
     end
 
     def retryable?(error)
+      status = (error.response.code.to_i if error.respond_to?(:response) && error.response.respond_to?(:code))
+      return [429, 503].include?(status) if status&.positive?
+
       message = error.message.to_s
-      message.include?("429") || message.include?("503") ||
+      message.match?(/\b(?:429|503)\b/) ||
         error.is_a?(Net::OpenTimeout) || error.is_a?(Net::ReadTimeout) ||
         error.is_a?(Errno::ETIMEDOUT)
     end
 
+    # Same contract as Retryable#with_retries: MAX_RETRIES is the number of
+    # retries after the first attempt (3 => up to 4 attempts).
     def with_engine_retries
       retries = 0
       begin

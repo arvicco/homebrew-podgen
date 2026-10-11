@@ -62,12 +62,18 @@ class HttpDownloader
 
   def write_body(response, path, uri)
     bytes = 0
-    File.open(path, "wb") do |f|
-      response.read_body do |chunk|
-        bytes += chunk.bytesize
-        raise "Download exceeds #{@max_size / (1024 * 1024)} MB limit" if bytes > @max_size
-        f.write(chunk)
+    tmp = "#{path}.part.#{Process.pid}"
+    begin
+      File.open(tmp, "wb") do |f|
+        response.read_body do |chunk|
+          bytes += chunk.bytesize
+          raise "Download exceeds #{@max_size / (1024 * 1024)} MB limit" if bytes > @max_size
+          f.write(chunk)
+        end
       end
+      File.rename(tmp, path)
+    ensure
+      File.delete(tmp) if File.exist?(tmp)
     end
     log("Downloaded #{bytes} bytes → #{path}")
   end

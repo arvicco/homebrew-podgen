@@ -42,7 +42,7 @@ class RssGenerator
     allocate
   end
 
-  def initialize(episodes_dir:, feed_path:, title: "Podcast", description: nil, author: "Podcast Agent", language: "en", base_url: nil, image: nil, history_path: nil, logger: nil)
+  def initialize(episodes_dir:, feed_path:, title: "Podcast", description: nil, author: "Podcast Agent", language: "en", languages: nil, base_url: nil, image: nil, history_path: nil, logger: nil)
     @logger = logger
     @episodes_dir = episodes_dir
     @feed_path = feed_path
@@ -50,6 +50,7 @@ class RssGenerator
     @description = description
     @author = author
     @language = language
+    @languages = languages # configured codes; nil keeps the legacy any-suffix rule
     @base_url = base_url&.chomp("/")
     @image = image
     @title_map, @timestamp_map, @duration_map = HistoryMaps.build(
@@ -82,7 +83,7 @@ class RssGenerator
   private
 
   def scan_episodes
-    EpisodeFiltering.episodes_for_language(@episodes_dir, @language)
+    EpisodeFiltering.episodes_for_language(@episodes_dir, @language, languages: @languages)
       .sort
       .reverse
       .filter_map do |path|

@@ -11,6 +11,10 @@ require "json"
 #
 # Segments are adjusted: original_start + intro_duration.
 module TimestampPersister
+  # A truncated/corrupt *_timestamps.json (P1-4, Q-05). Subclass of StandardError so
+  # existing `rescue => e` sites in the runner/regen keep their statuses.
+  class CorruptSidecarError < StandardError; end
+
   VERSION = 1
 
   # Persist segments to a JSON file, adjusting timestamps for intro offset.
@@ -61,6 +65,8 @@ module TimestampPersister
   def self.load(path)
     return nil unless File.exist?(path)
     JSON.parse(File.read(path))
+  rescue JSON::ParserError => e
+    raise CorruptSidecarError, "corrupt timestamps sidecar #{path}: #{e.message[0, 80]}"
   end
 
   # Extract the best available segments from a transcription result.

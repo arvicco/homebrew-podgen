@@ -17,7 +17,9 @@ module Retryable
 
   # Yields the block, retrying on specified exceptions with exponential backoff.
   #
-  # @param max [Integer] Maximum number of retries (default: 3)
+  # @param max [Integer] Maximum number of RETRIES after the first attempt
+  #   (default: 3), so `max: 3` makes up to 4 attempts in total. Transcription::BaseEngine
+  #   #with_engine_retries follows the same contract.
   # @param on [Array<Class>] Exception classes to retry on
   # @param label [String] Name for error messages (e.g. "TTSAgent")
   def with_retries(max: 3, on: [StandardError], label: self.class.name&.split("::")&.last)

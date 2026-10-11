@@ -13,7 +13,7 @@ class DescriptionAgent
 
   def initialize(logger: nil)
     @logger = logger
-    init_anthropic_client(env_key: "CLAUDE_DESCRIPTION_MODEL", default_model: "claude-sonnet-4-6")
+    init_anthropic_client(role: :description)
   end
 
   # Cleans a YouTube/RSS episode title by stripping category prefixes, labels, and noise.
@@ -36,7 +36,7 @@ class DescriptionAgent
       )
     end
 
-    result = message.content.first.text.strip
+    result = AnthropicClient.text_of(message).strip
     log_api_usage("Description clean_title", message, elapsed)
 
     if result.empty?
@@ -83,7 +83,7 @@ class DescriptionAgent
       )
     end
 
-    result = message.content.first.text.strip
+    result = AnthropicClient.text_of(message).strip
     log_api_usage("Description clean", message, elapsed)
 
     if result.empty?
@@ -117,7 +117,7 @@ class DescriptionAgent
       )
     end
 
-    result = message.content.first.text.strip
+    result = AnthropicClient.text_of(message).strip
     log_api_usage("Description generate_title", message, elapsed)
 
     if result.empty?
@@ -154,7 +154,7 @@ class DescriptionAgent
       )
     end
 
-    result = message.content.first.text.strip
+    result = AnthropicClient.text_of(message).strip
     log_api_usage("Description generate", message, elapsed)
 
     log("Description generated: #{result.length} chars")

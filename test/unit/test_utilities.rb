@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 require "stringio"
 
 # Tests for utility classes/modules that previously lacked coverage:
@@ -286,10 +287,10 @@ class TestUtilities < Minitest::Test
 
     klass = Class.new { include AnthropicClient }
     obj = klass.new
-    obj.send(:init_anthropic_client)
+    obj.send(:init_anthropic_client, role: :script)
 
     assert_kind_of Anthropic::Client, obj.instance_variable_get(:@client)
-    assert_equal ENV.fetch("CLAUDE_MODEL", "claude-opus-4-7"), obj.instance_variable_get(:@model)
+    assert_equal ClaudeModels.for(:script), obj.instance_variable_get(:@model)
   end
 
   def test_anthropic_client_custom_env_key
@@ -298,9 +299,9 @@ class TestUtilities < Minitest::Test
 
     klass = Class.new { include AnthropicClient }
     obj = klass.new
-    obj.send(:init_anthropic_client, env_key: "CLAUDE_WEB_MODEL", default_model: "claude-haiku-4-5-20251001")
+    obj.send(:init_anthropic_client, role: :web_search)
 
-    expected = ENV.fetch("CLAUDE_WEB_MODEL", "claude-haiku-4-5-20251001")
+    expected = ClaudeModels.for(:web_search)
     assert_equal expected, obj.instance_variable_get(:@model)
   end
 

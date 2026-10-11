@@ -78,7 +78,7 @@ class ScriptReviewer
     @priority_urls = Array(priority_urls)
     @guidelines = guidelines
     @logger = logger
-    init_anthropic_client(env_key: "CLAUDE_REVIEWER_MODEL")
+    init_anthropic_client(role: :reviewer)
   end
 
   # Main entry point.
@@ -452,7 +452,7 @@ class ScriptReviewer
   end
 
   def normalize_url(url)
-    url.to_s.sub(%r{https?://}, "").sub(/\/$/, "").downcase
+    url.to_s.sub(%r{https?://}i, "").sub(/\/$/, "").downcase
   end
 
   def format_research(research_data)

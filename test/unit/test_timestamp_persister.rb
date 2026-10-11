@@ -128,6 +128,15 @@ class TestTimestampPersister < Minitest::Test
     assert_equal 1, data["segments"].length
   end
 
+  # P1-4 (Q-05): a truncated/corrupt sidecar must surface as a named error, not a raw ParserError
+  def test_load_raises_corrupt_sidecar_error_for_truncated_json
+    path = File.join(@tmpdir, "ep_timestamps.json")
+    File.write(path, '{"segments": [{"start": 0.0, "end": 1.0, "te')
+
+    err = assert_raises(TimestampPersister::CorruptSidecarError) { TimestampPersister.load(path) }
+    assert_includes err.message, path
+  end
+
   def test_load_returns_nil_for_missing_file
     assert_nil TimestampPersister.load(File.join(@tmpdir, "nonexistent.json"))
   end

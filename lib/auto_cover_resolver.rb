@@ -20,7 +20,7 @@ class AutoCoverResolver
     auto_cover_min_bytes: 20_000,
     auto_cover_min_score: 14,
     auto_cover_candidates: 5,
-    auto_cover_model: "claude-sonnet-4-6"
+    auto_cover_model: nil # nil → ImageRanker default (registry role :image_rank)
   }.freeze
 
   def initialize(config: nil, searcher: nil, ranker: nil, logger: nil)

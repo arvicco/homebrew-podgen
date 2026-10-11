@@ -8,6 +8,7 @@ require "optparse"
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "time_value")
+require_relative File.join(root, "lib", "connectivity")
 require_relative File.join(root, "lib", "snip_interval")
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "logger")
@@ -72,6 +73,7 @@ module PodgenCLI
         @pipeline_start = Time.now
 
         verify_ffmpeg!(@logger) unless @dry_run
+        preflight_network!(@logger) unless @dry_run
 
         return run_language_pipeline if @config.type == "language"
 
@@ -524,6 +526,15 @@ module PodgenCLI
       summary = "[dry-run] Config validated, #{topics.length} topics, #{total_findings} stub findings, #{script[:segments].length} segments, #{languages.length} language(s) — no API calls made"
       @logger.log(summary)
       puts summary unless @options[:verbosity] == :quiet
+    end
+
+    # One DNS lookup before any phase: a dead network fails here in seconds
+    # with a single line instead of hours of stacked retries (P1-13).
+    def preflight_network!(logger)
+      Connectivity.preflight!
+    rescue Connectivity::PreflightError => e
+      logger.error(e.message)
+      raise
     end
 
     def verify_ffmpeg!(logger)
