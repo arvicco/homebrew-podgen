@@ -2,7 +2,7 @@
 
 Flat, human-editable packets; the loop's entire coordination state.
 Statuses: ready → in-progress → done | blocked: <reason>.
-Packet IDs: M<phase>-<n>. Decision items: D<phase>-<letter> — OPEN
+Packet IDs: P<phase>-<n>. Decision items: R<phase>-<letter> — OPEN
 items live in .docs/DECISIONS.md (gitignored, newest first, removed
 when ruled); the ruling is recorded inline in the affected packet.
 Research/planning docs, the work queue (.docs/WORK-QUEUE.md, Q-xx
@@ -14,7 +14,7 @@ appends one worklog paragraph per completed packet.
 
 Packet format:
 
-## M0-1 · <title>  [tier: <model-or-role>] [status: ready] [deps: --]
+## P0-1 · <title>  [tier: <model-or-role>] [status: ready] [deps: --]
 Goal: <one testable outcome>
 Acceptance: <the machine-checkable oracle: which tests/checks prove it>
 
@@ -23,7 +23,7 @@ Acceptance: <the machine-checkable oracle: which tests/checks prove it>
 ## Phase 00 — conventions & loop infrastructure (owner ruling 2026-08-25:
 land these before the rest of Phase 0)
 
-## M00-1 · .docs workspace + decisions registry  [tier: top] [status: done] [deps: --]
+## P00-1 · .docs workspace + decisions registry  [tier: top] [status: done] [deps: --]
 Goal: gitignored .docs/ holding research/planning docs; open owner
       decisions in .docs/DECISIONS.md (newest first, removed when
       ruled); TOOL-REVIEW.md relocated; dev-loop plugin templates
@@ -32,7 +32,7 @@ Acceptance: .docs/ ignored by git; DECISIONS.md seeded with all open
       items; no tracked process artifacts beyond BACKLOG/WORKLOG.
 Done: 2026-08-25.
 
-## M00-2 · Verification-discipline + alarm doc sync  [tier: implementation] [status: done] [deps: --]
+## P00-2 · Verification-discipline + alarm doc sync  [tier: implementation] [status: done] [deps: --]
 Goal: CLAUDE.md gains discipline items 5 (specific verification asks)
       and 6 (commit owner-session data immediately); DEV-LOOP.md §4
       gains the ring-for-owner alarm step.
@@ -40,7 +40,7 @@ Acceptance: both docs match the dev-loop skill's six-item discipline;
       gate green (docs-only).
 Done: 2026-08-25.
 
-## M00-3 · Source registry  [tier: top — first-of-family seam design] [status: done] [deps: --]
+## P00-3 · Source registry  [tier: top — first-of-family seam design] [status: done] [deps: --]
 Goal: lib/source_registry.rb registering every hard-coded external
       endpoint (name, probe URL, expected shape); a gate-tier drift
       test that scans lib/ for known HTTP hosts and fails on any
@@ -53,11 +53,11 @@ Acceptance: drift test red on a seeded unregistered endpoint, green
       HN-Algolia/Bluesky/socialdata/Exa/Telegram/Cloudflare/DDG);
       gate green; probe task green once. Note: per-podcast RSS feeds
       (RTVSLO etc.) are guidelines.md config, not hard-coded — covered
-      by podgen validate + M00-4, not the registry.
+      by podgen validate + P00-4, not the registry.
 Done: 2026-08-25. `rake health` 14/14 OK (elevenlabs probe URL fixed
       after first live run).
 
-## M00-4 · Content-progress (freshness) invariant  [tier: implementation] [status: done] [deps: --]
+## P00-4 · Content-progress (freshness) invariant  [tier: implementation] [status: done] [deps: --]
 Goal: lib/validators/freshness_validator.rb wired into podgen
       validate: newest episode date in the generated feed vs wall
       clock against the podcast's cadence; stale output trips an OLD
@@ -71,18 +71,18 @@ Done: 2026-08-25. Outcome check on REAL data: lahko_noc trips
       six other podcasts validate fresh. Cadence inferred from
       history median gap (no config addition needed).
 
-## M00-5 · ask-trim preview player: open → ffplay  [tier: top] [status: done — REJECTED by owner, reverted] [deps: --]
-History: D0-q diagnosed `open`→Apple Music importing soon-deleted temp
+## P00-5 · ask-trim preview player: open → ffplay  [tier: top] [status: done — REJECTED by owner, reverted] [deps: --]
+History: R0-q diagnosed `open`→Apple Music importing soon-deleted temp
 mp3s (394 dead library entries, beachballs). ffplay swap implemented
 2026-08-30, rejected same day: ffplay's transport is not usable for
 finding cut-off points; Music's interactive controls are the
 requirement. Commit 5bfca6e reverted. Ruling (2026-08-30): Music
 STAYS the preview player; mitigate the library pollution instead —
-research is D0-r in .docs/DECISIONS.md, implementation packet to be
+research is R0-r in .docs/DECISIONS.md, implementation packet to be
 elaborated after the ruling.
 
-## M00-6 · ask-trim preview via Quick Look  [tier: top — owner-facing UX] [status: done] [deps: --]
-Ruling D0-r (2026-08-30): owner trialled `qlmanage -p` on a real
+## P00-6 · ask-trim preview via Quick Look  [tier: top — owner-facing UX] [status: done] [deps: --]
+Ruling R0-r (2026-08-30): owner trialled `qlmanage -p` on a real
 episode and approved it (option B); Music-cleanup options A/D not
 needed since nothing is imported anymore.
 Goal: `--ask-trim` previews via Quick Look instead of `open`→Music:
@@ -95,11 +95,11 @@ Acceptance: unit tests pin preview command = qlmanage -p, background
       characterization tests green via the start_preview seam; gate
       green. Owner already exercised the player on the real surface.
 Done: 2026-08-30. Tests red-then-green; gate 2958+50 green.
-SUPERSEDED by M00-7: owner's real-run check found qlmanage neither
+SUPERSEDED by P00-7: owner's real-run check found qlmanage neither
 takes focus nor auto-plays (headless tool; autoplay would need an
 Accessibility-gated keystroke hack).
 
-## M00-7 · ask-trim preview via QuickTime Player  [tier: top — owner-facing UX] [status: done] [deps: M00-6]
+## P00-7 · ask-trim preview via QuickTime Player  [tier: top — owner-facing UX] [status: done] [deps: P00-6]
 Ruling (2026-08-31): owner trialled the corrected QT AppleScript
 (launch via `open -a` to dodge the -600 tell-before-registered race,
 then scripted `play`) on a real episode and approved.
@@ -120,25 +120,25 @@ Done: 2026-08-31. Tests red-then-green (3 errors → green); gate
 
 ## Phase 0 — inventory, gate + safety net
 
-## M0-1 · The gate command  [tier: implementation] [status: done] [deps: --]
+## P0-1 · The gate command  [tier: implementation] [status: done] [deps: --]
 Goal: one command (`bundle exec rake gate`) = ruby syntax check over
       lib/bin/test + test:unit + test:integration_offline; wired as
-      the pre-commit gate; CI wiring follows in M0-2.
+      the pre-commit gate; CI wiring follows in P0-2.
 Acceptance: gate red on a seeded syntax violation, green on HEAD.
 Done: 2026-07-27 as part of the dev-loop migration commit.
 
-## M0-2 · Gate in CI  [tier: implementation] [status: done] [deps: M0-1]
+## P0-2 · Gate in CI  [tier: implementation] [status: done] [deps: P0-1]
 Goal: CI runs `bundle exec rake gate` (not just unit tests) on every
       pushed head; phase branches included.
 Acceptance: a pushed commit shows the gate job green in `gh run list`;
       a deliberately red gate fails CI (red case proven locally in
-      M0-1's seeded-violation check — same task CI invokes).
+      P0-1's seeded-violation check — same task CI invokes).
 Done: 2026-07-27. Gate gained standardrb (matching the old CI lint
       step); ci.yml triggers on phase-* pushes and runs the gate as
       one step. Note: COVERAGE=1 now spans the whole gate, so
       simplecov also sees the offline integration tier.
 
-## M0-3 · Module inventory memo  [tier: top] [status: done] [deps: --]
+## P0-3 · Module inventory memo  [tier: top] [status: done] [deps: --]
 Signed off 2026-09-01 (§2 bugs → work queue Q-01…Q-12; §3 dead code
 kept, Q-13; §8 seeds accepted unstruck). Same ruling: leaked queue
 commit stays in history ("no big deal"); future phases get a full
@@ -150,7 +150,7 @@ Goal: .docs/TOOL-REVIEW.md — per-module purpose, contracts, maturity,
       owner; agreed findings seed Phase 1.
 Acceptance: owner sign-off recorded here.
 
-## M0-4 · Characterization audit + safety net  [tier: implementation] [status: done] [deps: M0-1, M0-3]
+## P0-4 · Characterization audit + safety net  [tier: implementation] [status: done] [deps: P0-1, P0-3]
 Goal: audit which pure logic (parsers, formatters, splitters, schema
       builders — the memo's "pure logic" list) lacks pinning tests;
       add characterization tests for the gaps. Zero production diffs.
@@ -162,7 +162,7 @@ Done: 2026-09-01. Audit: 37/67 targets directly covered, 9 acceptably
       by orchestrator). git diff lib/ empty. Gate 3068+50 green.
       8 latent-bug candidates pinned and queued (Q-14…Q-21, unruled).
 
-## M0-5 · Contract pinning tests  [tier: implementation] [status: done] [deps: M0-3]
+## P0-5 · Contract pinning tests  [tier: implementation] [status: done] [deps: P0-3]
 Goal: explicit pinning tests for the frozen domain: RSS item shape,
       episode guid/basename scheme, history.yml / uploads.yml /
       *_timestamps.json schemas. These become the oracles that let
@@ -175,7 +175,7 @@ Done: 2026-09-01. test/unit/test_frozen_contracts.rb: 5 tests / 34
       timestamps schema + reconciled-flag additivity. Oracle proven:
       red on a seeded extra feed element, green on HEAD.
 
-## M0-6 · README honesty pass  [tier: implementation] [status: done — owner acceptance at Gate 0] [deps: M0-3]
+## P0-6 · README honesty pass  [tier: implementation] [status: done — owner acceptance at Gate 0] [deps: P0-3]
 Goal: README.md current and honest about what works today, including
       manual steps.
 Acceptance: owner accepts at Gate 0.
@@ -191,29 +191,29 @@ Done: 2026-09-01. Updated: --ask-trim documented as QuickTime preview
 
 ## Decision items
 Open items: .docs/DECISIONS.md (gitignored registry, newest first —
-currently D0-p, D0-o, D0-c…D0-n, M0-3 sign-off). Landed rulings:
-- D0-a Git model (2026-07-27): phase branches + human-merged PRs
+currently R0-p, R0-o, R0-c…R0-n, P0-3 sign-off). Landed rulings:
+- R0-a Git model (2026-07-27): phase branches + human-merged PRs
   close gates; no agent pushes to master; releases are owner gate
   actions. Encoded in CLAUDE.md golden rule 3.
-- D0-b Frozen domain (2026-07-27): feed/site contracts + guid/basename
+- R0-b Frozen domain (2026-07-27): feed/site contracts + guid/basename
   scheme + history/uploads/timestamps schemas. Encoded in CLAUDE.md
   golden rule 4.
 - Phase-00 ruling (2026-08-25): conventions/infrastructure packets
-  (M00-1…4) land before the rest of Phase 0.
-- D0-p (2026-09-01): stray worktree commit 6dd5ba8 DISCARDED
+  (P00-1…4) land before the rest of Phase 0.
+- R0-p (2026-09-01): stray worktree commit 6dd5ba8 DISCARDED
   (worktree + branch deleted); merged refactor/dry-and-test-coverage
   pruned local + origin.
-- D0-o (2026-09-01): dead-code batch KEPT documented — review item
+- R0-o (2026-09-01): dead-code batch KEPT documented — review item
   Q-13 in the work queue.
-- D0-c…D0-n (2026-09-01): twelve inventory bugs formulated as work
+- R0-c…R0-n (2026-09-01): twelve inventory bugs formulated as work
   queue items Q-01…Q-12 (fix packets cut from the queue when
   scheduled).
 
 ---
 
-## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: M1-0, M1-12, M1-1, M1-3, M1-4/5/6/9/7 (parallelizable), M1-13, M1-2, M1-8, M1-14, M1-10; Gate 1 = owner-merged PR)
+## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: P1-0, P1-12, P1-1, P1-3, P1-4/5/6/9/7 (parallelizable), P1-13, P1-2, P1-8, P1-14, P1-10; Gate 1 = owner-merged PR)
 
-## M1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: ready] [deps: --]
+## P1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: ready] [deps: --]
 Signed off 2026-10-10 (priority). Model IDs are hard-coded at 11
 sites in 8 files with ad-hoc ENV overrides (three sites have none).
 Goal: lib/claude_models.rb holds LINES (opus/sonnet/haiku → current
@@ -228,7 +228,7 @@ Acceptance: unit test greps lib/ — model literals only in
       bajke + one news generate end to end on the bumped lines
       (owner-run); gate + CI green.
 
-## M1-1 · Permission-profile audit  [tier: top — guardrail security] [status: ready] [deps: --]
+## P1-1 · Permission-profile audit  [tier: top — guardrail security] [status: ready] [deps: --]
 Goal: every invocation path to each HUMAN-action command (direct,
       bundle exec, ruby, ./bin, rake) is denied by settings.json;
       `bundle exec ruby*` allow narrowed to the test-runner form.
@@ -236,40 +236,40 @@ Acceptance: written path×rule matrix in .docs; every HUMAN action
       denied on every path (rule tracing); no legit dev command newly
       blocked.
 
-## M1-2 · UploadsCommand boundary + observability  [tier: implementation] [status: ready] [deps: --]
+## P1-2 · UploadsCommand boundary + observability  [tier: implementation] [status: ready] [deps: --]
 Goal: invalid --mode rejected in initialize (before any side effect);
       round-robin total rounds capped at the initial pending sum; one
       log line per pod on permanent-skip drain.
 Acceptance: mode typo exits 2 with zero publisher calls; round cap and
       drain log pinned by tests.
 
-## M1-3 · Test-hygiene batch  [tier: implementation] [status: ready] [deps: --]
+## P1-3 · Test-hygiene batch  [tier: implementation] [status: ready] [deps: --]
 Goal: ENV save/restore for PODGEN_ROOT and TWITTER_*; audio_trimmer
       tmp litter cleaned; explicit pathname require in the drift test;
       CI concurrency group (one run per push with an open PR).
 Acceptance: full suite green under three seeds; single CI run per push.
 
-## M1-4 · Sidecar + probe reliability  [tier: implementation] [status: ready] [deps: --]
+## P1-4 · Sidecar + probe reliability  [tier: implementation] [status: ready] [deps: --]
 Goal: one guarded JSON load for *_timestamps.json shared by persister
       and subtitle generator; AudioAssembler probe_duration has one
       failure contract and a cache that invalidates on mtime/size.
 Acceptance: corrupt sidecar → named error, not ParserError; rewritten
       file probes fresh.
 
-## M1-5 · STT robustness  [tier: implementation] [status: ready] [deps: --]
+## P1-5 · STT robustness  [tier: implementation] [status: ready] [deps: --]
 Goal: timestamp epsilon in SubtitleReconciler#validate!; engine file
       handles closed; temp names unique per thread in engines,
       AudioTrimmer, AtomicWriter.
 Acceptance: 1e-6-drift reconcile fixture passes; fd count stable
       across stubbed retries; concurrent temp-name uniqueness test.
 
-## M1-6 · File hygiene  [tier: implementation] [status: ready] [deps: --]
+## P1-6 · File hygiene  [tier: implementation] [status: ready] [deps: --]
 Goal: HttpDownloader writes temp + rename (no partial on size abort);
       Voicer segment cleanup in ensure.
 Acceptance: size-cap abort leaves no destination file; assemble raise
       leaves no segment temps.
 
-## M1-7 · Concurrency + retry semantics  [tier: implementation] [status: ready] [deps: --]
+## P1-7 · Concurrency + retry semantics  [tier: implementation] [status: ready] [deps: --]
 Goal: shared result hashes in EngineManager/SourceManager written
       under a Mutex (or merged after join); unreachable raise removed;
       retry attempt count pinned then documented consistently across
@@ -278,27 +278,27 @@ Goal: shared result hashes in EngineManager/SourceManager written
 Acceptance: characterization first, minimal diff; multi-engine
       offline tests green.
 
-## M1-8 · Freshness completeness  [tier: implementation] [status: ready] [deps: --]
+## P1-8 · Freshness completeness  [tier: implementation] [status: ready] [deps: --]
 Goal: guidelines flag `freshness: off` honored by FreshnessValidator;
       a future-dated newest episode warns instead of passing forever.
 Acceptance: flagged podcast validates clean; future-date fixture
       warns; existing freshness tests green.
 
-## M1-9 · Small-fix batch  [tier: implementation] [status: ready] [deps: --]
+## P1-9 · Small-fix batch  [tier: implementation] [status: ready] [deps: --]
 Goal: normalize_url scheme match case-insensitive; TwitterAgent#
       truncate no dangling newline when url empty; ImageRanker comment
       matches code with the sort tuple pinned.
 Acceptance: each characterization test flipped to the fixed behavior
       in the same commit as its fix.
 
-## M1-10 · Offline fixtures for network sources  [tier: implementation] [status: ready] [deps: --]
+## P1-10 · Offline fixtures for network sources  [tier: implementation] [status: ready] [deps: --]
 Goal: recorded, trimmed fixtures for bluesky/hn/x/claude_web parse
       paths; recording is an owner-run network task (HUMAN); parsing
       tests run in the gate.
 Acceptance: each source's parse path unit-tested offline; fixtures
       registered in a fixtures README; gate green with no network.
 
-## M1-12 · Vocabulary enrich survives one malformed object  [tier: implementation] [status: ready] [deps: --]
+## P1-12 · Vocabulary enrich survives one malformed object  [tier: implementation] [status: ready] [deps: --]
 Goal: enrich prompt pins literal English keys regardless of target
       language; a parse error on a non-truncated response falls
       through to salvage so entries before the bad object survive,
@@ -306,14 +306,14 @@ Goal: enrich prompt pins literal English keys regardless of target
 Acceptance: fake 80-entry array with a malformed entry 40 → 39
       enrichments merged + warning (0 today); prompt test.
 
-## M1-13 · Fail-fast on dead network  [tier: implementation] [status: ready] [deps: M1-7]
+## P1-13 · Fail-fast on dead network  [tier: implementation] [status: ready] [deps: P1-7]
 Goal: connectivity preflight (injectable resolver against a registry
       host) aborts before Topics with a named error in under 5 s;
       bounded total retry budget for connection-class errors.
 Acceptance: fake-resolver unit test; dead-DNS run exits in under a
       minute with one clear line; retry tests green.
 
-## M1-14 · Scheduled content-progress check + status surface  [tier: implementation] [status: ready] [deps: M1-8]
+## P1-14 · Scheduled content-progress check + status surface  [tier: implementation] [status: ready] [deps: P1-8]
 Goal: `podgen status` prints one line per scheduled podcast (OK/OLD/
       WARN from content dates, run marker, repeated non-fatal
       warnings); `podgen schedule` prepares a daily entry and prints
@@ -322,13 +322,13 @@ Acceptance: fixtures → OLD / WARN / OK; install command printed,
       never executed by the agent.
 
 ## Decision items (Phase 1)
-Open: .docs/DECISIONS.md — D1-a CLAUDE_MODEL semantics, D1-b thinking/
-effort policy, D1-c drift check, D1-d gate lint coverage, D1-e
-exclusion exit codes, D1-f Q-06 language suffix, D1-g YouTube OAuth,
-D1-h dead-code batch, D1-i explicit defers. Rulings land inline in
+Open: .docs/DECISIONS.md — R1-a CLAUDE_MODEL semantics, R1-b thinking/
+effort policy, R1-c drift check, R1-d gate lint coverage, R1-e
+exclusion exit codes, R1-f Q-06 language suffix, R1-g YouTube OAuth,
+R1-h dead-code batch, R1-i explicit defers. Rulings land inline in
 the affected packet.
 
-## M1-11 · Script/translation max_tokens cap + no retry on truncation  [tier: implementation] [status: done] [deps: --]
+## P1-11 · Script/translation max_tokens cap + no retry on truncation  [tier: implementation] [status: done] [deps: --]
 Cut from Q-25 (incident 2026-10-09): on a thinking-default model the
 8192 output cap was consumed by thinking + JSON → truncated
 structured output → parse error → 3 identical retries per round.

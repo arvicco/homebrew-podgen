@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Registry of every hard-coded external service endpoint (dev-loop
-# source-registry convention, M00-3). Adding an HTTP call to a new
+# source-registry convention, P00-3). Adding an HTTP call to a new
 # host REQUIRES an entry here in the same commit — the gate's drift
 # test (test/integration/test_source_registry_drift.rb) fails
 # otherwise. Per-podcast RSS feeds are config (guidelines.md), not

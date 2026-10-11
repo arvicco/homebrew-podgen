@@ -6,7 +6,7 @@ class StructuredOutputError < StandardError; end
 
 # Raised when the response stopped at max_tokens and the structured output is
 # unusable. Deliberately NOT a StructuredOutputError: re-issuing the identical
-# request cannot succeed, so retry loops must let it propagate (M1-11).
+# request cannot succeed, so retry loops must let it propagate (P1-11).
 class TruncatedOutputError < StandardError; end
 
 # Shared Anthropic API client initialization.

@@ -793,7 +793,7 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal 10.0, called_with[:cut]
   end
 
-  # --- ask_trim preview via QuickTime Player (M00-7) ---
+  # --- ask_trim preview via QuickTime Player (P00-7) ---
   # QT: frontmost + autoplay natively scriptable (Quick Look could do
   # neither from a spawned process); still imports nothing.
 
