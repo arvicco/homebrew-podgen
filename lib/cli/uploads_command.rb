@@ -24,8 +24,11 @@ module PodgenCLI
   #      Rate-limit halts the YT phase but is an EXPECTED daily occurrence
   #      and does NOT contribute to a non-zero overall exit code.
   class UploadsCommand
+    MODES = %i[priority round_robin].freeze
+
     def initialize(args, options)
       @options = options
+      @log = options[:log] || ->(msg) { $stderr.puts msg }
       @mode = :priority
       @max = nil
 
@@ -38,6 +41,11 @@ module PodgenCLI
           @max = n
         end
       end.parse!(args)
+
+      # Validate before any side effect (R2 sync, tweets) runs in #run.
+      unless MODES.include?(@mode)
+        raise OptionParser::InvalidArgument, "--mode #{@mode.to_s.tr('_', '-')} (expected priority or round-robin)"
+      end
 
       @pods_arg = args.shift
       unless args.empty?
@@ -81,9 +89,6 @@ module PodgenCLI
       tick = case @mode
              when :priority    then run_priority(surviving_pods)
              when :round_robin then run_round_robin(surviving_pods)
-             else
-               $stderr.puts "Unknown mode: #{@mode}"
-               return 2
              end
 
       print_summary(tick, failures)
@@ -125,9 +130,14 @@ module PodgenCLI
       per_pod = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
       rate_limited = false
       drained = {}
+      # Runaway guard: every round that continues uploaded >= 1 item, so more
+      # rounds than the initial pending total can only mean a drifting count.
+      rounds_left = pods.sum { |pod| pending_count_for(pod) }
 
       catch(:stop) do
         loop do
+          break if rounds_left <= 0
+          rounds_left -= 1
           uploaded_this_round = 0
           pods.each do |pod|
             throw :stop if remaining == 0
@@ -153,6 +163,9 @@ module PodgenCLI
                                   result.errors.all? { |e| e[:type] == :missing_cover }
             if pending_count_for(pod) == 0 || permanent_skip_only
               drained[pod] = true
+              if permanent_skip_only
+                @log.call "uploads: #{pod} permanently skipped for this tick (missing_cover; items remain pending)"
+              end
             end
           end
           break if uploaded_this_round == 0
