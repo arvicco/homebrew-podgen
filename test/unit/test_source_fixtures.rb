@@ -179,6 +179,16 @@ class TestSourceFixtures < Minitest::Test
   # Live recording 2026-10-11 wrote an EMPTY hn fixture (zero hits in a 48 h
   # window) and a TRUNCATED claude_web fixture (stop_reason max_tokens, no
   # text block) — both useless. The recorder must refuse such bodies.
+  # Recorder tests must never reach the network: every fetcher is stubbed.
+  def offline_recorder(dir, out, hn:)
+    readme = File.join(dir, "README.md")
+    File.write(readme, "| hn | `sources/hn/search_by_date.json` | x | NOT RECORDED | t |\n")
+    rec = FixtureRecorder.new(out: out, fixture_dir: dir, readme: readme)
+    %i[fetch_bluesky fetch_x fetch_claude_web].each { |m| rec.define_singleton_method(m) { raise "stubbed: no network in tests" } }
+    rec.define_singleton_method(:fetch_hn, &hn)
+    rec
+  end
+
   def test_recorder_refuses_empty_or_truncated_bodies
     assert FixtureRecorder.unusable?("hn", {"hits" => []})
     refute FixtureRecorder.unusable?("hn", {"hits" => [{"title" => "t"}]})
@@ -198,15 +208,24 @@ class TestSourceFixtures < Minitest::Test
 
   def test_recorder_does_not_write_an_unusable_fixture
     Dir.mktmpdir do |dir|
-      readme = File.join(dir, "README.md")
-      File.write(readme, "| hn | `sources/hn/search_by_date.json` | x | NOT RECORDED | t |\n")
       out = StringIO.new
-      rec = FixtureRecorder.new(out: out, fixture_dir: dir, readme: readme)
-      rec.define_singleton_method(:fetch_hn) { {"hits" => []} }
+      rec = offline_recorder(dir, out, hn: -> { {"hits" => []} })
       failed = rec.record_all
       assert_includes failed, "hn"
       refute File.exist?(File.join(dir, "hn/search_by_date.json")), "empty body must not be written"
       assert_match(/hn\s+FAILED \(unusable/, out.string)
+    end
+  end
+
+  # Golden rule 8: a fetch error's message may carry a URL or token — only
+  # the recorder's own "unusable" verdict is printed verbatim.
+  def test_recorder_prints_only_the_class_for_fetch_errors
+    Dir.mktmpdir do |dir|
+      out = StringIO.new
+      rec = offline_recorder(dir, out, hn: -> { raise "HTTP 401 for https://x?api_key=SECRET" })
+      rec.record_all
+      refute_includes out.string, "SECRET"
+      assert_match(/hn\s+FAILED \(RuntimeError\)/, out.string)
     end
   end
 

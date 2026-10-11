@@ -12,6 +12,10 @@ require_relative "sources/claude_web_source"
 # (P1-10). NETWORK + OWNER-RUN only, via `rake fixtures:record`; never in the
 # gate. The trim_* methods are pure and unit-tested offline.
 class FixtureRecorder
+  # The recorder's own verdict on a body; the only error whose message is
+  # printed verbatim (fetch errors may carry URLs or tokens — rule 8).
+  class UnusableBody < StandardError; end
+
   FIXTURE_DIR = File.join(__dir__, "..", "test", "fixtures", "sources")
   README = File.join(__dir__, "..", "test", "fixtures", "README.md")
   KEEP = 3
@@ -108,12 +112,12 @@ class FixtureRecorder
         next name
       end
       trimmed = public_send(:"fetch_#{name}")
-      raise "unusable body (empty or truncated)" if self.class.unusable?(name, trimmed)
+      raise UnusableBody, "unusable body (empty or truncated)" if self.class.unusable?(name, trimmed)
       write(path, trimmed)
       @out.puts format("%-11s recorded %s", name, path)
       nil
     rescue => e
-      @out.puts format("%-11s FAILED (%s)", name, e.is_a?(RuntimeError) ? e.message : e.class)
+      @out.puts format("%-11s FAILED (%s)", name, e.is_a?(UnusableBody) ? e.message : e.class)
       name
     end
   end
