@@ -266,7 +266,7 @@ Goal: invalid --mode rejected in initialize (before any side effect);
 Acceptance: mode typo exits 2 with zero publisher calls; round cap and
       drain log pinned by tests.
 
-## P1-3 · Test-hygiene batch  [tier: implementation] [status: ready] [deps: --]
+## P1-3 · Test-hygiene batch  [tier: implementation] [status: done] [deps: --]
 Goal: ENV save/restore for PODGEN_ROOT and TWITTER_*; audio_trimmer
       tmp litter cleaned; explicit pathname require in the drift test;
       CI concurrency group (one run per push with an open PR).
@@ -275,6 +275,14 @@ Ruling 2026-10-11 (R1-d): lint in the gate covers new files only;
       a packet that touches a listed file removes it from
       .standard_todo.yml in the same commit when the lint diff is small;
       one-line note in README + DEV-LOOP rides this packet.
+Done 2026-10-11: 52fef3b (worktree implementation agent, diff reviewed
+      by the orchestrator). PODGEN_ROOT item verified already correct
+      at head — no change; TWITTER_* restore fixed in
+      test_twitter_agent (was prefix-guessing, not exception-safe);
+      trimmer pid-named tmp files cleaned in teardown; pathname
+      require; CI concurrency group. Seeds 1/2/3 green (note:
+      TESTOPTS="--seed=N", the space form breaks the Rakefile); gate
+      3097+50 green on phase-1.
 
 ## P1-4 · Sidecar + probe reliability  [tier: implementation] [status: done] [deps: --]
 Goal: one guarded JSON load for *_timestamps.json shared by persister
