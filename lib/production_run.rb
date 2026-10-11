@@ -7,6 +7,10 @@
 module ProductionRun
   module_function
 
+  # The installed launchd schedule (com.podcastagent.fulgur_news: 16:30).
+  # Keep in step with `podgen schedule --time`.
+  LAUNCHD_START = "16:30"
+
   # Podcast names whose run.lock is currently held by another process.
   # Never creates or writes a lock file; unreadable ones count as free.
   def running(output_root:)
@@ -18,23 +22,29 @@ module ProductionRun
     !running(output_root: output_root).empty?
   end
 
-  def launchd_window?(now:, start: "16:30", before_minutes: 5, after_minutes: 40)
+  def launchd_window?(now:, start: LAUNCHD_START, before_minutes: 5, after_minutes: 40)
     from, to = window_bounds(start, before_minutes, after_minutes)
     minute = now.hour * 60 + now.min
     minute.between?(from, to)
   end
 
+  # Window first: inside it nothing touches the lock — the probe's own
+  # LOCK_NB attempt would make a generate starting that instant abort
+  # (CRPR Gate 2 W1).
   def yield_reason(output_root:, now: Time.now)
-    names = running(output_root: output_root)
-    return "production run active: #{names.join(", ")}" unless names.empty?
-    return nil unless launchd_window?(now: now)
+    if launchd_window?(now: now)
+      from, to = window_bounds(LAUNCHD_START, 5, 40)
+      return "launchd window #{hhmm(from)}–#{hhmm(to)}"
+    end
 
-    from, to = window_bounds("16:30", 5, 40)
-    "launchd window #{hhmm(from)}–#{hhmm(to)}"
+    names = running(output_root: output_root)
+    names.empty? ? nil : "production run active: #{names.join(", ")}"
   end
 
+  # flock works on a read-only descriptor, so a read-only lock file is
+  # still probed (CRPR Gate 2 NIT 6).
   def locked?(path)
-    File.open(path, File::RDWR) do |f|
+    File.open(path, File::RDONLY) do |f|
       next true unless f.flock(File::LOCK_EX | File::LOCK_NB)
       f.flock(File::LOCK_UN)
       false

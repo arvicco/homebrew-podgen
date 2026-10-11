@@ -5,6 +5,9 @@
 # branch moves/merges or writes into lib/ bin/ scripts/. Exit 2 = blocked.
 # Safe by default: no output/ dir under cwd -> no-op.
 # PROD_GUARD_NOW (ISO time) overrides the clock, for tests.
+# Fails OPEN: missing jq/ruby, bad JSON or a bad PROD_GUARD_NOW allow the call
+# (only exit 2 blocks). `ruby` is whatever is first on the hook's PATH; the
+# probe needs only stdlib and runs on Ruby 2.6+.
 set -uo pipefail
 
 input=$(cat)
@@ -22,10 +25,17 @@ case "$tool" in
     if printf '%s' "$file" | grep -qE '(^|/)(lib|bin|scripts|\.claude)/'; then guarded=true; fi
     ;;
   Bash)
-    if printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+(merge|cherry-pick|switch|checkout|rebase|stash|pull)([^[:alnum:]_-]|$)'; then
+    # Branch moves / history rewrites (git -C <dir> form included); `git stash
+    # list|show` are read-only and pass.
+    if printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?(merge|cherry-pick|switch|checkout|rebase|pull|reset|restore)([^[:alnum:]_-]|$)' \
+      || printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?stash([[:space:]]+(push|pop|apply|drop|clear|save))?([^[:alnum:]_-]|$)' \
+      && ! printf '%s' "$cmd" | grep -qE 'git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?stash[[:space:]]+(list|show)'; then
       guarded=true
-    elif printf '%s' "$cmd" | grep -qE '(lib|bin|scripts)/' \
-      && printf '%s' "$cmd" | grep -qE '>|sed -i|ruby -i|cp |mv |rm '; then
+    # Writes INTO lib/ bin/ scripts/: redirect, tee, in-place editors, patch,
+    # cp/mv/rm as whole words whose target is one of those trees.
+    elif printf '%s' "$cmd" | grep -qE '(>>?|[[:space:]]tee([[:space:]]+-a)?)[[:space:]]*(\./)?(lib|bin|scripts)/' \
+      || printf '%s' "$cmd" | grep -qE '(sed -i|ruby -p?i|perl -p?i|patch )[^;|&]*(\./)?(lib|bin|scripts)/' \
+      || printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|])(cp|mv|rm)[[:space:]][^;|&]*(\./)?(lib|bin|scripts)/'; then
       guarded=true
     fi
     ;;

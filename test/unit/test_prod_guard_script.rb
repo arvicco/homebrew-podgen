@@ -12,6 +12,7 @@ class TestProdGuardScript < Minitest::Test
   INSIDE_WINDOW = "2026-10-11T16:40:00"
 
   def setup
+    skip "jq missing" unless system("command -v jq >/dev/null 2>&1")
     @cwd = Dir.mktmpdir("prod_guard_test")
     @lock = File.join(@cwd, "output", "podx", "run.lock")
     FileUtils.mkdir_p(File.dirname(@lock))
@@ -103,6 +104,66 @@ class TestProdGuardScript < Minitest::Test
   def test_bash_ls_while_active_allowed
     hold_lock
     code, _err = run_guard("Bash", {command: "ls"})
+
+    assert_equal 0, code
+  end
+
+  # CRPR Gate 2 W3: branch moves the first pattern missed.
+  def test_bash_git_reset_hard_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git reset --hard HEAD~1"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_git_dash_c_switch_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git -C /some/dir switch phase-3"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_tee_into_lib_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "echo x | tee lib/x.rb"})
+
+    assert_equal 2, code
+  end
+
+  # CRPR Gate 2 NIT 4: read-only work that merely mentions lib/ stays allowed.
+  def test_bash_readonly_redirect_mentioning_lib_while_active_allowed
+    hold_lock
+    code, _err = run_guard("Bash", {command: "grep -rn foo lib/ > /tmp/out 2>/dev/null"})
+
+    assert_equal 0, code
+  end
+
+  def test_bash_scp_and_git_stash_list_while_active_allowed
+    hold_lock
+    code1, _ = run_guard("Bash", {command: "scp lib/x.rb host:/tmp/"})
+    code2, _ = run_guard("Bash", {command: "git stash list"})
+
+    assert_equal 0, code1
+    assert_equal 0, code2
+  end
+
+  def test_edit_under_dot_claude_while_active_yields
+    hold_lock
+    code, _err = run_guard("Edit", {file_path: File.join(@cwd, ".claude", "settings.json")})
+
+    assert_equal 2, code
+  end
+
+  # CRPR Gate 2 NIT 9: the guard fails OPEN on malformed input.
+  def test_malformed_json_allowed
+    _out, _err, status = Open3.capture3({"PROD_GUARD_NOW" => OUTSIDE_WINDOW}, SCRIPT, stdin_data: "not json")
+
+    assert_equal 0, status.exitstatus
+  end
+
+  def test_bad_now_override_allowed
+    hold_lock
+    code, _err = run_guard("Edit", {file_path: File.join(@cwd, "lib", "x.rb")}, now: "yesterday-ish")
 
     assert_equal 0, code
   end
