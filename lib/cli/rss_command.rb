@@ -62,6 +62,7 @@ module PodgenCLI
           description: config.description,
           author: config.author,
           language: lang_code,
+          languages: config.language_codes,
           base_url: base_url,
           image: config.image,
           history_path: config.history_path

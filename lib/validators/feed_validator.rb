@@ -18,7 +18,7 @@ module Validators
         doc = REXML::Document.new(File.read(@config.feed_path))
         items = doc.elements.to_a("//item")
 
-        mp3_count = EpisodeFiltering.english_episodes(@config.episodes_dir).length
+        mp3_count = EpisodeFiltering.english_episodes(@config.episodes_dir, languages: @config.language_codes).length
 
         if items.length == mp3_count
           @passes << "Feed: well-formed XML, #{items.length} episodes"
