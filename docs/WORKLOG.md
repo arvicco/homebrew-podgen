@@ -7,6 +7,21 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-3 · 52fef3b · Test-hygiene batch via a worktree
+implementation agent (sonnet), diff reviewed and cherry-picked by the
+orchestrator. Four of five items changed: TWITTER_* ENV restore in
+test_twitter_agent (prefix-guessing → save/restore in ensure);
+AudioTrimmer pid-named tmp litter removed in teardown; explicit
+pathname require in the drift test; CI concurrency group
+(ci-<ref>, cancel-in-progress). PODGEN_ROOT item: the agent verified
+both files already save/restore correctly and changed nothing — the
+plan's premise was stale. Seeds 1/2/3 green; gate green on phase-1.
+Catches worth keeping: agent worktrees start from the default branch,
+so agents must fast-forward to phase-1 first; worktrees have no
+vendor/bundle (BUNDLE_PATH to the main checkout works); TESTOPTS needs
+--seed=N; 18 older pid-named trimmer files from past sessions remain in
+/var/folders (not deleted by the agent — owner's tmp).
+
 2026-10-11 · P1-4 (Q-05, Q-01) · aff5261 · One guarded sidecar load:
 TimestampPersister.load raises CorruptSidecarError (StandardError
 subclass, names the file) and SubtitleGenerator.generate_srt now goes
