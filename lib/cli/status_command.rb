@@ -21,6 +21,9 @@ module PodgenCLI
     DEFAULT_RUNS = 3
     LINE_MAX = 100
     WARNING_RE = /Warning:|WARNING/
+    # ScriptReviewer findings are logged indented with a bracketed category
+    # ("  WARNING: [COVERAGE] ...") - editorial notes, not pipeline warnings.
+    REVIEWER_FINDING_RE = /\A(?:\[[^\]]*\] )?\s+WARNING: \[/
     ERROR_RE = /\A(?:\[[^\]]*\]\s*)?ERROR\b/
     STAMP_RE = /\A\[[^\]]*\]\s*/
     STATUS_LABEL = "#{ScheduleCommand::LABEL_PREFIX}.status".freeze
@@ -109,7 +112,7 @@ module PodgenCLI
         reasons << "(freshness off)"
       end
       log_findings(config).each { |reason| escalate.call("WARN", reason) }
-      reasons << "newest #{newest} (#{age}d old)" if verdict == "OK" && newest
+      reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"})" if verdict == "OK" && newest
 
       {podcast: name, verdict: verdict, newest: newest&.to_s, age_days: age, reasons: reasons}
     rescue => e
@@ -150,7 +153,7 @@ module PodgenCLI
       last = lines.reject { |l| l.strip.empty? }.last
       return ["#{file} ends with #{clip(last)}"] if last&.match?(ERROR_RE)
 
-      first = lines.find { |l| l.match?(WARNING_RE) && !repeated.key?(normalize(l)) }
+      first = lines.find { |l| warning?(l) && !repeated.key?(normalize(l)) }
       first ? ["#{file}: #{clip(first)}"] : []
     end
 
@@ -159,9 +162,13 @@ module PodgenCLI
     def repeated_warnings(runs)
       return {} if runs.size < @runs || @runs < 2
 
-      per_run = runs.map { |lines| lines.select { |l| l.match?(WARNING_RE) }.to_h { |l| [normalize(l), l] } }
+      per_run = runs.map { |lines| lines.select { |l| warning?(l) }.to_h { |l| [normalize(l), l] } }
       shared = per_run.map(&:keys).reduce(:&)
       shared.to_h { |key| [key, per_run.last[key]] }
+    end
+
+    def warning?(line)
+      line.match?(WARNING_RE) && !line.match?(REVIEWER_FINDING_RE)
     end
 
     def normalize(line)

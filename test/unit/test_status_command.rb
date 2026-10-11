@@ -86,6 +86,71 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  def test_run_indented_reviewer_findings_are_not_warnings
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] Script review",
+      "[2026-10-10 06:00:02]   WARNING: [COVERAGE] The research includes CFTC proposals",
+      "[2026-10-10 06:00:02]   WARNING: [NATURAL_FLOW] 'First, Meanwhile' reads oddly",
+      "[2026-10-10 06:00:09] \u2713 Episode ready"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+newest 2026-10-10/, out)
+  end
+
+  def test_run_unindented_warning_line_reports_warn
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01]   WARNING: [COVERAGE] minor gap",
+      "[2026-10-10 06:00:05] WARNING: Response truncated at max_tokens and salvage failed",
+      "[2026-10-10 06:00:09] \u2713 Episode ready"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*WARNING: Response truncated at max_tokens/, out)
+    refute_includes out, "COVERAGE"
+  end
+
+  def test_run_repeated_agent_warning_across_runs_reports_warn
+    make_pod("alpha", dates: fresh_dates)
+    3.times do |i|
+      write_log("alpha", "a-2026-10-0#{7 + i}.log",
+        ["[2026-10-0#{7 + i} 06:00:01] [TweetAgent] Warning: credits depleted",
+          "[2026-10-0#{7 + i} 06:00:09] \u2713 Episode ready"], mtime: Time.new(2026, 10, 7 + i, 6))
+    end
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*repeated in last 3 runs: \[TweetAgent\] Warning: credits depleted/, out)
+  end
+
+  # --- pre-generated episodes (freshness_lead_days) ---
+
+  def test_run_newest_one_day_ahead_reports_ok_scheduled
+    make_pod("alpha", dates: %w[2026-10-09 2026-10-10 2026-10-11 2026-10-12])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+newest 2026-10-12 \(scheduled \+1d\)/, out)
+  end
+
+  def test_run_newest_ten_days_ahead_reports_warn
+    make_pod("alpha", dates: %w[2026-10-19 2026-10-20 2026-10-21])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*2026-10-21 is dated in the future \(10 days ahead\)/, out)
+  end
+
+  def test_run_lead_days_zero_warns_on_one_day_ahead
+    make_pod("alpha", dates: %w[2026-10-10 2026-10-11 2026-10-12], extra: "- freshness_lead_days: 0\n")
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*dated in the future \(1 days ahead\)/, out)
+  end
+
+  def test_run_json_scheduled_episode_keeps_key_set
+    make_pod("alpha", dates: %w[2026-10-10 2026-10-11 2026-10-12])
+    rows = JSON.parse(run_status("--json").first)
+    assert_equal JSON_KEYS, rows.first.keys.sort
+    assert_equal "OK", rows.first["verdict"]
+    assert_equal(-1, rows.first["age_days"])
+  end
+
   def test_run_missing_history_reports_warn
     make_pod("alpha", dates: nil)
     out, code = run_status
@@ -188,11 +253,11 @@ class TestStatusCommand < Minitest::Test
     [out, code]
   end
 
-  def make_pod(name, dates:, freshness_off: false)
+  def make_pod(name, dates:, freshness_off: false, extra: "")
     dir = File.join(@tmpdir, "podcasts", name)
     FileUtils.mkdir_p(dir)
     File.write(File.join(dir, "guidelines.md"),
-      "## Podcast\n- name: #{name}\n#{"- freshness: off\n" if freshness_off}\n## Topics\n- x\n")
+      "## Podcast\n- name: #{name}\n#{"- freshness: off\n" if freshness_off}#{extra}\n## Topics\n- x\n")
     return unless dates
 
     out = File.join(@tmpdir, "output", name)
