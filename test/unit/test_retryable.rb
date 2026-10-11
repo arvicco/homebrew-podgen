@@ -63,6 +63,19 @@ class TestRetryable < Minitest::Test
     assert_includes err.message, "Test failed after 3 attempts"
   end
 
+  def test_max_three_means_four_attempts
+    attempts = 0
+    err = assert_raises(RuntimeError) do
+      @host.call_with_retries(max: 3, on: [RuntimeError], label: "Test") do
+        attempts += 1
+        raise RuntimeError, "always fails"
+      end
+    end
+
+    assert_equal 4, attempts # 1 initial + 3 retries
+    assert_includes err.message, "Test failed after 4 attempts"
+  end
+
   def test_does_not_retry_unmatched_exception
     assert_raises(ArgumentError) do
       @host.call_with_retries(max: 3, on: [RuntimeError]) do
