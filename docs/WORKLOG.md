@@ -7,7 +7,23 @@ durable fix, the lesson now enforced.
 
 ---
 
-2026-10-11 · P1-0 outcome check · (this commit) · The scheduled
+2026-10-11 · P1-17 · f002314 · Owner-reported: feed titles ending in
+"…". Not the model — ScriptReviewer's deterministic title_length check
+cut every title over 40 chars at a word boundary and appended an
+ellipsis as an auto-fixed BLOCKER, while the prompt never told the
+model about any limit; the AI review even flagged the stub each time
+and lost. 13 fulgur_news episodes since 2026-04-16 shipped half
+headlines (№I-8; originals recovered from the reviewer's own log
+lines, repair is ruling R1-n). Fix: the check reports a WARNING and
+leaves the title whole, the system prompt states the 40-char
+self-contained target and forbids cutting, the truncation helper and
+its tests are gone. Lesson: a deterministic "auto-fix" that rewrites
+listener-visible text is a content decision in disguise; the reviewer
+may refuse or flag, never rewrite a headline. Evidence: regression test
+on the 10-11 title; gate 3178+50 green; CI on the pushed head.
+
+2026-10-11 · P1-0 outcome check
+ · (this commit) · The scheduled
 fulgur_news run (16:30, launchd, this checkout) is the first unattended
 generate on the registry: opus-5-5 at every logged role, script
 end_turn on attempt 1 (77 s), no max_tokens stop, no ERROR, 56
