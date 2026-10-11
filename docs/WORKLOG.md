@@ -7,6 +7,22 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · INCIDENT 2026-10-08 (recorded late) · no commit · The
+scheduled fulgur_news run (16:46) had no DNS for ~2.5 h: every host
+failed with getaddrinfo; TopicAgent fell back to queue.yml, all four
+research sources and the ScriptAgent exhausted retries, exit 1 at
+19:19. No episode that day. Root cause: local name resolution lost
+(same signature 2026-09-17 and 2026-09-19, all mid-afternoon;
+machine/network side, not code). Why it hurt: SDK-internal retries ×
+with_retries × per-source retries compounded into hours, and the
+Telegram failure alert rode the same dead network, so the owner
+learned of it from the missing episode. Durable fix: queued as Q-26
+(connectivity preflight + bounded retry budget) and Q-27 (scheduled
+content-progress check + status surface; also covers the Twitter
+"credits depleted" warning repeating daily since 2026-09-18 unseen).
+Lesson enforced: incidents get a worklog entry the day they are
+diagnosed, and every "worth a packet later" becomes a Q item at once.
+
 2026-10-10 · M1-11 (Q-25) · bdefdc8 · Incident 2026-10-09: fulgur_news
 died after 8 ScriptAgent attempts, all "SDK parsing failed: unexpected
 end of input". Root cause: CLAUDE_MODEL switched by hand to a
