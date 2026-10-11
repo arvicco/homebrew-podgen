@@ -73,6 +73,26 @@ class TestAnthropicClient < Minitest::Test
     assert_raises(StructuredOutputError) { @harness.require_parsed_output!(message) }
   end
 
+  # -- init_anthropic_client bounds the request timeout (P1-13): the SDK default of
+  # 10 min × retries is what turned a dead network into a 2.5 h run --
+
+  def test_init_anthropic_client_sets_a_bounded_timeout
+    captured = nil
+    fake = Object.new
+    Anthropic::Client.stub(:new, ->(**kw) {
+      captured = kw
+      fake
+    }) do
+      h = Class.new {
+        include AnthropicClient
+        public :init_anthropic_client
+      }.new
+      h.init_anthropic_client(role: :script)
+    end
+    assert_operator captured[:timeout], :<=, 300
+    assert_operator captured[:timeout], :>=, 120, "scripts and reconciliation take ~1-2 min"
+  end
+
   # -- text_of (P1-0 hazard H1): thinking-default models put a thinking block first --
 
   def test_text_of_skips_a_leading_thinking_block

@@ -259,6 +259,27 @@ class TestGenerateCommand < Minitest::Test
     end
   end
 
+  # --- preflight_network! (P1-13) ---
+
+  def test_preflight_network_raises_before_any_phase_when_network_is_dead
+    cmd = build_command
+    logger = StubGenLogger.new
+
+    Connectivity.stub(:preflight!, ->(**) { raise Connectivity::PreflightError, "no network: cannot resolve x" }) do
+      err = assert_raises(Connectivity::PreflightError) { cmd.send(:preflight_network!, logger) }
+      assert_includes err.message, "no network"
+    end
+  end
+
+  def test_preflight_network_passes_when_connectivity_ok
+    cmd = build_command
+    logger = StubGenLogger.new
+
+    Connectivity.stub(:preflight!, nil) do
+      assert_nil cmd.send(:preflight_network!, logger)
+    end
+  end
+
   # --- inject_priority_links ---
 
   def test_inject_priority_links_returns_unchanged_when_no_links_file
