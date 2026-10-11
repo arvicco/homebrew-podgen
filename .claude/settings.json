@@ -1,5 +1,5 @@
 {
-  "//": "dev-loop permission profile: inside the sandbox, full freedom -- the boundary itself is hard. Deny rules are match-anywhere (leading *) so wrappers, absolute paths, bash -c and compound commands are covered; the in-process guard in lib/cli.rb (CLAUDECODE=1) is the second layer. Matrix: .docs/P1-1-permission-matrix.md",
+  "//": "dev-loop permission profile: inside the sandbox, full freedom -- the boundary itself is hard. Deny rules use leading * anchored on bin/podgen / a space-prefixed binstub / subcommand start, so wrappers, absolute paths, bash -c and compound commands are covered without matching the repo path; the in-process guard in lib/cli.rb (CLAUDECODE=1) is the second layer. Matrix: .docs/P1-1-permission-matrix.md",
   "permissions": {
     "allow": [
       "Bash(git diff*)",
