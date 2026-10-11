@@ -48,7 +48,7 @@ class TestAnthropicClient < Minitest::Test
     assert_includes error.message, "unexpected token at pos 0"
   end
 
-  # -- truncation (M1-11): a max_tokens stop is deterministic, must not be retried --
+  # -- truncation (P1-11): a max_tokens stop is deterministic, must not be retried --
 
   def test_require_parsed_output_raises_truncated_on_max_tokens_with_error_hash
     message = stub_message(parsed: { error: "unexpected end of input" }, stop_reason: "max_tokens")

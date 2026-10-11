@@ -8,7 +8,7 @@ require "cli/validate_command"
 
 class TestStatsValidate < Minitest::Test
   # Relative dates keep the "clean podcast" fixture genuinely fresh —
-  # the freshness validator (M00-4) flags stale content by wall clock,
+  # the freshness validator (P00-4) flags stale content by wall clock,
   # so hard-coded dates would rot.
   NEWS_DATE1 = (Date.today - 6).iso8601
   NEWS_DATE2 = (Date.today - 1).iso8601

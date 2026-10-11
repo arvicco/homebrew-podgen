@@ -18,7 +18,7 @@ class TestTranslationAgent < Minitest::Test
     assert_equal "Pozdravljeni!", result[:segments].first[:text]
   end
 
-  # --- M1-11: output cap + truncation (incident 2026-10-09) ---
+  # --- P1-11: output cap + truncation (incident 2026-10-09) ---
 
   def test_translate_requests_max_tokens_of_at_least_16384
     agent = build_agent("sl")

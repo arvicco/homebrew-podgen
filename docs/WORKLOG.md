@@ -23,7 +23,7 @@ content-progress check + status surface; also covers the Twitter
 Lesson enforced: incidents get a worklog entry the day they are
 diagnosed, and every "worth a packet later" becomes a Q item at once.
 
-2026-10-10 · M1-11 (Q-25) · bdefdc8 · Incident 2026-10-09: fulgur_news
+2026-10-10 · P1-11 (Q-25) · bdefdc8 · Incident 2026-10-09: fulgur_news
 died after 8 ScriptAgent attempts, all "SDK parsing failed: unexpected
 end of input". Root cause: CLAUDE_MODEL switched by hand to a
 thinking-default model (opus-5-5); thinking tokens count against
@@ -37,9 +37,9 @@ stop with unusable output — a sibling of StructuredOutputError, not a
 subclass, so existing `on:` lists let it propagate after ONE call with
 a message naming the cap. 7 tests (helper error split, max_tokens pin
 and single-call pin for both agents) red-then-green; gate 3075+50;
-CI green. Lesson: this is M1-0 hazard H3 arriving early — thinking
-budget per role is decision D1-b; model defaults move to the registry
-in M1-0 (next). Outcome check at the owner's surface pending (news
+CI green. Lesson: this is P1-0 hazard H3 arriving early — thinking
+budget per role is decision R1-b; model defaults move to the registry
+in P1-0 (next). Outcome check at the owner's surface pending (news
 generate on the current model → end_turn on attempt 1).
 
 2026-09-02 · GATE 0 CLOSED · owner merged PR #1 (merge 4298988) —
@@ -63,7 +63,7 @@ registry test renamed. Deferred nits queued: Q-22 freshness opt-out
 for concluded podcasts, Q-23 QT front-document targeting. Gate
 3068+50 green; re-review requested.
 
-2026-09-01 · M0-4 · (this commit) · Characterization audit + safety
+2026-09-01 · P0-4 · (this commit) · Characterization audit + safety
 net. Read-only audit mapped the memo's 67 pure-logic targets: 37
 directly tested, 9 via thin orchestrators (accepted), 21 gaps. A
 worktree implementation agent wrote 76 exact-value tests across 14
@@ -79,7 +79,7 @@ Q-14…Q-21 — notable: priority-URL check misses uppercase-scheme
 URLs; topics like "AI" can never claim findings; TTS comma-split
 chunks start with ", ".
 
-2026-09-01 · M0-6 · (this commit) · README honesty pass: --ask-trim
+2026-09-01 · P0-6 · (this commit) · README honesty pass: --ask-trim
 now documented as the QuickTime preview flow (flag table +
 interactive-trimming section), stale exclude-key `[e]` corrected to
 the real `e[x]clude`, new Development section covering rake
@@ -88,7 +88,7 @@ OLD flag. Private-config detail (dead zverinice feed) deliberately
 kept OUT of the public README per the internal-comms ruling. Owner
 acceptance rides on Gate 0.
 
-2026-09-01 · M0-5 · (this commit) · Frozen-domain pinning tests
+2026-09-01 · P0-5 · (this commit) · Frozen-domain pinning tests
 (test/unit/test_frozen_contracts.rb): history.yml entry key set (incl.
 languages sub-schema), uploads.yml platform→group→{basename→id}
 nesting, *_timestamps.json schema (version 1, segment keys, intro
@@ -99,21 +99,21 @@ mp3 filename, pubDate composition, channel element set. Oracle proven
 red on a seeded extra item element, green on HEAD. Gate 2963+50.
 
 2026-09-01 · rulings batch · (this commit) · Owner ruled the three
-standing registry items. D0-p: stray worktree commit 6dd5ba8
+standing registry items. R0-p: stray worktree commit 6dd5ba8
 discarded (worktree + branch removed), merged
 refactor/dry-and-test-coverage pruned local + origin — repo is down
-to master + phase-0 everywhere. D0-o: dead-code batch KEPT documented,
-periodic-review item Q-13. D0-c…D0-n: formulated as self-contained
+to master + phase-0 everywhere. R0-o: dead-code batch KEPT documented,
+periodic-review item Q-13. R0-c…R0-n: formulated as self-contained
 queue items Q-01…Q-12 in the new work queue (each with problem,
 first-failing-test sketch, acceptance, tier suggestion; fix packets
 get cut from the queue when scheduled). Queue initially committed to
 tracked docs/ in error; owner ruled same day that dev queue + phase
 planning are internal (.docs/) and only executed work reaches the
 worklog — relocated to .docs/WORK-QUEUE.md. Registry now holds only
-the formal M0-3 sign-off. M00-7 owner-confirmed in real use, closed.
+the formal P0-3 sign-off. P00-7 owner-confirmed in real use, closed.
 
-2026-08-31 · M00-7 · (this commit) · Preview re-wired Quick Look →
-QuickTime Player after the owner's real-run check on M00-6 found
+2026-08-31 · P00-7 · (this commit) · Preview re-wired Quick Look →
+QuickTime Player after the owner's real-run check on P00-6 found
 qlmanage takes no focus and can't autoplay (headless; keystroke
 injection would need Accessibility). QT does both natively: `open -a`
 launches frontmost with the file (avoiding the AppleScript -600
@@ -127,9 +127,9 @@ against the live trial window. Third player iteration — Music
 (pollution) → ffplay (rejected) → Quick Look (no focus/autoplay) →
 QT; requirements now fully pinned in tests.
 
-2026-08-30 · M00-6 · (this commit) · ask-trim preview via Quick Look
-(D0-r option B, owner-trialled on a real episode and approved before
-any code changed — lesson from M00-5 applied). `open`→Music replaced
+2026-08-30 · P00-6 · (this commit) · ask-trim preview via Quick Look
+(R0-r option B, owner-trialled on a real episode and approved before
+any code changed — lesson from P00-5 applied). `open`→Music replaced
 by background `qlmanage -p`: positional scrubbing + min:sec readout,
 zero library imports, prompts live while the preview is open, TERM on
 prompt completion and on exclude (ensure block). TDD: 3 tests red
@@ -138,19 +138,19 @@ characterization tests repointed from the :system stub to the new
 :start_preview seam. Gate 2958+50 green. Music pollution class closed:
 nothing is imported anymore, so cleanup options A/D unnecessary.
 
-2026-08-30 · M00-5 REVERTED · (this commit) · ffplay ask-trim preview
+2026-08-30 · P00-5 REVERTED · (this commit) · ffplay ask-trim preview
 (5bfca6e) rejected by owner within hours: ffplay's fixed-step seeking
 and bare window are not usable for the trial-and-error hunt for
 cut-off points — Apple Music's transport is the requirement, the
-pollution is the bug. Lesson: the D0-q proposal optimized what I
+pollution is the bug. Lesson: the R0-q proposal optimized what I
 could measure (no library imports, seconds readout) over the owner's
 actual workflow (fast interactive scrubbing); the owner check in the
 acceptance criteria fired exactly as designed. `open`→Music restored;
-mitigation research filed as D0-r (options: post-preview AppleScript
+mitigation research filed as R0-r (options: post-preview AppleScript
 auto-cleanup inside --ask-trim; Quick Look zero-import preview;
 periodic sweep). ttt.mp3 deletion stands (approved separately).
 
-2026-08-25 · M00-4 · (this commit) · Freshness invariant:
+2026-08-25 · P00-4 · (this commit) · Freshness invariant:
 Validators::FreshnessValidator (newest content date vs wall clock,
 cadence = median history gap, OLD warning past 2× median) wired into
 PodcastValidator (array + check_freshness). TDD: 7 unit tests failed
@@ -161,7 +161,7 @@ real data: lahko_noc flags OLD (newest 2026-03-21, 157d, daily
 cadence); bajke/basnie/cuentos/fiabe/fulgur_news validate fresh;
 ruby_world correctly reports cannot-infer-cadence. Gate green.
 
-2026-08-25 · M00-3 · 1c6f87d · Source registry: 14 hard-coded service
+2026-08-25 · P00-3 · 1c6f87d · Source registry: 14 hard-coded service
 endpoints registered with probe URLs + expectations; drift test in
 the offline gate (red on seeded unregistered host, green on HEAD);
 IGNORED_HOSTS allowlist for namespace/display URLs; rake health
@@ -169,30 +169,30 @@ owner-run probe — 14/14 OK live (elevenlabs probe URL corrected
 after first run). Per-podcast RSS feeds ruled out of registry scope
 (config, not hard-coded).
 
-2026-08-25 · M00-1 + M00-2 · (this commit) · Phase 00 opened per
-owner ruling (conventions before Phase 0 continues). M00-1: gitignored
+2026-08-25 · P00-1 + P00-2 · (this commit) · Phase 00 opened per
+owner ruling (conventions before Phase 0 continues). P00-1: gitignored
 .docs/ workspace created; TOOL-REVIEW.md relocated there;
-.docs/DECISIONS.md registry seeded (D0-p stray-worktree salvage, D0-o,
-D0-c…D0-n, M0-3 sign-off — newest first, removed when ruled); dev-loop
+.docs/DECISIONS.md registry seeded (R0-p stray-worktree salvage, R0-o,
+R0-c…R0-n, P0-3 sign-off — newest first, removed when ruled); dev-loop
 plugin skill+templates updated in its own repo (commit 34a4994) to
-encode the convention. M00-2: CLAUDE.md verification discipline
+encode the convention. P00-2: CLAUDE.md verification discipline
 extended to the skill's six items (specific asks; commit
 owner-session data); DEV-LOOP.md §4 gains the ring-for-owner alarm
-step. M0-3 status normalized to blocked: decision-item. Docs-only in
+step. P0-3 status normalized to blocked: decision-item. Docs-only in
 podgen; gate green.
 
-2026-07-27 · M0-3 (memo drafted) · (this commit) · Full-lib inventory
+2026-07-27 · P0-3 (memo drafted) · (this commit) · Full-lib inventory
 via four parallel read-only agents (~130 files), synthesized into
-docs/TOOL-REVIEW.md: 12 suspected-bug decision items (D0-c…D0-n), a
-10-item dead-code batch (D0-o), 8 duplication/divergence risks, the
-frozen-contract inventory seeding M0-5, and a ranked 16-entry
-pure-logic list seeding M0-4. Coverage headline: nearly every module
+docs/TOOL-REVIEW.md: 12 suspected-bug decision items (R0-c…R0-n), a
+10-item dead-code batch (R0-o), 8 duplication/divergence risks, the
+frozen-contract inventory seeding P0-5, and a ranked 16-entry
+pure-logic list seeding P0-4. Coverage headline: nearly every module
 already has a dedicated unit test; gaps are publisher_shared,
 usage_logger, openai_client, language_names, and the four network
 sources (live-API tests only). Packet stays in-progress until owner
 sign-off per acceptance.
 
-2026-07-27 · M0-2 · (this commit) · Gate wired into CI: rake gate now
+2026-07-27 · P0-2 · (this commit) · Gate wired into CI: rake gate now
 also runs standardrb (was CI-only, so local gate and CI agree — it
 immediately caught a quote-style violation in the gate task itself);
 ci.yml triggers on phase-* pushes and collapses its three test steps
@@ -201,9 +201,9 @@ unit-only to the whole gate (simplecov now sees offline integration
 too). Evidence: gate green locally (305 files syntax-OK, lint clean,
 2942+48 runs); CI on pushed head checked below.
 
-2026-07-27 · M0-1 · (this commit) · Dev-loop migration: instantiated
+2026-07-27 · P0-1 · (this commit) · Dev-loop migration: instantiated
 CLAUDE.md (arbot-style golden rules; CRPR retained as pre-PR review;
-git model moved to phase branches + owner-merged PRs per D0-a),
+git model moved to phase branches + owner-merged PRs per R0-a),
 docs/DEV-LOOP.md, docs/BACKLOG.md (full brownfield Phase 0 per owner
 ruling), docs/WORKLOG.md; added `rake gate` (syntax check over
 lib/bin/test + test:unit + test:integration_offline). Evidence: gate

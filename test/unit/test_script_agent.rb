@@ -335,7 +335,7 @@ class TestScriptAgent < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
-  # --- M1-11: output cap + truncation (incident 2026-10-09) ---
+  # --- P1-11: output cap + truncation (incident 2026-10-09) ---
 
   def test_generate_requests_max_tokens_of_at_least_16384
     agent = build_agent

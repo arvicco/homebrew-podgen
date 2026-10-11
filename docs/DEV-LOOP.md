@@ -154,11 +154,11 @@ what good/bad looks like).
 ## 8. Ops pattern
 
 Podgen schedules work (launchd via `podgen schedule`). The
-content-progress invariant is IMPLEMENTED (M00-4):
+content-progress invariant is IMPLEMENTED (P00-4):
 `Validators::FreshnessValidator`, run by `podgen validate`, compares
 the newest episode's content date to the wall clock against a
 cadence inferred from history (median gap); a stalled producer trips
-a visible OLD flag, not silence. The source registry (M00-3,
+a visible OLD flag, not silence. The source registry (P00-3,
 `lib/source_registry.rb`) covers the other half: `rake health`
 probes every hard-coded endpoint, and the gate fails when lib/
 gains an unregistered host. Decommissioning any scheduled job

@@ -5,7 +5,7 @@ require_relative "base_validator"
 require_relative "../yaml_loader"
 
 module Validators
-  # Content-progress invariant (M00-4, CLAUDE.md verification
+  # Content-progress invariant (P00-4, CLAUDE.md verification
   # discipline #4): the newest episode's CONTENT date vs the wall
   # clock, judged against the podcast's own cadence inferred from
   # history (median gap between distinct episode dates). A scheduled

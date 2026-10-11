@@ -3,7 +3,7 @@
 # Gate-tier drift check: every hard-coded external host in lib/ must be
 # either a registered SourceRegistry entry or an explicitly ignored
 # non-service host. Fails when someone adds an endpoint without
-# registering it (CLAUDE.md: source-registry convention, M00-3).
+# registering it (CLAUDE.md: source-registry convention, P00-3).
 
 require_relative "../test_helper"
 require "source_registry"
