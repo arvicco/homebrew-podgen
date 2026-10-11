@@ -211,7 +211,7 @@ currently D0-p, D0-o, D0-c…D0-n, M0-3 sign-off). Landed rulings:
 
 ---
 
-## Phase 1 — robustness (plan in .docs/p01-plan.md; packets land here as signed off)
+## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: M1-0, M1-12, M1-1, M1-3, M1-4/5/6/9/7 (parallelizable), M1-13, M1-2, M1-8, M1-14, M1-10; Gate 1 = owner-merged PR)
 
 ## M1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: ready] [deps: --]
 Signed off 2026-10-10 (priority). Model IDs are hard-coded at 11
@@ -227,6 +227,106 @@ Acceptance: unit test greps lib/ — model literals only in
       ENV override; the generation bump is a ≤3-line diff; one
       bajke + one news generate end to end on the bumped lines
       (owner-run); gate + CI green.
+
+## M1-1 · Permission-profile audit  [tier: top — guardrail security] [status: ready] [deps: --]
+Goal: every invocation path to each HUMAN-action command (direct,
+      bundle exec, ruby, ./bin, rake) is denied by settings.json;
+      `bundle exec ruby*` allow narrowed to the test-runner form.
+Acceptance: written path×rule matrix in .docs; every HUMAN action
+      denied on every path (rule tracing); no legit dev command newly
+      blocked.
+
+## M1-2 · UploadsCommand boundary + observability  [tier: implementation] [status: ready] [deps: --]
+Goal: invalid --mode rejected in initialize (before any side effect);
+      round-robin total rounds capped at the initial pending sum; one
+      log line per pod on permanent-skip drain.
+Acceptance: mode typo exits 2 with zero publisher calls; round cap and
+      drain log pinned by tests.
+
+## M1-3 · Test-hygiene batch  [tier: implementation] [status: ready] [deps: --]
+Goal: ENV save/restore for PODGEN_ROOT and TWITTER_*; audio_trimmer
+      tmp litter cleaned; explicit pathname require in the drift test;
+      CI concurrency group (one run per push with an open PR).
+Acceptance: full suite green under three seeds; single CI run per push.
+
+## M1-4 · Sidecar + probe reliability  [tier: implementation] [status: ready] [deps: --]
+Goal: one guarded JSON load for *_timestamps.json shared by persister
+      and subtitle generator; AudioAssembler probe_duration has one
+      failure contract and a cache that invalidates on mtime/size.
+Acceptance: corrupt sidecar → named error, not ParserError; rewritten
+      file probes fresh.
+
+## M1-5 · STT robustness  [tier: implementation] [status: ready] [deps: --]
+Goal: timestamp epsilon in SubtitleReconciler#validate!; engine file
+      handles closed; temp names unique per thread in engines,
+      AudioTrimmer, AtomicWriter.
+Acceptance: 1e-6-drift reconcile fixture passes; fd count stable
+      across stubbed retries; concurrent temp-name uniqueness test.
+
+## M1-6 · File hygiene  [tier: implementation] [status: ready] [deps: --]
+Goal: HttpDownloader writes temp + rename (no partial on size abort);
+      Voicer segment cleanup in ensure.
+Acceptance: size-cap abort leaves no destination file; assemble raise
+      leaves no segment temps.
+
+## M1-7 · Concurrency + retry semantics  [tier: implementation] [status: ready] [deps: --]
+Goal: shared result hashes in EngineManager/SourceManager written
+      under a Mutex (or merged after join); unreachable raise removed;
+      retry attempt count pinned then documented consistently across
+      Retryable and BaseEngine; status-code-based retryable? where a
+      response exists.
+Acceptance: characterization first, minimal diff; multi-engine
+      offline tests green.
+
+## M1-8 · Freshness completeness  [tier: implementation] [status: ready] [deps: --]
+Goal: guidelines flag `freshness: off` honored by FreshnessValidator;
+      a future-dated newest episode warns instead of passing forever.
+Acceptance: flagged podcast validates clean; future-date fixture
+      warns; existing freshness tests green.
+
+## M1-9 · Small-fix batch  [tier: implementation] [status: ready] [deps: --]
+Goal: normalize_url scheme match case-insensitive; TwitterAgent#
+      truncate no dangling newline when url empty; ImageRanker comment
+      matches code with the sort tuple pinned.
+Acceptance: each characterization test flipped to the fixed behavior
+      in the same commit as its fix.
+
+## M1-10 · Offline fixtures for network sources  [tier: implementation] [status: ready] [deps: --]
+Goal: recorded, trimmed fixtures for bluesky/hn/x/claude_web parse
+      paths; recording is an owner-run network task (HUMAN); parsing
+      tests run in the gate.
+Acceptance: each source's parse path unit-tested offline; fixtures
+      registered in a fixtures README; gate green with no network.
+
+## M1-12 · Vocabulary enrich survives one malformed object  [tier: implementation] [status: ready] [deps: --]
+Goal: enrich prompt pins literal English keys regardless of target
+      language; a parse error on a non-truncated response falls
+      through to salvage so entries before the bad object survive,
+      with one logged warning.
+Acceptance: fake 80-entry array with a malformed entry 40 → 39
+      enrichments merged + warning (0 today); prompt test.
+
+## M1-13 · Fail-fast on dead network  [tier: implementation] [status: ready] [deps: M1-7]
+Goal: connectivity preflight (injectable resolver against a registry
+      host) aborts before Topics with a named error in under 5 s;
+      bounded total retry budget for connection-class errors.
+Acceptance: fake-resolver unit test; dead-DNS run exits in under a
+      minute with one clear line; retry tests green.
+
+## M1-14 · Scheduled content-progress check + status surface  [tier: implementation] [status: ready] [deps: M1-8]
+Goal: `podgen status` prints one line per scheduled podcast (OK/OLD/
+      WARN from content dates, run marker, repeated non-fatal
+      warnings); `podgen schedule` prepares a daily entry and prints
+      the install command (HUMAN); alert only when any pod is not OK.
+Acceptance: fixtures → OLD / WARN / OK; install command printed,
+      never executed by the agent.
+
+## Decision items (Phase 1)
+Open: .docs/DECISIONS.md — D1-a CLAUDE_MODEL semantics, D1-b thinking/
+effort policy, D1-c drift check, D1-d gate lint coverage, D1-e
+exclusion exit codes, D1-f Q-06 language suffix, D1-g YouTube OAuth,
+D1-h dead-code batch, D1-i explicit defers. Rulings land inline in
+the affected packet.
 
 ## M1-11 · Script/translation max_tokens cap + no retry on truncation  [tier: implementation] [status: done] [deps: --]
 Cut from Q-25 (incident 2026-10-09): on a thinking-default model the
