@@ -383,12 +383,19 @@ Ruling (orchestrator, 2026-10-11): no retry on parse failure — the
       bad object. Done 2026-10-11: 95893e5; 2 tests red-then-green; gate
       3090+50 green; CI run 38128847434 green.
 
-## P1-13 · Fail-fast on dead network  [tier: implementation] [status: ready] [deps: P1-7]
+## P1-13 · Fail-fast on dead network  [tier: implementation] [status: done] [deps: P1-7]
 Goal: connectivity preflight (injectable resolver against a registry
       host) aborts before Topics with a named error in under 5 s;
       bounded total retry budget for connection-class errors.
 Acceptance: fake-resolver unit test; dead-DNS run exits in under a
       minute with one clear line; retry tests green.
+Done 2026-10-11: b9edf12 (orchestrator). Rulings: preflight = one DNS
+      lookup of a registered host, 5 s cap, injectable resolver; the
+      "bounded retry budget" is delivered as the SDK client timeout
+      (300 s) rather than a new budget in with_retries — the hours came
+      from SDK-internal retries at the 10-min default, not from the
+      2+4+8 s backoff. Marker/status surfacing → P1-14. 7 tests
+      red-then-green; gate 3126+50 green; live resolver check sub-second.
 
 ## P1-14 · Scheduled content-progress check + status surface  [tier: implementation] [status: ready] [deps: P1-8]
 Goal: `podgen status` prints one line per scheduled podcast (OK/OLD/
