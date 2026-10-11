@@ -213,7 +213,7 @@ currently R0-p, R0-o, R0-c…R0-n, P0-3 sign-off). Landed rulings:
 
 ## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: P1-0, P1-12, P1-1, P1-3, P1-4/5/6/9/7 (parallelizable), P1-15, P1-13, P1-2, P1-8, P1-14, P1-10, P1-16; Gate 1 = owner-merged PR)
 
-## P1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: ready] [deps: --]
+## P1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: in-progress — code landed, outcome check pending] [deps: --]
 Signed off 2026-10-10 (priority). Model IDs are hard-coded at 11
 sites in 8 files with ad-hoc ENV overrides (three sites have none).
 Goal: lib/claude_models.rb holds LINES (opus/sonnet/haiku → current
@@ -233,6 +233,14 @@ Rulings 2026-10-11 (orchestrator, by owner delegation): R1-a → CLAUDE_MODEL
       note). R1-b → leave default effort; step 3's two live runs record
       per-role input/output tokens in the worklog as the baseline for
       Q-28. R1-c → the keyed drift check (step 5) is IN.
+Landed 2026-10-11: 869f84e (registry + text_of, zero behavior change),
+      05b3e93 (bump to opus-5-5 / sonnet-5-5 / haiku-5-5 = newest served),
+      + drift test. Gate 3088+50 green; drift test green live. Outcome
+      check: the scheduled fulgur_news run 2026-10-11 16:30 executes from
+      this checkout — its log must show the new IDs, end_turn on the
+      first script attempt, and an episode; plus the next owner bajke
+      generate (vocabulary present, subtitles reconciled). Status → done
+      when both are read.
 
 ## P1-1 · Permission-profile audit  [tier: top — guardrail security] [status: ready] [deps: --]
 Goal: every invocation path to each HUMAN-action command (direct,
