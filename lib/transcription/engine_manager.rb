@@ -40,6 +40,7 @@ module Transcription
     def transcribe_comparison(audio_path, captions: nil)
       results = {}
       errors = {}
+      lock = Mutex.new
 
       threads = @engine_codes.map do |code|
         Thread.new(code) do |c|
@@ -47,11 +48,12 @@ module Transcription
           engine = build_engine(c)
           log("Starting engine: #{c}")
           start = Time.now
-          results[c] = engine.transcribe(audio_path)
+          result = engine.transcribe(audio_path)
+          lock.synchronize { results[c] = result }
           elapsed = (Time.now - start).round(2)
           log("Engine '#{c}' completed in #{elapsed}s")
         rescue => e
-          errors[c] = e.message
+          lock.synchronize { errors[c] = e.message }
           log("Engine '#{c}' failed: #{e.message}")
         end
       end
@@ -69,8 +71,6 @@ module Transcription
         primary_code = fallback_code
         primary_result = results[fallback_code]
       end
-
-      raise "No engines succeeded" if results.empty?
 
       comparison = {
         primary: primary_result,
