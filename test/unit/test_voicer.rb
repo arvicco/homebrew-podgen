@@ -42,6 +42,33 @@ class TestVoicer < Minitest::Test
     end
   end
 
+  class RaisingAssembler
+    def initialize(**); end
+    def assemble(*, **)
+      raise "assembly boom"
+    end
+  end
+
+  def test_voice_assembler_raises_removes_segment_files_and_propagates
+    tts = MockTTSAgent.new
+    segments = [{ name: "A", text: "x" }, { name: "B", text: "y" }]
+    paths = segments.each_index.map { |i| File.join(Dir.tmpdir, "voicer_test_#{$$}_#{i}.mp3") }
+
+    TTSAgent.stub :new, tts do
+      AudioAssembler.stub :new, RaisingAssembler.new do
+        err = assert_raises(RuntimeError) do
+          Voicer.new(logger: nil).voice(
+            segments: segments, output_path: File.join(@tmpdir, "o.mp3"),
+            voice_id: "v", title: "T", author: "A"
+          )
+        end
+        assert_equal "assembly boom", err.message
+      end
+    end
+
+    paths.each { |p| refute File.exist?(p), "#{p} should be cleaned up" }
+  end
+
   def test_voice_constructs_tts_with_overrides_and_pronunciation
     output_path = File.join(@tmpdir, "out.mp3")
     tts = MockTTSAgent.new
