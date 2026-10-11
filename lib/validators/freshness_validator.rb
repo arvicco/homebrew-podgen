@@ -24,6 +24,10 @@ module Validators
     private
 
     def check
+      unless @config.freshness_enabled?
+        @passes << "Freshness: check disabled by guidelines (freshness: off)"
+        return
+      end
       return unless File.exist?(@config.history_path.to_s)
 
       entries = YamlLoader.load(@config.history_path, default: [])
@@ -39,7 +43,9 @@ module Validators
       newest = dates.last
       age = (@today - newest).to_i
 
-      if age > threshold
+      if age.negative?
+        @warnings << "Freshness: newest episode #{newest} is dated in the future (#{-age} days ahead)"
+      elsif age > threshold
         @warnings << "Freshness: OLD — newest episode #{newest} is #{age} days old " \
           "(cadence ~#{cadence}d, threshold #{threshold}d)"
       else

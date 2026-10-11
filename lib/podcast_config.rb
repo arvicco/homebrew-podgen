@@ -229,6 +229,11 @@ class PodcastConfig
     config.slice(:frequency, :similar, :filter, :priority).compact
   end
 
+  # `- freshness: off` in ## Podcast disables the OLD check (concluded series).
+  def freshness_enabled?
+    parser.podcast_section[:freshness].to_s.strip.downcase != "off"
+  end
+
   def links_enabled?
     !!links_config&.dig(:show)
   end

@@ -6,14 +6,18 @@ require "yaml"
 require "validators/freshness_validator"
 
 class TestFreshnessValidator < Minitest::Test
-  FakeConfig = Struct.new(:history_path, keyword_init: true)
+  FakeConfig = Struct.new(:history_path, :freshness_enabled, keyword_init: true) do
+    def freshness_enabled?
+      freshness_enabled != false
+    end
+  end
 
-  def with_history(dates)
+  def with_history(dates, freshness_enabled: true)
     Dir.mktmpdir do |dir|
       path = File.join(dir, "history.yml")
       entries = dates.map { |d| {"date" => d, "title" => "t", "topics" => []} }
       File.write(path, entries.to_yaml)
-      yield FakeConfig.new(history_path: path)
+      yield FakeConfig.new(history_path: path, freshness_enabled: freshness_enabled)
     end
   end
 
@@ -71,6 +75,32 @@ class TestFreshnessValidator < Minitest::Test
   def test_check_same_day_multi_episodes_use_unique_dates_for_cadence
     # Suffixed same-day episodes must not zero the median gap.
     with_history(%w[2026-08-10 2026-08-10 2026-08-10 2026-08-17 2026-08-24]) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      assert_empty result[:warnings], result.inspect
+    end
+  end
+
+  def test_check_freshness_disabled_skips_old_flag_with_notice
+    with_history(%w[2026-08-01 2026-08-02 2026-08-03 2026-08-04 2026-08-05], freshness_enabled: false) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      assert_empty result[:warnings], result.inspect
+      assert_empty result[:errors]
+      assert result[:passes].any? { |p| p.include?("disabled by guidelines") }, result.inspect
+    end
+  end
+
+  def test_check_future_dated_newest_episode_warns_naming_date
+    with_history(%w[2026-08-20 2026-08-21 2026-08-22 2026-08-23 2026-09-30]) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      future = result[:warnings].find { |w| w.include?("future") }
+      refute_nil future, result.inspect
+      assert_includes future, "2026-09-30"
+      assert_empty result[:errors]
+    end
+  end
+
+  def test_check_newest_dated_today_is_not_future
+    with_history(%w[2026-08-22 2026-08-23 2026-08-24 2026-08-25]) do |config|
       result = validate(config, Date.new(2026, 8, 25))
       assert_empty result[:warnings], result.inspect
     end
