@@ -7,6 +7,21 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · CRPR Gate 1 · 47a7ebd · Two review rounds on the whole
+phase diff (111 files, 31+ commits). Round 1: APPROVED with 3
+WARNINGS, all valid — (W1) four direct Anthropic::Client sites lacked
+the P1-13 timeout, so a mid-run network loss in the language pipeline
+could still stack to hours; (W2) the loopback consent accepted one
+connection and blocked on a silent browser pre-connect socket; (W3)
+the match-anywhere denies also matched the repo PATH followed by a
+space (`git -C …/podgen diff -- …publish_command.rb`), contradicting
+P1-1's "no legit dev command newly blocked". Fixed in 47a7ebd with
+tests (timeout pinned per site; idle-socket-then-callback; overall
+wait expiry) and anchored deny forms. Round 2: APPROVED, no warnings,
+each W verified with evidence. refs/cr/reviewed → 47a7ebd. Remaining
+nits (per-read bound on the callback socket, stale rows in the
+gitignored matrix) noted, not blocking.
+
 2026-10-11 · INCIDENT (same day) · cuentos 2026-10-10 reconciliation ·
 Found by the first run of `podgen status` (P1-14): the owner's cuentos
 generate started 11:19 local; at 11:20 the P1-0 refactor was being
