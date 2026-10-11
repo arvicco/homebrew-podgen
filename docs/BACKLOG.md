@@ -437,13 +437,20 @@ Done 2026-10-11: 7e18103 (orchestrator). Before/after English selection
       the legacy rule. 5 tests red-then-green; one site-generator fixture
       now configures es for its -es file.
 
-## P1-16 · YouTube OAuth loopback flow replaces OOB  [tier: top — auth flow, owner-visible] [status: ready] [deps: --]
+## P1-16 · YouTube OAuth loopback flow replaces OOB  [tier: top — auth flow, owner-visible] [status: done — owner re-auth pending (Gate 1 runbook)] [deps: --]
 Goal: loopback-redirect authorization replaces the discontinued
       out-of-band flow; token exchange behind a fake-able HTTP seam;
       interactive prompt in the CLI layer; refresh path untouched.
 Acceptance: unit tests on the exchange with a fake seam; one owner-run
       re-auth on a clean config in the Gate 1 runbook (EXPECT lines);
       upload behavior unchanged.
+Landed 2026-10-11: 1778b62 (orchestrator). Rulings: ephemeral loopback
+      port on 127.0.0.1 (no fixed port to collide with); consent is an
+      injected collaborator; `open` on macOS as a convenience, URL always
+      printed; denied consent → the existing "No authorization code"
+      error. 4 tests red-then-green; gate 3139+50 green. The one HUMAN
+      step — a fresh authorization on a clean token — is in the Gate 1
+      runbook with EXPECT lines.
 
 ## Rulings (Phase 1)
 R1-a…R1-i ruled 2026-10-11 by the orchestrator under the owner's
