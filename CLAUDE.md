@@ -34,6 +34,10 @@ tracked worklog only once executed.
    `phase-N` branches is allowed. Owner-only commands are enforced
    twice: settings.json denies and the dispatcher's `CLAUDECODE=1`
    refusal (owner override from the `!` prompt: `PODGEN_OWNER=1`).
+   While a production generate holds a run lock (or during the
+   16:25–17:10 launchd window) the loop YIELDS: no edits under lib/
+   bin/ scripts/, no branch switches or merges — enforced by
+   scripts/prod_guard.sh (P2-0).
 4. **Never change the frozen domain silently:** RSS/site output
    contracts, the episode guid/basename scheme, and the schemas of
    history.yml, uploads.yml, and `*_timestamps.json`. Breaking these
