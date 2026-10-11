@@ -716,7 +716,7 @@ class TestTellConfig < Minitest::Test
   def test_gloss_model_array_passes_through_full_ids
     write_config(base_config.merge("gloss_model" => ["claude-opus-4-6", "claude-sonnet-4-6"]))
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", ClaudeModels.line_id(:sonnet)], config.gloss_model
+    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
   end
 
   def test_phonetic_model_scalar_becomes_array
@@ -736,7 +736,7 @@ class TestTellConfig < Minitest::Test
   def test_phonetic_model_array_passes_through_full_ids
     write_config(base_config.merge("phonetic_model" => ["claude-haiku-4-5-20251001", "claude-opus-4-6"]))
     config = Tell::Config.new
-    assert_equal [ClaudeModels.line_id(:haiku), "claude-opus-4-6"], config.phonetic_model
+    assert_equal ["claude-haiku-4-5-20251001", "claude-opus-4-6"], config.phonetic_model
   end
 
   def test_phonetic_model_defaults_to_first_gloss_model_when_absent
