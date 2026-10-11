@@ -7,6 +7,17 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-4 (Q-05, Q-01) · aff5261 · One guarded sidecar load:
+TimestampPersister.load raises CorruptSidecarError (StandardError
+subclass, names the file) and SubtitleGenerator.generate_srt now goes
+through it instead of its own JSON.parse. AudioAssembler#probe_duration
+memo keyed by (path, mtime, size) so a re-voiced/trimmed file is
+re-probed; the class/instance contract split (nil vs raise) kept on
+purpose and documented. Red: raw ParserError from both consumers; a
+rewritten 3s tone served as 1s from the memo. Gate 3097+50 green.
+Executed by the orchestrator while the P1-3 worktree agent ran — no
+file overlap.
+
 2026-10-11 · P1-1 · dca69d8 · Permission audit over 21 invocation paths
 (.docs/P1-1-permission-matrix.md). Finding: the deny list anchored on
 `bin/podgen <cmd>` — bundle exec / ruby / --quiet / absolute path /
