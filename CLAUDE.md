@@ -20,15 +20,20 @@ tracked worklog only once executed.
 2. **Dependency policy: pinned set only.** Gems stay pinned `~> x.y`.
    No new dependency without a request for consideration presented
    WITH a pros/cons analysis — never a bare ask.
-3. **Never run publish, release, or push-to-master actions.** HUMAN
-   actions: merging PRs into `master` (the gate-closing event),
-   `gh release create`, `git tag`, and listener-facing CLI commands —
-   `podgen publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
-   `analytics` (Worker deploys), and `generate --youtube/--lingq`.
-   Prepare configs and print exact commands instead. Pushing `phase-N`
-   branches to origin is allowed. Enforced twice: settings.json denies
-   (match-anywhere) and the dispatcher refuses owner actions when
-   `CLAUDECODE=1` (owner override from the `!` prompt: `PODGEN_OWNER=1`).
+3. **Irreversible/outward acts are HUMAN actions; routine operations
+   are LOOP work.** Owner-only (identity acts): merging PRs into
+   `master` (the gate-closing event), `gh release create`, `git tag`,
+   OAuth consents, and the listener-facing CLI commands — `podgen
+   publish`, `unpublish`, `uploads`, `tweet`, `schedule`, `analytics`
+   (Worker deploys), `generate --youtube/--lingq`. Everything
+   operational short of that — fetches, fixture recording, regens,
+   verification rounds, builds — the loop runs itself, announced and
+   verified, once the containing packet is adopted; it never hands the
+   owner a runbook of commands it could run (dev-loop doctrine rules
+   1–2; blast-radius and ~30-min visibility limits apply). Pushing
+   `phase-N` branches is allowed. Owner-only commands are enforced
+   twice: settings.json denies and the dispatcher's `CLAUDECODE=1`
+   refusal (owner override from the `!` prompt: `PODGEN_OWNER=1`).
 4. **Never change the frozen domain silently:** RSS/site output
    contracts, the episode guid/basename scheme, and the schemas of
    history.yml, uploads.yml, and `*_timestamps.json`. Breaking these
@@ -41,7 +46,8 @@ tracked worklog only once executed.
    (`HttpRetryable#with_http_retries`, `Retryable#with_retries`);
    tests inject fakes and recorded fixtures. `test/api/` is the
    explicit exception, gated by `skip_unless_env` and excluded from
-   the gate. Fixture refresh is an owner-triggered task.
+   the gate. Fixture refresh is loop-run (`rake fixtures:record`),
+   never silently: the recorder refuses empty or truncated bodies.
 7. **Minimal diffs.** Smallest behavior-preserving change; no
    reformatting, renaming, or "clean up" beyond the packet's scope.
    Refactors are separate, owner-approved packets.
@@ -50,6 +56,16 @@ tracked worklog only once executed.
    error paths must redact.
 9. **Pre-existing failing tests are bug signals.** Flag them; never
    skip, dismiss, or treat as background noise.
+10. **The dev-loop doctrine binds this project.** Read the dev-loop
+   plugin's `doctrine.md` (17 owner-ruled working agreements) and
+   `boards.md` at session start for any substantive work. Mechanics
+   that bite here: a Bash call containing `git push`, `git commit` or
+   `gh pr create` contains NOTHING else; suites run to a log
+   (`> log 2>&1; echo exit=$?`) and "green" is read from the log, never
+   from a pipe; the gate PR opens EARLY as a living document; a turn
+   waiting on background work states "independent items remaining: N"
+   and N is 0; subagent lanes run on Opus-class models (`model:
+   "opus"`), frontier tokens buy judgment.
 
 ## Commands
 
