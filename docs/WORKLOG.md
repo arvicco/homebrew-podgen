@@ -7,6 +7,28 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-0 (code) · 869f84e, 05b3e93, +drift test · One model
+registry: lib/claude_models.rb LINES (newest per line) + ROLES (13 call
+sites → line); resolution per-role ENV → per-line ENV → default;
+CLAUDE_MODEL now aliases the opus line (R1-a) so it reaches the
+reviewer too (previously on its own key only) and no longer steers
+Tell translation (own role, sonnet line). AnthropicClient.text_of
+replaced all 11 `content.first.text` reads (thinking-default models
+put a thinking block first). Step 2 landed at the old IDs with zero
+behavior change (gate green), step 3 was the 3-line bump to
+opus-5-5 / sonnet-5-5 / haiku-5-5 — what the Models API serves as
+newest (created 09-21, 09-28, 10-07), verified by the new keyed drift
+test (green live). Catches: two Tell-config passthrough tests were
+over-pinned to the alias and had to go back to literals; the test
+helper loads .env, so registry tests isolate every CLAUDE_* key.
+Operational fact worth knowing: the launchd job runs scripts/run.sh
+from THIS checkout, so the 16:30 news run exercises whatever phase-1
+has at that moment — it is the outcome check for this packet, read
+at the next wakeup. Open from the bump (Q-28 baseline): small-cap
+calls (description 256, language-detect 30 tokens) on thinking-
+default sonnet/haiku lines may truncate; the scheduled run's
+description step is the first evidence.
+
 2026-10-11 · R1-a…R1-i ruled · (docs commit) · Owner ruling: decision
 items are for PRINCIPAL questions only (frozen domain, phase scope,
 spend policy, owner data, listener-visible behavior); implementation-
