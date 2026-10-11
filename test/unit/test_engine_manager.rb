@@ -128,7 +128,27 @@ class TestEngineManager < Minitest::Test
     stub_engine(manager, "open", mock_open)
     stub_engine(manager, "groq", mock_groq)
 
-    assert_raises(RuntimeError) { manager.transcribe("/fake.mp3") }
+    err = assert_raises(RuntimeError) { manager.transcribe("/fake.mp3") }
+    assert_match(/All engines failed/, err.message)
+    assert_includes err.message, "fail 1"
+    assert_includes err.message, "fail 2"
+  end
+
+  def test_comparison_mode_keys_results_and_errors_per_engine_under_concurrency
+    results = %w[open elab groq].each_with_index.to_h { |c, i| [c, { text: "#{c} text", segments: [], i: i }] }
+    manager = build_manager(%w[open elab groq])
+    # Finish in reverse of configured order; elab fails.
+    stub_engine(manager, "open", MockTranscriptionEngine.new(result: results["open"], delay: 0.06))
+    stub_engine(manager, "elab", MockTranscriptionEngine.new(error: RuntimeError.new("elab down"), delay: 0.03))
+    stub_engine(manager, "groq", MockTranscriptionEngine.new(result: results["groq"]))
+    stub_reconciler(manager, MockReconciler.new)
+
+    output = manager.transcribe("/fake.mp3")
+
+    assert_equal results["open"], output[:primary], "Primary is the first configured engine, not the first to finish"
+    assert_equal %w[groq open], output[:all].keys.sort
+    assert_equal results["groq"], output[:all]["groq"]
+    assert_equal({ "elab" => "elab down" }, output[:errors])
   end
 
   def test_comparison_mode_includes_captions_in_reconciliation

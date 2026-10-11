@@ -36,6 +36,19 @@ class TestHttpDownloader < Minitest::Test
     assert_match(/MB limit/, err.message)
   end
 
+  def test_write_body_size_abort_leaves_no_file_at_destination
+    downloader = HttpDownloader.new(max_size: 10)
+    response = Object.new
+    response.define_singleton_method(:read_body) { |&block| 2.times { block.call("x" * 6) } }
+
+    assert_raises(RuntimeError) do
+      downloader.send(:write_body, response, @dest, URI.parse("http://example.com/big"))
+    end
+
+    refute File.exist?(@dest), "partial file must not remain at destination"
+    assert_empty Dir.glob("#{@dest}.part.*"), "temp partial must be cleaned up"
+  end
+
   def test_follow_redirect_raises_when_exhausted
     response = Object.new
     response.define_singleton_method(:[]) { |_key| "http://example.com/next" }

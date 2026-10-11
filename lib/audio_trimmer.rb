@@ -2,6 +2,7 @@
 
 require "tmpdir"
 require "fileutils"
+require "securerandom"
 require_relative "loggable"
 require_relative "snip_interval"
 
@@ -52,7 +53,7 @@ class AudioTrimmer
 
     keeps = removal.keep_segments(total)
     if keeps.any? && keeps != [SnipInterval::Interval.new(0.0, total)]
-      trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}.mp3")
+      trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}_#{SecureRandom.hex(4)}.mp3")
       @temp_files << trimmed_path
       @assembler.snip_segments(audio_path, trimmed_path, keeps)
       kept_duration = keeps.sum { |s| s.to - s.from }
@@ -93,7 +94,7 @@ class AudioTrimmer
     log("Saved tail for review: #{tail_path}")
 
     # Trim audio
-    trimmed_path = File.join(Dir.tmpdir, "podgen_autotrimmed_#{Process.pid}.mp3")
+    trimmed_path = File.join(Dir.tmpdir, "podgen_autotrimmed_#{Process.pid}_#{SecureRandom.hex(4)}.mp3")
     @temp_files << trimmed_path
     @assembler.trim_to_duration(audio_path, trimmed_path, trim_point)
     trimmed_path

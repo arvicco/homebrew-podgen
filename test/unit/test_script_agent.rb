@@ -335,6 +335,26 @@ class TestScriptAgent < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # --- P1-11: output cap + truncation (incident 2026-10-09) ---
+
+  def test_generate_requests_max_tokens_of_at_least_16384
+    agent = build_agent
+    client = stub_client(agent, title: "T", segments: [{ name: "Open", text: "Hi" }])
+
+    agent.generate(valid_research_data)
+
+    assert_operator client.last_call[:max_tokens], :>=, 16384
+  end
+
+  def test_generate_does_not_retry_when_output_truncated_at_max_tokens
+    agent = build_agent
+    client = MockClient.new({ error: "unexpected end of input" }, stop_reason: "max_tokens")
+    agent.instance_variable_set(:@client, client)
+
+    assert_raises(TruncatedOutputError) { agent.generate(valid_research_data) }
+    assert_equal 1, client.calls.length, "a max_tokens truncation is deterministic; must not be retried"
+  end
+
   private
 
   def valid_research_data
@@ -373,16 +393,16 @@ class TestScriptAgent < Minitest::Test
 
   class MockClient
     attr_reader :calls
-    def initialize(output) = (@output = output; @calls = [])
+    def initialize(output, stop_reason: "end_turn") = (@output = output; @stop_reason = stop_reason; @calls = [])
     def messages = self
     def last_call = @calls.last
-    def create(**kw) = (@calls << kw; MockMsg.new(@output))
+    def create(**kw) = (@calls << kw; MockMsg.new(@output, @stop_reason))
   end
 
   class MockMsg
-    def initialize(output) = @output = output
+    attr_reader :stop_reason
+    def initialize(output, stop_reason = "end_turn") = (@output = output; @stop_reason = stop_reason)
     def parsed_output = @output
-    def stop_reason = "end_turn"
     def usage = MockUsage.new
   end
 

@@ -25,20 +25,25 @@ module Transcription
       with_engine_retries do
         start = Time.now
 
+        audio_file = File.open(audio_path, "rb")
         body = {
-          file: File.open(audio_path, "rb"),
+          file: audio_file,
           model_id: @model,
           language_code: @language,
           timestamps_granularity: "word"
         }
 
-        response = HTTParty.post(
-          ENDPOINT,
-          headers: { "xi-api-key" => @api_key },
-          multipart: true,
-          body: body,
-          timeout: TIMEOUT
-        )
+        response = begin
+          HTTParty.post(
+            ENDPOINT,
+            headers: { "xi-api-key" => @api_key },
+            multipart: true,
+            body: body,
+            timeout: TIMEOUT
+          )
+        ensure
+          audio_file.close
+        end
 
         elapsed = (Time.now - start).round(2)
 

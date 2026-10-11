@@ -83,6 +83,23 @@ class TestBaseEngine < Minitest::Test
     refute @engine.send(:retryable?, error)
   end
 
+  def test_not_retryable_for_number_containing_429
+    error = RuntimeError.new("error id 14290")
+    refute @engine.send(:retryable?, error)
+  end
+
+  def test_retryable_prefers_status_code_over_message
+    resp = Struct.new(:code).new(503)
+    error = RuntimeError.new("upstream unavailable")
+    error.define_singleton_method(:response) { resp }
+    assert @engine.send(:retryable?, error)
+
+    resp400 = Struct.new(:code).new(400)
+    error400 = RuntimeError.new("HTTP 429 in body text")
+    error400.define_singleton_method(:response) { resp400 }
+    refute @engine.send(:retryable?, error400)
+  end
+
   # Constants
 
   def test_max_retries
@@ -175,6 +192,19 @@ class TestBaseEngine < Minitest::Test
       assert_match(/BaseEngine failed after 4 attempts/, err.message)
       assert_equal 4, call_count # 1 initial + 3 retries
     end
+  end
+
+  def test_with_engine_retries_succeeds_on_last_allowed_attempt
+    call_count = 0
+    @engine.stub(:sleep, nil) do
+      result = @engine.send(:with_engine_retries) do
+        call_count += 1
+        raise "HTTP 503 Service Unavailable" if call_count < 4
+        :ok
+      end
+      assert_equal :ok, result
+    end
+    assert_equal 4, call_count # MAX_RETRIES = 3 retries after the first attempt
   end
 
   def test_with_engine_retries_does_not_retry_non_retryable
@@ -706,5 +736,58 @@ class TestElevenlabsEngine < Minitest::Test
   def test_transcribe_raises_for_missing_file
     err = assert_raises(RuntimeError) { @engine.transcribe("/nonexistent.mp3") }
     assert_match(/Audio file not found/, err.message)
+  end
+end
+
+# ── Engine fd hygiene (Q-04) ────────────────────────────────────────────────
+
+class TestEngineFileHandleClosing < Minitest::Test
+  def setup
+    @audio = Tempfile.new(["fd", ".mp3"])
+    @audio.write("fake audio data")
+    @audio.flush
+  end
+
+  def teardown
+    @audio.close!
+  end
+
+  def open_handles
+    ObjectSpace.each_object(File).count { |f| !f.closed? && f.path == @audio.path }
+  end
+
+  # HTTP stub failing twice (retryable 503) then succeeding.
+  def flaky_post(success_body)
+    calls = 0
+    lambda do |*_args, **_kw|
+      calls += 1
+      if calls <= 2
+        MockHTTPResponse.new(code: 503, body: "busy", "success?": false)
+      else
+        MockHTTPResponse.new(code: 200, body: success_body, "success?": true)
+      end
+    end
+  end
+
+  def assert_no_leaked_handles(engine, success_body)
+    engine.define_singleton_method(:sleep) { |_s| nil }
+    before = open_handles
+    GC.disable
+    HTTParty.stub(:post, flaky_post(success_body)) { engine.transcribe(@audio.path) }
+    assert_equal before, open_handles
+  ensure
+    GC.enable
+  end
+
+  def test_openai_closes_audio_file_across_retries
+    assert_no_leaked_handles(Transcription::OpenaiEngine.new(language: "en"), { "text" => "hi" }.to_json)
+  end
+
+  def test_groq_closes_audio_file_across_retries
+    assert_no_leaked_handles(Transcription::GroqEngine.new(language: "en"), { "text" => "hi" }.to_json)
+  end
+
+  def test_elevenlabs_closes_audio_file_across_retries
+    assert_no_leaked_handles(Transcription::ElevenlabsEngine.new(language: "en"), { "text" => "hi", "words" => [] }.to_json)
   end
 end

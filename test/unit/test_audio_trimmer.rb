@@ -211,6 +211,14 @@ class TestAudioTrimmer < Minitest::Test
     assert_equal 1, trimmer.temp_files.length
   end
 
+  def test_apply_trim_temp_names_unique_across_threads
+    paths = 2.times.map do
+      Thread.new { AudioTrimmer.new(assembler: MockAssembler.new).apply_trim("/input.mp3", skip: 10) }
+    end.map(&:value)
+
+    refute_equal paths[0], paths[1]
+  end
+
   # --- trim_outro ---
 
   def test_trim_outro_with_matching_words
@@ -308,6 +316,7 @@ class TestAudioTrimmer < Minitest::Test
 
   def teardown
     FileUtils.rm_rf(@tmpdir)
+    FileUtils.rm_f(Dir.glob(File.join(Dir.tmpdir, "podgen_*trimmed_#{Process.pid}_*.mp3")))
   end
 
   # --- words_match? (characterization: array-zip semantics) ---

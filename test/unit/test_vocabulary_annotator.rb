@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 require "vocabulary_annotator"
 require "tell/espeak"
 
@@ -9,12 +10,25 @@ class TestVocabularyAnnotator < Minitest::Test
     @annotator = VocabularyAnnotator.new("test-key", model: "claude-sonnet-4-6")
   end
 
+  # --- CRPR W1 (P1-13): direct client sites carry the bounded timeout ---
+
+  def test_client_is_built_with_the_bounded_request_timeout
+    captured = nil
+    Anthropic::Client.stub(:new, ->(**kw) {
+      captured = kw
+      Object.new
+    }) do
+      VocabularyAnnotator.new("test-key", model: "m")
+    end
+    assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
+  end
+
   # --- model resolution ---
 
   def test_default_model_is_sonnet_when_no_env_set
     ENV.delete("CLAUDE_VOCAB_MODEL")
     annotator = VocabularyAnnotator.new("test-key")
-    assert_equal "claude-sonnet-4-6", annotator.instance_variable_get(:@model)
+    assert_equal ClaudeModels.for(:vocab), annotator.instance_variable_get(:@model)
   end
 
   def test_claude_vocab_model_env_overrides_default
@@ -567,6 +581,41 @@ class TestVocabularyAnnotator < Minitest::Test
     prompt = @annotator.send(:enrich_prompt, "sl", "Polish", { similar: "Polish, Russian" })
     assert_includes prompt, "Russian"
     refute_match(/similar_translations.*Polish/, prompt)
+  end
+
+  # --- P1-12 (Q-24): one malformed object must not discard the whole enrichment ---
+
+  def test_enrich_prompt_pins_english_key_names_regardless_of_target_language
+    prompt = @annotator.send(:enrich_prompt, "sl", "Russian")
+
+    assert_match(/exactly these JSON keys/i, prompt)
+    assert_match(/lemma, translation, definition/, prompt)
+    assert_match(/never translate (the )?key names/i, prompt)
+  end
+
+  def test_call_enrich_api_salvages_entries_before_a_malformed_object
+    good = ->(i) { %({"lemma":"w#{i}","translation":"t#{i}","definition":"d#{i}"}) }
+    objects = (1..80).map { |i| (i == 40) ? %({лемма: "w40", "translation":"t40","definition":"d40"}) : good.call(i) }
+    raw = "[\n" + objects.join(",\n") + "\n]"
+
+    text_block = Struct.new(:type, :text).new("text", raw)
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens).new(100, 5000, 0, 0)
+    message = Struct.new(:content, :stop_reason, :model, :usage).new([text_block], "end_turn", "test", usage)
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_| message }
+    logs = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| logs << m }
+    annotator = VocabularyAnnotator.new("test-key", model: "m", logger: logger)
+    annotator.instance_variable_get(:@client).stub(:messages, fake_messages) do
+      entries = (1..80).map { |i| { lemma: "w#{i}" } }
+      result = annotator.send(:call_enrich_api, entries, language: "sl", target_language: "Russian", filters: {})
+
+      assert_equal 39, result.length, "entries before the malformed object survive"
+      assert_equal "w39", result.last[:lemma]
+    end
+    assert logs.any? { |m| m.include?("WARNING") && m.include?("malformed") && m.include?("39") },
+      "expected one warning naming the salvage count, got: #{logs.inspect}"
   end
 
   # --- enrich_entries (merge logic) ---

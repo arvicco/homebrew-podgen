@@ -77,3 +77,11 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 **Why.** A broad `rescue => e` that prints only `e.message` makes a revoked API key (permanent) indistinguishable from a network blip (transient) — the operator sees the same "non-fatal" warning forever. Naming the class in the warning is the cheapest possible signal split. Even cache reads narrow their rescue to the expected classes (`word_stats.rb#load_cache` rescues `Psych::Exception`/`Errno::ENOENT` — corrupt or vanished means "cache miss"; anything else raises). The only tolerated bare modifier rescues are cosmetic guards like `logger.phase_end(...) rescue nil`.
 
 **Implication.** New rescue sites must name their bucket in a trailing comment and include `e.class` in any warning they log. If you can't say which bucket a rescue is in, it's probably fatal — let it raise.
+
+## Model IDs live in one registry
+
+`lib/claude_models.rb` holds `LINES` (the newest model in each line: opus, sonnet, haiku) and `ROLES` (each call site's role → line). Every Claude call resolves its model through `ClaudeModels.for(:role)`; nothing else in `lib/` may contain a model ID literal (a unit test greps for it).
+
+**Why.** Before P1-0, IDs were hard-coded at eleven sites in eight files with ad-hoc ENV knobs, so a generation bump was a hunt and three sites had no override at all. A manual model switch in 2026-10 then exposed a second hazard: thinking-default models put a thinking block first, so `content.first.text` broke.
+
+**Implication.** A generation bump is a three-line change to `LINES`. Overrides resolve per-role ENV (`CLAUDE_<ROLE>_MODEL`) → per-line ENV (`CLAUDE_OPUS_MODEL` etc.; `CLAUDE_MODEL` aliases the opus line) → default. Read response text through `AnthropicClient.text_of(message)`, never `content.first.text`. The keyed drift test under `test/api` tells you when a line has a newer ID.

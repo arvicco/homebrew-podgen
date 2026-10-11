@@ -46,6 +46,12 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "news", parser.podcast_section[:type]
   end
 
+  def test_parses_freshness_flag_in_podcast_section
+    parser = build_parser("## Podcast\n- name: Test\n- freshness: off\n")
+
+    assert_equal "off", parser.podcast_section[:freshness]
+  end
+
   def test_parses_languages_with_voice_ids
     parser = build_parser(<<~MD)
       ## Podcast

@@ -17,6 +17,10 @@ class AudioAssembler
   OUTRO_FADE_IN = 2  # seconds
 
   # Returns the duration of an audio file in seconds via ffprobe.
+  # Two deliberate contracts (P1-4, Q-01): this class method returns nil on any
+  # failure (callers chain fallbacks: rss_generator, stats, groq/tts agents);
+  # the instance method below raises, because inside assembly a probe failure
+  # is fatal, and memoizes per file identity.
   # Standalone class method — no instance needed, no verify_ffmpeg! side effect.
   # Returns nil if ffprobe fails or isn't installed.
   def self.probe_duration(path)
@@ -140,7 +144,8 @@ class AudioAssembler
 
   # Returns the duration of an audio file in seconds (cached).
   def probe_duration(path)
-    return @duration_cache[path] if @duration_cache.key?(path)
+    key = duration_cache_key(path)
+    return @duration_cache[key] if @duration_cache.key?(key)
 
     stdout, stderr, status = Open3.capture3(
       "ffprobe", "-v", "quiet",
@@ -153,7 +158,15 @@ class AudioAssembler
       raise "ffprobe failed for #{path}: #{stderr}"
     end
 
-    @duration_cache[path] = stdout.strip.to_f
+    @duration_cache[key] = stdout.strip.to_f
+  end
+
+  # Memo keyed by (path, mtime, size): a re-voiced or trimmed file is re-probed.
+  def duration_cache_key(path)
+    stat = File.stat(path)
+    [path, stat.mtime.to_f, stat.size]
+  rescue Errno::ENOENT
+    [path, nil, nil]
   end
 
   private

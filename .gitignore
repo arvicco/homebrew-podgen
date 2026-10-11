@@ -12,3 +12,7 @@ podcasts/*/
 .claude/worktrees/
 coverage/
 .docs/
+
+# per-project hook config + CR marker (process artifacts, box-local)
+.claude/config.sh
+.claude/last-review.sha

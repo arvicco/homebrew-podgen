@@ -57,11 +57,12 @@ GROQ_API_KEY=...              # Optional: Groq transcription engine (language pi
 GROQ_WHISPER_MODEL=whisper-large-v3   # Optional: Groq Whisper model (default: whisper-large-v3)
 LINGQ_API_KEY=...             # Optional: LingQ upload (language pipeline)
 YOUTUBE_BROWSER=chrome        # Optional: browser for yt-dlp cookie auth (default: chrome)
-CLAUDE_MODEL=claude-opus-4-7          # Optional: Claude model for scripts (default: claude-opus-4-7)
-CLAUDE_WEB_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for web search source
-CLAUDE_DESCRIPTION_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for episode title/description cleanup
-CLAUDE_VOCAB_MODEL=claude-sonnet-4-6        # Optional: Claude model for vocabulary annotation
-CLAUDE_RECONCILER_MODEL=claude-sonnet-4-6   # Optional: Claude model for subtitle reconciliation
+CLAUDE_OPUS_MODEL=...         # Optional: override the opus line (script, topics, translation, review, transcript reconciliation, Tell gloss)
+CLAUDE_SONNET_MODEL=...       # Optional: override the sonnet line (descriptions, vocabulary, subtitle reconciliation, cover ranking, Tell translation)
+CLAUDE_HAIKU_MODEL=...        # Optional: override the haiku line (web search source, language detection)
+CLAUDE_MODEL=...              # Optional: alias of CLAUDE_OPUS_MODEL (no longer steers Tell translation)
+CLAUDE_<ROLE>_MODEL=...       # Optional: per-role override beats the line, e.g. CLAUDE_VOCAB_MODEL, CLAUDE_SCRIPT_MODEL,
+                              #   CLAUDE_RECONCILER_MODEL (subtitles), CLAUDE_WEB_MODEL — roles in lib/claude_models.rb
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
 ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
 ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription model
@@ -107,6 +108,7 @@ ruby bin/podgen <command> [options]
 | `podgen stats <podcast>`              | Show podcast statistics and download analytics           |
 | `podgen analytics <sub>`              | Manage Cloudflare analytics Worker                       |
 | `podgen validate <podcast>`           | Validate config and output                               |
+| `podgen status [podcast]`             | One-line OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN) |
 | `podgen list`                         | List available podcasts                                  |
 | `podgen add <podcast> <url>`          | Queue a priority link for the next episode               |
 | `podgen links <podcast>`              | List or manage queued priority links                     |
@@ -377,7 +379,7 @@ Configure in `.env`:
 ```
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2    # Default TTS model (long-form stable)
 ELEVENLABS_VOICE_ID=cjVigY5qzO86Huf0OWal     # Eric - Smooth, Trustworthy
-CLAUDE_MODEL=claude-opus-4-7                   # Script generation model
+CLAUDE_OPUS_MODEL=                             # Opus-line override (script generation etc.); defaults in lib/claude_models.rb
 ```
 
 Per-podcast override of the TTS model goes in `## Audio`:
@@ -1078,6 +1080,7 @@ podgen schedule fulgur_news --time 18:00 --publish --telegram
 | `--test`       | Send a test Telegram message and exit                  |
 | `--remove`     | Unload and delete the scheduler for this podcast       |
 | `--status`     | Report scheduled time, loaded/running state, last run  |
+| `--status-check` | Schedule the daily `podgen status` check (no podcast arg) |
 
 `--remove`, `--status`, and `--test` are mutually exclusive. `--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast). Use `--test` after setup to verify alerts are working.
 
@@ -1102,6 +1105,41 @@ podgen schedule ruby_world --remove
 `--remove` and `--status` do not require the podcast directory to still exist, so you can clean up schedulers for deleted podcasts.
 
 **Note:** macOS must be awake at the scheduled time. Keep the machine plugged in and disable sleep, or use `caffeinate`.
+
+### podgen status (content-progress check)
+
+`podgen status` prints one line per podcast (podcasts with an installed launchd
+scheduler first). It is read-only and makes no network calls.
+
+```
+ruby_world  OK    newest 2026-10-10 (1d old)
+fulgur_news WARN  repeated in last 3 runs: Warning: Twitter credits depleted (#)
+old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, threshold 2d)
+```
+
+- **OLD** - newest episode older than the cadence threshold (same rule as the
+  `podgen validate` freshness check; `- freshness: off` in `## Podcast` reports OK).
+- **WARN** - the latest run log in `logs/<podcast>/` ends with an `ERROR` line or
+  contains a `Warning:` / `WARNING` line, or the same warning appears in each of
+  the last 3 run logs (`--runs N` to change), or there is no history yet.
+- **OK** - otherwise.
+
+Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
+podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
+array; keys are only ever added, never renamed or removed:
+
+```json
+[{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"]}]
+```
+
+`verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
+when unknown; `reasons` is an array of short strings.
+
+The daily check is installed by the owner only (`podgen status --install-hint`
+prints the command): `bin/podgen schedule --status-check --time 07:00` writes
+and loads `com.podcastagent.status`, which runs `scripts/run_status.sh`. That
+wrapper sends the summary to Telegram (`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`
+in `.env`) only when the exit code is non-zero.
 
 ### Scheduled batch uploads across multiple pods
 
@@ -1385,10 +1423,17 @@ podgen/
 ## Development
 
 ```bash
-bundle exec rake gate      # pre-commit gate: syntax + lint (standardrb) + unit + offline integration
+bundle exec rake gate      # pre-commit gate: syntax + lint (standardrb; new files only — see .standard_todo.yml) + unit + offline integration
 bundle exec rake test      # full suite (API-keyed tiers run only with keys present)
 bundle exec rake health    # probe every registered external endpoint (network; see lib/source_registry.rb)
+bundle exec rake fixtures:record  # re-record the network sources' test fixtures (network + keys; owner-run, never in the gate)
+bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check sends this output to Telegram, so log lines must stay secret-free
 ```
+
+Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
+`analytics`, and `generate --youtube/--lingq`) refuse to run inside a Claude
+Code session (`CLAUDECODE=1`) with exit 2; `--dry-run` forms still work. To run
+one deliberately from the Claude Code prompt: `! PODGEN_OWNER=1 bin/podgen publish <pod>`.
 
 The gate is also what CI runs. Adding a hard-coded URL to a new
 external host fails the gate until the host is registered in
@@ -1762,7 +1807,7 @@ Tell loads `.env` from the code root and `~/.env`. Available variables:
 | `DEEPL_AUTH_KEY`         | DeepL translation                                       |
 | `ANTHROPIC_API_KEY`      | Claude translation + glossing                           |
 | `OPENAI_API_KEY`         | OpenAI translation                                      |
-| `CLAUDE_MODEL`           | Claude model for translation (default: claude-sonnet-4-6) |
+| `CLAUDE_TELL_TRANSLATE_MODEL` | Claude model for translation (default: the sonnet line in lib/claude_models.rb; `CLAUDE_SONNET_MODEL` overrides the line) |
 | `OPENAI_TRANSLATE_MODEL` | OpenAI model for translation (default: gpt-4o-mini)     |
 | `TELL_TRANSLATE_TIMEOUT` | Per-engine timeout in seconds (default: 8)              |
 | `TELL_GLOSS_MODEL`       | Override gloss_model config                             |

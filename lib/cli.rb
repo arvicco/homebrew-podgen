@@ -16,6 +16,7 @@ module PodgenCLI
     "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",    "PublishCommand"],
     "stats"     => ["Show podcast statistics",             "cli/stats_command",       "StatsCommand"],
     "validate"  => ["Validate podcast config and output",  "cli/validate_command",    "ValidateCommand"],
+    "status"    => ["One-line OK/OLD/WARN verdict per podcast", "cli/status_command",    "StatusCommand"],
     "list"      => ["List available podcasts",             "cli/list_command",        "ListCommand"],
     "test"      => ["Run a standalone test script",        "cli/test_command",        "TestCommand"],
     "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",    "ScheduleCommand"],
@@ -34,6 +35,28 @@ module PodgenCLI
     "tweet"     => ["Tweet about an episode",               "cli/tweet_command",       "TweetCommand"],
     "uploads"   => ["Per-pod regen+R2+LingQ then YT batch across pods", "cli/uploads_command", "UploadsCommand"]
   }.freeze
+
+  # Owner-only commands (CLAUDE.md golden rule 3) and the generate flags that
+  # upload to listener-facing services.
+  OWNER_ACTIONS = %w[publish unpublish uploads tweet schedule analytics].freeze
+  OWNER_FLAGS = %w[--youtube --lingq].freeze
+
+  def self.owner_action?(command_name, argv, options)
+    return true if OWNER_ACTIONS.include?(command_name)
+
+    command_name == "generate" && (options[:lingq] || argv.intersect?(OWNER_FLAGS))
+  end
+
+  # Second layer behind the settings.json deny list (P1-1): inside a Claude
+  # Code session (CLAUDECODE=1) owner actions are refused unless the call is a
+  # --dry-run or the owner opts in with PODGEN_OWNER=1 (e.g. `! PODGEN_OWNER=1
+  # bin/podgen publish x` from the Claude Code prompt).
+  def self.refuse_owner_action?(command_name, argv, options)
+    return false unless ENV["CLAUDECODE"] == "1" && ENV["PODGEN_OWNER"] != "1"
+    return false if options[:dry_run] || argv.include?("--dry-run")
+
+    owner_action?(command_name, argv, options)
+  end
 
   def self.run(argv)
     options = { verbosity: :normal }
@@ -55,6 +78,7 @@ module PodgenCLI
       opts.separator "  publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)"
       opts.separator "  stats <podcast> | --all        Show podcast statistics"
       opts.separator "  validate <podcast> | --all     Validate config and output"
+      opts.separator "  status [podcast] [--json]      OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)"
       opts.separator "  list                           List available podcasts"
       opts.separator "  test <name> [args]             Run a standalone test"
       opts.separator "  schedule <podcast>             Install launchd scheduler (--time, --publish, --telegram)"
@@ -122,6 +146,11 @@ module PodgenCLI
     entry = COMMANDS[command_name]
     unless entry
       $stderr.puts "Unknown command: #{command_name}\n\n#{global}"
+      return 2
+    end
+
+    if refuse_owner_action?(command_name, argv, options)
+      $stderr.puts "podgen: '#{command_name}' is an owner action; refusing inside a Claude Code session (PODGEN_OWNER=1 overrides)"
       return 2
     end
 

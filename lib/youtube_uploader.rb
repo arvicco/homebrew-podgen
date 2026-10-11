@@ -5,18 +5,88 @@ require "googleauth"
 require "googleauth/stores/file_token_store"
 require "fileutils"
 require "json"
+require "socket"
+require "cgi"
 
 # Uploads videos and captions to YouTube via the Data API v3.
 # Handles OAuth2 authentication with persistent token storage.
 class YouTubeUploader
-  OOB_URI = "urn:ietf:wg:oauth:2.0:oob"
   SCOPE = Google::Apis::YoutubeV3::AUTH_YOUTUBE_FORCE_SSL
   TOKEN_DIR = File.join(Dir.home, ".config", "podgen")
   TOKEN_FILE = File.join(TOKEN_DIR, "youtube_token.json")
 
-  def initialize(logger: nil)
+  # Loopback-redirect consent (P1-16, Q-07): Google shut off the out-of-band
+  # flow, so a fresh authorization listens on an ephemeral 127.0.0.1 port,
+  # sends the owner to the consent URL, and reads the code from the browser's
+  # callback. Returns [code, redirect_uri]; code is nil when the callback
+  # carried none (denied consent). Injected into YouTubeUploader so tests
+  # never open a browser or a real port.
+  class LoopbackConsent
+    attr_reader :port
+
+    # wait: overall seconds to wait for the browser callback; idle_timeout:
+    # seconds a connection may stay silent before it is dropped — browsers
+    # open speculative pre-connect sockets that never send a request.
+    def initialize(io: $stderr, open_browser: true, wait: 300, idle_timeout: 5)
+      @io = io
+      @open_browser = open_browser
+      @wait = wait
+      @idle_timeout = idle_timeout
+      @port = nil
+    end
+
+    def call(authorizer)
+      server = TCPServer.new("127.0.0.1", 0)
+      @port = server.addr[1]
+      redirect = "http://127.0.0.1:#{@port}"
+      url = authorizer.get_authorization_url(base_url: redirect)
+      @io.puts "Open the following URL in your browser and authorize the application:"
+      @io.puts url
+      system("open", url, out: File::NULL, err: File::NULL) if @open_browser && RUBY_PLATFORM.include?("darwin")
+
+      [await_callback(server), redirect]
+    ensure
+      server&.close
+    end
+
+    private
+
+    # Accepts connections until one carries a callback (code= or error=) or
+    # the overall wait is exhausted; silent connections are dropped.
+    def await_callback(server)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @wait
+      loop do
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        return nil if remaining <= 0 || IO.select([server], nil, nil, remaining).nil?
+
+        client = server.accept
+        request_line = IO.select([client], nil, nil, @idle_timeout) ? client.gets.to_s : ""
+        if request_line.match?(/[?&](code|error)=/)
+          code = code_from(request_line)
+          respond(client, code)
+          return code
+        end
+        client.close
+      end
+    end
+
+    def respond(client, code)
+      body = code ? "<html><body><p>podgen: YouTube authorized. You can close this tab.</p></body></html>" :
+                    "<html><body><p>podgen: no authorization code received.</p></body></html>"
+      client.write "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: #{body.bytesize}\r\nConnection: close\r\n\r\n#{body}"
+      client.close
+    end
+
+    def code_from(request_line)
+      query = request_line[/\AGET \S*\?(\S*) /, 1] or return nil
+      CGI.parse(query)["code"]&.first
+    end
+  end
+
+  def initialize(logger: nil, consent: nil)
     @logger = logger
     @service = nil
+    @consent = consent || LoopbackConsent.new
   end
 
   # Authorize and return a configured YouTube service.
@@ -47,14 +117,10 @@ class YouTubeUploader
     end
 
     if credentials.nil?
-      url = authorizer.get_authorization_url(base_url: OOB_URI)
-      log("Open the following URL in your browser and authorize the application:")
-      log(url)
-      $stderr.print "\nEnter the authorization code: "
-      code = $stdin.gets&.strip
+      code, redirect = @consent.call(authorizer)
       raise "No authorization code provided" if code.nil? || code.empty?
       credentials = authorizer.get_and_store_credentials_from_code(
-        user_id: "default", code: code, base_url: OOB_URI
+        user_id: "default", code: code, base_url: redirect
       )
     end
 

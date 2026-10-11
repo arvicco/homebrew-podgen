@@ -36,6 +36,7 @@ class SourceManager
   def research(topics)
     sources = enabled_sources
     results_by_source = {}
+    lock = Mutex.new
 
     threads = sources.map do |name, source|
       Thread.new(name, source) do |src_name, src|
@@ -49,7 +50,7 @@ class SourceManager
             cached = @cache.get(src_name, topics)
             if cached
               log("Cache hit for source '#{src_name}'")
-              results_by_source[src_name] = cached
+              lock.synchronize { results_by_source[src_name] = cached }
               next
             end
           end
@@ -66,7 +67,7 @@ class SourceManager
           # Cache results
           @cache&.set(src_name, topics, results)
 
-          results_by_source[src_name] = results
+          lock.synchronize { results_by_source[src_name] = results }
         rescue => e
           log("Source '#{src_name}' failed: #{e.message}")
         end

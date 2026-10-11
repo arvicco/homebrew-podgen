@@ -274,7 +274,7 @@ module PodgenCLI
         when "x", "exclude"
           @episode_source.exclude_url!(@episode[:audio_url])
           logger.log("Excluded #{@episode[:audio_url]}")
-          return 1
+          return 0
         else
           logger.log("Aborted by user")
           return 1
@@ -318,7 +318,7 @@ module PodgenCLI
       $stderr.puts "Excluded: \"#{@episode[:title]}\""
     end
 
-    # QuickTime Player preview (M00-7): frontmost + autoplay are native
+    # QuickTime Player preview (P00-7): frontmost + autoplay are native
     # AppleScript verbs — Quick Look could do neither from a spawned
     # process. Launch via `open -a` (avoids the tell-before-registered
     # -600 race); still imports nothing into any library.

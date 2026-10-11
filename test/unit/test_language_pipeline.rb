@@ -215,7 +215,7 @@ class TestLanguagePipeline < Minitest::Test
       AudioAssembler.stub :probe_duration, 700.0 do
         out, _ = capture_io do
           result = pipeline.send(:enforce_length_post_download)
-          assert_equal 1, result
+          assert_equal 0, result, "exclusion is a normal outcome (R1-e): exit 0"
         end
       end
     end
@@ -793,7 +793,7 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal 10.0, called_with[:cut]
   end
 
-  # --- ask_trim preview via QuickTime Player (M00-7) ---
+  # --- ask_trim preview via QuickTime Player (P00-7) ---
   # QT: frontmost + autoplay natively scriptable (Quick Look could do
   # neither from a spawned process); still imports nothing.
 

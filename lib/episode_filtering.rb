@@ -8,9 +8,15 @@ require "date"
 module EpisodeFiltering
   # Check if basename matches a language code.
   # English = no language suffix; others end with -xx (e.g. -es, -fr).
-  def self.matches_language?(basename, lang_code)
+  # With `languages:` (the podcast's configured codes) only a CONFIGURED
+  # code counts as a suffix, so a title-derived "-ai" stays English (P1-15,
+  # Q-06); without it any trailing -xx is treated as a suffix (legacy).
+  def self.matches_language?(basename, lang_code, languages: nil)
     if lang_code == "en"
-      !basename.match?(/-[a-z]{2}$/)
+      suffix = basename[/-([a-z]{2})\z/, 1]
+      return true if suffix.nil?
+      # nil/empty (no language config) keeps the legacy any-suffix rule
+      (languages.nil? || languages.empty?) ? false : !languages.include?(suffix)
     else
       basename.end_with?("-#{lang_code}")
     end
@@ -32,15 +38,15 @@ module EpisodeFiltering
   end
 
   # English/primary episodes only (no language suffix).
-  def self.english_episodes(dir)
+  def self.english_episodes(dir, languages: nil)
     all_episodes(dir)
-      .reject { |f| File.basename(f, ".mp3").match?(/-[a-z]{2}$/) }
+      .select { |f| matches_language?(File.basename(f, ".mp3"), "en", languages: languages) }
   end
 
   # Episodes matching a specific language.
-  def self.episodes_for_language(dir, lang_code)
+  def self.episodes_for_language(dir, lang_code, languages: nil)
     all_episodes(dir)
-      .select { |f| matches_language?(File.basename(f, ".mp3"), lang_code) }
+      .select { |f| matches_language?(File.basename(f, ".mp3"), lang_code, languages: languages) }
   end
 
   # Extract date from an episode filename or path.

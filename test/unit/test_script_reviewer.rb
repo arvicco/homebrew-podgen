@@ -630,11 +630,9 @@ class TestScriptReviewer < Minitest::Test
     refute reviewer.send(:urls_match?, "https://example.com/a", "https://example.com/b")
   end
 
-  def test_urls_match_uppercase_scheme_not_stripped
+  def test_urls_match_uppercase_scheme_is_stripped
     reviewer = build_reviewer
-    # Characterization: the scheme regex is case-sensitive, so an
-    # uppercase "HTTPS://" is not stripped and the URLs do NOT match.
-    refute reviewer.send(:urls_match?, "HTTPS://example.com/a", "https://example.com/a")
+    assert reviewer.send(:urls_match?, "HTTPS://example.com/a", "https://example.com/a")
   end
 
   private

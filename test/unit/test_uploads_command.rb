@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "cli"
 require "cli/uploads_command"
 require "r2_publisher"
 require "lingq_publisher"
@@ -265,6 +266,73 @@ class TestUploadsCommand < Minitest::Test
     assert_equal 0, tick.per_pod["pod_a"][:uploaded]
     assert_equal 1, tick.per_pod["pod_a"][:errors]
     assert_equal 1, tick.per_pod["pod_b"][:uploaded]
+  end
+
+  def test_round_robin_caps_rounds_at_initial_pending_total
+    yt_calls = []
+    cmd = stub_cmd(["pod_a,pod_b"])
+    cmd.define_singleton_method(:pending_count_for) { |_| 2 } # never drains
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+    end
+
+    capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    # initial pending sum = 4 -> at most 4 rounds x 2 pods
+    assert_equal 8, yt_calls.length
+  end
+
+  def test_round_robin_permanent_skip_logs_one_line_per_pod
+    logs = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
+    pending = { "pod_a" => 5, "pod_b" => 3 }
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      if pod == "pod_a"
+        YTResult.new(uploaded: 0, attempted: 1, rate_limited: false, errors: [{ type: :missing_cover }])
+      else
+        pending[pod] -= 1
+        YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal 1, logs.length
+    assert_includes logs.first, "pod_a"
+    assert_includes logs.first, "missing_cover"
+  end
+
+  # ── mode validation happens before side effects ──
+
+  def test_bogus_mode_raises_parse_error_at_construction
+    assert_raises(OptionParser::ParseError) { stub_cmd(["--mode", "bogus", "pod_a"]) }
+  end
+
+  def test_bogus_mode_exits_2_with_no_collaborator_calls
+    calls = []
+    publishers = [R2Publisher, LingQPublisher, YouTubePublisher]
+    publishers.each do |k|
+      k.singleton_class.send(:alias_method, :__orig_new, :new)
+      k.define_singleton_method(:new) { |*a, **kw|
+        calls << k
+        raise "must not be constructed"
+      }
+    end
+
+    code = nil
+    saved = ENV.delete("CLAUDECODE") # else the owner-action guard would also return 2
+    capture_io { code = PodgenCLI.run(%w[uploads --mode bogus pod_a]) }
+
+    assert_equal 2, code
+    assert_empty calls
+  ensure
+    ENV["CLAUDECODE"] = saved if saved
+    publishers.each do |k|
+      k.singleton_class.send(:alias_method, :new, :__orig_new)
+      k.singleton_class.send(:remove_method, :__orig_new)
+    end
   end
 
   private

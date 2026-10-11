@@ -104,29 +104,27 @@ class TestTwitterAgent < Minitest::Test
     assert_equal "#{"a" * 253}...\n#{url}", result
   end
 
-  def test_truncate_empty_url_ellipsizes_with_trailing_newline
+  def test_truncate_empty_url_ellipsizes_without_trailing_newline
     agent = build_agent
     result = agent.send(:truncate, "a" * 300, url: "")
-    # Characterization: with no URL the result still ends "...\n" —
-    # the "\n#{url}" tail is appended even when url is empty.
-    assert_equal "#{"a" * 276}...\n", result
-    assert_equal 280, result.length
+    assert_equal "#{"a" * 276}...", result
+    assert_equal 279, result.length
   end
 
   def test_truncate_nil_url_treated_as_empty
     agent = build_agent
     result = agent.send(:truncate, "a" * 300, url: nil)
-    assert_equal "#{"a" * 276}...\n", result
+    assert_equal "#{"a" * 276}...", result
   end
 
   private
 
   def build_agent
-    saved = %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET].map do |k|
-      [k, ENV[k] || "test-#{k}"].tap { |_, _| ENV[k] ||= "test-#{k}" }
-    end
-    agent = TwitterAgent.new
-    saved.each { |k, v| v.start_with?("test-") ? ENV.delete(k) : ENV[k] = v }
-    agent
+    keys = %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET]
+    saved = keys.map { |k| [k, ENV[k]] }
+    keys.each { |k| ENV[k] ||= "test-#{k}" }
+    TwitterAgent.new
+  ensure
+    saved&.each { |k, v| v ? ENV[k] = v : ENV.delete(k) }
   end
 end

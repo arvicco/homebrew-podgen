@@ -24,8 +24,11 @@ tracked worklog only once executed.
    actions: merging PRs into `master` (the gate-closing event),
    `gh release create`, `git tag`, and listener-facing CLI commands —
    `podgen publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
-   `analytics` (Worker deploys). Prepare configs and print exact
-   commands instead. Pushing `phase-N` branches to origin is allowed.
+   `analytics` (Worker deploys), and `generate --youtube/--lingq`.
+   Prepare configs and print exact commands instead. Pushing `phase-N`
+   branches to origin is allowed. Enforced twice: settings.json denies
+   (match-anywhere) and the dispatcher refuses owner actions when
+   `CLAUDECODE=1` (owner override from the `!` prompt: `PODGEN_OWNER=1`).
 4. **Never change the frozen domain silently:** RSS/site output
    contracts, the episode guid/basename scheme, and the schemas of
    history.yml, uploads.yml, and `*_timestamps.json`. Breaking these
@@ -156,7 +159,7 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 
 ## Current phase
 
-Phase 0 (brownfield hardening) COMPLETE PENDING GATE 0 — all packets
-done, CRPR APPROVED, PR open; the owner's merge closes the gate.
-Phase 1 planning starts as .docs/p01-plan.md after the merge; update
-this line at each gate.
+Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Phase 1
+AT GATE 1 (2026-10-11): all 17 packets landed on phase-1, CRPR
+APPROVED (refs/cr/reviewed = 47a7ebd), PR open — the owner merges;
+runbook .docs/GATE-1-RUNBOOK.md. Update this line at each gate.

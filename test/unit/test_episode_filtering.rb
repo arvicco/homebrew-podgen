@@ -43,6 +43,40 @@ class TestEpisodeFiltering < Minitest::Test
     refute EpisodeFiltering.matches_language?("show-2026-01-15-fr", "en")
   end
 
+  # P1-15 (Q-06): only a CONFIGURED language code is a language suffix
+  def test_matches_language_english_keeps_unconfigured_two_letter_suffix
+    assert EpisodeFiltering.matches_language?("pod-2026-01-01-ai", "en", languages: %w[en es])
+  end
+
+  def test_matches_language_english_rejects_configured_suffix
+    refute EpisodeFiltering.matches_language?("pod-2026-01-01-es", "en", languages: %w[en es])
+  end
+
+  def test_matches_language_without_languages_keeps_legacy_any_suffix_behavior
+    refute EpisodeFiltering.matches_language?("pod-2026-01-01-ai", "en")
+    refute EpisodeFiltering.matches_language?("pod-2026-01-01-ai", "en", languages: [])
+  end
+
+  def test_english_episodes_honors_configured_languages
+    dir = File.join(@tmpdir, "eps")
+    FileUtils.mkdir_p(dir)
+    %w[pod-2026-01-01.mp3 pod-2026-01-01-ai.mp3 pod-2026-01-01-es.mp3].each { |f| FileUtils.touch(File.join(dir, f)) }
+
+    names = EpisodeFiltering.english_episodes(dir, languages: %w[en es]).map { |f| File.basename(f) }.sort
+
+    assert_equal %w[pod-2026-01-01-ai.mp3 pod-2026-01-01.mp3], names
+  end
+
+  def test_episodes_for_language_english_honors_configured_languages
+    dir = File.join(@tmpdir, "eps2")
+    FileUtils.mkdir_p(dir)
+    %w[pod-2026-01-01-ai.mp3 pod-2026-01-01-es.mp3].each { |f| FileUtils.touch(File.join(dir, f)) }
+
+    names = EpisodeFiltering.episodes_for_language(dir, "en", languages: %w[en es]).map { |f| File.basename(f) }
+
+    assert_equal %w[pod-2026-01-01-ai.mp3], names
+  end
+
   def test_matches_language_non_english_matches_suffix
     assert EpisodeFiltering.matches_language?("show-2026-01-15-es", "es")
   end

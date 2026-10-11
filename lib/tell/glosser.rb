@@ -2,6 +2,8 @@
 
 require_relative "../language_names"
 require_relative "phonetic_systems"
+require_relative "../anthropic_client"
+require_relative "../claude_models"
 
 module Tell
   class Glosser
@@ -73,7 +75,7 @@ module Tell
       end
     end
 
-    def initialize(api_key, model: "claude-opus-4-7")
+    def initialize(api_key, model: ClaudeModels.for(:gloss))
       require "anthropic"
       @client = Anthropic::Client.new(api_key: api_key, timeout: 15, max_retries: 1)
       @model = model
@@ -225,7 +227,7 @@ module Tell
         max_tokens: max_tokens,
         messages: [{ role: "user", content: prompt }]
       )
-      message.content.first.text.strip
+      AnthropicClient.text_of(message).strip
     end
 
     def build_gloss_prompt(text, from:, to:, translate:, phonetic:, phonetic_ref: nil, system: nil)

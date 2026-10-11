@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 
 ENV["ANTHROPIC_API_KEY"] ||= "test-key"
 require "agents/topic_agent"
@@ -84,7 +85,7 @@ class TestTopicAgent < Minitest::Test
     client = stub_client(agent, ["q1"])
 
     agent.generate
-    assert_equal ENV.fetch("CLAUDE_MODEL", "claude-opus-4-7"), client.last_call[:model]
+    assert_equal ClaudeModels.for(:topic), client.last_call[:model]
   end
 
   private

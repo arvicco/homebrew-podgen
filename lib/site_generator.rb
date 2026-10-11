@@ -173,7 +173,7 @@ class SiteGenerator
   # --- Episode scanning ---
 
   def scan_episodes(lang_code)
-    EpisodeFiltering.episodes_for_language(@episodes_dir, lang_code)
+    EpisodeFiltering.episodes_for_language(@episodes_dir, lang_code, languages: @languages.map { |l| l["code"] })
       .sort
       .reverse
       .filter_map { |path| build_episode(path, lang_code) }

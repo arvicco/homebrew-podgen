@@ -105,6 +105,19 @@ class TestSourceManager < Minitest::Test
     assert_equal 1, total_findings
   end
 
+  def test_research_merges_in_configured_order_regardless_of_completion_order
+    manager = build_manager
+    slow = MockSource.new([{ topic: "Slow", findings: [{ title: "S", url: "us", summary: "s" }] }], delay: 0.05)
+    fast = MockSource.new([{ topic: "Fast", findings: [{ title: "F", url: "uf", summary: "s" }] }])
+
+    manager.define_singleton_method(:enabled_sources) do
+      [["slow", slow], ["fast", fast]]
+    end
+
+    results = manager.research(%w[Slow Fast])
+    assert_equal %w[Slow Fast], results.map { |r| r[:topic] }
+  end
+
   def test_research_handles_source_failure
     manager = build_manager
     good = MockSource.new([{ topic: "AI", findings: [{ title: "A", url: "u1", summary: "s" }] }])
@@ -145,12 +158,14 @@ class TestSourceManager < Minitest::Test
   end
 
   class MockSource
-    def initialize(results, error: nil)
+    def initialize(results, error: nil, delay: 0)
       @results = results
       @error = error
+      @delay = delay
     end
 
     def research(_topics, exclude_urls: Set.new)
+      sleep(@delay) if @delay > 0
       raise @error if @error
       @results
     end

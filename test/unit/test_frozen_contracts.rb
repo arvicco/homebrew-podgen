@@ -12,7 +12,7 @@ require "timestamp_persister"
 require "rss_generator"
 require "history_maps"
 
-# M0-5 — pinning tests for the FROZEN DOMAIN (CLAUDE.md golden rules
+# P0-5 — pinning tests for the FROZEN DOMAIN (CLAUDE.md golden rules
 # 4–5): the machine-readable shapes subscribers and downstream tooling
 # depend on. These tests assert EXACT shapes on purpose: any change —
 # even an additive one — must consciously update the matching

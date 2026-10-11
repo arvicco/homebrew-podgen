@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require_relative "anthropic_client"
+require_relative "claude_models"
 require "json"
 require "set"
 require_relative "loggable"
@@ -20,12 +22,10 @@ class VocabularyAnnotator
   MAX_PARTICLE_LENGTH = 3
   PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
-  DEFAULT_MODEL = "claude-sonnet-4-6"
-
   def initialize(api_key, model: nil, logger: nil)
     @logger = logger
-    @client = Anthropic::Client.new(api_key: api_key)
-    @model = model || ENV.fetch("CLAUDE_VOCAB_MODEL", DEFAULT_MODEL)
+    @client = Anthropic::Client.new(api_key: api_key, timeout: AnthropicClient::REQUEST_TIMEOUT)
+    @model = model || ClaudeModels.for(:vocab)
   end
 
   # Returns [marked_body, vocabulary_md]
@@ -161,7 +161,7 @@ class VocabularyAnnotator
 
       log_api_usage("Vocabulary classified", message, elapsed)
 
-      raw = message.content.first.text.strip
+      raw = AnthropicClient.text_of(message).strip
 
       # When response is truncated, go straight to salvage — the regex often
       # matches garbage brackets in preamble text, bypassing recovery.
@@ -306,12 +306,18 @@ class VocabularyAnnotator
       end
     end
 
+    keys = %w[lemma translation definition]
+    keys << "pronunciation" if ipa_line
+    keys << "similar_translations" if similar_line
+
     <<~PROMPT
       For each #{language} word below, provide:
       - lemma: the word (as given)
       - translation: #{target_language} translation of the word (not inflected forms)
       - definition: brief dictionary-style definition in #{target_language} (1 sentence max)#{ipa_line}#{similar_line}
 
+      Use exactly these JSON keys, in English, regardless of the target language:
+      #{keys.join(', ')}. Never translate the key names.
       Return a JSON array matching the order of input words.
       Return ONLY the JSON array, no other text.
     PROMPT
@@ -388,7 +394,7 @@ class VocabularyAnnotator
 
       log_api_usage("Vocabulary enriched", message, elapsed)
 
-      raw = message.content.first.text.strip
+      raw = AnthropicClient.text_of(message).strip
       json_str = if message.stop_reason == "max_tokens"
         salvage_truncated_json(raw).tap do |r|
           log(r ? "Salvaged partial enrichment" : "WARNING: Enrichment truncated and salvage failed")
@@ -399,9 +405,24 @@ class VocabularyAnnotator
 
       return [] unless json_str
 
-      parsed = JSON.parse(json_str, symbolize_names: true)
-      parsed.is_a?(Array) ? parsed : []
+      parse_enrichment(json_str, raw)
     end
+  end
+
+  # A non-truncated response can still be unparsable (2026-10-09: the model
+  # emitted an unquoted Cyrillic key mid-array). Salvage the entries that
+  # precede the bad object instead of discarding all of them. No retry: the
+  # prompt now pins the key names, and a retry would double the cost of the
+  # largest call in the pipeline (P1-12 ruling).
+  def parse_enrichment(json_str, raw)
+    parsed = JSON.parse(json_str, symbolize_names: true)
+    parsed.is_a?(Array) ? parsed : []
+  rescue JSON::ParserError => e
+    salvaged = salvage_truncated_json(raw)
+    entries = salvaged ? JSON.parse(salvaged, symbolize_names: true) : []
+    log("WARNING: Enrichment response malformed (#{e.message[0, 80]}); " \
+        "salvaged #{entries.length} entries before the bad object")
+    entries
   end
 
   def merge_enrichments(entries, enrichments)

@@ -7,8 +7,11 @@ the dev-loop skill (ancestry: nabu → mimir → arbot).*
 ## 1. Preconditions the loop needs
 
 - **Machine-checkable done:** `bundle exec rake gate` green is the
-  pre-commit gate (syntax + unit + offline integration). No network
-  in gate-tier tests; fully deterministic verification.
+  pre-commit gate (syntax + lint + unit + offline integration). Lint
+  covers files not listed in .standard_todo.yml (ruling R1-d: a packet
+  that touches a listed file removes it from the list in the same
+  commit when the lint diff is small). No network in gate-tier tests;
+  fully deterministic verification.
 - **Frozen contracts as oracles:** pinning tests on feed/site output
   shapes, episode naming, and history/uploads/timestamps schemas
   grade the work, not judgment.
@@ -154,11 +157,11 @@ what good/bad looks like).
 ## 8. Ops pattern
 
 Podgen schedules work (launchd via `podgen schedule`). The
-content-progress invariant is IMPLEMENTED (M00-4):
+content-progress invariant is IMPLEMENTED (P00-4):
 `Validators::FreshnessValidator`, run by `podgen validate`, compares
 the newest episode's content date to the wall clock against a
 cadence inferred from history (median gap); a stalled producer trips
-a visible OLD flag, not silence. The source registry (M00-3,
+a visible OLD flag, not silence. The source registry (P00-3,
 `lib/source_registry.rb`) covers the other half: `rake health`
 probes every hard-coded endpoint, and the gate fails when lib/
 gains an unregistered host. Decommissioning any scheduled job

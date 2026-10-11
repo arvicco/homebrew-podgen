@@ -29,6 +29,7 @@ module PodgenCLI
       @remove = false
       @status = false
       @uploads = false
+      @status_check = false
       @uploads_pods = nil
       @uploads_mode = :priority
       @max = nil
@@ -44,6 +45,7 @@ module PodgenCLI
           @uploads = true
           @uploads_pods = pods if pods && !pods.empty?
         end
+        opts.on("--status-check", "Schedule the daily `podgen status` content-progress check") { @status_check = true }
         opts.on("--mode MODE", "uploads mode: priority (default) or round-robin") do |m|
           @uploads_mode = m.tr("-", "_").to_sym
         end
@@ -77,6 +79,12 @@ module PodgenCLI
         return remove_scheduler! if @remove
         return show_status       if @status
         return install_uploads!
+      end
+
+      if @status_check
+        return remove_scheduler! if @remove
+        return show_status       if @status
+        return install_status_check!
       end
 
       if (@remove || @status) && (@podcast_name.nil? || @podcast_name.empty?)
@@ -127,6 +135,7 @@ module PodgenCLI
 
     def label
       return "#{LABEL_PREFIX}.uploads" if @uploads
+      return "#{LABEL_PREFIX}.status" if @status_check
       "#{LABEL_PREFIX}.#{@podcast_name}"
     end
 
@@ -166,6 +175,22 @@ module PodgenCLI
       end
 
       puts "uploads scheduler installed at #{format('%02d:%02d', @hour, @minute)} for: #{@uploads_pods}"
+      0
+    end
+
+    # Owner-only (like every schedule install): writes the plist for the daily
+    # `podgen status` check (scripts/run_status.sh) and loads it.
+    def install_status_check!
+      return 1 unless valid_time?
+
+      FileUtils.mkdir_p(LAUNCH_AGENTS_DIR)
+      do_launchctl_unload(plist_path) if File.exist?(plist_path)
+      File.write(plist_path, build_status_check_plist)
+      unless do_launchctl_load(plist_path)
+        $stderr.puts "Warning: launchctl load may have failed; check #{plist_path} and `launchctl list #{label}`"
+      end
+
+      puts "status check installed at #{format('%02d:%02d', @hour, @minute)} daily"
       0
     end
 
@@ -217,6 +242,45 @@ module PodgenCLI
       PLIST
     end
 
+    def build_status_check_plist
+      project_dir = File.expand_path("../..", __dir__)
+      <<~PLIST
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>Label</key>
+          <string>#{label}</string>
+          <key>ProgramArguments</key>
+          <array>
+            <string>/bin/bash</string>
+            <string>#{project_dir}/scripts/run_status.sh</string>
+          </array>
+          <key>StartCalendarInterval</key>
+          <dict>
+            <key>Hour</key>
+            <integer>#{@hour}</integer>
+            <key>Minute</key>
+            <integer>#{@minute}</integer>
+          </dict>
+          <key>StandardOutPath</key>
+          <string>#{project_dir}/logs/status_stdout.log</string>
+          <key>StandardErrorPath</key>
+          <string>#{project_dir}/logs/status_stderr.log</string>
+          <key>WorkingDirectory</key>
+          <string>#{project_dir}</string>
+          <key>EnvironmentVariables</key>
+          <dict>
+            <key>PATH</key>
+            <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+            <key>LANG</key>
+            <string>en_US.UTF-8</string>
+          </dict>
+        </dict>
+        </plist>
+      PLIST
+    end
+
     # --- --remove ---
 
     def remove_scheduler!
@@ -241,7 +305,9 @@ module PodgenCLI
     # --- --status ---
 
     def show_status
-      display_name = @uploads ? "uploads" : @podcast_name
+      display_name = @podcast_name
+      display_name = "status" if @status_check
+      display_name = "uploads" if @uploads
 
       unless plist_exists?
         puts "#{display_name}: no scheduler installed."
