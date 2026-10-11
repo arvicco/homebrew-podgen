@@ -108,4 +108,34 @@ class TestProductionRun < Minitest::Test
     assert_equal "launchd window 16:25–17:10",
       ProductionRun.yield_reason(output_root: @root, now: at("16:40"))
   end
+
+  # CRPR Gate 2 W1: inside the launchd window the probe must not touch the
+  # lock at all (a generate starting at that instant would see it held and
+  # abort). Observable contract: the window reason wins even when a lock is
+  # held, and ProductionRun.running is never called.
+  def test_yield_reason_inside_window_reports_window_without_probing
+    hold_lock(lock_path("podx"))
+    probed = false
+    ProductionRun.stub(:running, ->(**) {
+      probed = true
+      []
+    }) do
+      reason = ProductionRun.yield_reason(output_root: @root, now: Time.new(2026, 10, 11, 16, 31))
+
+      assert_match(/launchd window/, reason)
+      refute probed, "running must not be called inside the window"
+    end
+  end
+
+  # CRPR Gate 2 NIT 6: a read-only lock file is still probed (flock works on
+  # a read-only descriptor), so a held lock is detected.
+  def test_running_detects_held_lock_on_readonly_file
+    path = lock_path("podx")
+    hold_lock(path)
+    File.chmod(0o444, path)
+
+    assert_equal ["podx"], ProductionRun.running(output_root: @root)
+  ensure
+    File.chmod(0o644, path) if path && File.exist?(path)
+  end
 end
