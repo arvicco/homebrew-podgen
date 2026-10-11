@@ -1423,7 +1423,7 @@ podgen/
 ## Development
 
 ```bash
-bundle exec rake gate      # pre-commit gate: syntax + lint (standardrb) + unit + offline integration
+bundle exec rake gate      # pre-commit gate: syntax + lint (standardrb; new files only — see .standard_todo.yml) + unit + offline integration
 bundle exec rake test      # full suite (API-keyed tiers run only with keys present)
 bundle exec rake health    # probe every registered external endpoint (network; see lib/source_registry.rb)
 ```

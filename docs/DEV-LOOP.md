@@ -7,8 +7,11 @@ the dev-loop skill (ancestry: nabu → mimir → arbot).*
 ## 1. Preconditions the loop needs
 
 - **Machine-checkable done:** `bundle exec rake gate` green is the
-  pre-commit gate (syntax + unit + offline integration). No network
-  in gate-tier tests; fully deterministic verification.
+  pre-commit gate (syntax + lint + unit + offline integration). Lint
+  covers files not listed in .standard_todo.yml (ruling R1-d: a packet
+  that touches a listed file removes it from the list in the same
+  commit when the lint diff is small). No network in gate-tier tests;
+  fully deterministic verification.
 - **Frozen contracts as oracles:** pinning tests on feed/site output
   shapes, episode naming, and history/uploads/timestamps schemas
   grade the work, not judgment.
