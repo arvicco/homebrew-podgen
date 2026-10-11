@@ -7,6 +7,17 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-13 (Q-26) · b9edf12 · Connectivity.preflight! (one DNS
+lookup of api.anthropic.com, 5 s cap, injectable resolver) runs after
+the ffmpeg check and before any phase in both pipelines; a dead
+network now exits in seconds with one line instead of 2.5 h.
+Anthropic client requests capped at 300 s (SDK default 10 min × its
+internal retries was the multiplier). Ruled: no new budget inside
+with_retries — the backoff there totals 14 s and was never the cost.
+Gate 3126+50 green. Outcome check at the owner's surface: the next
+afternoon DNS loss should show exactly one "no network" error line
+within a minute of 16:30 in the news log.
+
 2026-10-11 · P1-15, P1-9, P1-7 · 7e18103, e94101a, 9f2994f · P1-15
 (orchestrator): a trailing -xx is a language suffix only when the
 code is configured; nil/empty list keeps the legacy rule; wired into
