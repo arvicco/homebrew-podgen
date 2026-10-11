@@ -111,6 +111,14 @@ class TestSubtitleReconciliationRunner < Minitest::Test
     assert_equal :no_transcript, result.status
   end
 
+  def test_run_returns_no_transcript_when_transcript_file_missing
+    write_timestamps
+    result = SubtitleReconciliationRunner.run(
+      ts_path: @ts_path, transcript_path: @tr_path, api_key: "k"
+    )
+    assert_equal :no_transcript, result.status
+  end
+
   # ── status: :reconciled (happy path) ───────────────────────────────
 
   def test_run_reconciles_and_persists_segments
