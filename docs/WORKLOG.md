@@ -7,6 +7,21 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · R1-a…R1-i ruled · (docs commit) · Owner ruling: decision
+items are for PRINCIPAL questions only (frozen domain, phase scope,
+spend policy, owner data, listener-visible behavior); implementation-
+level choices are the orchestrator's job. All nine open items ruled
+at orchestrator level and recorded in their packets: CLAUDE_MODEL
+aliases the opus line and Tell translation gets its own key (P1-0);
+default effort kept, baseline measured in P1-0, policy queued as
+Q-28; drift check in; gate lint = new files + touch-to-migrate
+(P1-3); exclusion exits 0 on both paths and the duplicate truncate
+goes (P1-9); language-suffix fix scheduled as P1-15 on evidence that
+only -es/-it/-jp exist on disk; YouTube OAuth loopback scheduled as
+P1-16 with the re-auth in the gate runbook; dead-code batch stays
+KEPT until a packet touches each file; six pinned quirks accepted.
+Registry empty.
+
 2026-10-11 · INCIDENT 2026-10-08 (recorded late) · no commit · The
 scheduled fulgur_news run (16:46) had no DNS for ~2.5 h: every host
 failed with getaddrinfo; TopicAgent fell back to queue.yml, all four

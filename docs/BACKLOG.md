@@ -211,7 +211,7 @@ currently R0-p, R0-o, R0-c…R0-n, P0-3 sign-off). Landed rulings:
 
 ---
 
-## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: P1-0, P1-12, P1-1, P1-3, P1-4/5/6/9/7 (parallelizable), P1-13, P1-2, P1-8, P1-14, P1-10; Gate 1 = owner-merged PR)
+## Phase 1 — correctness hardening (plan signed 2026-10-11; execution order: P1-0, P1-12, P1-1, P1-3, P1-4/5/6/9/7 (parallelizable), P1-15, P1-13, P1-2, P1-8, P1-14, P1-10, P1-16; Gate 1 = owner-merged PR)
 
 ## P1-0 · Claude model registry — one default per line, one override point  [tier: top — first-of-family pattern] [status: ready] [deps: --]
 Signed off 2026-10-10 (priority). Model IDs are hard-coded at 11
@@ -227,6 +227,12 @@ Acceptance: unit test greps lib/ — model literals only in
       ENV override; the generation bump is a ≤3-line diff; one
       bajke + one news generate end to end on the bumped lines
       (owner-run); gate + CI green.
+Rulings 2026-10-11 (orchestrator, by owner delegation): R1-a → CLAUDE_MODEL
+      becomes an alias of CLAUDE_OPUS_MODEL; Tell translation moves to the
+      sonnet line under CLAUDE_TELL_TRANSLATE_MODEL (README migration
+      note). R1-b → leave default effort; step 3's two live runs record
+      per-role input/output tokens in the worklog as the baseline for
+      Q-28. R1-c → the keyed drift check (step 5) is IN.
 
 ## P1-1 · Permission-profile audit  [tier: top — guardrail security] [status: ready] [deps: --]
 Goal: every invocation path to each HUMAN-action command (direct,
@@ -248,6 +254,10 @@ Goal: ENV save/restore for PODGEN_ROOT and TWITTER_*; audio_trimmer
       tmp litter cleaned; explicit pathname require in the drift test;
       CI concurrency group (one run per push with an open PR).
 Acceptance: full suite green under three seeds; single CI run per push.
+Ruling 2026-10-11 (R1-d): lint in the gate covers new files only;
+      a packet that touches a listed file removes it from
+      .standard_todo.yml in the same commit when the lint diff is small;
+      one-line note in README + DEV-LOOP rides this packet.
 
 ## P1-4 · Sidecar + probe reliability  [tier: implementation] [status: ready] [deps: --]
 Goal: one guarded JSON load for *_timestamps.json shared by persister
@@ -290,6 +300,10 @@ Goal: normalize_url scheme match case-insensitive; TwitterAgent#
       matches code with the sort tuple pinned.
 Acceptance: each characterization test flipped to the fixed behavior
       in the same commit as its fix.
+Rulings 2026-10-11: R1-e → an excluded episode is a normal outcome:
+      exit 0 on both the ask-trim and the length-check paths (test pins
+      both). Q-20 (duplicate StatsCommand#truncate) joins this batch —
+      it emits a Ruby warning on every gate run.
 
 ## P1-10 · Offline fixtures for network sources  [tier: implementation] [status: ready] [deps: --]
 Goal: recorded, trimmed fixtures for bluesky/hn/x/claude_web parse
@@ -321,12 +335,32 @@ Goal: `podgen status` prints one line per scheduled podcast (OK/OLD/
 Acceptance: fixtures → OLD / WARN / OK; install command printed,
       never executed by the agent.
 
-## Decision items (Phase 1)
-Open: .docs/DECISIONS.md — R1-a CLAUDE_MODEL semantics, R1-b thinking/
-effort policy, R1-c drift check, R1-d gate lint coverage, R1-e
-exclusion exit codes, R1-f Q-06 language suffix, R1-g YouTube OAuth,
-R1-h dead-code batch, R1-i explicit defers. Rulings land inline in
-the affected packet.
+## P1-15 · Language-suffix detection restricted to configured languages  [tier: implementation] [status: ready] [deps: --]
+Goal: a trailing "-xx" on an episode basename counts as a language
+      suffix only when xx is one of the podcast's configured
+      languages. Evidence 2026-10-11: only -es/-it/-jp exist on disk,
+      so current selection is unchanged (not a frozen-domain change).
+Acceptance: `pod-2026-01-01-ai.mp3` selected as English when no `ai`
+      language is configured; before/after selection over the real
+      output dirs identical (owner-run, printed diff empty); P0-5
+      pinning tests green.
+
+## P1-16 · YouTube OAuth loopback flow replaces OOB  [tier: top — auth flow, owner-visible] [status: ready] [deps: --]
+Goal: loopback-redirect authorization replaces the discontinued
+      out-of-band flow; token exchange behind a fake-able HTTP seam;
+      interactive prompt in the CLI layer; refresh path untouched.
+Acceptance: unit tests on the exchange with a fake seam; one owner-run
+      re-auth on a clean config in the Gate 1 runbook (EXPECT lines);
+      upload behavior unchanged.
+
+## Rulings (Phase 1)
+R1-a…R1-i ruled 2026-10-11 by the orchestrator under the owner's
+standing delegation (implementation-level decisions never go to the
+owner; only frozen-domain, phase-scope, spend-policy and owner-data
+questions do). Each ruling is recorded in its packet above. R1-h:
+the ten dead-code items stay KEPT; any is removed only by the packet
+that next touches its file. R1-i: Q-15, Q-17, Q-18, Q-19, Q-21, Q-23
+accepted as pinned behavior for Phase 1; Q-20 folded into P1-9.
 
 ## P1-11 · Script/translation max_tokens cap + no retry on truncation  [tier: implementation] [status: done] [deps: --]
 Cut from Q-25 (incident 2026-10-09): on a thinking-default model the
