@@ -200,6 +200,52 @@ class TestProdGuardScript < Minitest::Test
     assert_equal 2, code
   end
 
+  # CRPR Gate 2 round 3: rm/mv/cp reached through git, xargs, leading
+  # whitespace; mutating stash forms; tee long options; git global options.
+  def test_bash_git_rm_under_lib_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git rm lib/x.rb"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_leading_space_rm_under_lib_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "  rm lib/x.rb"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_mutating_stash_forms_while_active_yield
+    hold_lock
+    code1, _ = run_guard("Bash", {command: "git stash pop"})
+    code2, _ = run_guard("Bash", {command: "git stash -u; git stash list"})
+
+    assert_equal 2, code1
+    assert_equal 2, code2
+  end
+
+  def test_bash_tee_long_option_into_lib_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "tee --append lib/x.rb < /tmp/in"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_git_global_option_checkout_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git --no-pager checkout phase-3"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_grep_for_rm_in_lib_while_active_allowed
+    hold_lock
+    code, _err = run_guard("Bash", {command: "grep -rn rm lib/"})
+
+    assert_equal 0, code
+  end
+
   def test_no_output_dir_allowed
     FileUtils.rm_rf(File.join(@cwd, "output"))
     code, _err = run_guard("Bash", {command: "git merge x"}, now: INSIDE_WINDOW)
