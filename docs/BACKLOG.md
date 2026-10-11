@@ -304,11 +304,17 @@ Goal: timestamp epsilon in SubtitleReconciler#validate!; engine file
 Acceptance: 1e-6-drift reconcile fixture passes; fd count stable
       across stubbed retries; concurrent temp-name uniqueness test.
 
-## P1-6 · File hygiene  [tier: implementation] [status: ready] [deps: --]
+## P1-6 · File hygiene  [tier: implementation] [status: done] [deps: --]
 Goal: HttpDownloader writes temp + rename (no partial on size abort);
       Voicer segment cleanup in ensure.
 Acceptance: size-cap abort leaves no destination file; assemble raise
       leaves no segment temps.
+Done 2026-10-11: c6c0be3 (worktree implementation agent, diff reviewed
+      by the orchestrator). Rulings (agent, accepted): temp+rename lives
+      in write_body (redirect hops never reach it); inline .part.<pid>
+      beside the destination rather than AtomicWriter (text-only API);
+      Voicer ensure covers the assembly step only (TTS raise returns no
+      paths to clean). Red-then-green on both tests; gate 3099+50 green.
 
 ## P1-7 · Concurrency + retry semantics  [tier: implementation] [status: ready] [deps: --]
 Goal: shared result hashes in EngineManager/SourceManager written
