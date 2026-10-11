@@ -7,6 +7,18 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-12 (Q-24) · 95893e5 · Enrich prompt now lists the exact
+English key names it requests (dynamic: pronunciation /
+similar_translations only when asked, which an existing test pins)
+and forbids translating them; a ParserError on a non-truncated enrich
+response falls through to salvage_truncated_json so entries before
+the malformed object survive, with one WARNING naming the count.
+Ruled no retry (cost; cause addressed). Red: the exact incident error
+"expected object key, got 'лемма:'" and the missing prompt line.
+Gate 3090+50 green; CI green. Outcome at the listener surface: the
+next bajke episode's transcript must carry a vocabulary section even
+if the model slips again — verified at the next owner bajke generate.
+
 2026-10-11 · P1-0 (code) · 869f84e, 05b3e93, +drift test · One model
 registry: lib/claude_models.rb LINES (newest per line) + ROLES (13 call
 sites → line); resolution per-role ENV → per-line ENV → default;

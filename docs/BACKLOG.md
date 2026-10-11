@@ -320,13 +320,17 @@ Goal: recorded, trimmed fixtures for bluesky/hn/x/claude_web parse
 Acceptance: each source's parse path unit-tested offline; fixtures
       registered in a fixtures README; gate green with no network.
 
-## P1-12 · Vocabulary enrich survives one malformed object  [tier: implementation] [status: ready] [deps: --]
+## P1-12 · Vocabulary enrich survives one malformed object  [tier: implementation] [status: done] [deps: --]
 Goal: enrich prompt pins literal English keys regardless of target
       language; a parse error on a non-truncated response falls
       through to salvage so entries before the bad object survive,
       with one logged warning.
 Acceptance: fake 80-entry array with a malformed entry 40 → 39
       enrichments merged + warning (0 today); prompt test.
+Ruling (orchestrator, 2026-10-11): no retry on parse failure — the
+      prompt fix addresses the cause; salvage keeps what precedes the
+      bad object. Done 2026-10-11: 95893e5; 2 tests red-then-green; gate
+      3090+50 green; CI run 38128847434 green.
 
 ## P1-13 · Fail-fast on dead network  [tier: implementation] [status: ready] [deps: P1-7]
 Goal: connectivity preflight (injectable resolver against a registry
