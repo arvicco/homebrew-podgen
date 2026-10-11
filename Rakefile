@@ -67,6 +67,17 @@ task :health do
   puts "All #{SourceRegistry.entries.size} endpoints healthy"
 end
 
+namespace :fixtures do
+  desc "Record trimmed real responses of the network sources as test fixtures (network; owner-run, never in the gate)"
+  task :record do
+    require "dotenv/load"
+    require_relative "lib/fixture_recorder"
+    failed = FixtureRecorder.new.record_all
+    abort "Not recorded: #{failed.join(", ")}" unless failed.empty?
+    puts "Recorded #{FixtureRecorder::TARGETS.size} fixtures; review: git diff test/fixtures"
+  end
+end
+
 desc "Pre-commit gate: syntax + unit + offline integration (all green or no commit)"
 task :gate do
   sources = FileList["lib/**/*.rb", "test/**/*.rb", "bin/podgen", "bin/tell", "Rakefile"]
