@@ -33,8 +33,13 @@ module AnthropicClient
 
   private
 
+  # REQUEST_TIMEOUT bounds one HTTP request (the SDK default is 10 min, and
+  # with its internal retries a dead network cost hours — P1-13). Longest
+  # observed calls: script ~90 s, enrichment ~80 s, reconciliation ~55 s.
+  REQUEST_TIMEOUT = 300
+
   def init_anthropic_client(role:)
-    @client = Anthropic::Client.new
+    @client = Anthropic::Client.new(timeout: REQUEST_TIMEOUT)
     @model = ClaudeModels.for(role)
   end
 
