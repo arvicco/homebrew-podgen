@@ -23,7 +23,8 @@ class TestSiteGenerator < Minitest::Test
     create_mp3("mypod-2026-01-16.mp3")
     create_mp3("mypod-2026-01-16-es.mp3")
 
-    gen = build_generator
+    # P1-15: "-es" is a language suffix only because es is configured
+    gen = build_generator(languages: [{ "code" => "en" }, { "code" => "es" }])
     episodes = gen.send(:scan_episodes, "en")
 
     assert_equal 2, episodes.length

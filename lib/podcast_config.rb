@@ -281,6 +281,11 @@ class PodcastConfig
     languages.first&.dig("code") || "en"
   end
 
+  # Configured language codes, e.g. ["en", "es", "it"].
+  def language_codes
+    languages.map { |l| l["code"] }
+  end
+
   # Builds the public URL of an episode's HTML page on the published site,
   # inserting `/<lang>/` for non-primary languages so the URL points at the
   # actual rendered file (site_generator places non-primary pages under
@@ -320,7 +325,7 @@ class PodcastConfig
     prefix = "#{@name}-#{date_str}"
     existing = Dir.glob(File.join(@episodes_dir, "#{prefix}*.mp3"))
       .reject { |f| File.basename(f).include?("_concat") }
-      .select { |f| EpisodeFiltering.matches_language?(File.basename(f, ".mp3"), "en") }
+      .select { |f| EpisodeFiltering.matches_language?(File.basename(f, ".mp3"), "en", languages: language_codes) }
       .map { |f| File.basename(f, ".mp3") }
       .to_set
 

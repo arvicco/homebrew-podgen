@@ -375,6 +375,7 @@ class TestValidators < Minitest::Test
     keyword_init: true
   ) do
     def parser_warnings = []
+    def language_codes = (languages || []).map { |l| l["code"] }
   end
 
   def stub_config(**overrides)

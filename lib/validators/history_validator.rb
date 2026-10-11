@@ -28,7 +28,7 @@ module Validators
       end
 
       if Dir.exist?(@config.episodes_dir)
-        mp3_count = EpisodeFiltering.english_episodes(@config.episodes_dir).length
+        mp3_count = EpisodeFiltering.english_episodes(@config.episodes_dir, languages: @config.language_codes).length
 
         if entries.length == mp3_count
           @passes << "History: #{entries.length} entries"
