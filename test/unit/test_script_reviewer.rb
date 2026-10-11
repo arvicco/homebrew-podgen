@@ -110,7 +110,7 @@ class TestScriptReviewer < Minitest::Test
     assert_empty title_issues
   end
 
-  def test_check_title_length_over_40_auto_fixes
+  def test_check_title_length_over_40_warns_and_keeps_title_whole
     title = "AI Power Plays, Bitcoin ETF Reversals, and the Tokenization Race"
     script = make_script(title: title)
     reviewer = build_reviewer
@@ -119,32 +119,25 @@ class TestScriptReviewer < Minitest::Test
 
     title_issues = issues.select { |i| i[:check] == "title_length" }
     assert_equal 1, title_issues.length
-    assert_equal ScriptReviewer::BLOCKER, title_issues.first[:severity]
-    assert title_issues.first[:auto_fixed]
-    assert corrected[:title].length <= 40, "Truncated title '#{corrected[:title]}' should be ≤ 40 chars"
+    assert_equal ScriptReviewer::WARNING, title_issues.first[:severity]
+    refute title_issues.first[:auto_fixed]
+    assert_includes title_issues.first[:message], "64 chars"
+    assert_equal title, corrected[:title]
   end
 
-  def test_check_title_truncation_preserves_words
-    title = "Robots at the White House, Bitcoin Under Pressure"
+  # Regression (fulgur_news 2026-10-11, P1-17): a 42-char title shipped to the
+  # feed as "GPT-6's Interface Bet and the CFTC…" — half a headline. The
+  # reviewer never cuts a title; a listener-visible title is always whole.
+  def test_check_title_length_never_emits_an_ellipsis
+    title = "GPT-6's Interface Bet and the CFTC Charter"
     script = make_script(title: title)
     reviewer = build_reviewer
 
-    corrected, _ = reviewer.run_deterministic_checks(script)
+    corrected, issues = reviewer.run_deterministic_checks(script)
 
-    refute corrected[:title].match?(/\w\u2026/), "Should not cut mid-word"
-    assert corrected[:title].length <= 40
-  end
-
-  def test_check_title_truncation_tries_comma_split
-    title = "AI Data Centers Race, Bitcoin Under Pressure"
-    script = make_script(title: title)
-    reviewer = build_reviewer
-
-    corrected, _ = reviewer.run_deterministic_checks(script)
-
-    assert corrected[:title].length <= 40
-    # Should drop after comma if the first part fits
-    assert_equal "AI Data Centers Race", corrected[:title]
+    assert_equal title, corrected[:title]
+    refute_includes corrected[:title], "…"
+    assert issues.none? { |i| i[:severity] == ScriptReviewer::BLOCKER && i[:check] == "title_length" }
   end
 
   # --- check_stage_directions ---
@@ -479,7 +472,7 @@ class TestScriptReviewer < Minitest::Test
 
     corrected, issues = reviewer.run_deterministic_checks(script)
 
-    assert corrected[:title].length <= 40
+    assert_equal "AI Power Plays, Bitcoin ETF Reversals, and the Tokenization Race", corrected[:title]
     assert_includes corrected[:segments].first[:text], "Tuesday"
     refute_includes corrected[:segments].first[:text], "[pause]"
     assert issues.length >= 3 # weekday + title + stage direction
@@ -572,39 +565,6 @@ class TestScriptReviewer < Minitest::Test
 
     assert_includes prompt, "2026-04-07"
     assert_includes prompt, "Tuesday"
-  end
-
-  # --- truncate_title (characterization, private) ---
-
-  def test_truncate_title_short_title_unchanged
-    reviewer = build_reviewer
-    assert_equal "Bitcoin Rally", reviewer.send(:truncate_title, "Bitcoin Rally", 40)
-  end
-
-  def test_truncate_title_drops_after_comma_separator
-    reviewer = build_reviewer
-    title = "Bitcoin Surges Today, Markets React Strongly"
-    assert_equal "Bitcoin Surges Today", reviewer.send(:truncate_title, title, 40)
-  end
-
-  def test_truncate_title_drops_after_dash_separator
-    reviewer = build_reviewer
-    title = "Bitcoin Surges Past 70K — Markets React Fast"
-    assert_equal "Bitcoin Surges Past 70K", reviewer.send(:truncate_title, title, 40)
-  end
-
-  def test_truncate_title_separator_before_index_ten_ignored
-    reviewer = build_reviewer
-    # Only separator is at idx 4 (<= 10) — falls through to the word-boundary
-    # cut, which itself is too short (<10 chars) so a hard cut at max-1 wins.
-    title = "Abcd, #{"e" * 40}"
-    assert_equal "Abcd, #{"e" * 33}…", reviewer.send(:truncate_title, title, 40)
-  end
-
-  def test_truncate_title_word_boundary_fallback_adds_ellipsis
-    reviewer = build_reviewer
-    title = "Bitcoin Ethereum Solana Cardano Dogecoin Polkadot"
-    assert_equal "Bitcoin Ethereum Solana Cardano…", reviewer.send(:truncate_title, title, 40)
   end
 
   # --- normalize_url / urls_match? (characterization, private) ---
