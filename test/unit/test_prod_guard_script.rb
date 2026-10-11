@@ -284,11 +284,56 @@ class TestProdGuardScript < Minitest::Test
     assert_equal 0, code
   end
 
-  def test_bash_probe_shapes_while_active_yield
+  def test_bash_probe_shapes_while_active_yields
     hold_lock
     codes = ["/bin/rm lib/x.rb", "echo $(rm lib/x.rb)", "tee /tmp/a lib/x.rb", "git -P reset --hard", "git stash show; git stash drop", "echo x >| lib/x.rb"].map { |c| run_guard("Bash", {command: c}).first }
 
     assert_equal [2, 2, 2, 2, 2, 2], codes
+  end
+
+  # CRPR Gate 2 round 5: heredoc bodies (commit messages) are not scanned;
+  # ordinary loop commands stay allowed; more tree/branch rewrites block.
+  def test_bash_commit_heredoc_mentioning_guarded_words_while_active_allowed
+    hold_lock
+    msg = "git commit -q -F - <<'EOF'\nfix: guard covers git apply, rm lib/x\n\nbranch -f and commit --amend now block.\nEOF"
+    code, _err = run_guard("Bash", {command: msg})
+
+    assert_equal 0, code
+  end
+
+  def test_bash_ordinary_loop_commands_while_active_allowed
+    hold_lock
+    cmds = [
+      "bundle exec rake gate > log 2>&1; echo exit=$?",
+      "git branch --show-current",
+      "git cherry 6d869e4 origin/phase-1",
+      "ruby -e 'p({\"a\" => \"lib/x\"})'",
+      "echo pseudo rm lib/x.rb",
+      "sed -n '1,5p' lib/x.rb"
+    ]
+    codes = cmds.map { |c| run_guard("Bash", {command: c}).first }
+
+    assert_equal [0, 0, 0, 0, 0, 0], codes
+  end
+
+  def test_bash_more_tree_and_branch_rewrites_while_active_yields
+    hold_lock
+    cmds = [
+      "git revert --no-edit HEAD~1",
+      "git branch --delete phase-2",
+      "git update-ref HEAD HEAD~1",
+      "git update-ref -d refs/heads/x",
+      "git am /tmp/x.mbox",
+      "git checkout-index -f -a",
+      "sed -E -i '' 's/a/b/' lib/x.rb",
+      "X=1 rm lib/x.rb",
+      "{ rm lib/x.rb; }",
+      "/usr/bin/tee lib/x.rb",
+      "env FOO=1 rm lib/x.rb"
+    ]
+    codes = cmds.map { |c| run_guard("Bash", {command: c}).first }
+
+    assert_equal Array.new(cmds.size, 2), codes
   end
 
   def test_no_output_dir_allowed

@@ -4,8 +4,11 @@
 # Blocks Edit/Write/MultiEdit under lib/ bin/ scripts/ .claude/, and Bash
 # branch moves/merges/history rewrites or writes into lib/ bin/ scripts/
 # (redirect, tee, sed/ruby/perl -i, patch, cp/mv/rm). Exit 2 = blocked.
-# A seatbelt, not a sandbox: eval, variables holding paths, touch/ln/
-# rsync/dd/File.write and the like are out of scope.
+# A seatbelt, not a sandbox: eval, variables holding paths, stdin-fed
+# xargs, exec/nice/timeout wrappers, abbreviated git long options,
+# touch/ln/rsync/dd/File.write and the like are out of scope.
+# Heredoc bodies (commit messages, file contents) are NOT scanned — only
+# the command lines around them.
 # Safe by default: no output/ dir under cwd -> no-op.
 # PROD_GUARD_NOW (ISO time) overrides the clock, for tests.
 # Fails OPEN: missing jq/ruby, bad JSON or a bad PROD_GUARD_NOW allow the call
@@ -27,12 +30,26 @@ target='["'"'"']?([^[:space:]"'"'"']*/)?(lib|bin|scripts)/'
 # A run of git global options (-c k=v, -C dir, --no-pager, -P, --x=y, …).
 git_opts='((-[cC][[:space:]]+[^[:space:]]+|--?[[:alnum:]-]+(=[^[:space:]]+)?)[[:space:]]+)*'
 git_prefix="(^|[^[:alnum:]_])git[[:space:]]+${git_opts}"
-# A command position: line start, after ; | & ( { ! $( or then/do/else,
-# optional whitespace, optional wrapper (sudo/xargs/command/env/nohup/time
-# with options or VAR=val assignments) or git, optional /usr/bin or /bin prefix.
-cmd_pos='(^|[;|&({!]|\$\(|(then|do|else)[[:space:]])[[:space:]]*((sudo|xargs|command|env|nohup|time)([[:space:]]+(-[^[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+|git[[:space:]]+)?(/usr)?(/bin/)?'
+# A command position: line start, after ; | & ( { ! $( or a then/do/else
+# word, optional whitespace, optional VAR=val assignments, optional wrapper
+# (sudo/xargs/command/env/nohup/time with options or assignments) or git,
+# optional /usr/bin or /bin prefix.
+cmd_pos='(^|[;|&({!]|\$\(|(^|[[:space:];])(then|do|else)[[:space:]])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((sudo|xargs|command|env|nohup|time)([[:space:]]+(-[^[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*))*[[:space:]]+|git[[:space:]]+)?(/usr)?(/bin/)?'
 
 matches() { grep -qE "$1" <<<"$2"; }
+
+# Command lines only: drop every heredoc body (from the line after a
+# `<<WORD` / `<<-'WORD'` opener up to and including the WORD line).
+strip_heredocs() {
+  awk '
+    skip { if ($0 == term) { skip = 0 }; next }
+    { print }
+    match($0, /<<-?[[:space:]]*["'"'"']?[A-Za-z_][A-Za-z0-9_]*/) {
+      term = substr($0, RSTART, RLENGTH)
+      sub(/^<<-?[[:space:]]*["'"'"']?/, "", term)
+      skip = 1
+    }' <<<"$1"
+}
 
 guarded=false
 case "$tool" in
@@ -40,28 +57,31 @@ case "$tool" in
     if matches '(^|/)(lib|bin|scripts|\.claude)/' "$file"; then guarded=true; fi
     ;;
   Bash)
+    lines=$(strip_heredocs "$cmd")
     # Branch moves / tree and history rewrites. `update-ref refs/cr/…` (the
-    # review marker) stays allowed; only refs/heads/ is a branch move.
-    if matches "${git_prefix}(merge|cherry-pick|switch|checkout|rebase|pull|reset|restore|apply|am|clean|checkout-index)([^[:alnum:]_-]|\$)" "$cmd" \
-      || matches "${git_prefix}branch[[:space:]]+(-f|--force|-[mMcCdD])" "$cmd" \
-      || matches "${git_prefix}commit[^;|&]*--amend" "$cmd" \
-      || matches "${git_prefix}update-ref[[:space:]]+refs/heads/" "$cmd"; then
+    # review marker) stays allowed; HEAD or refs/heads/ is a branch move.
+    if matches "${git_prefix}(merge|cherry-pick|revert|switch|checkout|rebase|pull|reset|restore|apply|am|clean|checkout-index)([^[:alnum:]_-]|\$)" "$lines" \
+      || matches "${git_prefix}branch[[:space:]]+(-f|--force|--delete|--move|--copy|-[mMcCdD])" "$lines" \
+      || matches "${git_prefix}commit[^;|&]*--amend" "$lines" \
+      || matches "${git_prefix}update-ref([[:space:]]+-[^[:space:]]+)*[[:space:]]+(HEAD|refs/heads/)" "$lines"; then
       guarded=true
     fi
     # `git stash` mutates unless it is `stash list|show`; strip the read-only
     # forms first so they cannot exempt the rest of the command line.
-    stripped=$(sed -E "s/git[[:space:]]+${git_opts}stash[[:space:]]+(list|show)([^[:alnum:]_-]|\$)/\\5/g" <<<"$cmd")
+    stripped=$(sed -E "s/git[[:space:]]+${git_opts}stash[[:space:]]+(list|show)([^[:alnum:]_-]|\$)/\\5/g" <<<"$lines")
     if matches "${git_prefix}stash([^[:alnum:]_-]|\$)" "$stripped"; then
       guarded=true
     fi
-    # Writes INTO lib/ bin/ scripts/: redirect (absolute paths, heredocs and
-    # >| included), tee with any options or several files, in-place editors,
-    # patch, and cp/mv/rm at a command position whose arguments name one of
-    # those trees (a source path also matches — conservative).
-    if matches ">>?\\|?[[:space:]]*${target}" "$cmd" \
-      || matches "(^|[[:space:]|;&/])tee[[:space:]][^;|&]*${target}" "$cmd" \
-      || matches "(sed -i|ruby -p?i|perl -p?i|patch )[^;|&]*${target}" "$cmd" \
-      || matches "${cmd_pos}(cp|mv|rm)[[:space:]][^;|&]*${target}" "$cmd"; then
+    # Writes INTO lib/ bin/ scripts/: redirect (absolute paths, heredoc
+    # openers and >| included; `=>` is not a redirect), tee with any options
+    # or several files, in-place editors (sed/perl with -i anywhere in the
+    # options, ruby -i/-pi), patch, and cp/mv/rm at a command position whose
+    # arguments name one of those trees (a source path also matches —
+    # conservative).
+    if matches "(^|[^=-])>>?\\|?[[:space:]]*${target}" "$lines" \
+      || matches "(^|[[:space:]|;&/])tee[[:space:]][^;|&]*${target}" "$lines" \
+      || matches "((sed|perl)([[:space:]]+-[^[:space:]]*)*[[:space:]]+-[[:alnum:]]*i|ruby -p?i|patch )[^;|&]*${target}" "$lines" \
+      || matches "${cmd_pos}(cp|mv|rm)[[:space:]][^;|&]*${target}" "$lines"; then
       guarded=true
     fi
     ;;
