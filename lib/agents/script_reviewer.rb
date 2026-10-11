@@ -452,7 +452,7 @@ class ScriptReviewer
   end
 
   def normalize_url(url)
-    url.to_s.sub(%r{https?://}, "").sub(/\/$/, "").downcase
+    url.to_s.sub(%r{https?://}i, "").sub(/\/$/, "").downcase
   end
 
   def format_research(research_data)

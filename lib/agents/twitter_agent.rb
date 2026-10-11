@@ -62,6 +62,7 @@ class TwitterAgent
     # Truncate non-URL portion
     max_text = 280 - url_display_len - 4 # "... " + url
     text_without_url = text.sub(url.to_s, "").strip
-    "#{text_without_url[0...max_text].strip}...\n#{url}"
+    truncated = "#{text_without_url[0...max_text].strip}..."
+    url.to_s.empty? ? truncated : "#{truncated}\n#{url}"
   end
 end
