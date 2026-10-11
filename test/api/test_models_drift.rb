@@ -13,7 +13,7 @@ class TestModelsDrift < Minitest::Test
     skip_unless_env("ANTHROPIC_API_KEY")
     @models = []
     Anthropic::Client.new.models.list.auto_paging_each do |m|
-      @models << { id: m.id.to_s, created_at: m.created_at }
+      @models << {id: m.id.to_s, created_at: m.created_at}
     end
   end
 
