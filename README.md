@@ -108,6 +108,7 @@ ruby bin/podgen <command> [options]
 | `podgen stats <podcast>`              | Show podcast statistics and download analytics           |
 | `podgen analytics <sub>`              | Manage Cloudflare analytics Worker                       |
 | `podgen validate <podcast>`           | Validate config and output                               |
+| `podgen status [podcast]`             | One-line OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN) |
 | `podgen list`                         | List available podcasts                                  |
 | `podgen add <podcast> <url>`          | Queue a priority link for the next episode               |
 | `podgen links <podcast>`              | List or manage queued priority links                     |
@@ -1079,6 +1080,7 @@ podgen schedule fulgur_news --time 18:00 --publish --telegram
 | `--test`       | Send a test Telegram message and exit                  |
 | `--remove`     | Unload and delete the scheduler for this podcast       |
 | `--status`     | Report scheduled time, loaded/running state, last run  |
+| `--status-check` | Schedule the daily `podgen status` check (no podcast arg) |
 
 `--remove`, `--status`, and `--test` are mutually exclusive. `--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast). Use `--test` after setup to verify alerts are working.
 
@@ -1103,6 +1105,41 @@ podgen schedule ruby_world --remove
 `--remove` and `--status` do not require the podcast directory to still exist, so you can clean up schedulers for deleted podcasts.
 
 **Note:** macOS must be awake at the scheduled time. Keep the machine plugged in and disable sleep, or use `caffeinate`.
+
+### podgen status (content-progress check)
+
+`podgen status` prints one line per podcast (podcasts with an installed launchd
+scheduler first). It is read-only and makes no network calls.
+
+```
+ruby_world  OK    newest 2026-10-10 (1d old)
+fulgur_news WARN  repeated in last 3 runs: Warning: Twitter credits depleted (#)
+old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, threshold 2d)
+```
+
+- **OLD** - newest episode older than the cadence threshold (same rule as the
+  `podgen validate` freshness check; `- freshness: off` in `## Podcast` reports OK).
+- **WARN** - the latest run log in `logs/<podcast>/` ends with an `ERROR` line or
+  contains a `Warning:` / `WARNING` line, or the same warning appears in each of
+  the last 3 run logs (`--runs N` to change), or there is no history yet.
+- **OK** - otherwise.
+
+Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
+podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
+array; keys are only ever added, never renamed or removed:
+
+```json
+[{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"]}]
+```
+
+`verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
+when unknown; `reasons` is an array of short strings.
+
+The daily check is installed by the owner only (`podgen status --install-hint`
+prints the command): `bin/podgen schedule --status-check --time 07:00` writes
+and loads `com.podcastagent.status`, which runs `scripts/run_status.sh`. That
+wrapper sends the summary to Telegram (`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`
+in `.env`) only when the exit code is non-zero.
 
 ### Scheduled batch uploads across multiple pods
 

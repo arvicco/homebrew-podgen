@@ -16,6 +16,9 @@ module Validators
     STALE_FACTOR = 2        # stale when age > factor × median gap
     RECENT_GAPS = 12        # infer cadence from this many recent gaps
 
+    # Set by #validate once history has dated entries (used by `podgen status`).
+    attr_reader :newest, :age_days
+
     def initialize(config, today: Date.today)
       super(config)
       @today = today
@@ -32,6 +35,8 @@ module Validators
 
       entries = YamlLoader.load(@config.history_path, default: [])
       dates = entries.filter_map { |e| parse_date(e["date"]) if e.is_a?(Hash) }.uniq.sort
+      @newest = dates.last
+      @age_days = (@today - @newest).to_i if @newest
       if dates.size < 2
         @passes << "Freshness: cannot infer cadence (#{dates.size} dated entries)"
         return
@@ -40,8 +45,8 @@ module Validators
       gaps = dates.each_cons(2).map { |a, b| (b - a).to_i }.last(RECENT_GAPS)
       cadence = median(gaps)
       threshold = [cadence * STALE_FACTOR, MIN_STALE_DAYS].max
-      newest = dates.last
-      age = (@today - newest).to_i
+      newest = @newest
+      age = @age_days
 
       if age.negative?
         @warnings << "Freshness: newest episode #{newest} is dated in the future (#{-age} days ahead)"

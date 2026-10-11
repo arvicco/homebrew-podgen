@@ -16,6 +16,7 @@ module PodgenCLI
     "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",    "PublishCommand"],
     "stats"     => ["Show podcast statistics",             "cli/stats_command",       "StatsCommand"],
     "validate"  => ["Validate podcast config and output",  "cli/validate_command",    "ValidateCommand"],
+    "status"    => ["One-line OK/OLD/WARN verdict per podcast", "cli/status_command",    "StatusCommand"],
     "list"      => ["List available podcasts",             "cli/list_command",        "ListCommand"],
     "test"      => ["Run a standalone test script",        "cli/test_command",        "TestCommand"],
     "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",    "ScheduleCommand"],
@@ -77,6 +78,7 @@ module PodgenCLI
       opts.separator "  publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)"
       opts.separator "  stats <podcast> | --all        Show podcast statistics"
       opts.separator "  validate <podcast> | --all     Validate config and output"
+      opts.separator "  status [podcast] [--json]      OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)"
       opts.separator "  list                           List available podcasts"
       opts.separator "  test <name> [args]             Run a standalone test"
       opts.separator "  schedule <podcast>             Install launchd scheduler (--time, --publish, --telegram)"
