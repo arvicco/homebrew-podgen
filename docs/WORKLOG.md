@@ -7,7 +7,7 @@ durable fix, the lesson now enforced.
 
 ---
 
-2026-10-11 · P1-16 (Q-07) · 1778b62 · YouTube authorization moved from the
+2026-10-11 · P1-16 (Q-07) · a62eb0a · YouTube authorization moved from the
 discontinued out-of-band flow to a loopback redirect: an ephemeral
 127.0.0.1 listener, consent URL printed/opened, code read from the
 browser callback and exchanged against the same redirect; the

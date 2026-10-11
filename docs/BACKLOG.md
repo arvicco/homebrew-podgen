@@ -444,7 +444,7 @@ Goal: loopback-redirect authorization replaces the discontinued
 Acceptance: unit tests on the exchange with a fake seam; one owner-run
       re-auth on a clean config in the Gate 1 runbook (EXPECT lines);
       upload behavior unchanged.
-Landed 2026-10-11: 1778b62 (orchestrator). Rulings: ephemeral loopback
+Landed 2026-10-11: a62eb0a (orchestrator). Rulings: ephemeral loopback
       port on 127.0.0.1 (no fixed port to collide with); consent is an
       injected collaborator; `open` on macOS as a convenience, URL always
       printed; denied consent → the existing "No authorization code"
