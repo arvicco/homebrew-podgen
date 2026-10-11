@@ -21,34 +21,39 @@ repo=$(cd "$cwd" 2>/dev/null && pwd -P) || exit 0
 
 # A guarded target: optional quote, optional path prefix, then one of the trees.
 target='["'"'"']?([^[:space:]"'"'"']*/)?(lib|bin|scripts)/'
-# `git` with any run of -c key=val / -C <dir> options before the subcommand.
-git_prefix='(^|[^[:alnum:]_])git[[:space:]]+(-[cC][[:space:]]+[^[:space:]]+[[:space:]]+)*'
+# `git` with any run of global options (-c k=v, -C dir, --no-pager, -P, …).
+git_prefix='(^|[^[:alnum:]_])git[[:space:]]+((-[cC][[:space:]]+[^[:space:]]+|--?[[:alnum:]-]+(=[^[:space:]]+)?)[[:space:]]+)*'
+# A command position: line start, after ; | & ( or $(, optional whitespace,
+# optional sudo/xargs/git wrapper, optional /bin/ prefix.
+cmd_pos='(^|[;|&(]|\$\()[[:space:]]*(sudo[[:space:]]+|xargs[[:space:]]+|git[[:space:]]+)?(/bin/)?'
+
+matches() { grep -qE "$1" <<<"$2"; }
 
 guarded=false
 case "$tool" in
   Edit|Write|MultiEdit)
-    if printf '%s' "$file" | grep -qE '(^|/)(lib|bin|scripts|\.claude)/'; then guarded=true; fi
+    if matches '(^|/)(lib|bin|scripts|\.claude)/' "$file"; then guarded=true; fi
     ;;
   Bash)
     # Branch moves / history rewrites.
-    if printf '%s' "$cmd" | grep -qE "${git_prefix}(merge|cherry-pick|switch|checkout|rebase|pull|reset|restore)([^[:alnum:]_-]|\$)"; then
+    if matches "${git_prefix}(merge|cherry-pick|switch|checkout|rebase|pull|reset|restore)([^[:alnum:]_-]|\$)" "$cmd"; then
       guarded=true
     fi
     # `git stash` mutates unless it is `stash list|show`; strip the read-only
     # forms first so they cannot exempt the rest of the command line.
-    stripped=$(printf '%s' "$cmd" | sed -E 's/git[[:space:]]+(-[cC][[:space:]]+[^[:space:]]+[[:space:]]+)*stash[[:space:]]+(list|show)//g')
-    if printf '%s' "$stripped" | grep -qE "${git_prefix}stash([^[:alnum:]_-]|\$)"; then
+    stripped=$(sed -E 's/git[[:space:]]+(-[cC][[:space:]]+[^[:space:]]+[[:space:]]+)*stash[[:space:]]+(list|show)([^[:alnum:]_-]|$)/\3/g' <<<"$cmd")
+    if matches "${git_prefix}stash([^[:alnum:]_-]|\$)" "$stripped"; then
       guarded=true
     fi
-    # Writes INTO lib/ bin/ scripts/: redirect or tee (absolute paths and
-    # heredocs included), in-place editors, patch, and cp/mv/rm at a command
-    # position whose arguments name one of those trees (a source path also
-    # matches — conservative).
-    if printf '%s' "$cmd" | grep -qE "(>>?|(^|[[:space:]|;&])tee([[:space:]]+-a)?)[[:space:]]*${target}"; then
-      guarded=true
-    elif printf '%s' "$cmd" | grep -qE "(sed -i|ruby -p?i|perl -p?i|patch )[^;|&]*${target}"; then
-      guarded=true
-    elif printf '%s' "$cmd" | grep -qE "(^|[;|&][[:space:]]*)(sudo[[:space:]]+)?(cp|mv|rm)[[:space:]][^;|&]*${target}"; then
+    # Writes INTO lib/ bin/ scripts/: redirect (absolute paths and heredocs
+    # included), tee with any options or several files, in-place editors,
+    # patch, and cp/mv/rm at a command position (also via git/xargs/sudo)
+    # whose arguments name one of those trees (a source path also matches —
+    # conservative).
+    if matches ">>?[[:space:]]*${target}" "$cmd" \
+      || matches "(^|[[:space:]|;&])tee[[:space:]][^;|&]*${target}" "$cmd" \
+      || matches "(sed -i|ruby -p?i|perl -p?i|patch )[^;|&]*${target}" "$cmd" \
+      || matches "${cmd_pos}(cp|mv|rm)[[:space:]][^;|&]*${target}" "$cmd"; then
       guarded=true
     fi
     ;;
