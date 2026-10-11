@@ -185,6 +185,7 @@ Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Gate 1
 CLOSED 2026-10-11 12:57 (owner merged PR #2 at 94f0123, merge 6d869e4).
 Six commits pushed to phase-1 AFTER that merge (P1-10 live-smoke fixes,
 v2 docs sync, P1-0 outcome, P1-17 title fix) were carried onto phase-2
-as the Gate 1 tail — they reach master at Gate 2. Phase 2 SIGNED
-2026-10-11 (option A + riders; .docs/p02-plan.md), executing on phase-2;
-PR #3 is the living gate document. Update this line at each gate.
+as the Gate 1 tail — they reach master at Gate 2. Phase 2 AT GATE 2
+(2026-10-11 23:50): all packets landed on phase-2, CRPR APPROVED after
+seven rounds (refs/cr/reviewed = 3a2e19f), PR #3 open — the owner
+merges; runbook in .docs/p02-plan.md. Update this line at each gate.
