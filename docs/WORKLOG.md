@@ -7,6 +7,15 @@ durable fix, the lesson now enforced.
 
 ---
 
+2026-10-11 · P1-16 (Q-07) · 1778b62 · YouTube authorization moved from the
+discontinued out-of-band flow to a loopback redirect: an ephemeral
+127.0.0.1 listener, consent URL printed/opened, code read from the
+browser callback and exchanged against the same redirect; the
+collaborator is injected so the library no longer reads stdin and
+tests exercise a real local callback without a browser. Refresh path
+untouched. Gate 3139+50 green. Outcome check is the owner's: one fresh
+authorization on a clean token (runbook).
+
 2026-10-11 · P1-8, P1-2 · dfd51e3, aacc767 · P1-8 (agent): `freshness:
 off` in ## Podcast silences OLD for concluded series with a visible
 pass line; a future-dated newest episode warns instead of passing
