@@ -847,6 +847,23 @@ class TestClaudeWebSource < Minitest::Test
     end
   end
 
+  # Live recording 2026-10-11: a 1024-token cap truncated the web-search
+  # answer before any text block on the bumped model line (P1-0 hazard).
+  def test_call_api_requests_enough_output_for_a_cited_answer
+    captured = nil
+    fake = Object.new
+    fake.define_singleton_method(:messages) { self }
+    fake.define_singleton_method(:create) do |**kw|
+      captured = kw
+      Struct.new(:content, :stop_reason).new([], "end_turn")
+    end
+    @source.instance_variable_set(:@client, fake)
+    @source.instance_variable_set(:@model, "m")
+    @source.instance_variable_set(:@logger, nil)
+    @source.send(:call_api, "topic")
+    assert_operator captured[:max_tokens], :>=, 4096
+  end
+
   def test_max_retries_is_three
     assert_equal 3, ClaudeWebSource::MAX_RETRIES
   end
