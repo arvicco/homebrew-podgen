@@ -19,23 +19,36 @@ cwd=$(printf '%s' "$input" | jq -r '.cwd // "."')
 repo=$(cd "$cwd" 2>/dev/null && pwd -P) || exit 0
 [ -d "$repo/output" ] || exit 0
 
+# A guarded target: optional quote, optional path prefix, then one of the trees.
+target='["'"'"']?([^[:space:]"'"'"']*/)?(lib|bin|scripts)/'
+# `git` with any run of -c key=val / -C <dir> options before the subcommand.
+git_prefix='(^|[^[:alnum:]_])git[[:space:]]+(-[cC][[:space:]]+[^[:space:]]+[[:space:]]+)*'
+
 guarded=false
 case "$tool" in
   Edit|Write|MultiEdit)
     if printf '%s' "$file" | grep -qE '(^|/)(lib|bin|scripts|\.claude)/'; then guarded=true; fi
     ;;
   Bash)
-    # Branch moves / history rewrites (git -C <dir> form included); `git stash
-    # list|show` are read-only and pass.
-    if printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?(merge|cherry-pick|switch|checkout|rebase|pull|reset|restore)([^[:alnum:]_-]|$)' \
-      || printf '%s' "$cmd" | grep -qE '(^|[^[:alnum:]_])git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?stash([[:space:]]+(push|pop|apply|drop|clear|save))?([^[:alnum:]_-]|$)' \
-      && ! printf '%s' "$cmd" | grep -qE 'git[[:space:]]+(-C[[:space:]]+[^[:space:]]+[[:space:]]+)?stash[[:space:]]+(list|show)'; then
+    # Branch moves / history rewrites.
+    if printf '%s' "$cmd" | grep -qE "${git_prefix}(merge|cherry-pick|switch|checkout|rebase|pull|reset|restore)([^[:alnum:]_-]|\$)"; then
       guarded=true
-    # Writes INTO lib/ bin/ scripts/: redirect, tee, in-place editors, patch,
-    # cp/mv/rm as whole words whose target is one of those trees.
-    elif printf '%s' "$cmd" | grep -qE '(>>?|[[:space:]]tee([[:space:]]+-a)?)[[:space:]]*(\./)?(lib|bin|scripts)/' \
-      || printf '%s' "$cmd" | grep -qE '(sed -i|ruby -p?i|perl -p?i|patch )[^;|&]*(\./)?(lib|bin|scripts)/' \
-      || printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|])(cp|mv|rm)[[:space:]][^;|&]*(\./)?(lib|bin|scripts)/'; then
+    fi
+    # `git stash` mutates unless it is `stash list|show`; strip the read-only
+    # forms first so they cannot exempt the rest of the command line.
+    stripped=$(printf '%s' "$cmd" | sed -E 's/git[[:space:]]+(-[cC][[:space:]]+[^[:space:]]+[[:space:]]+)*stash[[:space:]]+(list|show)//g')
+    if printf '%s' "$stripped" | grep -qE "${git_prefix}stash([^[:alnum:]_-]|\$)"; then
+      guarded=true
+    fi
+    # Writes INTO lib/ bin/ scripts/: redirect or tee (absolute paths and
+    # heredocs included), in-place editors, patch, and cp/mv/rm at a command
+    # position whose arguments name one of those trees (a source path also
+    # matches — conservative).
+    if printf '%s' "$cmd" | grep -qE "(>>?|(^|[[:space:]|;&])tee([[:space:]]+-a)?)[[:space:]]*${target}"; then
+      guarded=true
+    elif printf '%s' "$cmd" | grep -qE "(sed -i|ruby -p?i|perl -p?i|patch )[^;|&]*${target}"; then
+      guarded=true
+    elif printf '%s' "$cmd" | grep -qE "(^|[;|&][[:space:]]*)(sudo[[:space:]]+)?(cp|mv|rm)[[:space:]][^;|&]*${target}"; then
       guarded=true
     fi
     ;;

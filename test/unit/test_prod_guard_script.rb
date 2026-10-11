@@ -168,6 +168,38 @@ class TestProdGuardScript < Minitest::Test
     assert_equal 0, code
   end
 
+  # CRPR Gate 2 round 2 W1: writes through an absolute path (the loop writes
+  # heredocs with absolute paths) and tee at command start.
+  def test_bash_heredoc_to_absolute_lib_path_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "cat > /Users/vb/Dev/podgen/lib/x.rb <<'EOF'\nputs 1\nEOF"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_tee_at_command_start_into_lib_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "tee -a lib/x.rb < /tmp/in"})
+
+    assert_equal 2, code
+  end
+
+  # CRPR Gate 2 round 2 W2: a read-only stash subcommand must not exempt the
+  # rest of the command line.
+  def test_bash_reset_followed_by_stash_list_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git reset --hard HEAD~1; git stash list"})
+
+    assert_equal 2, code
+  end
+
+  def test_bash_git_dash_c_option_checkout_while_active_yields
+    hold_lock
+    code, _err = run_guard("Bash", {command: "git -c core.hooksPath=/dev/null checkout phase-3"})
+
+    assert_equal 2, code
+  end
+
   def test_no_output_dir_allowed
     FileUtils.rm_rf(File.join(@cwd, "output"))
     code, _err = run_guard("Bash", {command: "git merge x"}, now: INSIDE_WINDOW)
