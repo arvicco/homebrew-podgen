@@ -37,7 +37,7 @@ class ScriptAgent
 
   def initialize(guidelines:, script_path:, logger: nil, priority_urls: [], links_config: nil)
     @logger = logger
-    init_anthropic_client
+    init_anthropic_client(role: :script)
     @guidelines = guidelines
     @script_path = script_path
     @priority_urls = Array(priority_urls)

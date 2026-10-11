@@ -4,6 +4,8 @@ require "set"
 require "yaml"
 require "digest"
 require "anthropic"
+require_relative "anthropic_client"
+require_relative "claude_models"
 require_relative "transcript_parser"
 require_relative "transcript_renderer"
 require_relative "atomic_writer"
@@ -309,11 +311,11 @@ class WordStats
              "Reply with EXACTLY ONE WORD from this list, no punctuation:\n\n" \
              "#{candidates.join("\n")}\n\nText:\n#{sample[0, 500]}"
     response = client.messages.create(
-      model: "claude-haiku-4-5-20251001",
+      model: ClaudeModels.for(:language_detect),
       max_tokens: 30,
       messages: [{ role: "user", content: prompt }]
     )
-    response.content.first.text.to_s.strip.split(/\s+/).first
+    AnthropicClient.text_of(response).to_s.strip.split(/\s+/).first
   end
 
   def save_language_detection(detection_hash, working_language)

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require_relative "anthropic_client"
+require_relative "claude_models"
 require "base64"
 require "json"
 require_relative "loggable"
@@ -19,7 +21,6 @@ require_relative "loggable"
 class ImageRanker
   include Loggable
 
-  DEFAULT_MODEL = "claude-sonnet-4-6"
   MEDIA_TYPES = {
     ".jpg"  => "image/jpeg",
     ".jpeg" => "image/jpeg",
@@ -29,7 +30,7 @@ class ImageRanker
   }.freeze
 
   def initialize(model: nil, logger: nil)
-    @model = model || DEFAULT_MODEL
+    @model = model || ClaudeModels.for(:image_rank)
     @client = Anthropic::Client.new
     @logger = logger
   end
@@ -136,7 +137,7 @@ class ImageRanker
   end
 
   def parse_response(response)
-    text = response.content.first.text rescue nil
+    text = AnthropicClient.text_of(response) rescue nil
     return nil unless text
     json = text.strip.sub(/\A```(?:json)?\s*/, "").sub(/\s*```\z/, "")
     data = JSON.parse(json)

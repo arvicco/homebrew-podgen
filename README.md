@@ -57,11 +57,12 @@ GROQ_API_KEY=...              # Optional: Groq transcription engine (language pi
 GROQ_WHISPER_MODEL=whisper-large-v3   # Optional: Groq Whisper model (default: whisper-large-v3)
 LINGQ_API_KEY=...             # Optional: LingQ upload (language pipeline)
 YOUTUBE_BROWSER=chrome        # Optional: browser for yt-dlp cookie auth (default: chrome)
-CLAUDE_MODEL=claude-opus-4-7          # Optional: Claude model for scripts (default: claude-opus-4-7)
-CLAUDE_WEB_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for web search source
-CLAUDE_DESCRIPTION_MODEL=claude-haiku-4-5-20251001  # Optional: Claude model for episode title/description cleanup
-CLAUDE_VOCAB_MODEL=claude-sonnet-4-6        # Optional: Claude model for vocabulary annotation
-CLAUDE_RECONCILER_MODEL=claude-sonnet-4-6   # Optional: Claude model for subtitle reconciliation
+CLAUDE_OPUS_MODEL=...         # Optional: override the opus line (script, topics, translation, review, transcript reconciliation, Tell gloss)
+CLAUDE_SONNET_MODEL=...       # Optional: override the sonnet line (descriptions, vocabulary, subtitle reconciliation, cover ranking, Tell translation)
+CLAUDE_HAIKU_MODEL=...        # Optional: override the haiku line (web search source, language detection)
+CLAUDE_MODEL=...              # Optional: alias of CLAUDE_OPUS_MODEL (no longer steers Tell translation)
+CLAUDE_<ROLE>_MODEL=...       # Optional: per-role override beats the line, e.g. CLAUDE_VOCAB_MODEL, CLAUDE_SCRIPT_MODEL,
+                              #   CLAUDE_RECONCILER_MODEL (subtitles), CLAUDE_WEB_MODEL — roles in lib/claude_models.rb
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
 ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
 ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription model
@@ -377,7 +378,7 @@ Configure in `.env`:
 ```
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2    # Default TTS model (long-form stable)
 ELEVENLABS_VOICE_ID=cjVigY5qzO86Huf0OWal     # Eric - Smooth, Trustworthy
-CLAUDE_MODEL=claude-opus-4-7                   # Script generation model
+CLAUDE_OPUS_MODEL=                             # Opus-line override (script generation etc.); defaults in lib/claude_models.rb
 ```
 
 Per-podcast override of the TTS model goes in `## Audio`:
@@ -1762,7 +1763,7 @@ Tell loads `.env` from the code root and `~/.env`. Available variables:
 | `DEEPL_AUTH_KEY`         | DeepL translation                                       |
 | `ANTHROPIC_API_KEY`      | Claude translation + glossing                           |
 | `OPENAI_API_KEY`         | OpenAI translation                                      |
-| `CLAUDE_MODEL`           | Claude model for translation (default: claude-sonnet-4-6) |
+| `CLAUDE_TELL_TRANSLATE_MODEL` | Claude model for translation (default: the sonnet line in lib/claude_models.rb; `CLAUDE_SONNET_MODEL` overrides the line) |
 | `OPENAI_TRANSLATE_MODEL` | OpenAI model for translation (default: gpt-4o-mini)     |
 | `TELL_TRANSLATE_TIMEOUT` | Per-engine timeout in seconds (default: 8)              |
 | `TELL_GLOSS_MODEL`       | Override gloss_model config                             |

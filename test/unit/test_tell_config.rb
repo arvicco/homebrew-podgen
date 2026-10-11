@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "claude_models"
 require "tell/config"
 
 class TestTellConfig < Minitest::Test
@@ -527,8 +528,8 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6"], config.gloss_model
-    assert_equal "claude-sonnet-4-6", config.gloss_reconciler
+    assert_equal [ClaudeModels.line_id(:sonnet)], config.gloss_model
+    assert_equal ClaudeModels.line_id(:sonnet), config.gloss_reconciler
   end
 
   def test_gloss_model_array
@@ -540,8 +541,8 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-7", "claude-sonnet-4-6"], config.gloss_model
-    assert_equal "claude-opus-4-7", config.gloss_reconciler
+    assert_equal [ClaudeModels.line_id(:opus), ClaudeModels.line_id(:sonnet)], config.gloss_model
+    assert_equal ClaudeModels.line_id(:opus), config.gloss_reconciler
   end
 
   def test_gloss_model_single_string
@@ -553,7 +554,7 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_model
+    assert_equal [ClaudeModels.line_id(:haiku)], config.gloss_model
   end
 
   def test_gloss_model_default_to_opus
@@ -564,7 +565,7 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-7"], config.gloss_model
+    assert_equal [ClaudeModels.line_id(:opus)], config.gloss_model
   end
 
   def test_gloss_model_env_override
@@ -577,7 +578,7 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-haiku-4-5-20251001"], config.gloss_model
+    assert_equal [ClaudeModels.line_id(:haiku)], config.gloss_model
   end
 
   def test_gloss_model_full_model_id_scalar
@@ -603,8 +604,8 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-7"], config.phonetic_model
-    assert_equal "claude-opus-4-7", config.phonetic_reconciler
+    assert_equal [ClaudeModels.line_id(:opus)], config.phonetic_model
+    assert_equal ClaudeModels.line_id(:opus), config.phonetic_reconciler
   end
 
   def test_phonetic_model_explicit_scalar
@@ -616,8 +617,8 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-haiku-4-5-20251001"], config.phonetic_model
-    assert_equal "claude-haiku-4-5-20251001", config.phonetic_reconciler
+    assert_equal [ClaudeModels.line_id(:haiku)], config.phonetic_model
+    assert_equal ClaudeModels.line_id(:haiku), config.phonetic_reconciler
   end
 
   def test_phonetic_model_explicit_array
@@ -629,8 +630,8 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"], config.phonetic_model
-    assert_equal "claude-sonnet-4-6", config.phonetic_reconciler
+    assert_equal [ClaudeModels.line_id(:sonnet), ClaudeModels.line_id(:haiku)], config.phonetic_model
+    assert_equal ClaudeModels.line_id(:sonnet), config.phonetic_reconciler
   end
 
   def test_phonetic_model_env_override
@@ -643,7 +644,7 @@ class TestTellConfig < Minitest::Test
     )
 
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6"], config.phonetic_model
+    assert_equal [ClaudeModels.line_id(:sonnet)], config.phonetic_model
   end
 
   # --- Gendered voices ---
@@ -695,53 +696,53 @@ class TestTellConfig < Minitest::Test
   def test_gloss_model_scalar_becomes_array
     write_config(base_config.merge("gloss_model" => "sonnet"))
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6"], config.gloss_model
-    assert_equal "claude-sonnet-4-6", config.gloss_reconciler
+    assert_equal [ClaudeModels.line_id(:sonnet)], config.gloss_model
+    assert_equal ClaudeModels.line_id(:sonnet), config.gloss_reconciler
   end
 
   def test_gloss_model_array_preserved_for_consensus
     write_config(base_config.merge("gloss_model" => ["opus", "sonnet"]))
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-7", "claude-sonnet-4-6"], config.gloss_model
-    assert_equal "claude-opus-4-7", config.gloss_reconciler # first = reconciler
+    assert_equal [ClaudeModels.line_id(:opus), ClaudeModels.line_id(:sonnet)], config.gloss_model
+    assert_equal ClaudeModels.line_id(:opus), config.gloss_reconciler # first = reconciler
   end
 
   def test_gloss_model_array_resolves_short_names
     write_config(base_config.merge("gloss_model" => ["sonnet", "haiku"]))
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"], config.gloss_model
+    assert_equal [ClaudeModels.line_id(:sonnet), ClaudeModels.line_id(:haiku)], config.gloss_model
   end
 
   def test_gloss_model_array_passes_through_full_ids
     write_config(base_config.merge("gloss_model" => ["claude-opus-4-6", "claude-sonnet-4-6"]))
     config = Tell::Config.new
-    assert_equal ["claude-opus-4-6", "claude-sonnet-4-6"], config.gloss_model
+    assert_equal ["claude-opus-4-6", ClaudeModels.line_id(:sonnet)], config.gloss_model
   end
 
   def test_phonetic_model_scalar_becomes_array
     write_config(base_config.merge("phonetic_model" => "haiku"))
     config = Tell::Config.new
-    assert_equal ["claude-haiku-4-5-20251001"], config.phonetic_model
-    assert_equal "claude-haiku-4-5-20251001", config.phonetic_reconciler
+    assert_equal [ClaudeModels.line_id(:haiku)], config.phonetic_model
+    assert_equal ClaudeModels.line_id(:haiku), config.phonetic_reconciler
   end
 
   def test_phonetic_model_array_preserved_for_consensus
     write_config(base_config.merge("phonetic_model" => ["sonnet", "haiku"]))
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"], config.phonetic_model
-    assert_equal "claude-sonnet-4-6", config.phonetic_reconciler
+    assert_equal [ClaudeModels.line_id(:sonnet), ClaudeModels.line_id(:haiku)], config.phonetic_model
+    assert_equal ClaudeModels.line_id(:sonnet), config.phonetic_reconciler
   end
 
   def test_phonetic_model_array_passes_through_full_ids
     write_config(base_config.merge("phonetic_model" => ["claude-haiku-4-5-20251001", "claude-opus-4-6"]))
     config = Tell::Config.new
-    assert_equal ["claude-haiku-4-5-20251001", "claude-opus-4-6"], config.phonetic_model
+    assert_equal [ClaudeModels.line_id(:haiku), "claude-opus-4-6"], config.phonetic_model
   end
 
   def test_phonetic_model_defaults_to_first_gloss_model_when_absent
     write_config(base_config.merge("gloss_model" => ["sonnet", "opus"]))
     config = Tell::Config.new
-    assert_equal ["claude-sonnet-4-6"], config.phonetic_model
+    assert_equal [ClaudeModels.line_id(:sonnet)], config.phonetic_model
   end
 
   # --- Per-language overrides ---
@@ -863,7 +864,7 @@ class TestTellConfig < Minitest::Test
 
     config = Tell::Config.new(overrides: { to: "ja", tts_engine: "google" })
     # Non-voice settings from language block still applied
-    assert_equal ["claude-haiku-4-5-20251001"], config.phonetic_model
+    assert_equal [ClaudeModels.line_id(:haiku)], config.phonetic_model
   end
 
   def test_no_cli_tts_engine_override_merges_language_voices_normally
@@ -1185,7 +1186,7 @@ class TestTellConfig < Minitest::Test
     assert_equal "ja_voice", ja.voice_id
     assert_equal "ja_male", ja.voice_male
     assert_equal "ja_female", ja.voice_female
-    assert_equal ["claude-haiku-4-5-20251001"], ja.phonetic_model
+    assert_equal [ClaudeModels.line_id(:haiku)], ja.phonetic_model
   end
 
   def test_for_language_inherits_defaults_without_override

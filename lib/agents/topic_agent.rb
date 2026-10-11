@@ -24,7 +24,7 @@ class TopicAgent
 
   def initialize(guidelines:, recent_topics: nil, logger: nil)
     @logger = logger
-    init_anthropic_client
+    init_anthropic_client(role: :topic)
     @guidelines = guidelines
     @recent_topics = recent_topics
   end

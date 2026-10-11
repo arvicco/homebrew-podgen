@@ -73,6 +73,30 @@ class TestAnthropicClient < Minitest::Test
     assert_raises(StructuredOutputError) { @harness.require_parsed_output!(message) }
   end
 
+  # -- text_of (P1-0 hazard H1): thinking-default models put a thinking block first --
+
+  def test_text_of_skips_a_leading_thinking_block
+    thinking = Struct.new(:type, :thinking).new(:thinking, "hmm")
+    text = Struct.new(:type, :text).new(:text, "answer")
+    message = Struct.new(:content, :stop_reason).new([thinking, text], "end_turn")
+
+    assert_equal "answer", AnthropicClient.text_of(message)
+  end
+
+  def test_text_of_accepts_untyped_fakes_with_text
+    message = Struct.new(:content).new([Struct.new(:text).new("plain")])
+
+    assert_equal "plain", AnthropicClient.text_of(message)
+  end
+
+  def test_text_of_raises_when_no_text_block
+    thinking = Struct.new(:type, :thinking).new("thinking", "only")
+    message = Struct.new(:content, :stop_reason).new([thinking], "max_tokens")
+
+    err = assert_raises(NoTextBlockError) { AnthropicClient.text_of(message) }
+    assert_includes err.message, "max_tokens"
+  end
+
   def test_require_parsed_output_accepts_duck_typed_objects
     mock = Struct.new(:title).new("Duck")
     message = stub_message(parsed: mock)

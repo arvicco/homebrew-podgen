@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "anthropic"
+require_relative "claude_models"
 
 class StructuredOutputError < StandardError; end
 
@@ -9,15 +10,32 @@ class StructuredOutputError < StandardError; end
 # request cannot succeed, so retry loops must let it propagate (P1-11).
 class TruncatedOutputError < StandardError; end
 
+# Raised by AnthropicClient.text_of when a response carries no text block.
+class NoTextBlockError < StandardError; end
+
 # Shared Anthropic API client initialization.
 # Include in classes that call Claude API and call init_anthropic_client
 # in initialize to set @client and @model.
 module AnthropicClient
+  # First text block of a response. Thinking-default models put a thinking
+  # block first, so `content.first.text` is unsafe (P1-0, hazard H1).
+  # Fakes without a `type` but with `text` are accepted.
+  def self.text_of(message)
+    blocks = Array(message.content)
+    block = blocks.find { |b| b.respond_to?(:type) && b.type.to_s == "text" } ||
+      blocks.find { |b| !b.respond_to?(:type) && b.respond_to?(:text) }
+    unless block
+      reason = message.respond_to?(:stop_reason) ? message.stop_reason : "?"
+      raise NoTextBlockError, "no text block in response (stop_reason: #{reason})"
+    end
+    block.text
+  end
+
   private
 
-  def init_anthropic_client(env_key: "CLAUDE_MODEL", default_model: "claude-opus-4-7")
+  def init_anthropic_client(role:)
     @client = Anthropic::Client.new
-    @model = ENV.fetch(env_key, default_model)
+    @model = ClaudeModels.for(role)
   end
 
   # Extract and validate structured output from an API response.
