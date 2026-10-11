@@ -3,6 +3,7 @@
 require "httparty"
 require "json"
 require "open3"
+require "securerandom"
 require "tmpdir"
 require_relative "base_engine"
 require_relative "../audio_assembler"
@@ -38,21 +39,26 @@ module Transcription
       with_engine_retries do
         start = Time.now
 
+        audio_file = File.open(audio_path, "rb")
         body = {
-          file: File.open(audio_path, "rb"),
+          file: audio_file,
           model: @model,
           language: @language,
           response_format: "verbose_json",
           "timestamp_granularities[]" => "word"
         }
 
-        response = HTTParty.post(
-          ENDPOINT,
-          headers: { "Authorization" => "Bearer #{@api_key}" },
-          multipart: true,
-          body: body,
-          timeout: TIMEOUT
-        )
+        response = begin
+          HTTParty.post(
+            ENDPOINT,
+            headers: { "Authorization" => "Bearer #{@api_key}" },
+            multipart: true,
+            body: body,
+            timeout: TIMEOUT
+          )
+        ensure
+          audio_file.close
+        end
 
         elapsed = (Time.now - start).round(2)
 
@@ -83,7 +89,7 @@ module Transcription
     private
 
     def downsample(audio_path, original_mb)
-      @downsampled_path = File.join(Dir.tmpdir, "podgen_groq_ds_#{Process.pid}.mp3")
+      @downsampled_path = File.join(Dir.tmpdir, "podgen_groq_ds_#{Process.pid}_#{SecureRandom.hex(4)}.mp3")
 
       duration = probe_duration(audio_path)
       bitrate = compute_target_bitrate(duration)
