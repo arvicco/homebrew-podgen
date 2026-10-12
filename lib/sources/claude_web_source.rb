@@ -42,7 +42,8 @@ class ClaudeWebSource < BaseSource
                      "Focus on news from the last 48 hours. " \
                      "For each article, mention its title and key points."
           }
-        ]
+        ],
+        **@effort_params
       )
     end
   rescue => e

@@ -121,6 +121,30 @@ class TestAnthropicClient < Minitest::Test
     end
   end
 
+  # P6-0: structured-output callers pass their format; effort merges beside it.
+  def test_effort_params_merge_effort_beside_a_format
+    with_effort_env("CLAUDE_EFFORT_SCRIPT" => "low") do
+      assert_equal({output_config: {format: String, effort: :low}},
+        AnthropicClient.effort_params(:script, format: String))
+    end
+  end
+
+  def test_effort_params_keep_the_format_when_effort_is_unset
+    with_effort_env do
+      assert_equal({output_config: {format: String}}, AnthropicClient.effort_params(:script, format: String))
+    end
+  end
+
+  def test_effort_params_return_a_fresh_hash_each_call
+    # The SDK rewrites output_config[:format] in place; a shared hash would leak.
+    with_effort_env do
+      a = AnthropicClient.effort_params(:script, format: String)
+      b = AnthropicClient.effort_params(:script, format: String)
+      refute_same a[:output_config], b[:output_config]
+      refute_predicate a[:output_config], :frozen?
+    end
+  end
+
   def test_init_anthropic_client_resolves_effort_params_for_the_role
     h = Class.new { include AnthropicClient }.new
     with_effort_env do

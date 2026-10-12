@@ -14,8 +14,8 @@
 # Effort (P5-1): EFFORT lists the roles sent a non-default effort level;
 # every other role resolves to nil (the parameter is omitted). Per-role
 # ENV CLAUDE_EFFORT_<ROLE> overrides; default/none/off turns effort off
-# silently, any other invalid value warns and omits. A level takes effect
-# only where the call site passes effort through (see the work queue).
+# silently, any other invalid value warns and omits. Every call site passes
+# the level through AnthropicClient.effort_params (P6-0).
 module ClaudeModels
   LINES = {
     opus: "claude-opus-5-5",

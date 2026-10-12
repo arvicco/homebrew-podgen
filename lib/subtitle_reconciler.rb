@@ -30,7 +30,8 @@ module SubtitleReconciler
     response = client.messages.create(
       model: model,
       max_tokens: tokens,
-      messages: [{ role: "user", content: prompt }]
+      messages: [{ role: "user", content: prompt }],
+      **AnthropicClient.effort_params(:subtitle_reconciler)
     )
 
     text = AnthropicClient.text_of(response)
