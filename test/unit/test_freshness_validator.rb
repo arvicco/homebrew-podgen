@@ -6,7 +6,7 @@ require "yaml"
 require "validators/freshness_validator"
 
 class TestFreshnessValidator < Minitest::Test
-  FakeConfig = Struct.new(:history_path, :freshness_enabled, :lead_days, keyword_init: true) do
+  FakeConfig = Struct.new(:history_path, :freshness_enabled, :lead_days, :cadence_days, keyword_init: true) do
     def freshness_enabled?
       freshness_enabled != false
     end
@@ -14,12 +14,13 @@ class TestFreshnessValidator < Minitest::Test
     def freshness_lead_days = lead_days || 3
   end
 
-  def with_history(dates, freshness_enabled: true, lead_days: nil)
+  def with_history(dates, freshness_enabled: true, lead_days: nil, cadence_days: nil)
     Dir.mktmpdir do |dir|
       path = File.join(dir, "history.yml")
       entries = dates.map { |d| {"date" => d, "title" => "t", "topics" => []} }
       File.write(path, entries.to_yaml)
-      yield FakeConfig.new(history_path: path, freshness_enabled: freshness_enabled, lead_days: lead_days)
+      yield FakeConfig.new(history_path: path, freshness_enabled: freshness_enabled, lead_days: lead_days,
+        cadence_days: cadence_days)
     end
   end
 
@@ -127,6 +128,64 @@ class TestFreshnessValidator < Minitest::Test
     with_history(%w[2026-08-22 2026-08-23 2026-08-24 2026-08-25]) do |config|
       result = validate(config, Date.new(2026, 8, 25))
       assert_empty result[:warnings], result.inspect
+    end
+  end
+
+  # --- dormant shows and configured cadence (P3-4) ---
+
+  def test_check_single_date_sixty_days_old_passes_with_dormant_note
+    with_history(%w[2026-06-26 2026-06-26 2026-06-26]) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      result = validator.validate
+      assert_empty result[:warnings], result.inspect
+      assert result[:passes].any? { |p| p.include?("dormant") }, result.inspect
+      assert_equal "dormant — no cadence", validator.note
+    end
+  end
+
+  def test_check_single_date_one_day_old_passes_without_note
+    with_history(%w[2026-08-24]) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      result = validator.validate
+      assert_empty result[:warnings], result.inspect
+      refute result[:passes].any? { |p| p.include?("dormant") }, result.inspect
+      assert_nil validator.note
+    end
+  end
+
+  def test_check_single_date_at_dormant_floor_is_not_dormant
+    with_history(%w[2026-07-26]) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      validator.validate
+      assert_nil validator.note
+    end
+  end
+
+  def test_check_configured_cadence_trips_old_flag
+    # Weekly history: inferred threshold 14d would pass at 10d; configured
+    # cadence 2d gives threshold 4d.
+    with_history(%w[2026-07-25 2026-08-01 2026-08-08 2026-08-15], cadence_days: 2) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      old = result[:warnings].find { |w| w.include?("OLD") }
+      refute_nil old, result.inspect
+      assert_includes old, "2026-08-15 is 10 days old (cadence 2d configured, threshold 4d)"
+    end
+  end
+
+  def test_check_configured_cadence_applies_to_single_date
+    with_history(%w[2026-08-15], cadence_days: 2) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      result = validator.validate
+      assert result[:warnings].any? { |w| w.include?("OLD") }, result.inspect
+      assert_nil validator.note
+    end
+  end
+
+  def test_check_configured_cadence_within_threshold_passes
+    with_history(%w[2026-08-15], cadence_days: 7) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      assert_empty result[:warnings], result.inspect
+      assert result[:passes].any? { |p| p.include?("cadence 7d configured") }, result.inspect
     end
   end
 end
