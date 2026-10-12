@@ -60,12 +60,40 @@ class TestScrapCommand < Minitest::Test
     assert_nil result
   end
 
-  def test_resolve_by_id_configured_languages_unconfigured_tail_is_not_this_episode
+  # Deleting covers every dash tail (P4-9, CRPR round 1): a lone variant
+  # file still resolves the episode, configured language or not.
+  def test_resolve_by_id_any_dash_tail_counts_as_this_episode
     File.write(File.join(@episodes_dir, "test-2026-03-15-ai.mp3"), "x")
 
     cmd = build_command_with_id("2026-03-15")
-    assert_nil cmd.send(:resolve_by_id, @episodes_dir, %w[en es])
-    assert_equal "test-2026-03-15", cmd.send(:resolve_by_id, @episodes_dir).first, "legacy: any dash tail counts"
+    assert_equal "test-2026-03-15", cmd.send(:resolve_by_id, @episodes_dir).first
+    assert_equal 1, cmd.method(:resolve_by_id).arity, "scrap does not narrow by configured languages"
+  end
+
+  # --- run: files removed ---
+
+  # A language commented out of the config (README documents this) must not
+  # leave its -it files behind when the episode is scrapped.
+  def test_run_removes_variant_files_of_unconfigured_language
+    ENV["PODGEN_ROOT"] = @tmpdir
+    pod_dir = File.join(@tmpdir, "podcasts", "scrappod")
+    FileUtils.mkdir_p(pod_dir)
+    File.write(File.join(pod_dir, "guidelines.md"), "## Podcast\n- name: scrappod\n- language:\n  - en\n  - es\n")
+    require "podcast_config"
+    episodes_dir = PodcastConfig.new("scrappod").episodes_dir
+    FileUtils.mkdir_p(episodes_dir)
+    files = %w[scrappod-2026-03-15.mp3 scrappod-2026-03-15-es.mp3 scrappod-2026-03-15-it.mp3 scrappod-2026-03-15-it_script.md]
+    files.each { |f| File.write(File.join(episodes_dir, f), "x") }
+
+    $stdin = StringIO.new("y\n")
+    code = nil
+    capture_io { code = PodgenCLI::ScrapCommand.new(["scrappod", "2026-03-15"], {}).run }
+
+    assert_equal 0, code
+    assert_equal [], Dir.children(episodes_dir).sort
+  ensure
+    $stdin = STDIN
+    ENV.delete("PODGEN_ROOT")
   end
 
   # --- find_history_entry ---

@@ -106,7 +106,7 @@ module PodgenCLI
         return 1
       end
 
-      artifacts = EpisodeArtifacts.for_basename(config.episodes_dir, from_base, languages: config.language_codes)
+      artifacts = EpisodeArtifacts.for_basename(config.episodes_dir, from_base)
       if artifacts.empty?
         $stderr.puts "No episode found at '#{from_base}' in #{config.episodes_dir}"
         nearby = same_day_basenames(config, from_date_str)
@@ -128,7 +128,7 @@ module PodgenCLI
 
       if to_suffix
         candidate = EpisodeNaming.basename_for(podcast, to_date_str, to_suffix)
-        if EpisodeArtifacts.for_basename(config.episodes_dir, candidate, languages: config.language_codes).any?
+        if EpisodeArtifacts.for_basename(config.episodes_dir, candidate).any?
           $stderr.puts "Error: target '#{candidate}' already exists. Scrap it first or pick another suffix."
           return nil
         end
@@ -137,7 +137,7 @@ module PodgenCLI
 
       SUFFIXES.each do |s|
         candidate = EpisodeNaming.basename_for(podcast, to_date_str, s)
-        return candidate if EpisodeArtifacts.for_basename(config.episodes_dir, candidate, languages: config.language_codes).empty?
+        return candidate if EpisodeArtifacts.for_basename(config.episodes_dir, candidate).empty?
       end
       $stderr.puts "Error: target date #{to_date_str} has no free suffix slots (a..z all taken)"
       nil
@@ -173,7 +173,7 @@ module PodgenCLI
         [from_base, "#{config.name}-#{to_date_str}#{suffix}"]
       end
 
-      artifacts_per_base = pairs.to_h { |from_base, _| [from_base, EpisodeArtifacts.for_basename(config.episodes_dir, from_base, languages: config.language_codes)] }
+      artifacts_per_base = pairs.to_h { |from_base, _| [from_base, EpisodeArtifacts.for_basename(config.episodes_dir, from_base)] }
       perform_move(config, pairs, to_date, artifacts_per_base: artifacts_per_base)
     end
 
@@ -243,12 +243,14 @@ module PodgenCLI
 
     # ── helpers ──────────────────────────────────────────────────────
 
-    # Primary (non-language-variant) basenames on a given date; the variant
-    # rule matches EpisodeArtifacts' (configured codes only — P4-9, Q-44).
+    # Primary (non-language-variant) basenames on a given date. Any
+    # two-letter tail is a variant (no configured-code narrowing), matching
+    # EpisodeArtifacts: a disabled language's files move with their episode
+    # (P4-9, CRPR round 1).
     def same_day_basenames(config, date_str)
       podcast = config.name
       Dir.glob(File.join(config.episodes_dir, "#{podcast}-#{date_str}*.mp3"))
-        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, ".mp3"), languages: config.language_codes) }
+        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, ".mp3")) }
         .map { |f| File.basename(f, ".mp3") }
         .sort
     end
