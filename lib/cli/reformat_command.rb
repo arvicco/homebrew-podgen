@@ -3,7 +3,7 @@
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
-require_relative File.join(root, "lib", "transcription", "reconciler")
+require_relative File.join(root, "lib", "transcription", "transcript_merger")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "transcript_parser")
 require_relative File.join(root, "lib", "transcript_renderer")
@@ -46,7 +46,7 @@ module PodgenCLI
 
       language = @config.transcription_language
       logger = build_logger
-      @reconciler ||= Transcription::Reconciler.new(language: language, logger: logger)
+      @reconciler ||= Transcription::TranscriptMerger.new(language: language, logger: logger)
 
       puts "Reformatting #{transcripts.length} transcript(s) (#{language})"
 

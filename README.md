@@ -1410,7 +1410,7 @@ podgen/
 │   │   ├── elevenlabs_engine.rb # ElevenLabs Scribe v2 (engine: "elab")
 │   │   ├── groq_engine.rb    # Groq hosted Whisper + word timestamps (engine: "groq")
 │   │   ├── engine_manager.rb # Orchestrator: single or parallel comparison mode
-│   │   └── reconciler.rb     # Claude reconciliation of multi-engine transcripts
+│   │   └── transcript_merger.rb # Claude merge of multi-engine transcripts
 │   ├── agents/
 │   │   ├── topic_agent.rb    # Claude topic generation
 │   │   ├── research_agent.rb # Exa.ai search

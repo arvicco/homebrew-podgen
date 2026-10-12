@@ -6,7 +6,7 @@ require_relative "../retryable"
 require_relative "../usage_logger"
 
 module Transcription
-  class Reconciler
+  class TranscriptMerger
     include AnthropicClient
     include Loggable
     include Retryable
