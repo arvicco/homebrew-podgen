@@ -25,8 +25,33 @@ class TestRuntimeStringHygiene < Minitest::Test
     end
   end
 
-  def shell_files
-    Dir.glob(File.join(ROOT, "scripts", "**", "*.sh")).select { |f| File.file?(f) }
+  SHELL_SHEBANG = %r{\A#!\S*(?:/|\s|env\s+)(?:ba)?sh\b}
+
+  # scripts/**/*.sh plus extensionless bin/ and scripts/ files whose first
+  # line is an sh/bash shebang.
+  def shell_files(root = ROOT)
+    sh = Dir.glob(File.join(root, "scripts", "**", "*.sh"))
+    extensionless = Dir.glob(File.join(root, "{bin,scripts}", "**", "*")).select do |f|
+      File.extname(f).empty? && File.file?(f) && File.open(f, &:readline).to_s.match?(SHELL_SHEBANG)
+    rescue EOFError
+      false
+    end
+    (sh + extensionless).select { |f| File.file?(f) }.uniq
+  end
+
+  def test_shell_files_include_extensionless_sh_and_bash_shebang_files
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p([File.join(root, "bin"), File.join(root, "scripts")])
+      files = {
+        "bin/tool" => "#!/bin/bash\necho hi\n", "scripts/job" => "#!/usr/bin/env sh\necho hi\n",
+        "scripts/a.sh" => "echo hi\n", "bin/rb" => "#!/usr/bin/env ruby\nputs 1\n",
+        "bin/zed" => "#!/bin/zsh\necho hi\n", "bin/empty" => ""
+      }
+      files.each { |rel, body| File.write(File.join(root, rel), body) }
+
+      found = shell_files(root).map { it.delete_prefix(root + "/") }.sort
+      assert_equal %w[bin/tool scripts/a.sh scripts/job], found
+    end
   end
 
   def string_literals(path)

@@ -1212,7 +1212,7 @@ Failure rules:
 - **R2 sync fail** for a pod is fatal — that pod is skipped from LingQ + YouTube for the tick.
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
-- **Same YouTube error two rounds running** (round-robin) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
+- **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
 
 Run ad-hoc (no schedule) with the same semantics:
 

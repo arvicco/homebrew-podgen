@@ -10,7 +10,10 @@ class HNSource < BaseSource
 
   # hn_queries: topic string => short keyword query (P3-1). Algolia ANDs
   # every term, so a full research topic never matches; topics without a
-  # keyword query are skipped rather than sent.
+  # keyword query are skipped rather than sent, unless the topic itself is
+  # short enough to serve as the query (queue.yml fallback topics).
+  SHORT_TOPIC_WORDS = 4
+
   def initialize(hn_queries: {}, **options)
     super(**options)
     @hn_queries = hn_queries || {}
@@ -20,6 +23,7 @@ class HNSource < BaseSource
 
   def search_topic(topic, exclude_urls)
     keywords = @hn_queries[topic].to_s.strip
+    keywords = topic.to_s.strip if keywords.empty? && topic.to_s.split.size <= SHORT_TOPIC_WORDS
     if keywords.empty?
       log("no hn_query for '#{topic}' — skipped")
       return []

@@ -170,8 +170,9 @@ module PodgenCLI
               next
             end
 
-            # P3-3: the same error class two rounds running will not clear
-            # this tick — stop retrying the pod and say so once.
+            # P3-3: the same error two rounds running (keyed on the error
+            # class when present, else the error type) will not clear this
+            # tick — stop retrying the pod and say so once.
             failure = failure_signature(result)
             if failure && last_failure[pod] && last_failure[pod][0] == failure[0]
               drained[pod] = true
@@ -186,7 +187,8 @@ module PodgenCLI
       Tick.new(per_pod: per_pod, rate_limited: rate_limited)
     end
 
-    # [error class label, message] of a round that uploaded nothing, else nil.
+    # [error class or type label, message] of a round that uploaded nothing,
+    # else nil.
     def failure_signature(result)
       return nil unless result.uploaded == 0 && result.errors.any?
 

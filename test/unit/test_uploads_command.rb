@@ -340,12 +340,20 @@ class TestUploadsCommand < Minitest::Test
     ok = ok_yt_result
     cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
     cmd.define_singleton_method(:pending_count_for) { |_| 3 }
-    # pod_a goes through the real crash path: no such podcast under PODGEN_ROOT
+    # pod_a goes through the real crash path: no such podcast under a
+    # PODGEN_ROOT of this test's own (never the real repo root).
     cmd.define_singleton_method(:run_yt_for) do |pod, max:|
       pod == "pod_a" ? super(pod, max: max) : ok
     end
 
-    capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+    saved_root = ENV["PODGEN_ROOT"]
+    Dir.mktmpdir("podgen_uploads_crash") do |root|
+      ENV["PODGEN_ROOT"] = root
+      refute Dir.exist?(File.join(root, "podcasts", "pod_a"))
+      capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+    ensure
+      ENV["PODGEN_ROOT"] = saved_root
+    end
 
     skip_lines = logs.grep(/permanently skipped/)
     assert_equal 1, skip_lines.length
