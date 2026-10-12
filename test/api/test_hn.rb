@@ -5,8 +5,8 @@ require "sources/hn_source"
 
 class TestHNSource < Minitest::Test
   def setup
-    @source = HNSource.new
     @topics = ["Bitcoin", "AI agents"]
+    @source = HNSource.new(hn_queries: @topics.to_h { |t| [t, t] })
   end
 
   def test_research_returns_results

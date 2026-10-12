@@ -316,6 +316,32 @@ class TestGenerateCommand < Minitest::Test
     assert_empty priority_urls
   end
 
+  # --- P3-1: TopicAgent hn_queries reach the HN source ---
+
+  def test_generate_then_research_threads_topic_agent_hn_queries_to_source_manager
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    cmd.instance_variable_set(:@history, Struct.new(:recent_topics_summary, :recent_urls).new(nil, Set.new))
+    config = Struct.new(:episodes_dir, :sources).new(@episodes_dir, { "hackernews" => true })
+    cmd.instance_variable_set(:@config, config)
+
+    keywords = { "Long research topic October 2026" => "research topic" }
+    fake_agent = Struct.new(:generate, :hn_queries).new(["Long research topic October 2026"], keywords)
+    manager_kwargs = nil
+    fake_manager = Object.new
+    fake_manager.define_singleton_method(:research) { |topics| topics.map { |t| { topic: t, findings: [] } } }
+
+    TopicAgent.stub(:new, fake_agent) do
+      SourceManager.stub(:new, ->(**kw) { (manager_kwargs = kw) && fake_manager }) do
+        topics = cmd.send(:generate_topics)
+        cmd.send(:research_topics, topics)
+      end
+    end
+
+    assert_equal keywords, manager_kwargs[:hn_queries]
+  end
+
   # parse_saved_script + strip_trailing_link_list extracted into LegacyScriptParser;
   # see test_legacy_script_parser.rb
 

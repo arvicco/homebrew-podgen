@@ -215,6 +215,7 @@ module PodgenCLI
         begin
           topic_agent = TopicAgent.new(guidelines: @guidelines, recent_topics: @history.recent_topics_summary, logger: @logger)
           t = topic_agent.generate
+          @hn_queries = topic_agent.hn_queries
           @logger.log("Generated #{t.length} topics from guidelines")
           t
         rescue => e
@@ -245,7 +246,8 @@ module PodgenCLI
           source_config: @config.sources,
           exclude_urls: @history.recent_urls,
           logger: @logger,
-          cache_dir: cache_dir
+          cache_dir: cache_dir,
+          hn_queries: @hn_queries || {}
         )
         source_manager.research(topics)
       end

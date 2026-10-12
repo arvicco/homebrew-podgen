@@ -441,7 +441,7 @@ Available sources:
 | Source      | Key          | API needed                  | Cost/run     | Description                  |
 | ----------- | ------------ | --------------------------- | ------------ | ---------------------------- |
 | Exa.ai      | `exa`        | EXA_API_KEY                 | ~$0.03       | AI search (default category) |
-| Hacker News | `hackernews` | None                        | $0           | HN Algolia top stories       |
+| Hacker News | `hackernews` | None                        | $0           | HN Algolia by topic keywords |
 | RSS feeds   | `rss`        | None                        | $0           | Any RSS/Atom feed            |
 | Claude Web  | `claude_web` | ANTHROPIC_API_KEY           | ~$0.02/topic | Claude `web_search` (Haiku)  |
 | Bluesky     | `bluesky`    | BLUESKY_HANDLE + APP_PASSWD | $0           | AT Protocol post search      |
