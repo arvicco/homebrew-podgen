@@ -60,7 +60,6 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
   }.freeze
 
   # parser => shape => [return value, warnings appended by that parser]
-  # :raises_no_method_error marks a cell where the parser raises.
   EXPECTED = {
     parse_kv_section: {
       present: [{"alpha" => "one", "beta" => "two"}, []],
@@ -68,18 +67,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [{}, []],
       heading_at_eof_no_newline: [nil, []],
       last_item_no_newline: [{"alpha" => "one", "beta" => "two"}, []],
-      sub_bullets: [{"alpha" => "one", "beta" => "two"}, []],
+      sub_bullets: [{"alpha" => "one", "beta" => "two"}, ["Generic: nested item '- sub: one' under '- alpha: one' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{"beta" => "two"}, []],
       blank_lines_inside: [{"alpha" => "one", "beta" => "two"}, []],
       followed_by_heading: [{"alpha" => "one"}, []],
       h3_inside: [{"alpha" => "one", "beta" => "two"}, []],
       h1_inside: [{"alpha" => "one", "beta" => "two"}, []],
-      bare_key: [{"alpha" => nil, "beta" => "two"}, []],
+      bare_key: [{"beta" => "two"}, ["Generic: '- alpha' is missing a value (expected '- alpha: <value>'); ignored"]],
       duplicate_keys: [{"alpha" => "uno"}, []],
-      autolinked_url: [{"alpha" => "one", "url" => "[https://ex.com/a](https://ex.com/a)"}, []],
+      autolinked_url: [{"alpha" => "one", "url" => "https://ex.com/a"}, []],
       hash_comment: [{"alpha" => "one", "beta" => "two"}, []],
-      indented_item: [{"beta" => "two"}, []],
-      double_space_bullet: [{"beta" => "two"}, []],
+      indented_item: [{"alpha" => "one", "beta" => "two"}, []],
+      double_space_bullet: [{"alpha" => "one", "beta" => "two"}, []],
       crlf: [{"alpha" => "one", "beta" => "two"}, []]
     },
     parse_podcast_section: {
@@ -88,18 +87,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [{}, []],
       heading_at_eof_no_newline: [{}, []],
       last_item_no_newline: [{name: "Show", author: "Jane"}, []],
-      sub_bullets: [{name: "Show", author: "Jane"}, []],
+      sub_bullets: [{name: "Show", author: "Jane"}, ["Podcast: nested item '- sub: one' under '- name: Show' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{author: "Jane"}, []],
       blank_lines_inside: [{name: "Show", author: "Jane"}, []],
       followed_by_heading: [{name: "Show"}, []],
       h3_inside: [{name: "Show", author: "Jane"}, []],
       h1_inside: [{name: "Show", author: "Jane"}, []],
-      bare_key: [{author: "Jane"}, []],
+      bare_key: [{author: "Jane"}, ["Podcast: '- name' is missing a value (expected '- name: <value>'); ignored"]],
       duplicate_keys: [{name: "Other"}, []],
-      autolinked_url: [{name: "Show", website: "[https://ex.com](https://ex.com)"}, []],
-      hash_comment: [{name: "Show # note", author: "Jane"}, []],
-      indented_item: [{author: "Jane"}, []],
-      double_space_bullet: [{author: "Jane"}, []],
+      autolinked_url: [{name: "Show", website: "https://ex.com"}, []],
+      hash_comment: [{name: "Show", author: "Jane"}, []],
+      indented_item: [{name: "Show", author: "Jane"}, []],
+      double_space_bullet: [{name: "Show", author: "Jane"}, []],
       crlf: [{name: "Show", author: "Jane"}, []]
     },
     parse_audio_section: {
@@ -108,18 +107,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [{}, []],
       heading_at_eof_no_newline: [{}, []],
       last_item_no_newline: [{language: "it", skip: 30.0}, []],
-      sub_bullets: [{language: "it", skip: 30.0}, ["Audio section: indented line '- sub: one' is ignored (top-level keys must start at column 0 with '- ')"]],
+      sub_bullets: [{language: "it", skip: 30.0}, ["Audio: nested item '- sub: one' under '- language: it' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{skip: 30.0}, []],
       blank_lines_inside: [{language: "it", skip: 30.0}, []],
       followed_by_heading: [{language: "it"}, []],
       h3_inside: [{language: "it", skip: 30.0}, []],
       h1_inside: [{language: "it", skip: 30.0}, []],
-      bare_key: [{skip: 30.0}, []],
+      bare_key: [{skip: 30.0}, ["Audio: '- language' is missing a value (expected '- language: <value>'); ignored"]],
       duplicate_keys: [{language: "sl"}, []],
-      autolinked_url: [{language: "it", url: "[https://ex.com/a.mp3](https://ex.com/a.mp3)"}, []],
-      hash_comment: [{language: "it # note", skip: 30.0}, []],
-      indented_item: [{skip: 30.0}, ["Audio section: indented line '- language: it' is ignored (top-level keys must start at column 0 with '- ')"]],
-      double_space_bullet: [{skip: 30.0}, []],
+      autolinked_url: [{language: "it", url: "https://ex.com/a.mp3"}, []],
+      hash_comment: [{language: "it", skip: 30.0}, []],
+      indented_item: [{language: "it", skip: 30.0}, []],
+      double_space_bullet: [{language: "it", skip: 30.0}, []],
       crlf: [{language: "it", skip: 30.0}, []]
     },
     parse_image_section: {
@@ -128,18 +127,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [{}, []],
       heading_at_eof_no_newline: [{}, []],
       last_item_no_newline: [{font: "Arial", font_size: 40}, []],
-      sub_bullets: [{font: "Arial", font_size: 40}, []],
+      sub_bullets: [{font: "Arial", font_size: 40}, ["Image: nested item '- sub: one' under '- font: Arial' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{font_size: 40}, []],
       blank_lines_inside: [{font: "Arial", font_size: 40}, []],
       followed_by_heading: [{font: "Arial"}, []],
       h3_inside: [{font: "Arial", font_size: 40}, []],
       h1_inside: [{font: "Arial", font_size: 40}, []],
-      bare_key: [{font: nil, font_size: 40}, []],
+      bare_key: [{font_size: 40}, ["Image: '- font' is missing a value (expected '- font: <value>'); ignored"]],
       duplicate_keys: [{font: "Helvetica"}, []],
-      autolinked_url: [{font: "Arial", image: "[https://ex.com/i.png](https://ex.com/i.png)"}, []],
+      autolinked_url: [{font: "Arial", image: "https://ex.com/i.png"}, []],
       hash_comment: [{font: "Arial", font_size: 40}, []],
-      indented_item: [{font_size: 40}, []],
-      double_space_bullet: [{font_size: 40}, []],
+      indented_item: [{font: "Arial", font_size: 40}, []],
+      double_space_bullet: [{font: "Arial", font_size: 40}, []],
       crlf: [{font: "Arial", font_size: 40}, []]
     },
     parse_site_section: {
@@ -148,18 +147,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [{}, []],
       heading_at_eof_no_newline: [{}, []],
       last_item_no_newline: [{footer: "Hello", accent: "red"}, []],
-      sub_bullets: [{footer: "Hello", accent: "red"}, []],
+      sub_bullets: [{footer: "Hello", accent: "red"}, ["Site: nested item '- sub: one' under '- footer: Hello' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{accent: "red"}, []],
       blank_lines_inside: [{footer: "Hello", accent: "red"}, []],
       followed_by_heading: [{footer: "Hello"}, []],
       h3_inside: [{footer: "Hello", accent: "red"}, []],
       h1_inside: [{footer: "Hello", accent: "red"}, []],
-      bare_key: [{footer: nil, accent: "red"}, []],
+      bare_key: [{accent: "red"}, ["Site: '- footer' is missing a value (expected '- footer: <value>'); ignored"]],
       duplicate_keys: [{footer: "Bye"}, []],
-      autolinked_url: [{footer: "[https://ex.com](https://ex.com)"}, []],
+      autolinked_url: [{footer: "https://ex.com"}, []],
       hash_comment: [{footer: "Hello", accent: "red"}, []],
-      indented_item: [{accent: "red"}, []],
-      double_space_bullet: [{accent: "red"}, []],
+      indented_item: [{footer: "Hello", accent: "red"}, []],
+      double_space_bullet: [{footer: "Hello", accent: "red"}, []],
       crlf: [{footer: "Hello", accent: "red"}, []]
     },
     parse_language_section: {
@@ -168,7 +167,7 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [[{"code" => "en"}], []],
       heading_at_eof_no_newline: [[{"code" => "en"}], []],
       last_item_no_newline: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
-      sub_bullets: [[{"code" => "en"}, {"code" => "sub", "voice_id" => "one"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
+      sub_bullets: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], ["Language: nested item '- sub: one' under '- en' is ignored (this entry takes no sub-items)"]],
       star_bullets: [[{"code" => "es", "voice_id" => "VOICE_ES"}], []],
       blank_lines_inside: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
       followed_by_heading: [[{"code" => "en"}], []],
@@ -176,8 +175,8 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       h1_inside: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
       bare_key: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
       duplicate_keys: [[{"code" => "en"}, {"code" => "en", "voice_id" => "VOICE_EN"}], []],
-      autolinked_url: [[{"code" => "en"}, {"code" => "fr"}], []],
-      hash_comment: [[{"code" => "en # note"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
+      autolinked_url: [[{"code" => "en"}, {"code" => "fr", "voice_id" => "https://ex.com"}], []],
+      hash_comment: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
       indented_item: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
       double_space_bullet: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []],
       crlf: [[{"code" => "en"}, {"code" => "es", "voice_id" => "VOICE_ES"}], []]
@@ -188,7 +187,7 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [["open"], []],
       heading_at_eof_no_newline: [["open"], []],
       last_item_no_newline: [["open", "groq"], []],
-      sub_bullets: [["open", "sub: one", "groq"], []],
+      sub_bullets: [["open", "groq"], ["Transcription Engine: nested item '- sub: one' under '- open' is ignored (this entry takes no sub-items)"]],
       star_bullets: [["groq"], []],
       blank_lines_inside: [["open", "groq"], []],
       followed_by_heading: [["open"], []],
@@ -196,8 +195,8 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       h1_inside: [["open", "groq"], []],
       bare_key: [["open", "groq"], []],
       duplicate_keys: [["open", "open"], []],
-      autolinked_url: [["open", "[https://ex.com](https://ex.com)"], []],
-      hash_comment: [["open # note", "groq"], []],
+      autolinked_url: [["open", "https://ex.com"], []],
+      hash_comment: [["open", "groq"], []],
       indented_item: [["open", "groq"], []],
       double_space_bullet: [["open", "groq"], []],
       crlf: [["open", "groq"], []]
@@ -208,18 +207,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [nil, []],
       heading_at_eof_no_newline: [nil, []],
       last_item_no_newline: [{token: "abc", level: 3}, []],
-      sub_bullets: [{token: "abc", level: 3}, []],
+      sub_bullets: [{token: "abc", level: 3}, ["LingQ: nested item '- sub: one' under '- token: abc' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{level: 3}, []],
       blank_lines_inside: [{token: "abc", level: 3}, []],
       followed_by_heading: [{token: "abc"}, []],
       h3_inside: [{token: "abc", level: 3}, []],
       h1_inside: [{token: "abc", level: 3}, []],
-      bare_key: [{token: nil, level: 3}, []],
+      bare_key: [{level: 3}, ["LingQ: '- token' is missing a value (expected '- token: <value>'); ignored"]],
       duplicate_keys: [{token: "xyz"}, []],
-      autolinked_url: [{token: "abc", image: "/pod/[https://ex.com/i.png](https://ex.com/i.png)"}, []],
+      autolinked_url: [{token: "abc", image: "/pod/https://ex.com/i.png"}, []],
       hash_comment: [{token: "abc", level: 3}, []],
-      indented_item: [{level: 3}, []],
-      double_space_bullet: [{level: 3}, []],
+      indented_item: [{token: "abc", level: 3}, []],
+      double_space_bullet: [{token: "abc", level: 3}, []],
       crlf: [{token: "abc", level: 3}, []]
     },
     parse_youtube_section: {
@@ -228,18 +227,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [nil, []],
       heading_at_eof_no_newline: [nil, []],
       last_item_no_newline: [{playlist: "PL1", category: "Education"}, []],
-      sub_bullets: [{playlist: "PL1", category: "Education"}, []],
+      sub_bullets: [{playlist: "PL1", category: "Education"}, ["YouTube: nested item '- sub: one' under '- playlist: PL1' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{category: "Education"}, []],
       blank_lines_inside: [{playlist: "PL1", category: "Education"}, []],
       followed_by_heading: [{playlist: "PL1"}, []],
       h3_inside: [{playlist: "PL1", category: "Education"}, []],
       h1_inside: [{playlist: "PL1", category: "Education"}, []],
-      bare_key: [{playlist: nil, category: "Education"}, []],
+      bare_key: [{category: "Education"}, ["YouTube: '- playlist' is missing a value (expected '- playlist: <value>'); ignored"]],
       duplicate_keys: [{playlist: "PL2"}, []],
-      autolinked_url: [{playlist: "[https://youtube.com/p](https://youtube.com/p)"}, []],
+      autolinked_url: [{playlist: "https://youtube.com/p"}, []],
       hash_comment: [{playlist: "PL1", category: "Education"}, []],
-      indented_item: [{category: "Education"}, []],
-      double_space_bullet: [{category: "Education"}, []],
+      indented_item: [{playlist: "PL1", category: "Education"}, []],
+      double_space_bullet: [{playlist: "PL1", category: "Education"}, []],
       crlf: [{playlist: "PL1", category: "Education"}, []]
     },
     parse_twitter_section: {
@@ -248,18 +247,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [nil, []],
       heading_at_eof_no_newline: [nil, []],
       last_item_no_newline: [{template: "Hello", since: 5}, []],
-      sub_bullets: [{template: "Hello", since: 5}, []],
+      sub_bullets: [{template: "Hello", since: 5}, ["Twitter: nested item '- sub: one' under '- template: Hello' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{since: 5}, []],
       blank_lines_inside: [{template: "Hello", since: 5}, []],
       followed_by_heading: [{template: "Hello"}, []],
       h3_inside: [{template: "Hello", since: 5}, []],
       h1_inside: [{template: "Hello", since: 5}, []],
-      bare_key: [{template: nil, since: 5}, []],
+      bare_key: [{since: 5}, ["Twitter: '- template' is missing a value (expected '- template: <value>'); ignored"]],
       duplicate_keys: [{template: "Bye"}, []],
-      autolinked_url: [{template: "[https://ex.com](https://ex.com)"}, []],
+      autolinked_url: [{template: "https://ex.com"}, []],
       hash_comment: [{template: "Hello", since: 5}, []],
-      indented_item: [{since: 5}, []],
-      double_space_bullet: [{since: 5}, []],
+      indented_item: [{template: "Hello", since: 5}, []],
+      double_space_bullet: [{template: "Hello", since: 5}, []],
       crlf: [{template: "Hello", since: 5}, []]
     },
     parse_translation_glossary_section: {
@@ -274,12 +273,12 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       followed_by_heading: [{"jp" => {"Bitcoin" => "BTC"}}, []],
       h3_inside: [{"jp" => {"Bitcoin" => "BTC"}, "es" => {"mining" => "mineria"}}, []],
       h1_inside: [{"jp" => {"Bitcoin" => "BTC"}, "es" => {"mining" => "mineria"}}, []],
-      bare_key: [{"es" => {"mining" => "mineria"}}, []],
+      bare_key: [{"es" => {"mining" => "mineria"}}, ["Translation Glossary: '- jp' is missing a value (expected '- jp: <value>'); ignored"]],
       duplicate_keys: [{"jp" => {"Bitcoin" => "XBT"}}, []],
-      autolinked_url: [{"jp" => {"Bitcoin" => "BTC", "site" => "[https://ex.com](https://ex.com)"}}, []],
-      hash_comment: [{"jp" => {"Bitcoin" => "BTC # note"}, "es" => {"mining" => "mineria"}}, []],
-      indented_item: [{"es" => {"mining" => "mineria"}}, []],
-      double_space_bullet: [{"es" => {"mining" => "mineria"}}, []],
+      autolinked_url: [{"jp" => {"Bitcoin" => "BTC", "site" => "https://ex.com"}}, []],
+      hash_comment: [{"jp" => {"Bitcoin" => "BTC"}, "es" => {"mining" => "mineria"}}, []],
+      indented_item: [{"jp" => {}, "es" => {"mining" => "mineria"}}, ["Translation Glossary: 1 top-level entry/entries ignored — entries must be nested under a language code (e.g. `- jp:` then indented `  - term: translation`)."]],
+      double_space_bullet: [{"jp" => {"Bitcoin" => "BTC"}, "es" => {"mining" => "mineria"}}, []],
       crlf: [{"jp" => {"Bitcoin" => "BTC"}, "es" => {"mining" => "mineria"}}, []]
     },
     parse_vocabulary_section: {
@@ -288,18 +287,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [nil, []],
       heading_at_eof_no_newline: [nil, []],
       last_item_no_newline: [{level: "B1", max: 5}, []],
-      sub_bullets: [{level: "B1", max: 5}, []],
+      sub_bullets: [{level: "B1", max: 5}, ["Vocabulary: nested item '- sub: one' under '- level: B1' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{max: 5}, []],
       blank_lines_inside: [{level: "B1", max: 5}, []],
       followed_by_heading: [{level: "B1"}, []],
       h3_inside: [{level: "B1", max: 5}, []],
       h1_inside: [{level: "B1", max: 5}, []],
-      bare_key: :raises_no_method_error,
+      bare_key: [{max: 5}, ["Vocabulary: '- level' is missing a value (expected '- level: <value>'); ignored"]],
       duplicate_keys: [{level: "C2"}, []],
-      autolinked_url: [{level: "B1", filter: "[https://ex.com](https://ex.com)"}, []],
+      autolinked_url: [{level: "B1", filter: "https://ex.com"}, []],
       hash_comment: [{level: "B1", max: 5}, []],
-      indented_item: [{max: 5}, []],
-      double_space_bullet: [{max: 5}, []],
+      indented_item: [{level: "B1", max: 5}, []],
+      double_space_bullet: [{level: "B1", max: 5}, []],
       crlf: [{level: "B1", max: 5}, []]
     },
     parse_links_section: {
@@ -308,18 +307,18 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [nil, []],
       heading_at_eof_no_newline: [nil, []],
       last_item_no_newline: [{show: true, title: "More"}, []],
-      sub_bullets: [{show: true, title: "More"}, []],
+      sub_bullets: [{show: true, title: "More"}, ["Links: nested item '- sub: one' under '- show: true' is ignored (this entry takes no sub-items)"]],
       star_bullets: [nil, []],
       blank_lines_inside: [{show: true, title: "More"}, []],
       followed_by_heading: [{show: true}, []],
       h3_inside: [{show: true, title: "More"}, []],
       h1_inside: [{show: true, title: "More"}, []],
-      bare_key: [nil, []],
+      bare_key: [nil, ["Links: '- show' is missing a value (expected '- show: <value>'); ignored"]],
       duplicate_keys: [nil, []],
-      autolinked_url: [{show: true, title: "[https://ex.com](https://ex.com)"}, []],
+      autolinked_url: [{show: true, title: "https://ex.com"}, []],
       hash_comment: [{show: true, title: "More"}, []],
-      indented_item: [nil, []],
-      double_space_bullet: [nil, []],
+      indented_item: [{show: true, title: "More"}, []],
+      double_space_bullet: [{show: true, title: "More"}, []],
       crlf: [{show: true, title: "More"}, []]
     },
     parse_sources_section: {
@@ -328,7 +327,7 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       empty: [{"exa" => true}, []],
       heading_at_eof_no_newline: [{"exa" => true}, []],
       last_item_no_newline: [{"exa" => true, "hn" => true}, []],
-      sub_bullets: [{"exa" => true, "hn" => true}, []],
+      sub_bullets: [{"exa" => true, "hn" => true}, ["Sources: nested item '- sub: one' under '- exa' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{"hn" => true}, []],
       blank_lines_inside: [{"exa" => true, "hn" => true}, []],
       followed_by_heading: [{"exa" => true}, []],
@@ -336,10 +335,10 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       h1_inside: [{"exa" => true, "hn" => true}, []],
       bare_key: [{"exa" => true, "hn" => true}, []],
       duplicate_keys: [{"exa" => ["x"]}, []],
-      autolinked_url: [{"exa" => true, "rss" => [{url: "[https://ex.com/feed](https://ex.com/feed)", skip: 30.0}]}, []],
-      hash_comment: [{"exa # note" => true, "hn" => true}, []],
-      indented_item: [{"hn" => true}, []],
-      double_space_bullet: [{"hn" => true}, []],
+      autolinked_url: [{"exa" => true, "rss" => [{url: "https://ex.com/feed", skip: 30.0}]}, []],
+      hash_comment: [{"exa" => true, "hn" => true}, []],
+      indented_item: [{"exa" => true, "hn" => true}, []],
+      double_space_bullet: [{"exa" => true, "hn" => true}, []],
       crlf: [{"exa" => true, "hn" => true}, []]
     }
   }.freeze
@@ -351,12 +350,7 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       define_method(:"test_#{method}_#{shape}_returns_pinned_structure") do
         expected = EXPECTED.fetch(method).fetch(shape)
 
-        if expected == :raises_no_method_error
-          assert_raises(NoMethodError) { run_cell(method, shape) }
-        else
-          result, warnings = run_cell(method, shape)
-          assert_equal expected, [result, warnings]
-        end
+        assert_equal expected, run_cell(method, shape)
       end
     end
   end
@@ -472,54 +466,36 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
   end
 
   # --- bare recognized key (a "- key" line with no colon) ---
-  # parse_kv_section yields (key, nil); handlers that call a method on the
-  # value raise, which prime! converts into a warning.
+  # P4-7: the shared walker warns "missing value" and skips the item; no
+  # handler ever sees a nil value, so nothing raises and nothing is coerced.
 
-  BARE_KEY_RAISES = {
-    "## YouTube\n- tags\n" => [:youtube_config, "split"],
-    "## LingQ\n- tags\n" => [:lingq_config, "split"],
-    "## LingQ\n- image\n" => [:lingq_config, "start_with?"],
-    "## Image\n- base_image\n" => [:image_section, "start_with?"],
-    "## Twitter\n- languages\n" => [:twitter_config, "split"],
-    "## Site\n- accent\n" => [:site_config, "gsub"],
-    "## Vocabulary\n- level\n" => [:vocabulary_config, "upcase"]
+  BARE_KEY_CASES = {
+    "## YouTube\n- tags\n" => [:youtube_config, nil],
+    "## LingQ\n- tags\n" => [:lingq_config, nil],
+    "## LingQ\n- image\n" => [:lingq_config, nil],
+    "## Image\n- base_image\n" => [:image_section, {}],
+    "## Twitter\n- languages\n" => [:twitter_config, nil],
+    "## Site\n- accent\n" => [:site_config, {}],
+    "## Vocabulary\n- level\n" => [:vocabulary_config, nil],
+    "## Site\n- playback_speed\n" => [:site_config, {}],
+    "## Site\n- show_duration\n" => [:site_config, {}],
+    "## Image\n- font_size\n" => [:image_section, {}],
+    "## Vocabulary\n- max\n" => [:vocabulary_config, nil],
+    "## Links\n- show\n" => [:links_config, nil]
   }.freeze
 
-  def test_kv_readers_bare_recognized_key_raises_no_method_error
-    BARE_KEY_RAISES.each do |text, (reader, meth)|
+  def test_kv_readers_bare_recognized_key_skipped_with_missing_value_warning
+    BARE_KEY_CASES.each do |text, (reader, expected)|
       parser = GuidelinesParser.new(text, podcast_dir: PODCAST_DIR)
 
-      error = assert_raises(NoMethodError, text) { parser.public_send(reader) }
-      assert_includes error.message, meth
-    end
-  end
-
-  def test_warnings_bare_recognized_key_reported_as_unparseable
-    BARE_KEY_RAISES.each do |text, (reader, _meth)|
-      warnings = GuidelinesParser.new(text, podcast_dir: PODCAST_DIR).warnings
-
-      assert_equal 1, warnings.size, text
-      assert warnings.first.start_with?("#{reader}: unparseable — NoMethodError: "), warnings.first
-    end
-  end
-
-  def test_kv_readers_bare_recognized_key_coerces_nil_silently
-    cases = {
-      "## Site\n- playback_speed\n" => [:site_config, {playback_speed: 0.0}],
-      "## Site\n- show_duration\n" => [:site_config, {show_duration: true}],
-      "## Image\n- font_size\n" => [:image_section, {font_size: 0}],
-      "## Vocabulary\n- max\n" => [:vocabulary_config, nil],
-      "## Links\n- show\n" => [:links_config, nil]
-    }
-
-    cases.each do |text, (reader, expected)|
-      parser = GuidelinesParser.new(text, podcast_dir: PODCAST_DIR)
       if expected.nil?
         assert_nil parser.public_send(reader), text
       else
         assert_equal expected, parser.public_send(reader), text
       end
-      assert_empty parser.warnings, text
+      warnings = parser.warnings
+      assert_equal 1, warnings.size, text
+      assert_includes warnings.first, "is missing a value", text
     end
   end
 
@@ -553,49 +529,40 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
     assert_equal({}, EXPECTED[:parse_kv_section][:empty].first)
   end
 
-  def test_cross_parser_hash_comment_stripped_only_by_kv_family
-    # FLAG: " # note" after a value is stripped by parse_kv_section users,
-    # kept verbatim by podcast/audio/language/transcription_engine/glossary,
-    # and for sources kept on a bare item ("exa # note" becomes the key) but
-    # stripped on an inline "key: v1, v2 # c" item.
-    keeps = SPECS.keys.select { |m| EXPECTED[m][:hash_comment].inspect.include?("# note") }
-
-    assert_equal %i[
-      parse_podcast_section parse_audio_section parse_language_section
-      parse_transcription_engine_section parse_translation_glossary_section parse_sources_section
-    ], keeps
-    assert_empty KV_FAMILY & keeps
+  def test_cross_parser_hash_comment_stripped_by_all
+    # Unified (P4-7): " # note" is stripped from every item in every section.
+    SPECS.each_key do |m|
+      assert_equal EXPECTED[m][:present], EXPECTED[m][:hash_comment], m.to_s
+    end
   end
 
-  def test_cross_parser_indented_and_double_space_items_accepted_only_by_strip_first_parsers
-    # FLAG: language and transcription_engine strip the line before matching
-    # "- ", so indented items and "-  x" are accepted; every other parser
-    # requires /^- \S/ and drops them (audio additionally warns on indented).
-    accepting = SPECS.keys.select { |m| EXPECTED[m][:indented_item] == EXPECTED[m][:present] }
+  def test_cross_parser_indented_and_double_space_items_accepted_by_all
+    # Unified (P4-7): any indentation and "-  x" are accepted. The glossary
+    # cell differs only because the shape indents "- jp:" AND its entry to
+    # the same column, so the entry reads as a flat top-level item (warned).
+    SPECS.each_key do |m|
+      assert_equal EXPECTED[m][:present], EXPECTED[m][:double_space_bullet], m.to_s
+      next if m == :parse_translation_glossary_section
 
-    assert_equal %i[parse_language_section parse_transcription_engine_section], accepting
-    assert_equal accepting, SPECS.keys.select { |m| EXPECTED[m][:double_space_bullet] == EXPECTED[m][:present] }
-    warners = SPECS.keys.reject { |m| EXPECTED[m][:indented_item].last.empty? }
-    assert_equal %i[parse_audio_section], warners
+      assert_equal EXPECTED[m][:present], EXPECTED[m][:indented_item], m.to_s
+    end
+    assert_equal 1, EXPECTED[:parse_translation_glossary_section][:indented_item].last.size
   end
 
-  def test_cross_parser_sub_bullets_handling_disagrees
-    # FLAG: an unexpected indented "  - sub: one" is ignored by most parsers,
-    # warned about by audio, merged into the current language by the
-    # glossary, and FLATTENED into a top-level entry by language
-    # ({"code" => "sub", "voice_id" => "one"}) and transcription_engine
-    # ("sub: one" becomes an engine code).
-    unchanged = SPECS.keys.select { |m| EXPECTED[m][:sub_bullets] == EXPECTED[m][:present] }
+  def test_cross_parser_unexpected_sub_bullets_warned_and_ignored_by_all
+    # Unified (P4-7): "  - sub: one" under an item that takes no sub-items is
+    # ignored with one warning. The glossary is the exception by design —
+    # its entries ARE sub-items of "- jp:", so the line merges as an entry.
+    SPECS.each_key do |m|
+      next if m == :parse_translation_glossary_section
 
-    assert_equal %i[
-      parse_kv_section parse_podcast_section parse_image_section parse_site_section
-      parse_lingq_section parse_youtube_section parse_twitter_section
-      parse_vocabulary_section parse_links_section parse_sources_section
-    ], unchanged
-    assert_includes EXPECTED[:parse_language_section][:sub_bullets].first, {"code" => "sub", "voice_id" => "one"}
-    assert_includes EXPECTED[:parse_transcription_engine_section][:sub_bullets].first, "sub: one"
+      result, warnings = EXPECTED[m][:sub_bullets]
+      assert_equal EXPECTED[m][:present].first, result, m.to_s
+      assert_equal 1, warnings.size, m.to_s
+      assert_includes warnings.first, "'- sub: one'", m.to_s
+      assert_includes warnings.first, "is ignored", m.to_s
+    end
     assert_equal "one", EXPECTED[:parse_translation_glossary_section][:sub_bullets].first["jp"]["sub"]
-    assert_equal 1, EXPECTED[:parse_audio_section][:sub_bullets].last.size
   end
 
   def test_cross_parser_duplicate_keys_last_wins_except_list_parsers
@@ -626,14 +593,17 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
     end
   end
 
-  def test_cross_parser_autolinked_urls_never_unwrapped
-    # FLAG: no parser unwraps Markdown autolinks "[url](url)"; the raw
-    # bracket form flows into config. lingq image additionally prefixes the
-    # podcast dir ("/pod/[https://...") and language drops a voice_id that
-    # contains a colon ({"code" => "fr"}).
-    assert_equal "/pod/[https://ex.com/i.png](https://ex.com/i.png)", EXPECTED[:parse_lingq_section][:autolinked_url].first[:image]
-    assert_equal({"code" => "fr"}, EXPECTED[:parse_language_section][:autolinked_url].first.last)
-    assert_equal "[https://ex.com/feed](https://ex.com/feed)", EXPECTED[:parse_sources_section][:autolinked_url].first["rss"].first[:url]
+  def test_cross_parser_autolinked_urls_unwrapped_by_all
+    # Unified (P4-7): "[url](url)" with identical halves is unwrapped to the
+    # bare url before any parser sees the item. lingq's image still goes
+    # through resolve_path, which prefixes the podcast dir to any
+    # non-absolute value (a URL included) — unchanged here.
+    SPECS.each_key do |m|
+      refute_includes EXPECTED[m][:autolinked_url].inspect, "](", m.to_s
+    end
+    assert_equal "/pod/https://ex.com/i.png", EXPECTED[:parse_lingq_section][:autolinked_url].first[:image]
+    assert_equal({"code" => "fr", "voice_id" => "https://ex.com"}, EXPECTED[:parse_language_section][:autolinked_url].first.last)
+    assert_equal "https://ex.com/feed", EXPECTED[:parse_sources_section][:autolinked_url].first["rss"].first[:url]
   end
 
   private

@@ -361,6 +361,8 @@ topics:
 
 Edit `podcasts/<name>/guidelines.md` to change format, tone, length, and content rules. The script agent follows these strictly. HTML comments (`<!-- ... -->`) are stripped before parsing, so you can use them to temporarily disable config entries (e.g. languages, sources).
 
+All config sections follow the same list rules: items are `- key: value` lines (indentation and extra spaces after `-` are fine); a trailing ` # note` is stripped; a Markdown autolink `[url](url)` is unwrapped to the bare url; a repeated key keeps the last value (the `language` and engine lists keep every entry); a bare `- key` with no value, or a nested `  - item` under an entry that takes none, is ignored and reported by `podgen validate`.
+
 ### Topics
 
 Edit `podcasts/<name>/queue.yml`:
