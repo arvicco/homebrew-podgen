@@ -1151,7 +1151,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   installed launchd scheduler; the streak runs across legacy and marked
   publishes. Legacy limitation: an undated generate-time warning that follows
   a publish is counted with that publish, and when several podcasts publish
-  only the last one's warnings are visible. Shown as
+  only the last one's warnings are visible. A legacy publish counts as latest
+  only while no marked publish follows it. A publish whose end marker never
+  came closes at the next generate output or dated line of a later day.
+  Marker limitation: overlapping launchd jobs (two publishes interleaved in
+  the shared stderr) can misattribute warnings between begin/end markers.
+  Shown as
   `publish warning in last 44 publishes (since 2026-08-20): Warning: Twitter posting failed: ...`.
   Without markers, if rclone ever stops printing a dated line, publishes can
   no longer be told apart and this check goes quiet - the announcement check
