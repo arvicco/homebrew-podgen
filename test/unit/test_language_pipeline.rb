@@ -8,6 +8,8 @@ require "episode_history"
 require "agents/description_agent"
 require "cli/language_pipeline"
 require "time_value"
+require "json"
+require "subtitle_reconciler"
 
 # Minimal logger that captures messages without file I/O
 class StubLogger
@@ -167,6 +169,39 @@ class TestLanguagePipeline < Minitest::Test
     refute_nil warn_line, "failure must be logged"
     assert_includes warn_line, "RuntimeError",
       "warning must name the exception class so permanent failures are distinguishable from transient ones"
+  end
+
+  # --- reconcile_subtitles (runs through SubtitleReconciliationRunner, P4-2) ---
+
+  def test_reconcile_subtitles_already_reconciled_skips_reconciler_and_logs
+    pipeline = build_reconcile_pipeline("Text.", reconciled: true)
+
+    calls = with_counting_reconciler { pipeline.send(:reconcile_subtitles) }
+
+    assert_equal 0, calls
+    assert @logger.messages.any? { |m| m.include?("skipped") && m.include?("already reconciled") },
+      "expected an already-reconciled log line, got #{@logger.messages.inspect}"
+    assert_empty pipeline.instance_variable_get(:@warnings)
+  end
+
+  def test_reconcile_subtitles_blank_text_skips_reconciler_and_logs
+    pipeline = build_reconcile_pipeline("   ")
+
+    calls = with_counting_reconciler { pipeline.send(:reconcile_subtitles) }
+
+    assert_equal 0, calls
+    assert @logger.messages.any? { |m| m.include?("skipped") && m.include?("empty") },
+      "expected a blank-transcript log line, got #{@logger.messages.inspect}"
+  end
+
+  def test_reconcile_subtitles_missing_api_key_logs_reason
+    pipeline = build_reconcile_pipeline("Text.")
+
+    calls = with_counting_reconciler(api_key: nil) { pipeline.send(:reconcile_subtitles) }
+
+    assert_equal 0, calls
+    assert @logger.messages.any? { |m| m.include?("skipped") && m.include?("ANTHROPIC_API_KEY not set") },
+      "expected a missing-key log line, got #{@logger.messages.inspect}"
   end
 
   # --- enforce_length_post_download ---
@@ -963,6 +998,29 @@ class TestLanguagePipeline < Minitest::Test
     AudioTrimmer.stub(:new, fake_trimmer) do
       yield
     end
+  end
+
+  def build_reconcile_pipeline(text, reconciled: false)
+    pipeline = build_pipeline
+    pipeline.instance_variable_set(:@base_name, "ep")
+    pipeline.instance_variable_set(:@reconciled_text, text)
+    staging = pipeline.instance_variable_get(:@staging_dir)
+    FileUtils.mkdir_p(staging)
+    data = { "version" => 1, "engine" => "groq", "intro_duration" => 0.0,
+             "segments" => [{ "start" => 0.0, "end" => 1.0, "text" => "raw" }] }
+    data["reconciled"] = true if reconciled
+    File.write(File.join(staging, "ep_timestamps.json"), JSON.generate(data))
+    pipeline
+  end
+
+  def with_counting_reconciler(api_key: "test-key-not-real")
+    calls = 0
+    saved = ENV["ANTHROPIC_API_KEY"]
+    api_key.nil? ? ENV.delete("ANTHROPIC_API_KEY") : ENV["ANTHROPIC_API_KEY"] = api_key
+    SubtitleReconciler.stub(:reconcile, ->(segs, _text, **) { calls += 1; segs }) { yield }
+    calls
+  ensure
+    saved.nil? ? ENV.delete("ANTHROPIC_API_KEY") : ENV["ANTHROPIC_API_KEY"] = saved
   end
 
   def build_pipeline(options: {}, config: nil, name: nil, transcription_language: nil)

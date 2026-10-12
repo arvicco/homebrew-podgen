@@ -17,6 +17,7 @@ require_relative File.join(root, "lib", "youtube_downloader")
 require_relative File.join(root, "lib", "vocabulary_annotator")
 require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "timestamp_persister")
+require_relative File.join(root, "lib", "subtitle_reconciliation_runner")
 require_relative File.join(root, "lib", "subtitle_generator")
 require_relative File.join(root, "lib", "video_generator")
 require_relative File.join(root, "lib", "url_cleaner")
@@ -471,25 +472,32 @@ module PodgenCLI
       logger.log("Timestamps saved: #{ts_path} (#{segments.length} segments, engine: #{engine}, intro: #{intro_duration.round(1)}s)")
     end
 
+    # Reconciles the staged STT segments against the in-memory reconciled
+    # transcript through the shared runner (P4-2): the transcript file does
+    # not exist yet at this point in #run. Single-engine runs (no reconciled
+    # text) have nothing to reconcile against and skip silently.
     def reconcile_subtitles
       return unless @reconciled_text
-      ts_path = File.join(@staging_dir, "#{@base_name}_timestamps.json")
-      return unless File.exist?(ts_path)
-
-      api_key = ENV["ANTHROPIC_API_KEY"]
-      return unless api_key && !api_key.empty?
 
       logger.phase_start("Subtitle Reconciliation")
-      require_relative "../subtitle_reconciler"
-      data = TimestampPersister.load(ts_path)
-      segments = SubtitleReconciler.reconcile(data["segments"], @reconciled_text, api_key: api_key)
-      TimestampPersister.update_segments(ts_path, segments)
-      logger.log("Subtitles reconciled (#{segments.length} segments)")
+      ts_path = File.join(@staging_dir, "#{@base_name}_timestamps.json")
+      result = SubtitleReconciliationRunner.run(
+        ts_path: ts_path,
+        transcript_path: nil,
+        text: @reconciled_text,
+        api_key: ENV["ANTHROPIC_API_KEY"]
+      )
+      case result.status
+      when :reconciled
+        logger.log("Subtitles reconciled (#{result.message.delete_prefix("reconciled ")})")
+      when :failed # skippable: canonical audio/transcript already produced; raw segments remain usable
+        cause = "#{result.error_class}: #{result.message}"
+        logger.log("Warning: Subtitle reconciliation failed: #{cause} (non-fatal, keeping raw segments)")
+        @warnings << "Subtitle reconciliation failed (#{cause})"
+      else
+        logger.log("Subtitle reconciliation skipped: #{result.message}")
+      end
       logger.phase_end("Subtitle Reconciliation")
-    rescue => e # skippable: canonical audio/transcript already produced; raw segments remain usable
-      logger.log("Warning: Subtitle reconciliation failed: #{e.class}: #{e.message} (non-fatal, keeping raw segments)")
-      @warnings << "Subtitle reconciliation failed (#{e.class}: #{e.message})"
-      logger.phase_end("Subtitle Reconciliation") rescue nil
     end
 
     def save_transcript_and_cover
