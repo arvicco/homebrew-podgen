@@ -63,23 +63,28 @@ class GuidelinesParser
   end
 
   def lingq_config
-    @lingq_config ||= parse_lingq_section
+    return @lingq_config if defined?(@lingq_config)
+    @lingq_config = parse_lingq_section
   end
 
   def youtube_config
-    @youtube_config ||= parse_youtube_section
+    return @youtube_config if defined?(@youtube_config)
+    @youtube_config = parse_youtube_section
   end
 
   def twitter_config
-    @twitter_config ||= parse_twitter_section
+    return @twitter_config if defined?(@twitter_config)
+    @twitter_config = parse_twitter_section
   end
 
   def links_config
-    @links_config ||= parse_links_section
+    return @links_config if defined?(@links_config)
+    @links_config = parse_links_section
   end
 
   def vocabulary_config
-    @vocabulary_config ||= parse_vocabulary_section
+    return @vocabulary_config if defined?(@vocabulary_config)
+    @vocabulary_config = parse_vocabulary_section
   end
 
   def translation_glossary
@@ -133,26 +138,84 @@ class GuidelinesParser
     value.gsub(/[;{}]/, "")
   end
 
-  # Shared iterator for flat key-value sections.
-  # Yields (key, value) for each "- key: value" line.
-  # Returns nil when the section is missing, otherwise the accumulated config hash.
-  def parse_kv_section(heading)
+  # One parsed top-level list item of a section: the cleaned item text, the
+  # key/value split on its first colon (value nil for a bare "- key"), and the
+  # cleaned texts of the more-indented items nested under it.
+  SectionItem = Struct.new(:text, :key, :value, :subs)
+
+  BULLET = /\A([ \t]*)([-*])[ \t]+(\S.*?)\s*\z/
+  # " # note" — whitespace on both sides, so "#ff0000", "#hashtag" and URL
+  # fragments ("feed#section") survive.
+  INLINE_COMMENT = /\s+#(?:\s.*)?\z/
+  # Markdown autolink with identical halves ("[url](url)", what editors like
+  # Cursor produce on paste) — unwrapped to the bare url.
+  AUTOLINK = %r{\[([a-z][a-z0-9+.-]*://[^\]\s]+)\]\(\1\)}i
+
+  # The single list walker behind every section parser (P4-7). Returns nil
+  # when the section is missing, otherwise its top-level items in order.
+  # Any indentation and extra spaces after "-" are accepted; an item more
+  # indented than the preceding top-level item is a sub-item of it;
+  # non-bullet lines are skipped. A "* " bullet is not an item: it is
+  # dropped silently together with anything nested under it.
+  def section_items(heading)
     body = extract_section(heading)
     return nil unless body
 
-    config = {}
+    items = []
+    top_indent = nil
+    parent = nil
     body.each_line do |line|
-      next unless line.match?(/^- \S/)
-      item = line.strip.sub(/^- /, "")
-      if item.include?(":")
-        key, value = item.split(":", 2)
-        value = value.strip.sub(/\s+#.*/, "")
-        result = yield(key.strip, value)
-        config.merge!(result) if result
+      match = line.match(BULLET)
+      next unless match
+
+      text = clean_item(match[3])
+      next if text.empty?
+
+      indent = match[1].length
+      if top_indent && indent > top_indent
+        parent&.subs&.push(text)
       else
-        result = yield(item.strip, nil)
-        config.merge!(result) if result
+        top_indent = indent
+        parent = nil
+        next if match[2] == "*"
+
+        key, value = text.split(":", 2)
+        parent = SectionItem.new(text, key.strip, value&.strip, [])
+        items << parent
       end
+    end
+    items
+  end
+
+  def clean_item(text)
+    text.sub(INLINE_COMMENT, "").gsub(AUTOLINK, '\1').strip
+  end
+
+  def warn_sub_items(heading, item)
+    item.subs.each do |sub|
+      @warnings << "#{heading}: nested item '- #{sub}' under '- #{item.text}' is ignored (this entry takes no sub-items)"
+    end
+  end
+
+  def warn_missing_value(heading, item)
+    @warnings << "#{heading}: '- #{item.key}' is missing a value (expected '- #{item.key}: <value>'); ignored"
+  end
+
+  # Shared iterator for flat key-value sections.
+  # Yields (key, value) for each "- key: value" item; a bare "- key" is
+  # warned about and skipped, nested items are warned about and ignored.
+  # Returns nil when the section is missing, otherwise the accumulated config hash.
+  def parse_kv_section(heading)
+    items = section_items(heading)
+    return nil unless items
+
+    config = {}
+    items.each do |item|
+      warn_sub_items(heading, item)
+      next warn_missing_value(heading, item) if item.value.nil?
+
+      result = yield(item.key, item.value)
+      config.merge!(result) if result
     end
     config
   end
@@ -160,30 +223,21 @@ class GuidelinesParser
   # --- Section parsers ---
 
   def parse_podcast_section
-    body = extract_section("Podcast")
-    return {} unless body
+    items = section_items("Podcast")
+    return {} unless items
 
     config = {}
-    current_key = nil
+    items.each do |item|
+      next warn_missing_value("Podcast", item) if item.value.nil?
 
-    body.each_line do |line|
-      if line.match?(/^- \S/)
-        item = line.strip.sub(/^- /, "")
-        if item.include?(":")
-          key, value = item.split(":", 2)
-          key = key.strip
-          value = value.strip
-          if value.empty?
-            current_key = key
-          else
-            current_key = nil
-            config[key.to_sym] = value
-          end
+      if item.key == "language" && item.value.empty?
+        item.subs.each do |entry|
+          config[:languages] ||= []
+          config[:languages] << parse_language_entry(entry)
         end
-      elsif current_key == "language" && line.match?(/^\s+- \S/)
-        entry = line.strip.sub(/^- /, "").strip
-        config[:languages] ||= []
-        config[:languages] << parse_language_entry(entry)
+      else
+        warn_sub_items("Podcast", item)
+        config[item.key.to_sym] = item.value unless item.value.empty?
       end
     end
 
@@ -191,45 +245,35 @@ class GuidelinesParser
   end
 
   def parse_audio_section
-    body = extract_section("Audio")
-    return {} unless body
+    items = section_items("Audio")
+    return {} unless items
 
     config = {}
-    current_key = nil
-
-    body.each_line do |line|
-      if line.match?(/^- \S/)
-        item = line.strip.sub(/^- /, "")
-        if item.include?(":")
-          key, value = item.split(":", 2)
-          key = key.strip
-          value = value.strip
-          if value.empty?
-            current_key = key
-          else
-            current_key = nil
-            case key
-            when "skip"
-              config[:skip] = TimeValue.parse(value)
-            when "cut"
-              config[:cut] = TimeValue.parse(value)
-            when "autotrim"
-              config[:autotrim] = true
-            else
-              config[key.to_sym] = value
-            end
-          end
-        elsif item.strip == "autotrim"
-          config[:autotrim] = true
+    items.each do |item|
+      if item.key == "engine" && item.value&.empty?
+        item.subs.each do |entry|
+          config[:engines] ||= []
+          config[:engines] << entry
         end
-      elsif current_key == "engine" && line.match?(/^\s+- \S/)
-        entry = line.strip.sub(/^- /, "").strip
-        config[:engines] ||= []
-        config[:engines] << entry unless entry.empty?
-      elsif line.match?(/^\s+- \S/)
-        # Indented item not under an `engine:` block — likely a misindented
-        # top-level key. Record a warning instead of silently dropping it.
-        @warnings << "Audio section: indented line '#{line.strip}' is ignored (top-level keys must start at column 0 with '- ')"
+        next
+      end
+
+      warn_sub_items("Audio", item)
+      if item.value.nil?
+        (item.key == "autotrim") ? config[:autotrim] = true : warn_missing_value("Audio", item)
+        next
+      end
+      next if item.value.empty?
+
+      case item.key
+      when "skip"
+        config[:skip] = TimeValue.parse(item.value)
+      when "cut"
+        config[:cut] = TimeValue.parse(item.value)
+      when "autotrim"
+        config[:autotrim] = true
+      else
+        config[item.key.to_sym] = item.value
       end
     end
 
@@ -275,16 +319,12 @@ class GuidelinesParser
   def parse_language_section
     default = [{ "code" => "en" }]
 
-    body = extract_section("Language")
-    return default unless body
+    items = section_items("Language")
+    return default unless items
 
-    languages = []
-    body.each_line do |line|
-      line = line.strip
-      next unless line.start_with?("- ")
-
-      entry = line.sub(/^- /, "").strip
-      languages << parse_language_entry(entry)
+    languages = items.map do |item|
+      warn_sub_items("Language", item)
+      parse_language_entry(item.text)
     end
 
     languages.empty? ? default : languages
@@ -306,8 +346,9 @@ class GuidelinesParser
     return config if rest.nil? || rest.empty?
 
     parts = rest.split(/\s+(?=[a-z_]\w*:)/, -1)
-    # First part is voice_id only when it doesn't itself look like a key:value pair.
-    if parts.first && !parts.first.include?(":")
+    # First part is voice_id only when it doesn't itself look like a key:value
+    # pair (a URL's "scheme://" colon doesn't count).
+    if parts.first && !(parts.first.include?(":") && !parts.first.match?(%r{\A[a-z][a-z0-9+.-]*://}i))
       voice_id = parts.shift
       config["voice_id"] = voice_id unless voice_id.empty?
     end
@@ -326,16 +367,12 @@ class GuidelinesParser
   def parse_transcription_engine_section
     default = ["open"]
 
-    body = extract_section("Transcription Engine")
-    return default unless body
+    items = section_items("Transcription Engine")
+    return default unless items
 
-    engines = []
-    body.each_line do |line|
-      line = line.strip
-      next unless line.start_with?("- ")
-
-      code = line.sub(/^- /, "").strip
-      engines << code unless code.empty?
+    engines = items.map do |item|
+      warn_sub_items("Transcription Engine", item)
+      item.text
     end
 
     engines.empty? ? default : engines
@@ -404,23 +441,28 @@ class GuidelinesParser
   #   - es:
   #     - mining: minería
   def parse_translation_glossary_section
-    body = extract_section("Translation Glossary")
-    return {} unless body
+    items = section_items("Translation Glossary")
+    return {} unless items
 
     glossary = {}
-    current_lang = nil
     flat_entries = 0
-    body.each_line do |line|
-      if line.match?(/^- [a-z]{2,3}:\s*$/i)
-        current_lang = line.strip.sub(/^- /, "").chomp(":").strip.downcase
-        glossary[current_lang] ||= {}
-      elsif line.match?(/^\s+- \S/) && current_lang
-        entry = line.strip.sub(/^- /, "")
-        # Split on the FIRST colon — translations may themselves contain colons.
-        next unless entry.include?(":")
-        term, translation = entry.split(":", 2).map(&:strip)
-        glossary[current_lang][term] = translation if !term.empty? && translation && !translation.empty?
-      elsif line.match?(/^- \S.*:\s*\S/)
+    items.each do |item|
+      if item.value&.empty? && item.key.match?(/\A[a-z]{2,3}\z/i)
+        lang = item.key.downcase
+        glossary[lang] ||= {}
+        item.subs.each do |entry|
+          # Split on the FIRST colon — translations may themselves contain colons.
+          next unless entry.include?(":")
+          term, translation = entry.split(":", 2).map(&:strip)
+          glossary[lang][term] = translation if !term.empty? && translation && !translation.empty?
+        end
+        next
+      end
+
+      warn_sub_items("Translation Glossary", item)
+      if item.value.nil?
+        warn_missing_value("Translation Glossary", item)
+      elsif !item.value.empty?
         # Flat `- term: translation` line at top level — no language wrapper.
         # Counted whether or not the rest of the section parses correctly,
         # so a partial slip-up under a valid language doesn't get masked.
@@ -475,36 +517,22 @@ class GuidelinesParser
   def parse_sources_section
     default = { "exa" => true }
 
-    body = extract_section("Sources")
-    return default unless body
+    items = section_items("Sources")
+    return default unless items
 
     sources = {}
-    current_key = nil
-
-    body.each_line do |line|
-      # Top-level item: "- name", "- name:", or "- name: val1, val2"
-      if line.match?(/^- \S/)
-        item = line.strip.sub(/^- /, "")
-        if item.include?(":")
-          key, value = item.split(":", 2)
-          current_key = key.strip
-          inline = value.sub(/\s+#\s.*/, "").strip
-          if inline.empty?
-            # "- name:" with sub-list to follow
-            sources[current_key] = []
-          else
-            # "- name: val1, val2" inline comma-separated
-            current_key = nil
-            sources[key.strip] = inline.split(",").map(&:strip)
-          end
-        else
-          current_key = nil
-          sources[item] = true
-        end
-      # Sub-item: "  - value" (indented under a key with colon)
-      elsif current_key && line.match?(/^\s+- \S/)
-        value = line.strip.sub(/^- /, "")
-        sources[current_key] << parse_source_item(current_key, value)
+    items.each do |item|
+      if item.value.nil?
+        # "- name" — enabled with defaults
+        warn_sub_items("Sources", item)
+        sources[item.key] = true
+      elsif item.value.empty?
+        # "- name:" with a sub-list to follow
+        sources[item.key] = item.subs.map { |value| parse_source_item(item.key, value) }
+      else
+        # "- name: val1, val2" inline comma-separated
+        warn_sub_items("Sources", item)
+        sources[item.key] = item.value.split(",").map(&:strip)
       end
     end
 

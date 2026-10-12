@@ -5,14 +5,14 @@ require "json"
 
 ENV["ANTHROPIC_API_KEY"] ||= "test-key"
 require "subtitle_reconciler"
-require "transcription/reconciler"
+require "transcription/transcript_merger"
 
 # P3-0 H2 — characterization harness for the two confusably named
 # reconcilers. They do different jobs:
-#   SubtitleReconciler          — module; segment-PRESERVING: Array of
-#                                 {start,end,text} in → same-shape Array out
-#   Transcription::Reconciler   — class; whole-transcript MERGE: Hash of
-#                                 engine → text (or one text) in → String out
+#   SubtitleReconciler              — module; segment-PRESERVING: Array of
+#                                     {start,end,text} in → same-shape Array out
+#   Transcription::TranscriptMerger — class; whole-transcript MERGE: Hash of
+#                                     engine → text (or one text) in → String out
 # These tests pin each one's public surface and its behavior on the same
 # shaped inputs, so a future rename/merge cannot silently swap semantics.
 class TestCharacterizationReconcilers < Minitest::Test
@@ -34,20 +34,21 @@ class TestCharacterizationReconcilers < Minitest::Test
     assert_equal 0.01, SubtitleReconciler::TIMESTAMP_EPSILON
   end
 
-  def test_transcription_reconciler_surface_is_a_class_with_reconcile_and_cleanup
-    assert_instance_of Class, Transcription::Reconciler
-    assert_equal %i[cleanup reconcile], Transcription::Reconciler.public_instance_methods(false).sort
+  def test_transcript_merger_surface_is_a_class_with_reconcile_and_cleanup
+    assert_instance_of Class, Transcription::TranscriptMerger
+    assert_equal %i[cleanup reconcile], Transcription::TranscriptMerger.public_instance_methods(false).sort
     assert_equal [[:key, :language], [:key, :logger]],
-      Transcription::Reconciler.instance_method(:initialize).parameters
-    assert_equal [[:req, :transcripts]], Transcription::Reconciler.instance_method(:reconcile).parameters
-    assert_equal [[:req, :text], [:key, :captions]], Transcription::Reconciler.instance_method(:cleanup).parameters
-    assert_equal 3, Transcription::Reconciler::MAX_RETRIES
+      Transcription::TranscriptMerger.instance_method(:initialize).parameters
+    assert_equal [[:req, :transcripts]], Transcription::TranscriptMerger.instance_method(:reconcile).parameters
+    assert_equal [[:req, :text], [:key, :captions]], Transcription::TranscriptMerger.instance_method(:cleanup).parameters
+    assert_equal 3, Transcription::TranscriptMerger::MAX_RETRIES
   end
 
   def test_names_two_reconcilers_are_distinct_constants_with_distinct_model_roles
-    refute_same SubtitleReconciler, Transcription::Reconciler
+    refute_same SubtitleReconciler, Transcription::TranscriptMerger
     refute Transcription.const_defined?(:SubtitleReconciler, false)
     refute Object.const_defined?(:Reconciler, false), "no top-level Reconciler alias"
+    refute Transcription.const_defined?(:Reconciler, false), "old Reconciler name left no alias in Transcription (P4-5)"
     assert_equal :sonnet, ClaudeModels::ROLES[:subtitle_reconciler]
     assert_equal :opus, ClaudeModels::ROLES[:transcript_reconciler]
   end
@@ -83,9 +84,9 @@ class TestCharacterizationReconcilers < Minitest::Test
     assert_equal 4800, fake2.calls.first[:max_tokens]
   end
 
-  # Drift within epsilon is ACCEPTED and the LLM's drifted values are
-  # returned (not snapped back to the originals).
-  def test_reconcile_subtitle_drift_within_epsilon_returns_llm_values_not_originals
+  # Drift within epsilon is ACCEPTED, but the ORIGINAL values are returned
+  # (P4-1 flipped this pin: the LLM's drifted values used to leak through).
+  def test_reconcile_subtitle_drift_within_epsilon_returns_original_values
     reply = [{"start" => 0.0, "end" => 2.5, "text" => "a"}, {"start" => 2.5, "end" => 7.700000001, "text" => "b"}]
     fake = FakeSubtitleClient.new(JSON.generate(reply))
 
@@ -93,10 +94,11 @@ class TestCharacterizationReconcilers < Minitest::Test
       SubtitleReconciler.reconcile(SEGMENTS, TRANSCRIPT, api_key: "k", model: "m")
     end
 
-    assert_equal 7.700000001, result.last["end"]
+    assert_equal 7.7, result.last["end"]
   end
 
-  def test_reconcile_subtitle_extra_keys_in_reply_pass_through
+  # P4-1 flipped this pin: model-added keys used to pass through.
+  def test_reconcile_subtitle_extra_keys_in_reply_are_dropped
     reply = SEGMENTS.map { |s| s.merge("speaker" => "x") }
     fake = FakeSubtitleClient.new(JSON.generate(reply))
 
@@ -104,7 +106,7 @@ class TestCharacterizationReconcilers < Minitest::Test
       SubtitleReconciler.reconcile(SEGMENTS, TRANSCRIPT, api_key: "k", model: "m")
     end
 
-    assert_equal %w[start end text speaker], result.first.keys
+    assert_equal %w[start end text], result.first.keys
   end
 
   def test_reconcile_subtitle_api_error_is_not_retried
@@ -137,7 +139,7 @@ class TestCharacterizationReconcilers < Minitest::Test
     assert_includes prompt, "\"start\": 0.0"
   end
 
-  # ── Transcription::Reconciler: whole-transcript merge ───────────────
+  # ── Transcription::TranscriptMerger: whole-transcript merge ───────────────
 
   def test_reconcile_transcription_engine_hash_returns_single_string
     reconciler, client = transcription_reconciler("Merged text.")
@@ -253,7 +255,7 @@ class TestCharacterizationReconcilers < Minitest::Test
   end
 
   def transcription_reconciler(texts, fail_times: 0)
-    reconciler = Transcription::Reconciler.new(language: "Slovenian")
+    reconciler = Transcription::TranscriptMerger.new(language: "Slovenian")
     reconciler.define_singleton_method(:sleep) { |_| }
     client = FakeTranscriptClient.new(texts, fail_times)
     reconciler.instance_variable_set(:@client, client)

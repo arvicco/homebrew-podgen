@@ -13,11 +13,16 @@ require "agents/translation_agent"
 # record every call (no network). Where the paths differ, the test name says
 # "divergent" and both behaviors are asserted, so a consolidation has to
 # choose visibly. These pin CURRENT behavior; they are not a spec.
+#
+# P4-4 consolidated both paths into one core with backend adapters; the
+# former "divergent" rows for output cap, truncation, logging and the
+# glossary block now pin the chosen shared behavior ("aligned").
 class TestCharacterizationTranslationPaths < Minitest::Test
   Segment = Struct.new(:name, :text)
   Translation = Struct.new(:title, :segments)
   OpenAIContent = Struct.new(:parsed)
-  OpenAIResponse = Struct.new(:output)
+  OpenAIResponse = Struct.new(:output, :status, :usage, :incomplete_details)
+  OpenAIIncomplete = Struct.new(:reason)
 
   class Usage
     def input_tokens = 500
@@ -149,10 +154,14 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal OpenAITranslatedScript, call[:text]
   end
 
-  # Divergence: Claude sends max_tokens 16384 and a separate `system:` with a
-  # string-role user message; OpenAI sends NO output cap and puts the system
-  # prompt in `input` with symbol roles.
-  def test_translate_output_cap_divergent_between_paths
+  # Divergent by design (P4-4, CRPR round 1): Claude caps output at 16384
+  # (`max_tokens`); OpenAI sends NO output cap — on the Responses API
+  # `max_output_tokens` counts reasoning tokens too, and the ja translator
+  # (gpt-5) reasons by default, so a cap could truncate a long script. Also
+  # divergent by API shape: Claude sends a separate `system:` with a
+  # string-role user message; OpenAI puts the system prompt in `input` with
+  # symbol roles.
+  def test_translate_output_cap_claude_only
     c_agent, c_client, = build("claude", steps: [claude_ok])
     o_agent, o_client, = build("openai", steps: [openai_ok])
 
@@ -190,8 +199,8 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert o_client.calls.last[:input].last[:content].start_with?("Translate this podcast script to xx:\n\n")
   end
 
-  # The glossary pair lines carry 6 leading spaces (the interpolated string is
-  # not de-indented by the squiggly heredoc) and quotes are not escaped.
+  # P4-4 (Q-42): the glossary pair lines start at column 0 (previously 6
+  # leading spaces) and embedded double quotes are escaped.
   def test_build_system_prompt_glossary_block_exact_text_pinned
     agent, = build("claude", glossary: {"Bitcoin" => "bitcoin", "say \"hi\"" => "x"})
 
@@ -200,8 +209,8 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     expected_tail = "- Write naturally as spoken Slovenian — no stage directions, no timestamps, no markdown\n" \
       "\nGLOSSARY (always use these exact translations for the listed terms,\n" \
       "overriding the natural-conventions rule above):\n" \
-      "      - \"Bitcoin\" → \"bitcoin\"\n" \
-      "      - \"say \"hi\"\" → \"x\"\n"
+      "- \"Bitcoin\" → \"bitcoin\"\n" \
+      "- \"say \\\"hi\\\"\" → \"x\"\n"
     assert prompt.end_with?(expected_tail), prompt
   end
 
@@ -373,30 +382,36 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     end
   end
 
-  # Divergence: Claude turns a max_tokens stop into TruncatedOutputError (not
-  # retried). OpenAI has no truncation check: an empty/unparsed response is
-  # always a retried StructuredOutputError.
-  def test_translate_truncation_handling_divergent_between_paths
+  # Aligned (P4-4): a stop at the output cap is a TruncatedOutputError after
+  # ONE call on both paths (Claude stop_reason max_tokens; OpenAI status
+  # incomplete with reason max_output_tokens). An OpenAI empty/unparsed
+  # response that is not truncated stays a retried StructuredOutputError.
+  def test_translate_truncation_handling_aligned_between_paths
     c_agent, c_client, = build("claude", steps: [ClaudeMessage.new(nil, "max_tokens")])
-    o_agent, o_client, = build("openai", steps: [OpenAIResponse.new([])])
+    truncated = OpenAIResponse.new([], :incomplete, Usage.new, OpenAIIncomplete.new(:max_output_tokens))
+    o_agent, o_client, = build("openai", steps: [truncated])
 
     err = assert_raises(TruncatedOutputError) { c_agent.translate(script) }
     assert_match(/\AOutput truncated at max_tokens \(400 output tokens\)/, err.message)
     assert_equal 1, c_client.calls.length
 
-    assert_raises(RuntimeError) { o_agent.translate(script) }
-    assert_equal 4, o_client.calls.length
+    err = assert_raises(TruncatedOutputError) { o_agent.translate(script) }
+    assert_match(/\AOutput truncated at max_output_tokens \(400 output tokens\)/, err.message)
+    assert_equal 1, o_client.calls.length
   end
 
   # --- logging ---
 
-  # Divergence: Claude logs API usage and "complete: N"; OpenAI logs no usage
-  # and puts elapsed into "complete in Xs: N".
-  def test_translate_logging_divergent_between_paths
+  # Aligned (P4-4): both paths log the same 4-line shape — start, "generated
+  # in Xs (stop)", usage, "complete: N". OpenAI's stop is the response status.
+  def test_translate_logging_aligned_between_paths
     c_logger = RecordingLogger.new
     o_logger = RecordingLogger.new
     c_agent, = build("claude", steps: [claude_ok], logger: c_logger)
-    o_agent, = build("openai", steps: [openai_ok], logger: o_logger)
+    o_response = openai_ok
+    o_response.status = :completed
+    o_response.usage = Usage.new
+    o_agent, = build("openai", steps: [o_response], logger: o_logger)
 
     c_agent.translate(script)
     o_agent.translate(script)
@@ -409,9 +424,22 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal "[TranslationAgent] Translation complete: 1 segments", c_logger.lines[3]
 
     model = o_agent.instance_variable_get(:@openai_model)
-    assert_equal 2, o_logger.lines.length
+    assert_equal 4, o_logger.lines.length
     assert_equal "[TranslationAgent] Translating script to Slovenian (sl) with #{model} (openai)", o_logger.lines[0]
-    assert_match(/\A\[TranslationAgent\] Translation complete in [\d.]+s: 1 segments\z/, o_logger.lines[1])
+    assert_match(/\A\[TranslationAgent\] Translation generated in [\d.]+s \(completed\)\z/, o_logger.lines[1])
+    assert_equal "[TranslationAgent]   Input: 500 tokens | Output: 400 tokens", o_logger.lines[2]
+    assert_equal "[TranslationAgent] Translation complete: 1 segments", o_logger.lines[3]
+  end
+
+  # When the backend reports no usage the usage line is omitted (3 lines).
+  def test_translate_logging_without_usage_omits_usage_line
+    logger = RecordingLogger.new
+    agent, = build("openai", steps: [openai_ok], logger: logger)
+
+    agent.translate(script)
+
+    assert_equal 3, logger.lines.length
+    assert_match(/\A\[TranslationAgent\] Translation generated in [\d.]+s \(\?\)\z/, logger.lines[1])
   end
 
   def test_translate_retry_log_line_pinned_both_paths

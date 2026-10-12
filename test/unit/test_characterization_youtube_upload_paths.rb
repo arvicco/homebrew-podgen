@@ -106,7 +106,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     def messages = @events.select { |e| e[0] == :log }.map(&:last)
   end
 
-  PipelineConfig = Struct.new(:episodes_dir, :transcription_language, :yt, keyword_init: true) do
+  PipelineConfig = Struct.new(:episodes_dir, :name, :transcription_language, :yt, keyword_init: true) do
     def youtube_enabled? = !yt.nil?
 
     def youtube_config = yt
@@ -154,7 +154,12 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_empty uploads.warnings
   end
 
-  def test_upload_to_youtube_with_playlist_runs_steps_in_pipeline_order
+  # P4-8 flipped: the pipeline runs the publisher's one routine in its one
+  # order (verify playlist → cover check → srt → video → upload → record →
+  # captions → playlist). Its timestamps are authoritative, so no
+  # retranscription/reconcile step; no explicit authorize! (the uploader
+  # authorizes lazily); the uploader is built at first use (the verify step).
+  def test_upload_to_youtube_with_playlist_runs_steps_in_shared_routine_order
     seed_episode(timestamps: true, cover: true)
     calls = []
     uploads = build_pipeline_uploads(yt: {playlist: "PLx"})
@@ -163,18 +168,15 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
       uploads.upload_to_youtube(episode: {title: "T", description: "D"}, base_name: BASE, output_path: mp3_path)
     end
 
-    # No retranscription, no reconciliation; video always regenerated;
-    # explicit authorize!; verify_playlist per call; tracker record LAST.
     assert_equal [
+      [:uploader_new],
+      [:verify_playlist, "PLx"],
       [:generate_srt, "#{BASE}_timestamps.json"],
       [:video_generate, "#{BASE}.mp4"],
-      [:uploader_new],
-      [:authorize],
-      [:verify_playlist, "PLx"],
       [:upload_video, "#{BASE}.mp4"],
+      [:record, :youtube, "PLx", BASE, "vid_p"],
       [:upload_captions, "vid_p", "#{BASE}.srt", "sl"],
-      [:add_to_playlist, "vid_p", "PLx"],
-      [:record, :youtube, "PLx", BASE, "vid_p"]
+      [:add_to_playlist, "vid_p", "PLx"]
     ], calls
     assert_empty uploads.warnings
   end
@@ -203,7 +205,9 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     end
 
     refute(calls.any? { |c| c[0] == :verify_playlist || c[0] == :add_to_playlist })
-    assert_equal [:record, :youtube, "default", BASE, "vid_d"], calls.last
+    record_at = calls.index { |c| c[0] == :record }
+    assert_equal [:record, :youtube, "default", BASE, "vid_d"], calls[record_at]
+    assert_equal :upload_video, calls[record_at - 1][0]
   end
 
   def test_upload_to_youtube_without_timestamps_skips_srt_and_captions_and_never_retranscribes
@@ -238,7 +242,8 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     refute JSON.parse(File.read(ts_path))["reconciled"], "timestamps file must be left unreconciled"
   end
 
-  def test_upload_to_youtube_existing_mp4_is_regenerated
+  # P4-8 flipped: mp4 reuse everywhere (was: the pipeline always regenerated).
+  def test_upload_to_youtube_existing_mp4_is_reused_not_regenerated
     seed_episode(timestamps: true, cover: true, mp4: true)
     calls = []
     uploads = build_pipeline_uploads(yt: {})
@@ -247,10 +252,13 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
       uploads.upload_to_youtube(episode: {title: "T"}, base_name: BASE, output_path: mp3_path)
     end
 
-    assert_includes calls, [:video_generate, "#{BASE}.mp4"]
+    refute_includes calls.map(&:first), :video_generate
+    assert_includes calls, [:upload_video, "#{BASE}.mp4"]
   end
 
-  def test_upload_to_youtube_metadata_comes_from_episode_hash_with_defaults
+  # P4-8 flipped: a non-nil episode-hash field wins; a nil one falls back to
+  # the transcript file (was: nil description uploaded as "").
+  def test_upload_to_youtube_metadata_hash_wins_and_file_fills_nil_fields
     seed_episode(timestamps: true, cover: true, transcript_title: "File Title")
     calls = []
     uploader = FakeUploader.new(calls)
@@ -260,8 +268,22 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
       uploads.upload_to_youtube(episode: {title: "Hash Title", description: nil}, base_name: BASE, output_path: mp3_path)
     end
 
-    assert_equal({title: "Hash Title", description: "", language: "sl",
+    assert_equal({title: "Hash Title", description: "Desc", language: "sl",
                   privacy: "unlisted", category: "27", tags: []}, uploader.upload_kwargs)
+  end
+
+  def test_upload_to_youtube_nil_description_without_transcript_file_uploads_empty_string
+    seed_episode(timestamps: true, cover: true)
+    File.delete(File.join(@episodes_dir, "#{BASE}_transcript.md"))
+    calls = []
+    uploader = FakeUploader.new(calls)
+    uploads = build_pipeline_uploads(yt: {})
+
+    with_seams(calls, uploader: uploader) do
+      uploads.upload_to_youtube(episode: {title: "T", description: nil}, base_name: BASE, output_path: mp3_path)
+    end
+
+    assert_equal "", uploader.upload_kwargs[:description]
   end
 
   def test_upload_to_youtube_configured_privacy_category_tags_pass_through
@@ -294,10 +316,10 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_includes calls, [:upload_captions, "vid_en", "#{BASE}.srt", "en"]
   end
 
-  # Divergence pin: the pipeline records the upload only AFTER captions and
-  # playlist insertion, so a captions failure leaves an uploaded video
-  # untracked (the publisher path records first — see the Path B twin).
-  def test_upload_to_youtube_captions_failure_leaves_upload_unrecorded
+  # P4-0 flipped this former divergence pin: the pipeline now records the
+  # upload right after upload_video, like the publisher path (see the Path B
+  # twin), so a captions failure is a warning and the upload stays tracked.
+  def test_upload_to_youtube_captions_failure_keeps_upload_recorded
     seed_episode(timestamps: true, cover: true)
     calls = []
     uploads = build_pipeline_uploads(yt: {playlist: "PLx"})
@@ -309,7 +331,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     kinds = calls.map(&:first)
     assert_includes kinds, :upload_video
     refute_includes kinds, :add_to_playlist
-    refute_includes kinds, :record
+    assert_includes calls, [:record, :youtube, "PLx", BASE, "vid_c"]
     assert_equal ["YouTube upload failed (RuntimeError: upload_captions boom)"], uploads.warnings
   end
 
@@ -326,7 +348,9 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_equal ["YouTube upload failed (RuntimeError: verify_playlist boom)"], uploads.warnings
   end
 
-  def test_upload_to_youtube_verifies_playlist_on_every_call_without_cache
+  # P4-8 flipped: verification is cached per pod+playlist everywhere (was:
+  # the pipeline verified on every call).
+  def test_upload_to_youtube_verifies_playlist_once_per_pod_and_playlist
     seed_episode(timestamps: true, cover: true)
     calls = []
 
@@ -337,7 +361,8 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
       end
     end
 
-    assert_equal 2, calls.count { |c| c[0] == :verify_playlist }
+    assert_equal 1, calls.count { |c| c[0] == :verify_playlist }
+    assert_equal 2, calls.count { |c| c[0] == :upload_video }
   end
 
   def test_upload_to_youtube_failure_logs_class_and_backtrace_without_phase_end
@@ -541,14 +566,16 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_includes out, "  reconciled subtitles: #{BASE}_timestamps.json"
   end
 
-  def test_upload_loop_missing_cover_prepares_subtitles_then_skips_unattempted
+  # P4-8 flipped: the cover check runs BEFORE subtitle prep, so a skipped
+  # episode costs no paid reconcile/re-transcription (was: reconcile + srt ran).
+  def test_upload_loop_missing_cover_skips_before_subtitles_unattempted
     seed_episode(timestamps: true, cover: false)
     calls = []
     publisher = build_publisher(yt: {}, uploader: FakeUploader.new(calls))
 
     result = run_publisher(publisher, calls)
 
-    assert_equal %i[reconcile generate_srt], calls.map(&:first)
+    assert_equal [], calls
     assert_equal 0, result.attempted
     assert_equal 0, result.uploaded
     assert_equal [{type: :missing_cover, base: BASE, message: "no cover image"}], result.errors
@@ -567,7 +594,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_equal [{type: :video, base: BASE, message: "ffmpeg exploded"}], result.errors
   end
 
-  # Divergence twin of the Path A captions test: the publisher records the
+  # Twin of the Path A captions test (both paths agree since P4-0): the publisher records the
   # upload BEFORE captions, so the video stays tracked when captions fail.
   def test_upload_loop_captions_failure_keeps_upload_recorded_and_counts_error
     seed_episode(timestamps: true, cover: true)
@@ -629,7 +656,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
   end
 
   def build_pipeline_uploads(yt:, dry_run: false, language: "sl", engines: [])
-    config = PipelineConfig.new(episodes_dir: @episodes_dir, transcription_language: language, yt: yt)
+    config = PipelineConfig.new(episodes_dir: @episodes_dir, name: "char_pod", transcription_language: language, yt: yt)
     config.define_singleton_method(:transcription_engines) { engines }
     PostPipelineUploads.new(config: config, logger: @logger, dry_run: dry_run)
   end

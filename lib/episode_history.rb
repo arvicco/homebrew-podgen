@@ -4,6 +4,7 @@ require "date"
 require "set"
 require_relative "atomic_writer"
 require_relative "yaml_loader"
+require_relative "episode_naming"
 
 class EpisodeHistory
   LOOKBACK_DAYS = 7
@@ -61,16 +62,16 @@ class EpisodeHistory
     removed
   end
 
-  # Remove a specific entry by date and suffix index (0-based position among
-  # entries sharing that date). Returns the removed entry, or nil if not found.
+  # Remove a specific entry by date and suffix index (0-based slot: "" → 0,
+  # "a" → 1, ...). The slot resolves through the same mapping HistoryMaps
+  # uses (explicit basename wins, else same-day position — P4-9, Q-44).
+  # Returns the removed entry, or nil if not found.
   def remove_by_date!(date, suffix_index)
     entries = YamlLoader.load(@path, default: [])
 
-    # Find all entries with this date, in order
-    matches = entries.each_with_index.select { |e, _| e["date"] == date.to_s }
-    return nil if matches.empty? || suffix_index >= matches.length
+    global_index = EpisodeNaming.history_entry_index(entries, date, EpisodeNaming.suffix_for(suffix_index))
+    return nil unless global_index
 
-    _, global_index = matches[suffix_index]
     removed = entries.delete_at(global_index)
     write_entries!(entries)
     removed

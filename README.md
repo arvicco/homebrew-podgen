@@ -120,6 +120,8 @@ ruby bin/podgen <command> [options]
 | `podgen fork <old> <new>`             | Fork podcast into a new namespace                        |
 | `podgen test <name>`                  | Run a component test (research, hn, rss, tts, etc.)      |
 | `podgen schedule <podcast>`           | Install, remove, or inspect a daily launchd scheduler    |
+| `podgen uploads <pods>`               | Per-pod regen + R2 + LingQ, then a YouTube batch across pods (`--mode`, `--max`) |
+| `podgen init <podcast>`               | Initialize a new podcast (skeleton or from existing) |
 
 Per-command flags are documented in the dedicated sections below (e.g. [Generate command](#generate-command-options), [Publish command](#publishing-to-cloudflare-r2)).
 
@@ -360,6 +362,8 @@ topics:
 ### Podcast Guidelines
 
 Edit `podcasts/<name>/guidelines.md` to change format, tone, length, and content rules. The script agent follows these strictly. HTML comments (`<!-- ... -->`) are stripped before parsing, so you can use them to temporarily disable config entries (e.g. languages, sources).
+
+All config sections follow the same list rules: items are `- key: value` lines (indentation and extra spaces after `-` are fine); a trailing ` # note` is stripped; a Markdown autolink `[url](url)` is unwrapped to the bare url; a repeated key keeps the last value (the `language` and engine lists keep every entry); a bare `- key` with no value, or a nested `  - item` under an entry that takes none, is ignored and reported by `podgen validate`.
 
 ### Topics
 
@@ -1408,7 +1412,7 @@ podgen/
 │   │   ├── elevenlabs_engine.rb # ElevenLabs Scribe v2 (engine: "elab")
 │   │   ├── groq_engine.rb    # Groq hosted Whisper + word timestamps (engine: "groq")
 │   │   ├── engine_manager.rb # Orchestrator: single or parallel comparison mode
-│   │   └── reconciler.rb     # Claude reconciliation of multi-engine transcripts
+│   │   └── transcript_merger.rb # Claude merge of multi-engine transcripts
 │   ├── agents/
 │   │   ├── topic_agent.rb    # Claude topic generation
 │   │   ├── research_agent.rb # Exa.ai search

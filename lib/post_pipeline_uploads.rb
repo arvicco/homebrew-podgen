@@ -4,6 +4,7 @@ require_relative "upload_tracker"
 require_relative "subtitle_generator"
 require_relative "video_generator"
 require_relative "cover_resolver"
+require_relative "youtube_publisher"
 require_relative "agents/lingq_agent"
 
 # Post-commit upload side effects for the language pipeline (LingQ and
@@ -80,54 +81,41 @@ class PostPipelineUploads
     end
 
     @logger.phase_start("YouTube Upload")
-    yt_config = @config.youtube_config
-    language = @config.transcription_language || "en"
 
-    # Generate SRT from timestamps
-    ts_path = File.join(@config.episodes_dir, "#{base_name}_timestamps.json")
-    srt_path = File.join(@config.episodes_dir, "#{base_name}.srt")
-    SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path)
+    # One upload routine shared with publish/yt-batch (P4-8). The pipeline's
+    # in-memory title/description win over the transcript file, and its fresh
+    # timestamps are authoritative (no re-transcription, no second reconcile).
+    # The uploader authorizes lazily on first API call.
+    publisher = YouTubePublisher.new(config: @config, logger: @logger)
+    ep = {
+      base_name: base_name,
+      mp3_path: output_path,
+      transcript_path: File.join(@config.episodes_dir, "#{base_name}_transcript.md")
+    }
+    result = publisher.upload_episode(ep,
+      metadata: {title: episode[:title], description: episode[:description]},
+      timestamps_authoritative: true)
 
-    # Generate video from cover + audio
-    cover_path = CoverResolver.find_episode_cover(@config.episodes_dir, base_name)
-    raise "No episode cover found for video generation" unless cover_path
-
-    video_path = File.join(@config.episodes_dir, "#{base_name}.mp4")
-    VideoGenerator.new(logger: @logger).generate(output_path, cover_path, video_path)
-
-    # Upload to YouTube (lazy require to avoid loading google-apis gems unless needed)
-    require_relative "youtube_uploader"
-    uploader = YouTubeUploader.new(logger: @logger)
-    uploader.authorize!
-
-    # Verify playlist exists before uploading
-    uploader.verify_playlist!(yt_config[:playlist]) if yt_config[:playlist]
-
-    video_id = uploader.upload_video(
-      video_path,
-      title: episode[:title],
-      description: episode[:description].to_s,
-      language: language,
-      privacy: yt_config[:privacy] || "unlisted",
-      category: yt_config[:category] || "27",
-      tags: yt_config[:tags] || []
-    )
-
-    # Upload captions if SRT exists
-    uploader.upload_captions(video_id, srt_path, language: language) if File.exist?(srt_path)
-
-    # Add to playlist if configured
-    uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
-
-    # Record upload
-    playlist = yt_config[:playlist] || "default"
-    UploadTracker.for_config(@config).record(:youtube, playlist, base_name, video_id)
-    @logger.log("Recorded YouTube upload: #{base_name} → #{video_id}")
+    # The routine records the upload right after upload_video (P4-0), so a
+    # captions/playlist failure still leaves the video tracked.
+    @logger.log("Recorded YouTube upload: #{base_name} → #{result.video_id}") if result.video_id
+    raise_for(result) unless result.status == :uploaded
 
     @logger.phase_end("YouTube Upload")
   rescue => e # skippable: side effect after commit; tracker-based retry on next publish
     @logger.log("Warning: YouTube upload failed: #{e.class}: #{e.message} (non-fatal, continuing)")
     @logger.log(e.backtrace.first(3).join("\n"))
     @warnings << "YouTube upload failed (#{e.class}: #{e.message})"
+  end
+
+  private
+
+  # Maps the routine's typed result onto the pipeline's skippable-warning
+  # path (the rescue above); a quota stop is just another warning here.
+  def raise_for(result)
+    raise result.exception if result.exception
+    raise "No episode cover found for video generation" if result.error[:type] == :missing_cover
+
+    raise result.error[:message]
   end
 end

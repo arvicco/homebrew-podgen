@@ -7,6 +7,7 @@ require "date"
 require "fileutils"
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "episode_selector")
+require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "script_artifact")
 require_relative File.join(root, "lib", "script_renderer")
@@ -87,7 +88,7 @@ module PodgenCLI
       date_str = date.strftime("%Y-%m-%d")
       if suffix
         paths.select do |p|
-          base = File.basename(p, "_script.md").sub(/-[a-z]{2}\z/, "")
+          base = EpisodeNaming.primary_basename(File.basename(p, "_script.md"))
           base.end_with?("-#{date_str}#{suffix}")
         end
       else
@@ -99,20 +100,14 @@ module PodgenCLI
     # recent groups (English + all language variants for those episodes).
     def filter_by_last_n(paths, n)
       groups = paths.group_by do |p|
-        base = File.basename(p, "_script.md")
-        base.sub(/-[a-z]{2}\z/, "")
+        EpisodeNaming.primary_basename(File.basename(p, "_script.md"))
       end
       groups.keys.sort.last(n).flat_map { |k| groups[k] }
     end
 
     def filter_by_lang(paths, lang)
       paths.select do |p|
-        base = File.basename(p, "_script.md")
-        if lang == "en"
-          !base.match?(/-[a-z]{2}\z/)
-        else
-          base.end_with?("-#{lang}")
-        end
+        EpisodeNaming.matches_language?(File.basename(p, "_script.md"), lang)
       end
     end
   end

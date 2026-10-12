@@ -10,6 +10,8 @@ require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "podcast_config")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_filtering")
+require_relative File.join(root, "lib", "episode_naming")
+require_relative File.join(root, "lib", "history_maps")
 require_relative File.join(root, "lib", "word_stats")
 
 module PodgenCLI
@@ -346,15 +348,7 @@ module PodgenCLI
       }
 
       # Date range from filenames
-      dates = mp3s.filter_map { |f|
-        m = File.basename(f).match(/(\d{4}-\d{2}-\d{2})/)
-        next unless m
-        begin
-          Date.parse(m[1])
-        rescue Date::Error
-          nil
-        end
-      }.uniq.sort
+      dates = mp3s.filter_map { |f| EpisodeNaming.parse_date(f) }.uniq.sort
 
       date_range = if dates.length >= 2
         " (#{dates.first.strftime('%b %d')} – #{dates.last.strftime('%b %d, %Y')})"
@@ -406,10 +400,6 @@ module PodgenCLI
       }
     end
 
-    # Build a map of MP3 filename → duration (seconds) from history entries.
-    # Same suffix logic as RssGenerator to match filenames to history entries.
-    SUFFIXES = [""] + ("a".."z").to_a
-
     # Returns nil (with a visible warning) on malformed XML — a wrong count
     # must not be reported silently.
     def count_feed_items(feed_path)
@@ -430,27 +420,14 @@ module PodgenCLI
       0
     end
 
+    # Primary-episode filename → duration via HistoryMaps (P4-9, Q-44):
+    # explicit history basenames win. No language variants: a translated
+    # mp3 is not the English episode's length, so those fall back to
+    # ffprobe (P4-9, CRPR round 1).
     def build_duration_map(config)
-      entries = YamlLoader.load(config.history_path, default: nil)
-      return {} unless entries.is_a?(Array)
-
       podcast_name = File.basename(File.dirname(config.episodes_dir))
-      by_date = {}
-      entries.each do |entry|
-        date = entry["date"]
-        next unless date
-        (by_date[date] ||= []) << entry
-      end
-
-      map = {}
-      by_date.each do |date, date_entries|
-        date_entries.each_with_index do |entry, idx|
-          next unless entry["duration"]
-          suffix = SUFFIXES[idx] || idx.to_s
-          map["#{podcast_name}-#{date}#{suffix}.mp3"] = entry["duration"]
-        end
-      end
-      map
+      HistoryMaps.build(history_path: config.history_path, podcast_name: podcast_name,
+        episodes_dir: config.episodes_dir)[2]
     end
 
     # Renders pre-formatted text columns side by side.

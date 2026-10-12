@@ -17,13 +17,16 @@ module SubtitleReconciliationRunner
   #   :already_reconciled  — file has "reconciled": true and force is false
   #   :no_timestamps       — timestamps file does not exist or is unreadable
   #   :no_api_key          — api_key was nil or empty
-  #   :no_transcript       — transcript body was empty
-  #   :failed              — reconciler or persister raised; message holds the cause
-  Result = Struct.new(:status, :message, keyword_init: true)
+  #   :no_transcript       — transcript body (or given text) was empty
+  #   :failed              — reconciler or persister raised; message holds the
+  #                          cause, error_class the exception class name
+  Result = Struct.new(:status, :message, :error_class, keyword_init: true)
 
   module_function
 
-  def run(ts_path:, transcript_path:, api_key: ENV["ANTHROPIC_API_KEY"], force: false)
+  # text: — in-memory transcript text (the language pipeline, before the
+  # transcript file exists); when given, transcript_path is not read.
+  def run(ts_path:, transcript_path:, api_key: ENV["ANTHROPIC_API_KEY"], force: false, text: nil)
     data = TimestampPersister.load(ts_path)
     return Result.new(status: :no_timestamps, message: "no timestamps at #{ts_path}") if data.nil?
 
@@ -35,20 +38,25 @@ module SubtitleReconciliationRunner
       return Result.new(status: :no_api_key, message: "ANTHROPIC_API_KEY not set")
     end
 
-    unless transcript_path && File.exist?(transcript_path)
-      return Result.new(status: :no_transcript, message: "no transcript at #{transcript_path}")
-    end
+    if text
+      transcript_text = text
+      source = "transcript text"
+    else
+      unless transcript_path && File.exist?(transcript_path)
+        return Result.new(status: :no_transcript, message: "no transcript at #{transcript_path}")
+      end
 
-    parsed = TranscriptParser.parse_file(transcript_path)
-    transcript_text = parsed.body
+      transcript_text = TranscriptParser.parse_file(transcript_path).body
+      source = "transcript at #{transcript_path}"
+    end
     if transcript_text.nil? || transcript_text.strip.empty?
-      return Result.new(status: :no_transcript, message: "transcript at #{transcript_path} is empty")
+      return Result.new(status: :no_transcript, message: "#{source} is empty")
     end
 
     segments = SubtitleReconciler.reconcile(data["segments"], transcript_text, api_key: api_key)
     TimestampPersister.update_segments(ts_path, segments)
     Result.new(status: :reconciled, message: "reconciled #{segments.length} segments")
   rescue => e
-    Result.new(status: :failed, message: e.message)
+    Result.new(status: :failed, message: e.message, error_class: e.class.name)
   end
 end

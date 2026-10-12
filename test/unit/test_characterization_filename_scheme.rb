@@ -189,7 +189,7 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     title_map.each do |fname, title|
       m = File.basename(fname, ".mp3").match(DAY_LETTER_RE)
       same_day = positional_history.select { |e| e["date"] == m[1] }
-      assert_equal title, same_day[HistoryMaps::SUFFIXES.index(m[2].to_s)]["title"], fname
+      assert_equal title, same_day[EpisodeNaming::SUFFIXES.index(m[2].to_s)]["title"], fname
     end
   end
 
@@ -201,15 +201,15 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     title_map.each do |fname, title|
       write_history(positional_history)
       m = File.basename(fname, ".mp3").match(DAY_LETTER_RE)
-      removed = EpisodeHistory.new(@history_path).remove_by_date!(m[1], HistoryMaps::SUFFIXES.index(m[2].to_s))
+      removed = EpisodeHistory.new(@history_path).remove_by_date!(m[1], EpisodeNaming::SUFFIXES.index(m[2].to_s))
       assert_equal title, removed["title"], fname
     end
   end
 
   def test_suffixes_constants_are_identical_across_implementations
     expected = [""] + ("a".."z").to_a
-    assert_equal expected, HistoryMaps::SUFFIXES
-    assert_equal expected, PodgenCLI::StatsCommand::SUFFIXES
+    assert_equal expected, EpisodeNaming::SUFFIXES
+    assert_equal DAY_LETTER_RE, EpisodeNaming::DAY_LETTER_RE
   end
 
   def test_build_more_than_27_same_day_entries_falls_back_to_numeric_suffix_in_both
@@ -233,11 +233,12 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     assert_equal "pod", site_generator(%w[en]).instance_variable_get(:@podcast_name)
   end
 
-  # ── CURRENT divergences (pinned, not endorsed) ──────────────────────
+  # ── Q-44 divergences, resolved by P4-9 (EpisodeNaming) ──────────────
 
-  # HistoryMaps honors an entry's explicit basename; StatsCommand ignores it
-  # and re-derives positionally, so after a middle scrap the two disagree.
-  def test_build_explicit_basename_after_middle_scrap_diverges_between_history_maps_and_stats
+  # Stats honours an entry's explicit basename exactly as HistoryMaps does,
+  # so after a middle scrap the two still agree (was: Stats re-derived
+  # positionally and keyed C as "...15a").
+  def test_build_explicit_basename_after_middle_scrap_history_maps_and_stats_agree
     write_history([
       {"date" => "2026-01-15", "title" => "A", "duration" => 10.0, "basename" => "pod-2026-01-15"},
       {"date" => "2026-01-15", "title" => "C", "duration" => 30.0, "basename" => "pod-2026-01-15b"}
@@ -247,25 +248,29 @@ class TestCharacterizationFilenameScheme < Minitest::Test
       episodes_dir: @episodes_dir, languages: [])
 
     assert_equal({"pod-2026-01-15.mp3" => 10.0, "pod-2026-01-15b.mp3" => 30.0}, hm)
-    assert_equal({"pod-2026-01-15.mp3" => 10.0, "pod-2026-01-15a.mp3" => 30.0}, stats_duration_map)
+    assert_equal hm, stats_duration_map
   end
 
-  # EpisodeHistory#remove_by_date! is purely positional: after a middle
-  # scrap, letter "b" (index 2) no longer resolves; index 1 removes the "b" entry.
-  def test_remove_by_date_explicit_basename_after_middle_scrap_is_positional_not_letter_based
+  # EpisodeHistory#remove_by_date! resolves the letter through the same
+  # mapping HistoryMaps uses: after a middle scrap, letter "b" (index 2)
+  # removes the "b" entry and letter "a" (index 1) resolves to nothing
+  # (was: purely positional, index 1 removed the "b" entry).
+  def test_remove_by_date_explicit_basename_after_middle_scrap_resolves_letter_via_history_mapping
     entries = [
       {"date" => "2026-01-15", "title" => "A", "basename" => "pod-2026-01-15"},
       {"date" => "2026-01-15", "title" => "C", "basename" => "pod-2026-01-15b"}
     ]
     write_history(entries)
-    assert_nil EpisodeHistory.new(@history_path).remove_by_date!("2026-01-15", 2)
+    assert_nil EpisodeHistory.new(@history_path).remove_by_date!("2026-01-15", 1)
 
-    removed = EpisodeHistory.new(@history_path).remove_by_date!("2026-01-15", 1)
+    removed = EpisodeHistory.new(@history_path).remove_by_date!("2026-01-15", 2)
     assert_equal "pod-2026-01-15b", removed["basename"]
   end
 
-  # HistoryMaps maps per-language filenames; StatsCommand maps primary only
-  # (language mp3s fall through to ffprobe/size estimate).
+  # HistoryMaps maps per-language filenames (to the English duration);
+  # Stats maps primary only, so language mp3s fall through to ffprobe/size
+  # estimate (P4-9, CRPR round 1: a translation's length is not the
+  # English episode's).
   def test_build_language_variants_diverge_history_maps_maps_them_stats_does_not
     write_history([{"date" => "2026-01-15", "title" => "T", "duration" => 10.0}])
 
@@ -273,33 +278,37 @@ class TestCharacterizationFilenameScheme < Minitest::Test
       episodes_dir: @episodes_dir, languages: CONFIGURED)
 
     assert_equal({"pod-2026-01-15.mp3" => 10.0, "pod-2026-01-15-es.mp3" => 10.0}, hm)
-    assert_equal({"pod-2026-01-15.mp3" => 10.0}, stats_duration_map)
+    assert_equal({"pod-2026-01-15.mp3" => 10.0}, stats_duration_map(CONFIGURED))
   end
 
-  # EpisodeArtifacts' `<base>-*` glob treats ANY dash tail as a variant of
-  # <base>, while EpisodeFiltering (configured languages) treats
-  # "pod-2026-01-15-ai" as a distinct English episode.
+  # Divergent by design (P4-9, CRPR round 1): EpisodeArtifacts (what scrap
+  # deletes and move renames) treats ANY `<base>-*` file as part of the
+  # episode, so a language commented out of the config is not left behind;
+  # the configured-language rule is for attribution only, where
+  # "pod-2026-01-15-ai" is its own English episode.
   def test_for_basename_unconfigured_dash_tail_diverges_from_language_rule
-    %w[pod-2026-01-15.mp3 pod-2026-01-15-es.mp3 pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md].each { |f| touch(f) }
+    %w[pod-2026-01-15.mp3 pod-2026-01-15-es.mp3 pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md
+      pod-2026-01-15-ai-es.mp3 pod-2026-01-15-esp.mp3].each { |f| touch(f) }
 
     names = EpisodeArtifacts.for_basename(@episodes_dir, "pod-2026-01-15").map { |f| File.basename(f) }
-
-    assert_equal %w[pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md pod-2026-01-15-es.mp3 pod-2026-01-15.mp3], names
+    assert_equal %w[pod-2026-01-15-ai-es.mp3 pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md
+      pod-2026-01-15-es.mp3 pod-2026-01-15-esp.mp3 pod-2026-01-15.mp3], names
     assert EpisodeFiltering.matches_language?("pod-2026-01-15-ai", "en", languages: CONFIGURED),
       "the -ai file is its own English episode under the configured-language rule"
   end
 
-  # SiteGenerator/EpisodeFiltering hard-code "en" as the suffix-less
-  # language; PodcastConfig uses languages.first. With a non-en primary
-  # they disagree on which language owns suffix-less files.
-  def test_scan_episodes_non_en_primary_diverges_from_language_for_episode
+  # The primary language comes from config (languages.first) in
+  # SiteGenerator/EpisodeFiltering as in PodcastConfig: a non-en primary
+  # lists its suffix-less episodes on its primary page (was: hard-coded
+  # "en", so the 'sl' page listed nothing).
+  def test_scan_episodes_non_en_primary_agrees_with_language_for_episode
     touch("pod-2026-01-15.mp3")
     touch("pod-2026-01-15-es.mp3")
     langs = %w[sl es]
 
     gen = site_generator(langs)
-    assert_equal [], gen.send(:scan_episodes, "sl").map { |e| e[:basename] },
-      "primary 'sl' site page lists no suffix-less episodes"
+    assert_equal ["pod-2026-01-15"], gen.send(:scan_episodes, "sl").map { |e| e[:basename] },
+      "primary 'sl' site page lists the suffix-less episode"
     assert_equal ["pod-2026-01-15-es"], gen.send(:scan_episodes, "es").map { |e| e[:basename] }
     assert_equal "sl", config_with_languages(langs).language_for_episode("pod-2026-01-15")
   end
@@ -374,6 +383,7 @@ class TestCharacterizationFilenameScheme < Minitest::Test
 
   StatsGatherConfig = Struct.new(:episodes_dir, :history_path, :feed_path, :podcast_dir) do
     def load_env! = nil
+    def language_codes = %w[en]
     def type = "news"
     def image = nil
     def base_url = nil
@@ -399,8 +409,8 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     File.write(@history_path, entries.to_yaml)
   end
 
-  def stats_duration_map
-    config = Struct.new(:episodes_dir, :history_path).new(@episodes_dir, @history_path)
+  def stats_duration_map(language_codes = [])
+    config = Struct.new(:episodes_dir, :history_path, :language_codes).new(@episodes_dir, @history_path, language_codes)
     PodgenCLI::StatsCommand.allocate.send(:build_duration_map, config)
   end
 

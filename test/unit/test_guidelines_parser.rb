@@ -267,8 +267,11 @@ class TestGuidelinesParser < Minitest::Test
   end
 
   def test_audio_section_warns_on_misindented_lines
+    # An indented line nested under a valued key is ignored with a warning;
+    # a section whose items are all indented is accepted as-is (P4-7).
     parser = build_parser(<<~MD)
       ## Audio
+      - language: sl
         - tts_model: eleven_v3
     MD
     parser.audio_section
@@ -1205,6 +1208,211 @@ class TestGuidelinesParser < Minitest::Test
   def test_sanitize_css_leaves_clean_value_unchanged
     parser = build_parser("")
     assert_equal "#aabbcc", parser.send(:sanitize_css, "#aabbcc")
+  end
+
+  # --- unified list-walker rules (P4-7, Q-47) ---
+
+  def test_inline_comment_stripped_in_every_section
+    parser = build_parser(<<~MD)
+      ## Podcast
+      - name: Show # note
+      ## Audio
+      - language: it # note
+      - autotrim # flag
+      ## Language
+      - en # note
+      ## Transcription Engine
+      - groq # note
+      ## Translation Glossary
+      - jp: # wrapper
+        - Bitcoin: BTC # note
+      ## Sources
+      - exa # note
+    MD
+
+    assert_equal "Show", parser.podcast_section[:name]
+    assert_equal({language: "it", autotrim: true}, parser.audio_section)
+    assert_equal [{"code" => "en"}], parser.languages
+    assert_equal ["groq"], parser.transcription_engines
+    assert_equal({"jp" => {"Bitcoin" => "BTC"}}, parser.translation_glossary)
+    assert_equal({"exa" => true}, parser.sources)
+  end
+
+  def test_inline_comment_requires_space_after_hash
+    parser = build_parser("## Twitter\n- template: New {title} #ruby\n## Site\n- accent: #ff0000 # red\n")
+
+    assert_equal "New {title} #ruby", parser.twitter_config[:template]
+    assert_equal "#ff0000", parser.site_config[:accent]
+  end
+
+  def test_indented_and_double_space_items_accepted_in_every_section
+    parser = build_parser(<<~MD)
+      ## Podcast
+        - name: Show
+      ## Audio
+      -  language: it
+      ## Image
+        - font: Arial
+      ## Sources
+      -  hn
+      ## Links
+        - show: true
+    MD
+
+    assert_equal({name: "Show"}, parser.podcast_section)
+    assert_equal({language: "it"}, parser.audio_section)
+    assert_equal({font: "Arial"}, parser.image_section)
+    assert_equal({"hn" => true}, parser.sources)
+    assert_equal({show: true}, parser.links_config)
+    assert_empty parser.warnings
+  end
+
+  def test_unexpected_sub_bullets_warned_and_ignored_in_every_section
+    parser = build_parser(<<~MD)
+      ## Podcast
+      - name: Show
+        - stray: one
+      ## Image
+      - font: Arial
+        - stray: two
+      ## Language
+      - en
+        - fr: VOICE_FR
+      ## Transcription Engine
+      - open
+        - groq
+    MD
+
+    assert_equal({name: "Show"}, parser.podcast_section)
+    assert_equal({font: "Arial"}, parser.image_section)
+    assert_equal [{"code" => "en"}], parser.languages
+    assert_equal ["open"], parser.transcription_engines
+    %w[stray:\ one stray:\ two fr:\ VOICE_FR groq].each do |sub|
+      assert(parser.warnings.any? { |w| w.include?("'- #{sub}'") && w.include?("ignored") },
+        "expected an ignored-sub-item warning for #{sub}, got #{parser.warnings.inspect}")
+    end
+  end
+
+  def test_expected_sub_bullets_do_not_warn
+    parser = build_parser(<<~MD)
+      ## Podcast
+      - language:
+        - en
+      ## Audio
+      - engine:
+        - open
+      ## Sources
+      - rss:
+        - https://ex.com/feed
+      ## Translation Glossary
+      - jp:
+        - Bitcoin: BTC
+    MD
+
+    assert_equal [{"code" => "en"}], parser.languages
+    assert_equal ["open"], parser.transcription_engines
+    assert_equal({"rss" => ["https://ex.com/feed"]}, parser.sources)
+    assert_empty parser.warnings
+  end
+
+  def test_bare_recognised_key_warns_missing_value_never_raises
+    %w[YouTube:tags LingQ:tags LingQ:image Image:base_image Twitter:languages Site:accent
+      Vocabulary:level Site:playback_speed Image:font_size Podcast:name Audio:skip].each do |pair|
+      heading, key = pair.split(":")
+      parser = build_parser("## #{heading}\n- #{key}\n")
+
+      warnings = parser.warnings
+      assert_equal 1, warnings.size, "#{pair}: #{warnings.inspect}"
+      assert_includes warnings.first, "'- #{key}' is missing a value"
+    end
+  end
+
+  def test_nil_section_memoized_so_warnings_not_duplicated
+    parser = build_parser("## Links\n- show\n")
+
+    2.times { assert_nil parser.links_config }
+    assert_equal 1, parser.warnings.size
+  end
+
+  def test_bare_recognised_key_is_skipped_not_coerced
+    parser = build_parser("## Site\n- show_duration\n- footer: Hi\n## Image\n- font_size\n")
+
+    assert_equal({footer: "Hi"}, parser.site_config)
+    assert_equal({}, parser.image_section)
+  end
+
+  def test_duplicate_keys_last_wins_except_ordered_lists
+    parser = build_parser(<<~MD)
+      ## Podcast
+      - name: One
+      - name: Two
+      ## Sources
+      - hn: a
+      - hn: b
+      ## Language
+      - en
+      - en: VOICE_EN
+      ## Transcription Engine
+      - open
+      - open
+    MD
+
+    assert_equal "Two", parser.podcast_section[:name]
+    assert_equal({"hn" => ["b"]}, parser.sources)
+    assert_equal [{"code" => "en"}, {"code" => "en", "voice_id" => "VOICE_EN"}], parser.languages
+    assert_equal ["open", "open"], parser.transcription_engines
+  end
+
+  def test_autolinked_urls_unwrapped_everywhere
+    parser = build_parser(<<~MD)
+      ## Podcast
+      - base_url: [https://ex.com/pod](https://ex.com/pod)
+      ## Site
+      - footer: See [https://ex.com](https://ex.com) # note
+      ## Sources
+      - rss:
+        - [https://ex.com/feed](https://ex.com/feed) skip: 30
+      ## YouTube
+      - playlist: [https://youtube.com/p](https://youtube.com/p)
+    MD
+
+    assert_equal "https://ex.com/pod", parser.podcast_section[:base_url]
+    assert_equal "See https://ex.com", parser.site_config[:footer]
+    assert_equal [{url: "https://ex.com/feed", skip: 30.0}], parser.sources["rss"]
+    assert_equal "https://youtube.com/p", parser.youtube_config[:playlist]
+  end
+
+  def test_autolink_with_different_halves_left_alone
+    parser = build_parser("## Site\n- footer: [ex.com](https://ex.com)\n")
+
+    assert_equal "[ex.com](https://ex.com)", parser.site_config[:footer]
+  end
+
+  def test_language_autolinked_voice_id_kept_after_unwrapping
+    parser = build_parser("## Language\n- fr: [https://x](https://x)\n")
+
+    assert_equal [{"code" => "fr", "voice_id" => "https://x"}], parser.languages
+  end
+
+  def test_return_types_unchanged_for_missing_sections
+    # Callers depend on these exact shapes (nil vs {} vs a default).
+    parser = build_parser("## Format\nShort.\n")
+
+    assert_equal({}, parser.podcast_section)
+    assert_equal({}, parser.audio_section)
+    assert_equal({}, parser.image_section)
+    assert_equal({}, parser.site_config)
+    assert_equal({}, parser.translation_glossary)
+    assert_equal({"exa" => true}, parser.sources)
+    assert_equal [{"code" => "en"}], parser.languages
+    assert_equal ["open"], parser.transcription_engines
+    assert_nil parser.lingq_config
+    assert_nil parser.youtube_config
+    assert_nil parser.twitter_config
+    assert_nil parser.vocabulary_config
+    assert_nil parser.links_config
+    assert_nil parser.send(:parse_kv_section, "Generic") { |k, v| {k => v} }
+    assert_empty parser.warnings
   end
 
   private

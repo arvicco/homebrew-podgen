@@ -127,6 +127,20 @@ class TestStatsCommand < Minitest::Test
     assert_in_delta 90.0, map["mypod-2026-01-15a.mp3"]
   end
 
+  # A translated mp3 is not the English episode's length: stats keeps no
+  # language-variant keys so those files fall back to ffprobe.
+  def test_build_duration_map_with_languages_has_no_variant_keys
+    File.write(@history_path, [
+      { "date" => "2026-01-15", "title" => "Ep 1", "duration" => 120.5 }
+    ].to_yaml)
+    config = StubStatsConfig.new(episodes_dir: @episodes_dir, history_path: @history_path)
+    config.define_singleton_method(:language_codes) { %w[en es] }
+
+    map = build_command.send(:build_duration_map, config)
+
+    assert_equal({ "mypod-2026-01-15.mp3" => 120.5 }, map)
+  end
+
   def test_build_duration_map_missing_history
     cmd = build_command
     config = stub_config(history_path: "/nonexistent.yml")
@@ -193,7 +207,9 @@ class TestStatsCommand < Minitest::Test
     File.write(File.join(@episodes_dir, name), "x" * size)
   end
 
-  StubStatsConfig = Struct.new(:episodes_dir, :history_path, keyword_init: true)
+  StubStatsConfig = Struct.new(:episodes_dir, :history_path, keyword_init: true) do
+    def language_codes = %w[en]
+  end
 
   def stub_config(**overrides)
     defaults = {

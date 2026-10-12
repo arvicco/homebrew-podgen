@@ -4,6 +4,8 @@ require_relative "../test_helper"
 require "youtube_publisher"
 require "regen_cache"
 require "google/apis/errors"
+require "transcription/engine_manager"
+require "subtitle_reconciliation_runner"
 
 class TestYouTubePublisher < Minitest::Test
   def setup
@@ -306,7 +308,120 @@ class TestYouTubePublisher < Minitest::Test
     assert_match(/ep-2026-01-15/, uploader.uploads.first[1][:title])
   end
 
+  # --- upload_episode: the one per-episode routine (P4-8) ---
+
+  def test_upload_episode_checks_cover_before_preparing_subtitles
+    base = "ep-2026-01-20"
+    File.write(File.join(@episodes_dir, "#{base}.mp3"), "x" * 100)
+    File.write(File.join(@episodes_dir, "#{base}_transcript.md"), "# T\n\n## Transcript\n\nHello.\n")
+    config = stub_config(youtube_enabled: true)
+    config.transcription_engines = %w[groq]
+    uploader = stub_uploader
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    Transcription::EngineManager.stub(:new, ->(**) { flunk "paid re-transcription ran for a skipped episode" }) do
+      capture_io { result = publisher.upload_episode(ep_hash(base)) }
+    end
+
+    assert_equal :skipped, result.status
+    refute result.attempted
+    assert_equal({type: :missing_cover, base: base, message: "no cover image"}, result.error)
+    assert_empty uploader.uploads
+  end
+
+  def test_upload_episode_caller_metadata_wins_over_transcript_file
+    seed_ep("ep-2026-01-15")
+    uploader = stub_uploader
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    capture_io do
+      publisher.upload_episode(ep_hash("ep-2026-01-15"),
+        metadata: {title: "Hash Title", description: "Hash Desc"})
+    end
+
+    kw = uploader.uploads.first[1]
+    assert_equal "Hash Title", kw[:title]
+    assert_equal "Hash Desc", kw[:description]
+  end
+
+  def test_upload_episode_missing_caller_field_falls_back_to_transcript_file
+    seed_ep("ep-2026-01-15")
+    uploader = stub_uploader
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    capture_io do
+      publisher.upload_episode(ep_hash("ep-2026-01-15"), metadata: {title: nil, description: "Hash Desc"})
+    end
+
+    assert_equal "Title ep-2026-01-15", uploader.uploads.first[1][:title]
+    assert_equal "Hash Desc", uploader.uploads.first[1][:description]
+  end
+
+  def test_upload_episode_verifies_playlist_once_per_pod_and_playlist
+    seed_ep("ep-2026-01-15")
+    seed_ep("ep-2026-01-16")
+    verified = 0
+    uploader = stub_uploader
+    uploader.define_singleton_method(:verify_playlist!) { |_id| verified += 1 }
+    config = stub_config(youtube_enabled: true, playlist: "PLx")
+
+    capture_io do
+      build_publisher(config: config, uploader: uploader).upload_episode(ep_hash("ep-2026-01-15"))
+      build_publisher(config: config, uploader: uploader).upload_episode(ep_hash("ep-2026-01-16"))
+    end
+
+    assert_equal 1, verified
+    assert_equal 2, uploader.uploads.length
+  end
+
+  def test_upload_episode_authoritative_timestamps_skip_retranscription_and_reconcile
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    config = stub_config(youtube_enabled: true)
+    config.transcription_engines = %w[groq]
+    publisher = build_publisher(config: config, uploader: stub_uploader)
+
+    result = nil
+    Transcription::EngineManager.stub(:new, ->(**) { flunk "re-transcribed authoritative timestamps" }) do
+      SubtitleReconciliationRunner.stub(:run, ->(**) { flunk "reconciled authoritative timestamps" }) do
+        capture_io { result = publisher.upload_episode(ep_hash(base), timestamps_authoritative: true) }
+      end
+    end
+
+    assert_equal :uploaded, result.status
+    assert_equal "vid_default", result.video_id
+  end
+
+  def test_upload_episode_regenerates_mp4_older_than_audio
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    mp4 = File.join(@episodes_dir, "#{base}.mp4")
+    File.utime(Time.now - 120, Time.now - 120, mp4)
+    File.write(File.join(@episodes_dir, "#{base}_cover.jpg"), "jpg")
+    generated = []
+    gen = Object.new
+    gen.define_singleton_method(:generate) { |_a, _i, out| (generated << out) && File.write(out, "new") && out }
+    uploader = stub_uploader
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    out = nil
+    result = nil
+    VideoGenerator.stub(:new, ->(**) { gen }) do
+      out, _ = capture_io { result = publisher.upload_episode(ep_hash(base)) }
+    end
+
+    assert_equal [mp4], generated
+    assert_includes out, "video regenerated: mp4 older than audio"
+    assert_equal :uploaded, result.status
+  end
+
   private
+
+  def ep_hash(base)
+    {base_name: base, mp3_path: File.join(@episodes_dir, "#{base}.mp3"),
+     transcript_path: File.join(@episodes_dir, "#{base}_transcript.md")}
+  end
 
   StubYouTubeConfig = Struct.new(:episodes_dir, :name, :transcription_language,
     :target_language, :transcription_engines, :_yt, :base_url,

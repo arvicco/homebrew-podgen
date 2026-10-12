@@ -132,6 +132,31 @@ class TestMoveCommand < Minitest::Test
     refute File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-16-jp.mp3"))
   end
 
+  # Moving covers every dash tail (P4-9, CRPR round 1): a language commented
+  # out of the config (config here is [en, jp]) still moves with its episode,
+  # so nothing is left under the old basename for a later episode to collide with.
+  def test_single_moves_unconfigured_language_variant_together
+    write_episode("mypod-2026-05-16")
+    File.write(File.join(@config.episodes_dir, "mypod-2026-05-16-it.mp3"), "audio")
+    File.write(File.join(@config.episodes_dir, "mypod-2026-05-16-it_script.md"), "it")
+    stub_rss { run_move("mypod", "2026-05-16", "2026-05-20") }
+
+    assert File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-20-it.mp3"))
+    assert File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-20-it_script.md"))
+    refute File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-16-it.mp3"))
+    refute File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-16-it_script.md"))
+  end
+
+  def test_wildcard_moves_unconfigured_language_variant_with_its_episode
+    write_episode("mypod-2026-05-16")
+    File.write(File.join(@config.episodes_dir, "mypod-2026-05-16-it.mp3"), "audio")
+    out = nil
+    stub_rss { out, = capture_io { PodgenCLI::MoveCommand.new(["mypod", "2026-05-16+", "2026-05-20"], {}).run } }
+
+    assert File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-20-it.mp3"))
+    assert_match(/Moved 1 episode\(s\)/, out, "the -it file is a variant, not a separate episode")
+  end
+
   def test_single_skips_concat_files
     write_episode("mypod-2026-05-16")
     File.write(File.join(@config.episodes_dir, "mypod-2026-05-16_concat.txt"), "scratch")
@@ -286,7 +311,7 @@ class TestMoveCommand < Minitest::Test
   def setup_fake_podcast(name)
     require "podcast_config"
     FileUtils.mkdir_p(File.join(@tmpdir, "podcasts", name))
-    File.write(File.join(@tmpdir, "podcasts", name, "guidelines.md"), "## Podcast\n- name: #{name}\n")
+    File.write(File.join(@tmpdir, "podcasts", name, "guidelines.md"), "## Podcast\n- name: #{name}\n- language:\n  - en\n  - jp\n")
     config = PodcastConfig.new(name)
     FileUtils.mkdir_p(config.episodes_dir)
     config

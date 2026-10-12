@@ -3,6 +3,7 @@
 require "date"
 require "optparse"
 require_relative File.join(File.expand_path("../..", __dir__), "lib", "episode_filtering")
+require_relative File.join(File.expand_path("../..", __dir__), "lib", "episode_naming")
 
 module PodgenCLI
   # Shared episode-selection parsing for CLI commands that operate on a
@@ -152,7 +153,7 @@ module PodgenCLI
     # podcasts never produce `_script.md` so this returns [] for them.
     def english_script_basenames(config)
       Dir.glob(File.join(config.episodes_dir, "*_script.md"))
-        .reject { |f| File.basename(f).match?(/-[a-z]{2}_script\.md\z/) }
+        .reject { |f| EpisodeNaming.language_tail(File.basename(f, "_script.md")) }
         .sort
         .map { |f| File.basename(f, "_script.md") }
     end
@@ -164,7 +165,7 @@ module PodgenCLI
     # etc. Excludes per-language MP3s like `-jp.mp3`.
     def english_episode_basenames(config)
       EpisodeFiltering.all_episodes(config.episodes_dir)
-        .reject { |f| File.basename(f).match?(/-[a-z]{2}\.mp3\z/) }
+        .reject { |f| EpisodeNaming.language_tail(File.basename(f, ".mp3")) }
         .sort
         .map { |f| File.basename(f, ".mp3") }
     end
