@@ -9,6 +9,7 @@ require_relative File.join(root, "lib", "episode_artifacts")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "episode_filtering")
+require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "atomic_writer")
 
@@ -17,7 +18,7 @@ module PodgenCLI
     include PodcastCommand
     include EpisodeSelector
 
-    SUFFIXES = [""] + ("a".."z").to_a
+    SUFFIXES = EpisodeNaming::SUFFIXES
 
     def initialize(args, options)
       @exclude = false
@@ -60,7 +61,7 @@ module PodgenCLI
       return 1 unless target_base
 
       # Find all files related to this episode (mp3 + scripts, all languages).
-      related_files = EpisodeArtifacts.for_basename(episodes_dir, target_base)
+      related_files = EpisodeArtifacts.for_basename(episodes_dir, target_base, languages: config.language_codes)
 
       if related_files.empty?
         $stderr.puts "No files found for '#{target_base}'"
@@ -146,27 +147,25 @@ module PodgenCLI
     # Returns [base_name, date_string, suffix_index] or nil on error.
     def resolve_target(config, episodes_dir)
       if @episode_id
-        resolve_by_id(episodes_dir)
+        resolve_by_id(episodes_dir, config.language_codes)
       else
         resolve_latest(episodes_dir)
       end
     end
 
-    def resolve_by_id(episodes_dir)
+    def resolve_by_id(episodes_dir, languages = nil)
       # Parse episode_id: "2026-03-31" or "2026-03-31b"
-      match = @episode_id.match(/\A(\d{4}-\d{2}-\d{2})([a-z])?\z/)
-      unless match
+      date, suffix = EpisodeNaming.parse_episode_id(@episode_id)
+      unless date
         $stderr.puts "Invalid episode identifier '#{@episode_id}' — expected YYYY-MM-DD or YYYY-MM-DD[a-z]"
         return nil
       end
 
-      date = match[1]
-      suffix = match[2] || ""
-      suffix_index = SUFFIXES.index(suffix) || 0
-      base = "#{@podcast_name}-#{date}#{suffix}"
+      suffix_index = EpisodeNaming.index_for(suffix) || 0
+      base = EpisodeNaming.basename_for(@podcast_name, date, suffix)
 
       # Verify the episode exists.
-      if EpisodeArtifacts.for_basename(episodes_dir, base).empty?
+      if EpisodeArtifacts.for_basename(episodes_dir, base, languages: languages).empty?
         $stderr.puts "No files found matching '#{base}' in #{episodes_dir}"
         return nil
       end
@@ -184,8 +183,8 @@ module PodgenCLI
         return nil
       end
 
-      english_pattern = /^#{Regexp.escape(@podcast_name)}-(\d{4}-\d{2}-\d{2})([a-z])?\.mp3$/
-      english_mp3s = all_mp3s.select { |f| File.basename(f).match?(english_pattern) }
+      english_pattern = EpisodeNaming.primary_basename_re(@podcast_name)
+      english_mp3s = all_mp3s.select { |f| File.basename(f, ".mp3").match?(english_pattern) }
 
       if english_mp3s.empty?
         $stderr.puts "No base episodes found for '#{@podcast_name}'"
@@ -193,10 +192,10 @@ module PodgenCLI
       end
 
       latest = File.basename(english_mp3s.last, ".mp3")
-      match = latest.match(/(\d{4}-\d{2}-\d{2})([a-z])?$/)
+      match = latest.match(english_pattern)
       date = match[1]
       suffix = match[2] || ""
-      suffix_index = SUFFIXES.index(suffix) || 0
+      suffix_index = EpisodeNaming.index_for(suffix) || 0
 
       [latest, date, suffix_index]
     end
@@ -206,10 +205,11 @@ module PodgenCLI
       entries.find { |e| e["basename"] == basename }
     end
 
-    # Fall back to positional index for old entries without basename.
+    # Fall back to the slot for old entries without basename, resolved
+    # through the HistoryMaps mapping (P4-9, Q-44).
     def find_history_entry_by_date(entries, date, suffix_index)
-      matches = entries.select { |e| e["date"].to_s == date }
-      matches[suffix_index]
+      idx = EpisodeNaming.history_entry_index(entries, date, EpisodeNaming.suffix_for(suffix_index))
+      idx && entries[idx]
     end
 
     # Extract podcast name and episode ID from a file path.
@@ -217,14 +217,10 @@ module PodgenCLI
     #             podcast-YYYY-MM-DD[a-z][-lang][.ext]
     # Returns [podcast_name, episode_id] or nil.
     def resolve_from_path(path)
-      basename = File.basename(path)
-      match = basename.match(/\A(.+?)-(\d{4}-\d{2}-\d{2})([a-z])?/)
-      return nil unless match
+      parsed = EpisodeNaming.parse(File.basename(path))
+      return nil unless parsed
 
-      podcast_name = match[1]
-      date = match[2]
-      suffix = match[3] || ""
-      [podcast_name, "#{date}#{suffix}"]
+      [parsed[:podcast], "#{parsed[:date]}#{parsed[:letter]}"]
     end
 
     def remove_upload_tracking(config, base_name)

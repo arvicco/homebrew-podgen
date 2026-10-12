@@ -2,6 +2,7 @@
 
 require_relative "base_validator"
 require_relative "../episode_filtering"
+require_relative "../episode_naming"
 
 module Validators
   class EpisodesValidator < BaseValidator
@@ -26,7 +27,7 @@ module Validators
         @errors << "Episodes: #{zero_byte.length} zero-byte MP3 file#{'s' unless zero_byte.length == 1}"
       end
 
-      name_pattern = /^#{Regexp.escape(@config.name)}-\d{4}-\d{2}-\d{2}[a-z]?(-[a-z]{2})?\.mp3$/
+      name_pattern = EpisodeNaming.filename_re(@config.name)
       bad_names = mp3s.reject { |f| File.basename(f).match?(name_pattern) }
       unless bad_names.empty?
         @warnings << "Episodes: #{bad_names.length} file#{'s' unless bad_names.length == 1} with unexpected naming"

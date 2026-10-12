@@ -60,6 +60,14 @@ class TestScrapCommand < Minitest::Test
     assert_nil result
   end
 
+  def test_resolve_by_id_configured_languages_unconfigured_tail_is_not_this_episode
+    File.write(File.join(@episodes_dir, "test-2026-03-15-ai.mp3"), "x")
+
+    cmd = build_command_with_id("2026-03-15")
+    assert_nil cmd.send(:resolve_by_id, @episodes_dir, %w[en es])
+    assert_equal "test-2026-03-15", cmd.send(:resolve_by_id, @episodes_dir).first, "legacy: any dash tail counts"
+  end
+
   # --- find_history_entry ---
 
   def test_find_history_entry_by_basename
@@ -86,6 +94,17 @@ class TestScrapCommand < Minitest::Test
     assert_equal "Second", cmd.send(:find_history_entry_by_date, entries, "2026-03-01", 1)["title"]
     assert_equal "Third", cmd.send(:find_history_entry_by_date, entries, "2026-03-02", 0)["title"]
     assert_nil cmd.send(:find_history_entry_by_date, entries, "2026-03-05", 0)
+  end
+
+  def test_find_history_entry_by_date_explicit_basename_resolves_letter_via_history_mapping
+    entries = [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "pod-2026-03-01" },
+      { "date" => "2026-03-01", "title" => "Third", "basename" => "pod-2026-03-01b" }
+    ]
+    cmd = build_command(stub_config)
+
+    assert_nil cmd.send(:find_history_entry_by_date, entries, "2026-03-01", 1)
+    assert_equal "Third", cmd.send(:find_history_entry_by_date, entries, "2026-03-01", 2)["title"]
   end
 
   # --- remove_upload_tracking ---
