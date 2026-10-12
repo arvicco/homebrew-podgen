@@ -5,8 +5,8 @@ require "stringio"
 require "cli"
 
 # P3-0 H4 characterization harness: pins the CURRENT behavior of the
-# dispatcher in lib/cli.rb before a refactor consolidates the help text
-# (opts.separator lines) with the COMMANDS hash — today two sources of truth.
+# dispatcher in lib/cli.rb. P4-6 consolidated the help text with the COMMANDS
+# hash (help is now generated from it) and flipped the drift/order/list pins.
 # These tests describe what the code does, not what it should do; places
 # where current behavior looks wrong are marked "FLAG".
 #
@@ -22,33 +22,33 @@ class TestCharacterizationCLI < Minitest::Test
     Commands:
       generate <podcast>             Run the full pipeline (news or language)
       translate <podcast>            Translate episodes to new languages
-      render <podcast> [--date|--lang] Re-render script markdown from canonical JSON
-      voice <podcast> [--date|--lang|--force] Voice/re-voice from script JSON (recover from TTS failure)
+      render <podcast> [--date|--lang]  Re-render script markdown from canonical JSON
+      voice <podcast> [--date|--lang|--force]  Voice or re-voice an episode from script JSON (recover from TTS failure)
       scrap <podcast> [episode|path]  Remove episode files + history entry
       move <podcast> <from> <to>     Move episode to another date (suffix '+' = whole day)
       rss <podcast>                  Generate RSS feed
       site <podcast>                 Generate static HTML website
       publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)
       stats <podcast> | --all        Show podcast statistics
-      validate <podcast> | --all     Validate config and output
-      status [podcast] [--json]      OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)
+      validate <podcast> | --all     Validate podcast config and output
+      status [podcast] [--json]      One-line OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)
       list                           List available podcasts
-      test <name> [args]             Run a standalone test
+      test <name> [args]             Run a standalone test script
       schedule <podcast>             Install launchd scheduler (--time, --publish, --telegram)
-      uploads <pod1,pod2,...>        Per-pod regen+R2+LingQ then YT batch (--mode, --max)
+      uploads <pod1,pod2,...>        Per-pod regen+R2+LingQ then YT batch across pods (--mode, --max)
       analytics <setup|deploy|tail|status>  Manage download analytics Worker
-      add <podcast> <url> [--note ...]     Queue a priority link for next episode
-      links <podcast> [--remove|--clear]   List or manage queued priority links
-      vocab <add|remove|list> <podcast>    Manage known vocabulary words
-      revocab <podcast> [episode] [--missing-only]  Re-annotate vocabulary
-      reformat <podcast> [episode]         Reformat transcripts (paragraph breaks, cleanup)
-      exclude <podcast> <url> [url...]     Exclude URLs from future episodes
-      cover <podcast> <title|episode-id>   Generate episode cover image
+      add <podcast> <url> [--note ...]  Queue a priority link for next episode
+      links <podcast> [--remove|--clear]  List or manage queued priority links
+      vocab <add|remove|list> <podcast>  Manage known vocabulary words
+      revocab <podcast> [episode] [--missing-only]  Re-annotate vocabulary on transcripts
+      reformat <podcast> [episode]   Reformat transcripts (paragraph breaks, cleanup)
+      exclude <podcast> <url> [url...]  Exclude URLs from future episodes
+      cover <podcast> <title|episode-id>  Generate episode cover image
       regen <podcast> [date] [--video|--subtitles|--reconcile|--all]  Regenerate post-pipeline artifacts
-      init <name> | <source> <name>      Initialize a new podcast (skeleton or from existing)
-      fork <old> <new>                   Fork podcast with all content into a new namespace
-      unpublish <podcast>                Remove podcast from Cloudflare R2
-      tweet <podcast> <episode-id>       Tweet about an episode (--force, --dry-run)
+      init <name> | <source> <name>  Initialize a new podcast (skeleton or from existing)
+      fork <old> <new>               Fork podcast with all content into a new namespace
+      unpublish <podcast>            Remove podcast from Cloudflare R2
+      tweet <podcast> <episode-id>   Tweet about an episode (--force, --dry-run)
 
     Pipelines (configured via ## Type in guidelines.md):
       news      Research topics, write script, TTS, assemble MP3 (default)
@@ -74,33 +74,6 @@ class TestCharacterizationCLI < Minitest::Test
         -V, --version                    Print version and exit
         -h, --help                       Show this help
   HELP
-
-  # COMMANDS entries whose description appears verbatim on their help line.
-  HELP_DESCRIPTION_VERBATIM = %w[
-    translate site stats list schedule analytics links vocab exclude cover
-    init unpublish tweet
-  ].freeze
-
-  # FLAG (two sources of truth): COMMANDS description vs the help line's
-  # description text, for every command where they have drifted apart.
-  HELP_DESCRIPTION_DRIFT = {
-    "generate" => ["Run the full podcast pipeline", "Run the full pipeline (news or language)"],
-    "render" => ["Re-render script markdown from JSON", "Re-render script markdown from canonical JSON"],
-    "voice" => ["Voice or re-voice an episode from JSON", "Voice/re-voice from script JSON (recover from TTS failure)"],
-    "scrap" => ["Remove episode and history entry", "Remove episode files + history entry"],
-    "move" => ["Move an episode (or whole day) to a different date", "Move episode to another date (suffix '+' = whole day)"],
-    "rss" => ["Generate RSS feed for a podcast", "Generate RSS feed"],
-    "publish" => ["Publish to Cloudflare R2 or LingQ", "Publish to Cloudflare R2 (--lingq for LingQ)"],
-    "validate" => ["Validate podcast config and output", "Validate config and output"],
-    "status" => ["One-line OK/OLD/WARN verdict per podcast", "OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)"],
-    "test" => ["Run a standalone test script", "Run a standalone test"],
-    "add" => ["Add a priority link for next episode", "Queue a priority link for next episode"],
-    "revocab" => ["Re-annotate vocabulary on transcripts", "Re-annotate vocabulary"],
-    "reformat" => ["Reformat transcripts with paragraph breaks", "Reformat transcripts (paragraph breaks, cleanup)"],
-    "regen" => ["Regenerate video / subtitles / reconciliation for an existing episode", "Regenerate post-pipeline artifacts"],
-    "fork" => ["Fork podcast into a new namespace", "Fork podcast with all content into a new namespace"],
-    "uploads" => ["Per-pod regen+R2+LingQ then YT batch across pods", "Per-pod regen+R2+LingQ then YT batch (--mode, --max)"]
-  }.freeze
 
   REFUSAL = "podgen: '%s' is an owner action; refusing inside a Claude Code session (PODGEN_OWNER=1 overrides)\n"
 
@@ -169,13 +142,13 @@ class TestCharacterizationCLI < Minitest::Test
     assert_equal "podgen #{PodgenCLI::VERSION}\n", out
   end
 
-  # --- COMMANDS vs help (two sources of truth) ---
+  # --- COMMANDS is the single source of the help screen (P4-6) ---
 
   def test_commands_hash_lists_29_commands_in_pinned_order
     expected = %w[
       generate translate render voice scrap move rss site publish stats
-      validate status list test schedule analytics add links vocab revocab
-      reformat exclude cover regen init fork unpublish tweet uploads
+      validate status list test schedule uploads analytics add links vocab
+      revocab reformat exclude cover regen init fork unpublish tweet
     ]
 
     assert_equal expected, PodgenCLI::COMMANDS.keys
@@ -190,36 +163,23 @@ class TestCharacterizationCLI < Minitest::Test
     end
   end
 
-  def test_help_command_order_differs_from_commands_hash_order
-    # FLAG: help lists `uploads` right after `schedule`; COMMANDS has it last.
+  def test_help_command_order_matches_commands_hash_order
+    # P4-6 flip: help used to list `uploads` after `schedule` while COMMANDS
+    # had it last; COMMANDS now carries the help order.
     command_lines = GOLDEN_HELP.lines.drop_while { |l| l != "Commands:\n" }.drop(1).take_while { |l| l != "\n" }
     help_order = command_lines.map { |l| l.split.first }
 
-    assert_equal PodgenCLI::COMMANDS.keys.sort, help_order.sort
-    refute_equal PodgenCLI::COMMANDS.keys, help_order
+    assert_equal PodgenCLI::COMMANDS.keys, help_order
     assert_equal "uploads", help_order[help_order.index("schedule") + 1]
   end
 
-  def test_help_description_verbatim_for_pinned_commands
-    HELP_DESCRIPTION_VERBATIM.each do |name|
-      desc = PodgenCLI::COMMANDS.fetch(name).first
+  def test_help_line_is_name_synopsis_and_commands_description_for_every_command
+    # P4-6 flip: 16 of 29 descriptions had drifted between COMMANDS and help.
+    PodgenCLI::COMMANDS.each do |name, (desc, _path, _klass, synopsis)|
+      label = [name, synopsis].reject(&:empty?).join(" ")
       line = help_line_for(name)
-      assert_includes line, desc, "#{name}: COMMANDS description should appear verbatim in help"
+      assert_match(/\A  #{Regexp.escape(label)} {2,}#{Regexp.escape(desc)}\z/, line, name)
     end
-  end
-
-  def test_help_description_drifted_from_commands_hash_for_pinned_commands
-    HELP_DESCRIPTION_DRIFT.each do |name, (commands_desc, help_desc)|
-      line = help_line_for(name)
-      assert_equal commands_desc, PodgenCLI::COMMANDS.fetch(name).first, name
-      refute_includes line, commands_desc, "#{name}: drift no longer present — update the pin"
-      assert line.end_with?(help_desc), "#{name}: help line was #{line.inspect}"
-    end
-  end
-
-  def test_help_verbatim_and_drift_partition_all_commands
-    assert_equal PodgenCLI::COMMANDS.keys.sort, (HELP_DESCRIPTION_VERBATIM + HELP_DESCRIPTION_DRIFT.keys).sort
-    assert_empty HELP_DESCRIPTION_VERBATIM & HELP_DESCRIPTION_DRIFT.keys
   end
 
   def test_commands_entries_require_paths_and_class_names_follow_convention
@@ -499,7 +459,7 @@ class TestCharacterizationCLI < Minitest::Test
 
   def test_run_global_options_stop_at_command_name
     # `order!` stops at the first non-option, so `-v` after the command is
-    # left for the command's own parser (list ignores it).
+    # left for the command's own parser (stubbed here).
     seen = nil
     capture = ->(*) {
       Class.new {
@@ -531,7 +491,7 @@ class TestCharacterizationCLI < Minitest::Test
     "stats" => "a1 a2 a3 a4 zz_leftover",
     "validate" => "a1 a2 a3 a4 zz_leftover",
     "status" => "a1 a2 a3 a4 zz_leftover",
-    "list" => nil, # FLAG: list silently ignores every positional argument
+    "list" => "test_pod a1 a2 a3 a4 zz_leftover", # P4-6 flip: list used to ignore every positional argument
     "test" => nil, # varargs by design (test args)
     "schedule" => "a1 a2 a3 a4 zz_leftover",
     "analytics" => "a1 a2 a3 a4 zz_leftover",

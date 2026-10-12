@@ -430,6 +430,28 @@ class TestCLIOptions < Minitest::Test
     assert_includes out, "Usage:"
   end
 
+  # ── P4-6: help generated from COMMANDS; list rejects leftovers ──
+
+  def test_help_every_command_line_carries_its_commands_description
+    code, out, = run_cli("--help")
+    assert_equal 0, code
+
+    lines = out.lines.map(&:rstrip)
+    drifted = PodgenCLI::COMMANDS.filter_map do |name, (desc, *)|
+      matching = lines.select { |l| l.start_with?("  #{name} ") || l == "  #{name}" }
+      assert_equal 1, matching.size, "#{name} must appear on exactly one help line"
+      name unless matching.first.end_with?(" #{desc}")
+    end
+    assert_empty drifted, "help lines lacking their COMMANDS description"
+  end
+
+  def test_list_with_leftover_arg_exits_two_with_leftover_error
+    code, out, err = run_cli("list", "extra")
+    assert_equal 2, code
+    assert_equal "", out
+    assert_equal "list: parse error: unexpected argument(s): extra\n", err
+  end
+
   private
 
   def run_cli(*args)
