@@ -3,7 +3,7 @@
 require_relative "openai_engine"
 require_relative "elevenlabs_engine"
 require_relative "groq_engine"
-require_relative "reconciler"
+require_relative "transcript_merger"
 require_relative "../loggable"
 
 module Transcription
@@ -102,7 +102,7 @@ module Transcription
     end
 
     def build_reconciler
-      Reconciler.new(language: @target_language || @language, logger: @logger)
+      TranscriptMerger.new(language: @target_language || @language, logger: @logger)
     end
 
     def build_engine(code)

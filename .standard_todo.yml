@@ -448,7 +448,7 @@ ignore:
   - Layout/SpaceInsideHashLiteralBraces
 - lib/transcription/openai_engine.rb:
   - Layout/SpaceInsideHashLiteralBraces
-- lib/transcription/reconciler.rb:
+- lib/transcription/transcript_merger.rb:
   - Layout/EmptyLinesAfterModuleInclusion
   - Layout/SpaceInsideHashLiteralBraces
   - Layout/EmptyLinesAroundClassBody
@@ -665,7 +665,7 @@ ignore:
   - Layout/SpaceInsideHashLiteralBraces
   - Layout/ParameterAlignment
   - Layout/EmptyLineBetweenDefs
-- test/unit/test_reconciler.rb:
+- test/unit/test_transcript_merger.rb:
   - Layout/SpaceInsideHashLiteralBraces
   - Style/Semicolon
   - Style/TrivialAccessors

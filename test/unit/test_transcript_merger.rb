@@ -3,9 +3,9 @@
 require_relative "../test_helper"
 
 ENV["ANTHROPIC_API_KEY"] ||= "test-key"
-require "transcription/reconciler"
+require "transcription/transcript_merger"
 
-class TestReconciler < Minitest::Test
+class TestTranscriptMerger < Minitest::Test
   # --- argument validation ---
 
   def test_reconcile_requires_two_or_more_transcripts
@@ -90,7 +90,7 @@ class TestReconciler < Minitest::Test
   private
 
   def build_reconciler(language: "Slovenian")
-    reconciler = Transcription::Reconciler.new(language: language)
+    reconciler = Transcription::TranscriptMerger.new(language: language)
     reconciler.define_singleton_method(:sleep) { |_| }
     reconciler
   end

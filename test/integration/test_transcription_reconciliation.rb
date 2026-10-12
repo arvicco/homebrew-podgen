@@ -2,15 +2,15 @@
 
 # Integration test: verifies multi-engine STT reconciliation.
 # Uses pre-written transcript strings (no real STT calls).
-# Reconciler uses Claude to merge divergent transcripts.
+# TranscriptMerger uses Claude to merge divergent transcripts.
 
 require_relative "../test_helper"
-require "transcription/reconciler"
+require "transcription/transcript_merger"
 
 class TestTranscriptionReconciliation < Minitest::Test
   def setup
     skip_unless_env("ANTHROPIC_API_KEY")
-    @reconciler = Transcription::Reconciler.new(language: "English")
+    @reconciler = Transcription::TranscriptMerger.new(language: "English")
   end
 
   def test_reconciliation_merges_two_transcripts
@@ -64,7 +64,7 @@ class TestTranscriptionReconciliation < Minitest::Test
   end
 
   def test_reconciliation_preserves_language_specific_chars
-    @reconciler = Transcription::Reconciler.new(language: "Slovenian")
+    @reconciler = Transcription::TranscriptMerger.new(language: "Slovenian")
 
     transcripts = {
       "engine_a" => "Prekopiščevali so se čez reko. Šli so po široki poti.",
