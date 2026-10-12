@@ -115,16 +115,29 @@ class TestTranscriptParser < Minitest::Test
     refute_includes result.header, "## Transcript"
   end
 
-  def test_parse_from_file
+  def test_parse_file_reads_the_file
+    Dir.mktmpdir("tp_test") do |dir|
+      path = File.join(dir, "test_transcript.md")
+      File.write(path, FULL_TRANSCRIPT)
+
+      result = TranscriptParser.parse_file(path)
+
+      assert_equal "Episode Title", result.title
+      assert_equal "First paragraph of transcript.\n\nSecond paragraph of transcript.", result.body
+      assert_includes result.vocabulary, "**word**"
+    end
+  end
+
+  def test_parse_single_line_text_equal_to_existing_path_treated_as_text
     Dir.mktmpdir("tp_test") do |dir|
       path = File.join(dir, "test_transcript.md")
       File.write(path, FULL_TRANSCRIPT)
 
       result = TranscriptParser.parse(path)
 
-      assert_equal "Episode Title", result.title
-      assert_equal "First paragraph of transcript.\n\nSecond paragraph of transcript.", result.body
-      assert_includes result.vocabulary, "**word**"
+      assert_equal path, result.title
+      assert_equal "", result.body
+      assert_nil result.vocabulary
     end
   end
 
@@ -145,7 +158,16 @@ class TestTranscriptParser < Minitest::Test
       path = File.join(dir, "test_transcript.md")
       File.write(path, "# File Title\n\nBody.")
 
-      assert_equal "File Title", TranscriptParser.extract_title(path)
+      assert_equal "File Title", TranscriptParser.extract_title_from_file(path)
+    end
+  end
+
+  def test_extract_title_single_line_text_equal_to_existing_path_treated_as_text
+    Dir.mktmpdir("tp_test") do |dir|
+      path = File.join(dir, "test_transcript.md")
+      File.write(path, "# File Title\n\nBody.")
+
+      assert_equal path, TranscriptParser.extract_title(path)
     end
   end
 
@@ -168,7 +190,16 @@ class TestTranscriptParser < Minitest::Test
       path = File.join(dir, "test_transcript.md")
       File.write(path, FULL_TRANSCRIPT)
 
-      assert TranscriptParser.has_vocabulary?(path)
+      assert TranscriptParser.file_has_vocabulary?(path)
+    end
+  end
+
+  def test_has_vocabulary_single_line_text_equal_to_existing_path_treated_as_text
+    Dir.mktmpdir("tp_test") do |dir|
+      path = File.join(dir, "test_transcript.md")
+      File.write(path, FULL_TRANSCRIPT)
+
+      refute TranscriptParser.has_vocabulary?(path)
     end
   end
 
@@ -235,7 +266,7 @@ class TestTranscriptParser < Minitest::Test
         body: parsed.body,
         vocabulary: parsed.vocabulary)
 
-      reparsed = TranscriptParser.parse(path)
+      reparsed = TranscriptParser.parse_file(path)
       assert_equal parsed.title, reparsed.title
       assert_equal parsed.description, reparsed.description
       assert_equal parsed.body, reparsed.body

@@ -48,7 +48,9 @@ module Validators
       newest = @newest
       age = @age_days
 
-      if age.negative?
+      if age.negative? && -age <= @config.freshness_lead_days
+        @passes << "Freshness: newest #{newest} (scheduled +#{-age}d)"
+      elsif age.negative?
         @warnings << "Freshness: newest episode #{newest} is dated in the future (#{-age} days ahead)"
       elsif age > threshold
         @warnings << "Freshness: OLD — newest episode #{newest} is #{age} days old " \

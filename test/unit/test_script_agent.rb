@@ -153,6 +153,19 @@ class TestScriptAgent < Minitest::Test
     assert_match(/\d{4}-\d{2}-\d{2}/, prompt_text)
   end
 
+  def test_system_prompt_states_title_limit_and_forbids_cutting
+    agent = build_agent
+    client = stub_client(agent, title: "T", segments: [])
+
+    agent.generate(valid_research_data)
+
+    system = client.last_call[:system]
+    prompt_text = system.map { |s| s[:text] }.join("\n")
+    assert_includes prompt_text, "at most 40 characters"
+    assert_includes prompt_text, "self-contained"
+    assert_includes prompt_text, "never cut it off"
+  end
+
   def test_system_prompt_includes_guidelines_with_cache_control
     agent = build_agent
     client = stub_client(agent, title: "T", segments: [])

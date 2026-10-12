@@ -210,7 +210,7 @@ module PodgenCLI
           next
         end
 
-        parsed = TranscriptParser.parse(ep[:transcript_path])
+        parsed = TranscriptParser.parse_file(ep[:transcript_path])
         result = resolver.try(
           title: parsed.title,
           description: parsed.description.to_s,
@@ -313,7 +313,7 @@ module PodgenCLI
           next
         end
 
-        title = TranscriptParser.extract_title(path)
+        title = TranscriptParser.extract_title_from_file(path)
         next unless title && !title.empty?
 
         output = File.join(dir, "#{basename}_cover.jpg")

@@ -1,0 +1,47 @@
+{
+  "hits": [
+    {
+      "author": "ca98am79",
+      "created_at": "2026-10-07T15:37:40Z",
+      "created_at_i": 1791387460,
+      "num_comments": 0,
+      "objectID": "49994350",
+      "points": 2,
+      "story_id": 49994350,
+      "title": "Bitcoin Spaces",
+      "updated_at": "2026-10-07T16:14:35Z",
+      "url": "https://bitsaga.be/insights/bitcoin-spaces"
+    },
+    {
+      "author": "joeymabia1",
+      "children": [
+        49984996
+      ],
+      "created_at": "2026-10-06T22:24:27Z",
+      "created_at_i": 1791325467,
+      "num_comments": 0,
+      "objectID": "49984995",
+      "points": 2,
+      "story_id": 49984995,
+      "title": "Bitcoin Rebound Revives Debate over a New Crypto Cycle",
+      "updated_at": "2026-10-06T22:39:33Z",
+      "url": "https://discord.com/channels/1519570089488289956/1522069205795606650/1556860425667215462"
+    },
+    {
+      "author": "CharlesRStrogis",
+      "children": [
+        49959740,
+        49989179
+      ],
+      "created_at": "2026-10-05T01:29:00Z",
+      "created_at_i": 1791163740,
+      "num_comments": 0,
+      "objectID": "49959733",
+      "points": 2,
+      "story_id": 49959733,
+      "title": "L402 edge cache for AI agents paying over Lightning",
+      "updated_at": "2026-10-09T05:08:25Z",
+      "url": "https://github.com/CharlesStrogish/bitcoin-stratigraphy-mcp"
+    }
+  ]
+}

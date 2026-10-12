@@ -35,7 +35,11 @@ module SubtitleReconciliationRunner
       return Result.new(status: :no_api_key, message: "ANTHROPIC_API_KEY not set")
     end
 
-    parsed = TranscriptParser.parse(transcript_path)
+    unless transcript_path && File.exist?(transcript_path)
+      return Result.new(status: :no_transcript, message: "no transcript at #{transcript_path}")
+    end
+
+    parsed = TranscriptParser.parse_file(transcript_path)
     transcript_text = parsed.body
     if transcript_text.nil? || transcript_text.strip.empty?
       return Result.new(status: :no_transcript, message: "transcript at #{transcript_path} is empty")

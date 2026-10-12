@@ -33,7 +33,7 @@ class ClaudeWebSource < BaseSource
     with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError], label: source_name) do
       @client.messages.create(
         model: @model,
-        max_tokens: 1024,
+        max_tokens: 4096, # 1024 truncated before any text block on thinking-default lines (2026-10-11)
         tools: [{ type: "web_search_20250305", name: "web_search", max_uses: MAX_SEARCH_USES }],
         messages: [
           {

@@ -95,7 +95,7 @@ module PodgenCLI
     end
 
     def process_transcript(path, logger:)
-      parsed = TranscriptParser.parse(path)
+      parsed = TranscriptParser.parse_file(path)
       unless parsed.transcript_section
         logger.log("Skipping #{File.basename(path)}: no ## Transcript section")
         return
