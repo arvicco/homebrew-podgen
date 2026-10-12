@@ -47,7 +47,9 @@ class RemoteImageCache
   def fetch(url)
     stem = "#{BASENAME}_#{Digest::SHA256.hexdigest(url)[0, 12]}"
     # Real image names only: a temp file left by a killed write never matches.
-    cached = Dir.glob(File.join(@cache_dir, "#{stem}{#{EXTENSIONS.values.uniq.join(",")}}")).find { |p| File.size?(p) }
+    # base: keeps glob metacharacters in the podcast path literal.
+    cached = Dir.glob("#{stem}{#{EXTENSIONS.values.uniq.join(",")}}", base: @cache_dir)
+      .map { |name| File.join(@cache_dir, name) }.find { |p| File.size?(p) }
     return cached if cached
 
     shown = self.class.redact(url)
@@ -112,16 +114,22 @@ class RemoteImageCache
   end
 
   # Turns one response into the fetcher hash, streaming a success body under
-  # the size cap; a redirect yields { location: }. Other bodies are not read.
+  # the size cap; a redirect yields { location: }. Other bodies are drained
+  # and discarded under the cap: Net::HTTPResponse#reading_body would
+  # otherwise buffer an unread body in full after this block returns.
   def read_response(res, url)
     code = res.code.to_i
     raise RetriableError, "HTTP #{code} fetching #{self.class.redact(url)}" if RETRIABLE_CODES.include?(code)
     if (300..399).cover?(code)
       location = res["location"].to_s
       raise FetchError, "HTTP #{code} without a Location header fetching #{self.class.redact(url)}" if location.empty?
+      drain(res, code, url)
       return {location: location}
     end
-    return {status: code, content_type: res["content-type"], body: ""} unless (200..299).cover?(code)
+    unless (200..299).cover?(code)
+      drain(res, code, url)
+      return {status: code, content_type: res["content-type"], body: ""}
+    end
 
     raise too_big(url) if res["content-length"].to_i > @max_bytes
     body = String.new(encoding: Encoding::BINARY)
@@ -130,6 +138,14 @@ class RemoteImageCache
       raise too_big(url) if body.bytesize > @max_bytes
     end
     {status: code, content_type: res["content-type"], body: body}
+  end
+
+  def drain(res, code, url)
+    bytes = 0
+    res.read_body do |chunk|
+      bytes += chunk.bytesize
+      raise FetchError, "HTTP #{code} with a body over #{@max_bytes} bytes: #{self.class.redact(url)}" if bytes > @max_bytes
+    end
   end
 
   def http_uri(url)

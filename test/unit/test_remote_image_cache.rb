@@ -107,6 +107,21 @@ class TestRemoteImageCache < Minitest::Test
     assert_equal 1, @calls.length
   end
 
+  # Glob metacharacters in the podcast path must not act as patterns.
+  def test_fetch_reuses_cache_under_dir_with_glob_metacharacters
+    dir = File.join(@dir, "pod[x]{a,b}*")
+    calls = []
+    fetcher = ->(url) { (calls << url) && {status: 200, content_type: "image/png", body: PNG} }
+    cache = RemoteImageCache.new(cache_dir: dir, fetcher: fetcher)
+
+    first = cache.fetch(URL)
+    second = cache.fetch(URL)
+
+    assert_equal File.join(dir, "lingq_image_#{digest(URL)}.png"), second
+    assert_equal first, second
+    assert_equal 1, calls.length
+  end
+
   # N5: a signed URL's query (token) never reaches an error message.
   def test_fetch_error_message_strips_query_string
     url = "#{URL}.png?X-Amz-Signature=SECRETTOKEN&x=1"
@@ -125,12 +140,20 @@ class TestRemoteImageCache < Minitest::Test
 
   # ---------- default network path (W4), Net::HTTP stubbed at .start ----------
 
-  FakeResponse = Struct.new(:code, :headers, :chunks, :reads) do
+  # consumed counts chunks pulled off the "socket"; #body mirrors
+  # Net::HTTPResponse#reading_body, which buffers any unread body after the
+  # request block returns.
+  FakeResponse = Struct.new(:code, :headers, :chunks, :reads, :consumed) do
     def [](key) = headers[key.downcase]
 
     def read_body
       self.reads = (reads || 0) + 1
-      chunks.each { |c| yield c }
+      self.consumed ||= 0
+      chunks.each { |c| (self.consumed += 1) && yield(c) }
+    end
+
+    def body
+      read_body { |_c| } unless reads
     end
   end
 
@@ -211,12 +234,33 @@ class TestRemoteImageCache < Minitest::Test
     assert_nil busy.reads, "a retriable response body is not read"
   end
 
-  def test_http_fetch_non_success_does_not_read_body
+  def test_http_fetch_non_success_body_is_discarded
     missing = FakeResponse.new("404", {"content-type" => "text/html"}, ["<html>secret</html>"])
     result, = with_http([missing]) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png") }
 
     assert_equal({status: 404, content_type: "text/html", body: ""}, result)
-    assert_nil missing.reads
+  end
+
+  # CRPR round 2: Net::HTTP buffers an unread body after the request block,
+  # so non-2xx and redirect bodies are drained under the cap, not left unread.
+  def test_http_fetch_non_success_body_drain_stops_at_cap
+    missing = FakeResponse.new("404", {"content-type" => "text/html"}, Array.new(5) { "z" * 40 })
+    err = assert_raises(RemoteImageCache::FetchError) do
+      with_http([missing], max_bytes: 100) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png") }
+    end
+
+    assert_includes err.message, "HTTP 404"
+    assert_equal 3, missing.consumed, "draining stops at the first chunk past the cap"
+  end
+
+  def test_http_fetch_redirect_body_drain_stops_at_cap
+    redirect = FakeResponse.new("302", {"location" => "/b.png"}, Array.new(5) { "z" * 40 })
+    assert_raises(RemoteImageCache::FetchError) do
+      with_http([redirect, ok_response([PNG])], max_bytes: 100) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png") }
+    end
+
+    assert_equal 3, redirect.consumed
+    assert_equal 1, @http_requests.length
   end
 
   def test_http_fetch_content_length_over_cap_raises_before_reading
@@ -267,6 +311,7 @@ class TestRemoteImageCache < Minitest::Test
         requests << [host, port, use_ssl, req.path]
         res = queue.shift or raise "unexpected request #{req.path}"
         rblk.call(res)
+        res.body # as Net::HTTPResponse#reading_body does
         res
       end
       blk.call(http)
