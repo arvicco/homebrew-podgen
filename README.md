@@ -1155,7 +1155,8 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   only while no marked publish follows it. A publish whose end marker never
   came closes at the next generate output or dated line of a later day.
   Marker limitation: overlapping launchd jobs (two publishes interleaved in
-  the shared stderr) can misattribute warnings between begin/end markers.
+  the shared stderr) can misattribute warnings between begin/end markers. A marked publish that runs past midnight is split at the
+  first next-day rclone line; the later warnings land in an unnamed entry.
   Shown as
   `publish warning in last 44 publishes (since 2026-08-20): Warning: Twitter posting failed: ...`.
   Without markers, if rclone ever stops printing a dated line, publishes can
@@ -1488,7 +1489,9 @@ Code session (`CLAUDECODE=1`) with exit 2. Only `generate`, `publish`,
 `unpublish` and `tweet` honour dry-run, so only their dry runs pass: the
 global `podgen --dry-run <command>`, or `--dry-run` right after the podcast
 name (`unpublish` takes the global flag only). `uploads`, `schedule` and
-`analytics` ignore dry-run and are refused even with it. A `--dry-run` that
+`analytics` ignore dry-run and are refused even with it. With `POSIXLY_CORRECT`
+set the option parser stops at the first positional, so only the global flag
+counts for `publish`/`tweet` under that variable. A `--dry-run` that
 follows a bare option (`publish <pod> --date --dry-run`) may be swallowed as
 that option's value, so it is refused. For `generate` the guard parses the
 arguments with generate's own option list, so it refuses exactly what would
