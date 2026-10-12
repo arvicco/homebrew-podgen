@@ -116,6 +116,7 @@ class LingQPublisher
         $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.class}: #{e.message}"
         errors << { type: :upload, base: ep[:base_name], message: e.message }
       ensure
+        # The cached URL image is kept; cleanup only deletes under Dir.tmpdir, so this matters only when the cache dir is there.
         CoverResolver.cleanup(image_path) unless image_path && image_path == @cached_static_image
       end
     end

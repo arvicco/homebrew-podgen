@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "base_validator"
+require_relative "../remote_image_cache"
 
 module Validators
   class LanguagePipelineValidator < BaseValidator
@@ -25,7 +26,7 @@ module Validators
         lc = @config.lingq_config
         # A URL is fetched by LingQPublisher (Q-56); say so, not "not found".
         if lc[:image]&.match?(%r{\Ahttps?://}i)
-          @warnings << "LingQ: image is a URL, downloaded to the podcast cache (output/<podcast>/cache/) at publish time: #{lc[:image]}"
+          @warnings << "LingQ: image is a URL, downloaded to the podcast cache (output/<podcast>/cache/) at publish time: #{RemoteImageCache.redact(lc[:image])}"
         elsif lc[:image] && !File.exist?(lc[:image])
           @warnings << "LingQ: image file not found: #{lc[:image]}"
         end
