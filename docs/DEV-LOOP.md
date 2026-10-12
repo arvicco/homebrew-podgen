@@ -21,8 +21,9 @@ files are binding and are NOT duplicated here.*
 - **Phases with review gates** are the standing human approval
   points — the loop never invents its own.
 
-Podgen is brownfield: Phase 0 (section 5) runs before ANY feature
-work.
+Podgen is brownfield: Phase 0 (section 5) ran before any feature work
+(closed 2026-09-02); every later phase builds on its gate, fixtures and
+characterization net.
 
 ## 2. Model tiering policy
 

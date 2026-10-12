@@ -33,8 +33,9 @@ ELEVENLABS_VOICE_ID=...   # pick a voice at elevenlabs.io/app/voice-library
 
 ## 3. Describe your podcast
 
-Create `~/.podgen/podcasts/mypod/guidelines.md` — this one markdown file
-*is* the podcast. Minimal working example:
+`podgen init mypod` creates `~/.podgen/podcasts/mypod/` with a skeleton
+`guidelines.md` (or copy an existing show: `podgen init oldpod mypod`).
+This one markdown file *is* the podcast. Minimal working example:
 
 ```markdown
 ## Podcast
@@ -83,6 +84,9 @@ regenerate with `podgen generate mypod --force` until you like it.
 - `podgen publish mypod` — upload to Cloudflare R2 (needs R2 keys in `.env`)
 - `podgen schedule mypod` — install a launchd job that generates an episode
   daily, hands-off
+- `podgen status` — one line per show saying whether it is still producing
+  (`OK`, `OLD`, or `WARN` with the reason); `podgen schedule --status-check`
+  runs it daily and alerts on Telegram
 
 That's the whole loop: one markdown file describes the show, one command
 produces an episode.
