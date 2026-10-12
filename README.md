@@ -963,7 +963,7 @@ When enabled, the script agent asks Claude to list every source it referenced wh
 Every news script is reviewed before it is voiced. Deterministic checks run first. Three of them apply a mechanical fix and log it as auto-fixed: a weekday that does not match its date is corrected, stage directions (`[pause]`, `(laughs)`) are removed, and leftover Markdown is stripped. The others only report: forbidden filler phrases, spelled-out magnitudes ("two million"), a missing title, a title over the target length, and queued priority links that went unused. Then Claude reviews the script against the research under six headings — FACTUAL ACCURACY, HALLUCINATION DETECTION, COVERAGE, TONE, NUMBER FORMAT, NATURAL FLOW — and reports each finding as a BLOCKER, a WARNING or a NIT.
 
 - An unfixed BLOCKER sends the script back to the writer with the findings; up to two rewrites, after which the run continues with a warning in the log.
-- A WARNING or NIT is logged (the indented `WARNING: [...]` lines in the run log) and the script is kept as written.
+- A WARNING or NIT is logged (the indented `WARNING: [...]` / `NIT: [...]` lines in the run log) and the script is kept as written.
 - Beyond the three mechanical fixes above, the reviewer never rewrites content. Titles in particular are never truncated: the writer is asked for about 40 characters, and a longer title is warned about and kept whole.
 
 The raw script responses are kept under `output/<podcast>/debug/` for inspection.
