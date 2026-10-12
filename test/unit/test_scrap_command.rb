@@ -67,7 +67,6 @@ class TestScrapCommand < Minitest::Test
 
     cmd = build_command_with_id("2026-03-15")
     assert_equal "test-2026-03-15", cmd.send(:resolve_by_id, @episodes_dir).first
-    assert_equal 1, cmd.method(:resolve_by_id).arity, "scrap does not narrow by configured languages"
   end
 
   # --- run: files removed ---

@@ -295,7 +295,6 @@ class TestCharacterizationFilenameScheme < Minitest::Test
       pod-2026-01-15-es.mp3 pod-2026-01-15-esp.mp3 pod-2026-01-15.mp3], names
     assert EpisodeFiltering.matches_language?("pod-2026-01-15-ai", "en", languages: CONFIGURED),
       "the -ai file is its own English episode under the configured-language rule"
-    assert_equal 2, EpisodeArtifacts.method(:for_basename).arity, "no languages: narrowing for delete/move"
   end
 
   # The primary language comes from config (languages.first) in

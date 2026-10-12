@@ -252,7 +252,7 @@ class TestTranslationAgent < Minitest::Test
     assert_equal "Hello", result[:segments].first[:text]
   end
 
-  # --- P4-4: one core — OpenAI output cap, truncation check, shared log shape ---
+  # --- P4-4: one core — no OpenAI output cap, truncation check, shared log shape ---
 
   # No output cap on the OpenAI path: Responses API `max_output_tokens`
   # counts reasoning tokens too, and the production ja translator (gpt-5)
