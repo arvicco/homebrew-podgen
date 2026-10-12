@@ -193,6 +193,47 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+OK/, out)
   end
 
+  def test_run_marked_publishes_attribute_warnings_by_podcast
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    make_pod("beta", dates: fresh_dates, sections: TWITTER)
+    File.write(File.join(@plist_dir, "com.podcastagent.beta.plist"), "<plist/>")
+    write_publish_log(%w[2026-10-08 2026-10-09 2026-10-10].flat_map { |d|
+      marked_publish("alpha", d, CREDITS) + marked_publish("beta", d, nil)
+    })
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*publish warning in last 3 publishes \(since 2026-10-08\): .*credits depleted/, out)
+    assert_match(/beta\s+OK/, out)
+  end
+
+  def test_run_marked_publish_warning_belongs_to_named_podcast_regardless_of_content
+    make_pod("alpha", dates: fresh_dates)
+    write_publish_log(%w[2026-10-08 2026-10-09 2026-10-10].flat_map { |d| marked_publish("alpha", d, CREDITS) })
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*last 3 publishes/, out)
+  end
+
+  def test_run_generate_warning_between_marked_publishes_not_counted
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>")
+    write_publish_log(%w[2026-10-08 2026-10-09 2026-10-10].flat_map { |d|
+      ["Warning: guidelines.md: unknown section ## Foo"] + marked_publish("alpha", d, nil)
+    } + ["Warning: guidelines.md: unknown section ## Foo"])
+    out, code = run_status
+    assert_equal 0, code, out
+    refute_match(/guidelines/, out)
+  end
+
+  def test_run_streak_counts_across_legacy_and_marked_publishes
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-07 2026-10-08], CREDITS) +
+      %w[2026-10-09 2026-10-10].flat_map { |d| marked_publish("alpha", d, CREDITS) })
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*last 4 publishes \(since 2026-10-07\)/, out)
+  end
+
   def test_run_publish_log_path_is_injectable
     make_pod("alpha", dates: fresh_dates, sections: TWITTER)
     path = File.join(@tmpdir, "elsewhere.log")
@@ -466,6 +507,13 @@ class TestStatusCommand < Minitest::Test
 
   def publishes(dates, warning)
     dates.flat_map { |d| [rclone_line(d), *warning] }
+  end
+
+  # scripts/run.sh brackets each publish with dated begin/end markers.
+  def marked_publish(name, date, warning)
+    stamp = "#{date.tr("-", "/")} 16:52:00"
+    ["#{stamp} podgen publish #{name} begin", rclone_line(date), *warning,
+      "#{stamp.sub("16:52:00", "16:53:00")} podgen publish #{name} end exit=0"]
   end
 
   def make_episodes(pod, basenames)
