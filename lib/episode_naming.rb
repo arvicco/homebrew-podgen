@@ -156,14 +156,17 @@ module EpisodeNaming
   end
 
   # Index into `entries` of the entry whose mapped name carries `date` and
-  # day slot `slot` ("" / "a".."z"), or nil.
+  # day slot `slot` ("" / "a".."z"), or nil. When several entries map to
+  # the slot, the LAST wins — the one HistoryMaps (and so the feed) shows
+  # (P5-2a, Q-54).
   def history_entry_index(entries, date, slot)
     pos = -1
+    found = nil
     entries.each_with_index do |entry, global|
       next unless entry["date"].to_s == date.to_s
       pos += 1
-      return global if history_slot(entry, pos) == slot.to_s
+      found = global if history_slot(entry, pos) == slot.to_s
     end
-    nil
+    found
   end
 end
