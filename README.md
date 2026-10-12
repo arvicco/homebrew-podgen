@@ -1663,6 +1663,8 @@ Claude usage per news episode, as measured in the run log of a four-language epi
 | Review | 2 | 23k each | 3–4k each |
 | Translation | 1 per language | 2.9k | 9–14k |
 
+The two short-output roles (description, language detection) run at low effort. The heavier roles were measured at low on real inputs (2026-10-12, one sample each) and stay at the API default: the reviewer returned a different set of findings, the Spanish translation read less fluently, and the script came out about 40% shorter than the configured length. `CLAUDE_EFFORT_<ROLE>=low` still lets you take that trade per role.
+
 Multiply by the current price list of the resolved models. Other costs per episode:
 
 - Exa.ai: ~$0.03 (4 searches + summaries)
