@@ -184,7 +184,7 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 Gate 0 CLOSED 2026-09-02 (PR #1, merge 4298988). Gate 1 CLOSED 2026-10-11
 (PR #2, merge 6d869e4). Gate 2 CLOSED 2026-10-12 08:50 (PR #3, merge
 494c000). Gate 3 CLOSED 2026-10-12 11:45 (PR #4, merge 35592dd). Gate 4
-CLOSED 2026-10-12 12:55 (PR #5, merge 8e454c6 — the dry-up). Phase 5 not
-yet named: the slate was presented 2026-10-12 and awaits the owner's
-pick; this line rides phase-5 as a carried edit. Update this line at each
-gate.
+CLOSED 2026-10-12 12:55 (PR #5, merge 8e454c6 — the dry-up). Phase 5
+(correctness and cost sweep; signed 2026-10-12 13:10) AT GATE 5 pending
+CRPR: all packets on phase-5, PR #6 open — the owner merges; runbook in
+.docs/p05-plan.md. Update this line at each gate.
