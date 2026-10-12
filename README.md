@@ -66,8 +66,8 @@ CLAUDE_<ROLE>_MODEL=...       # Optional: per-role override beats the line, e.g.
                               #   CLAUDE_RECONCILER_MODEL (subtitles), CLAUDE_WEB_MODEL — roles in lib/claude_models.rb
 CLAUDE_EFFORT_<ROLE>=low      # Optional: effort level (low|medium|high) for a role, resolved by ClaudeModels.effort(role).
                               #   Default policy: DESCRIPTION and LANGUAGE_DETECT (short outputs) at low; every other role
-                              #   omits the parameter (API default). An invalid value warns and omits. Takes effect where the
-                              #   call site passes effort through — today the description and language-detection calls.
+                              #   omits the parameter (API default). An invalid value warns and omits. Every Claude call site
+                              #   passes it through (structured-output calls keep their format beside it).
                               #   Effort assumes the resolved model accepts output_config.effort; with a pinned model that
                               #   rejects it, DescriptionAgent falls back to the original text (or no generated title/description) and WordStats picks the first
                               #   candidate language, with only a non-fatal warning in the log. Set the override to

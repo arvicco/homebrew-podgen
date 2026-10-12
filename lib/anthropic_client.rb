@@ -32,10 +32,14 @@ module AnthropicClient
   end
 
   # Request params carrying the role's effort level (P5-1): empty when the
-  # registry resolves nil, so the API default applies.
-  def self.effort_params(role)
+  # registry resolves nil, so the API default applies. Structured-output
+  # callers pass their other output_config keys (format:) to merge beside
+  # effort (P6-0); the hash is fresh per call because the SDK rewrites
+  # output_config[:format] in place.
+  def self.effort_params(role, **output_config)
     effort = ClaudeModels.effort(role)
-    effort ? {output_config: {effort: effort.to_sym}} : {}
+    output_config[:effort] = effort.to_sym if effort
+    output_config.empty? ? {} : {output_config: output_config}
   end
 
   private

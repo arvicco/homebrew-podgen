@@ -53,7 +53,7 @@ class TopicAgent
               content: build_user_prompt(today)
             }
           ],
-          output_config: { format: TopicList }
+          **AnthropicClient.effort_params(:topic, format: TopicList)
         )
       end
 

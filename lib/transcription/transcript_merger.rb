@@ -50,7 +50,8 @@ module Transcription
             system: system,
             messages: [
               { role: "user", content: user_content }
-            ]
+            ],
+            **@effort_params
           )
         end
 
