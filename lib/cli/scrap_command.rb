@@ -18,8 +18,6 @@ module PodgenCLI
     include PodcastCommand
     include EpisodeSelector
 
-    SUFFIXES = EpisodeNaming::SUFFIXES
-
     def initialize(args, options)
       @exclude = false
       OptionParser.new do |opts|
