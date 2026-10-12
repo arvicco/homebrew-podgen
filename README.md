@@ -1487,7 +1487,7 @@ podgen/
 │   ├── history_maps.rb       # History lookups for feeds/site (per-language durations)
 │   ├── episode_artifacts.rb  # Every on-disk file of one episode (scrap, move)
 │   ├── episode_filtering.rb  # Shared MP3 glob/filter helpers
-│   ├── episode_scanner.rb    # Episode discovery for stats/validate
+│   ├── episode_scanner.rb    # Publishable episodes (mp3 + transcript) for the publishers
 │   ├── script_artifact.rb    # Canonical script JSON read/write
 │   ├── script_renderer.rb    # Script JSON → markdown view (## Links)
 │   ├── legacy_script_parser.rb # Markdown script → JSON for pre-JSON episodes
@@ -1502,15 +1502,15 @@ podgen/
 │   ├── site_generator.rb     # Static HTML website (ERB templates), per language
 │   ├── transcript_renderer.rb # Shared transcript HTML rendering (RSS + site)
 │   ├── transcript_parser.rb  # Transcript markdown structure (segments, vocabulary)
-│   ├── transcript_discovery.rb # Finds transcripts/timestamps for an episode
+│   ├── transcript_discovery.rb # Existing transcripts (feed tags, episode pages, YouTube captions) before STT
 │   ├── vocabulary_annotator.rb # CEFR vocabulary annotation (Claude + cognate filtering)
 │   ├── known_vocabulary.rb   # Per-language known word lists
 │   ├── word_stats.rb         # Vocabulary frequency (hunspell forms, language detection)
 │   ├── language_names.rb     # ISO 639-1 → language name
-│   ├── cover_resolver.rb     # Cover priority chain (CLI, per-feed, ## Image, thumbnail)
-│   ├── episode_cover_resolver.rb # Per-episode cover lookup
+│   ├── cover_resolver.rb     # Shared cover lookup/generation (publish, pipeline, site, cover command)
+│   ├── episode_cover_resolver.rb # Cover priority chain for a language-pipeline episode
 │   ├── auto_cover_resolver.rb # image: auto — web search + Claude vision ranking
-│   ├── image_searcher.rb     # Image search for auto covers
+│   ├── image_searcher.rb     # DuckDuckGo image search for auto covers
 │   ├── image_ranker.rb       # Claude vision ranking of cover candidates
 │   ├── r2_publisher.rb       # rclone sync to Cloudflare R2 + announcements
 │   ├── lingq_publisher.rb    # LingQ bulk publish with tracking
@@ -1529,6 +1529,7 @@ podgen/
 │   ├── connectivity.rb       # Network preflight before a scheduled run
 │   ├── fixture_recorder.rb   # Records real API responses as test fixtures (rake fixtures:record)
 │   ├── http_downloader.rb    # HTTP file download with retries
+│   ├── remote_image_cache.rb # Caches a remote image URL under output/<podcast>/cache/ (LingQ image: URL)
 │   ├── http_retryable.rb     # Mixin: HTTP-specific retries (includes Retryable)
 │   ├── retryable.rb          # Mixin: exponential backoff retries
 │   ├── atomic_writer.rb      # Temp file + rename writes
@@ -1545,7 +1546,7 @@ podgen/
 │       ├── translator.rb     # Translation engines (DeepL, Claude, OpenAI)
 │       ├── translation_service.rb # Failover chain across translation engines
 │       ├── tts.rb            # TTS engines (ElevenLabs, Google)
-│       ├── engine.rb / engine_pool.rb # Engine abstraction and pooling
+│       ├── engine.rb / engine_pool.rb # Tell processing engine; thread-safe glosser/translator cache for the web UI
 │       ├── glosser.rb        # Grammatical glossing via Claude
 │       ├── espeak.rb         # eSpeak-ng wrapper: IPA phonetic transcription
 │       ├── icu_phonetic.rb   # ICU transliteration: Cyrillic/Greek/Korean romanization

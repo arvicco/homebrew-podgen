@@ -28,11 +28,11 @@ Vocabulary filtering for cognates (words similar enough to the target-language e
 
 ## Twitter publish is non-fatal by design
 
-`R2Publisher#tweet_new_episodes` (`lib/r2_publisher.rb`) rescues all Twitter errors and logs `"non-fatal"`. A failed tweet never aborts a publish.
+`R2Publisher#tweet_new_episodes` (`lib/r2_publisher.rb`) rescues all Twitter errors and logs `"non-fatal"` with the exception class. A failed tweet never aborts a publish. HTTP 402 (X pay-per-use credits at zero) raises `TwitterAgent::CreditsDepleted` after one call instead of being retried.
 
-**Why.** Publish is the critical path — R2 upload, RSS regeneration, LingQ, YouTube. A social-media side effect should not block or roll back the primary artifact shipping. The `UploadTracker` only records the tweet after success, so a failed tweet is naturally retried on the next publish.
+**Why.** Publish is the critical path — R2 upload, RSS regeneration, LingQ, YouTube. A social-media side effect should not block or roll back the primary artifact shipping. The `UploadTracker` only records the tweet after success, so a failed tweet is naturally retried on the next publish. Non-fatal is not invisible, though: the warning went unseen for 54 days once, because the status board read only the generate logs. `podgen status` now reads the scheduled publishes' stderr (bracketed by `scripts/run.sh` markers) and compares the newest episode with the newest tweeted one, so a silent side effect still trips a WARN.
 
-**Implication.** When adding new side effects to publish, default to non-fatal with tracker-based retry. Reserve fatal errors for steps that produce the canonical outputs (audio, feed, site).
+**Implication.** When adding new side effects to publish, default to non-fatal with tracker-based retry, and give the status board a content-progress check for the side effect's own output (what the listener would see), not just the warning line.
 
 ---
 
@@ -87,6 +87,22 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 **Why.** Before P1-0, IDs were hard-coded at eleven sites in eight files with ad-hoc ENV knobs, so a generation bump was a hunt and three sites had no override at all. A manual model switch in 2026-10 then exposed a second hazard: thinking-default models put a thinking block first, so `content.first.text` broke.
 
 **Implication.** A generation bump is a three-line change to `LINES`. Overrides resolve per-role ENV (`CLAUDE_<ROLE>_MODEL`) → per-line ENV (`CLAUDE_OPUS_MODEL` etc.; `CLAUDE_MODEL` aliases the opus line) → default. Read response text through `AnthropicClient.text_of(message)`, never `content.first.text`. The keyed drift test under `test/api` tells you when a line has a newer ID. Effort is per role too: `ClaudeModels.effort(:role)` (nil = omit; `CLAUDE_EFFORT_<ROLE>` overrides) and call sites splat `AnthropicClient.effort_params(role)` (`output_config: {effort:}`) — short-output roles run at low, measured by `test/api/test_effort_policy.rb`.
+
+## The owner-action guard asks the real parser
+
+`PodgenCLI.owner_action?` (`lib/cli.rb`) decides whether a `generate` invocation would upload (`--youtube`/`--lingq`) by dry-parsing the argv with generate's own option list (`GenerateOptions.dry_parse`); a token scan is only the fallback when that parse fails.
+
+**Why.** The first guard scanned tokens and missed what OptionParser accepts: unique prefixes (`--you`), single-dash completions (`-y`), and flags swallowed as a value-taking option's argument (`--title -- --you`). Four review rounds of patching the scan each found another hole. A guard over a parser's input is only as right as the parser, so it has to ask the parser.
+
+**Implication.** A new generate option that uploads is added to `OWNER_FLAGS` and to the probe table in `test/unit/test_owner_guard.rb` in the same commit. The same rule applies to any future guard over argv or shell text: probe table first, then the real parser; token rules only as the fallback.
+
+## The script reviewer warns, it never edits
+
+`ScriptReviewer` (`lib/agents/script_reviewer.rb`) reports BLOCKERs and WARNINGs; the only way a script changes is a rewrite by `ScriptAgent` with the findings attached (at most two retries). Titles are never truncated: the prompt states the ~40-character target, and a longer title is a WARNING.
+
+**Why.** The reviewer once auto-fixed titles over 40 characters by cutting them with an ellipsis. Thirteen episodes shipped with half titles in every feed, on the site and in the ID3 tags before anyone noticed, because the cut happened after the writer had done its job and nothing downstream could object. An editor that silently rewrites output is a second writer with no accountability.
+
+**Implication.** Checks that find a problem send it back to the producer with the finding; they do not patch the artifact. If a check must change the output, it is a WARNING with the before/after in the log.
 
 ## Episode naming lives in one module
 
