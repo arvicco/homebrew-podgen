@@ -7,13 +7,12 @@ class HNSource < BaseSource
   RESULTS_PER_TOPIC = 3
   LOOKBACK_HOURS = 48
   API_BASE = "https://hn.algolia.com/api/v1/search_by_date"
+  SHORT_TOPIC_WORDS = 4
 
   # hn_queries: topic string => short keyword query (P3-1). Algolia ANDs
   # every term, so a full research topic never matches; topics without a
   # keyword query are skipped rather than sent, unless the topic itself is
   # short enough to serve as the query (queue.yml fallback topics).
-  SHORT_TOPIC_WORDS = 4
-
   def initialize(hn_queries: {}, **options)
     super(**options)
     @hn_queries = hn_queries || {}
