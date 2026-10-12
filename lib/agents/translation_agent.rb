@@ -137,10 +137,13 @@ class TranslationAgent
 
   # --- OpenAI adapter ---
 
+  # No output cap here (unlike Claude): Responses API `max_output_tokens`
+  # counts reasoning tokens too, and reasoning models (gpt-5) could exhaust
+  # it on a long script. The truncation check below still catches a stop at
+  # the model's own ceiling.
   def openai_request(system_prompt, user_message)
     @openai_client.responses.create(
       model: @openai_model,
-      max_output_tokens: MAX_OUTPUT_TOKENS,
       input: [
         { role: :system, content: system_prompt },
         { role: :user, content: user_message }
@@ -169,7 +172,7 @@ class TranslationAgent
     extract_openai_parsed!(response)
   end
 
-  # A response cut at the output cap carries truncated JSON; re-issuing the
+  # A response cut at the model's output ceiling carries truncated JSON; re-issuing the
   # identical request cannot succeed, so it is a TruncatedOutputError (not
   # retried), mirroring the Claude max_tokens check (P4-4).
   def raise_openai_truncated!(response)
@@ -178,7 +181,7 @@ class TranslationAgent
     tokens = response.usage&.output_tokens if response.respond_to?(:usage)
     raise TruncatedOutputError,
       "Output truncated at max_output_tokens (#{tokens || "?"} output tokens) — " \
-      "structured response is incomplete; raise max_output_tokens for this call"
+      "structured response is incomplete; the model's output ceiling was reached"
   end
 
   # Sources are not translated (they're URLs + titles in the source language).

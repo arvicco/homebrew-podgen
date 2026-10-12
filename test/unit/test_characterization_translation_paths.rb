@@ -145,9 +145,8 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     agent.translate(script)
 
     call = client.calls.last
-    assert_equal %i[model max_output_tokens input text], call.keys
+    assert_equal %i[model input text], call.keys
     assert_equal agent.instance_variable_get(:@openai_model), call[:model]
-    assert_equal 16384, call[:max_output_tokens]
     assert_equal [
       {role: :system, content: agent.send(:build_system_prompt)},
       {role: :user, content: "Translate this podcast script to Slovenian:\n\n#{expected_script_text}"}
@@ -155,11 +154,14 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal OpenAITranslatedScript, call[:text]
   end
 
-  # Aligned (P4-4): both paths cap output at 16384 (Claude `max_tokens`,
-  # OpenAI `max_output_tokens`). Still divergent by API shape: Claude sends a
-  # separate `system:` with a string-role user message; OpenAI puts the
-  # system prompt in `input` with symbol roles.
-  def test_translate_output_cap_aligned_between_paths
+  # Divergent by design (P4-4, CRPR round 1): Claude caps output at 16384
+  # (`max_tokens`); OpenAI sends NO output cap — on the Responses API
+  # `max_output_tokens` counts reasoning tokens too, and the ja translator
+  # (gpt-5) reasons by default, so a cap could truncate a long script. Also
+  # divergent by API shape: Claude sends a separate `system:` with a
+  # string-role user message; OpenAI puts the system prompt in `input` with
+  # symbol roles.
+  def test_translate_output_cap_claude_only
     c_agent, c_client, = build("claude", steps: [claude_ok])
     o_agent, o_client, = build("openai", steps: [openai_ok])
 
@@ -168,7 +170,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
 
     assert_equal 16384, c_client.calls.last[:max_tokens]
     refute o_client.calls.last.key?(:max_tokens)
-    assert_equal 16384, o_client.calls.last[:max_output_tokens]
+    refute o_client.calls.last.key?(:max_output_tokens)
     assert_equal "user", c_client.calls.last[:messages].first[:role]
     assert_equal :user, o_client.calls.last[:input].last[:role]
   end

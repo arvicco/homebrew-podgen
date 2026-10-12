@@ -254,13 +254,17 @@ class TestTranslationAgent < Minitest::Test
 
   # --- P4-4: one core — OpenAI output cap, truncation check, shared log shape ---
 
-  def test_openai_backend_requests_max_output_tokens_16384
+  # No output cap on the OpenAI path: Responses API `max_output_tokens`
+  # counts reasoning tokens too, and the production ja translator (gpt-5)
+  # reasons by default — a cap could truncate a long script and drop the
+  # episode. Only the model's own ceiling can produce an incomplete response.
+  def test_openai_backend_request_carries_no_max_output_tokens
     agent = build_openai_agent("jp")
     client = stub_openai_client(agent, title: "T", segments: [])
 
     agent.translate(sample_script)
 
-    assert_equal 16384, client.last_call[:max_output_tokens]
+    refute client.last_call.key?(:max_output_tokens)
   end
 
   def test_openai_backend_does_not_retry_when_incomplete_at_max_output_tokens
