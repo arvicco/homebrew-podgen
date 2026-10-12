@@ -840,7 +840,7 @@ Per-feed image overrides go inline with RSS URLs:
 
 Cover generation requires `imagemagick` + `librsvg` (`brew install imagemagick librsvg`) and fonts via `fontconfig`. Falls back to static cover or YouTube thumbnail on failure. Non-fatal.
 
-**Backward compatibility:** Image keys in `## LingQ` (`image`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset`) continue to work as fallbacks. The `## Image` section takes priority when present.
+**Backward compatibility:** Image keys in `## LingQ` (`image`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset`) continue to work as fallbacks. The `## Image` section takes priority when present. A `## LingQ` `image:` may be an `https://` URL: it is downloaded once into `output/<podcast>/cache/` when lessons are uploaded (a failed download warns and the lesson uploads without an image).
 
 #### Cover command
 

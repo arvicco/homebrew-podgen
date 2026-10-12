@@ -23,9 +23,9 @@ module Validators
 
       if @config.lingq_config
         lc = @config.lingq_config
-        # A URL is not fetched (yet: see the work queue); say so, not "not found".
+        # A URL is fetched by LingQPublisher (Q-56); say so, not "not found".
         if lc[:image]&.match?(%r{\Ahttps?://}i)
-          @warnings << "LingQ: URL images are not supported (file path expected): #{lc[:image]}"
+          @warnings << "LingQ: image is a URL, downloaded to the podcast cache (output/<podcast>/cache/) at publish time: #{lc[:image]}"
         elsif lc[:image] && !File.exist?(lc[:image])
           @warnings << "LingQ: image file not found: #{lc[:image]}"
         end
