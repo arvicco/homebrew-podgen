@@ -96,6 +96,56 @@ class TestRenderCommand < Minitest::Test
     refute(result.any? { |p| p.include?("04-25") })
   end
 
+  # ── configured language rule (P5-2a, Q-52) ───────────────────────
+  # The 8-row basename table of test_characterization_filename_scheme.rb.
+  # Only rows whose two-letter tail is NOT configured differ from the old
+  # any-two-letter rule (no real episode file has one).
+  TABLE = %w[
+    pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z pod-2026-01-15-es
+    pod-2026-01-15b-es pod-2026-01-15-ai pod-2026-01-15-jp pod-2026-01-15-esp
+  ].freeze
+  TABLE_PATHS = TABLE.map { |b| "/x/#{b}_script.md" }.sort.freeze
+
+  # [--lang en selection, --date 2026-01-15b selection] per configuration.
+  EXPECTED = {
+    nil => [ # old any-two-letter rule (no languages passed)
+      %w[pod-2026-01-15-esp pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z],
+      %w[pod-2026-01-15b-es]
+    ],
+    %w[en] => [
+      %w[pod-2026-01-15-ai pod-2026-01-15-es pod-2026-01-15-esp pod-2026-01-15-jp
+        pod-2026-01-15 pod-2026-01-15a pod-2026-01-15b-es pod-2026-01-15z],
+      []
+    ],
+    %w[en ja] => [
+      %w[pod-2026-01-15-ai pod-2026-01-15-es pod-2026-01-15-esp pod-2026-01-15-jp
+        pod-2026-01-15 pod-2026-01-15a pod-2026-01-15b-es pod-2026-01-15z],
+      []
+    ],
+    %w[en es it jp] => [
+      %w[pod-2026-01-15-ai pod-2026-01-15-esp pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z],
+      %w[pod-2026-01-15b-es]
+    ]
+  }.freeze
+
+  def test_filters_table_follow_configured_rule
+    cmd = build_command
+    EXPECTED.each do |codes, (lang_en, date_b)|
+      by_lang = cmd.send(:filter_by_lang, TABLE_PATHS, "en", languages: codes)
+      by_date = cmd.send(:filter_by_date, TABLE_PATHS, Date.parse("2026-01-15"), "b", languages: codes)
+      assert_equal lang_en, by_lang.map { |p| File.basename(p, "_script.md") }, codes.inspect
+      assert_equal date_b, by_date.map { |p| File.basename(p, "_script.md") }, codes.inspect
+    end
+  end
+
+  def test_filter_by_last_n_unconfigured_tail_is_its_own_episode
+    cmd = build_command
+    paths = %w[/x/pod-2026-04-26_script.md /x/pod-2026-04-26-es_script.md /x/pod-2026-04-26-ai_script.md]
+    # "-ai" is its own (latest-sorting) episode, not a variant of 04-26
+    result = cmd.send(:filter_by_last_n, paths, 1, languages: %w[en es])
+    assert_equal %w[/x/pod-2026-04-26-ai_script.md], result
+  end
+
   def test_render_rebuilds_md_from_json_with_inline_links
     json_path = File.join(@episodes_dir, "pod-2026-04-26_script.json")
     script = {

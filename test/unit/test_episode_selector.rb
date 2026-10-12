@@ -298,14 +298,19 @@ class TestEpisodeSelectorMixin < Minitest::Test
 
   # ── english_episode_basenames ─────────────────────────────────────
 
+  # language_codes mirrors PodcastConfig#language_codes; the default models
+  # a podcast whose jp/it variants the fixtures below create (P5-2a, Q-52).
   class FakeConfig
-    attr_reader :episodes_dir
-    def initialize(dir); @episodes_dir = dir; end
+    attr_reader :episodes_dir, :language_codes
+    def initialize(dir, language_codes = %w[en jp it])
+      @episodes_dir = dir
+      @language_codes = language_codes
+    end
   end
 
-  def with_episodes_dir
+  def with_episodes_dir(language_codes = %w[en jp it])
     Dir.mktmpdir("ep_dir") do |dir|
-      yield FakeConfig.new(dir), dir
+      yield FakeConfig.new(dir, language_codes), dir
     end
   end
 
@@ -345,6 +350,64 @@ class TestEpisodeSelectorMixin < Minitest::Test
     with_episodes_dir do |config, _|
       h = Harness.new([])
       assert_empty h.english_episode_basenames(config)
+    end
+  end
+
+  # ── configured language rule (P5-2a, Q-52) ───────────────────────
+  # The 8-row basename table of test_characterization_filename_scheme.rb.
+  # A tail counts as a language variant only when it is a CONFIGURED code;
+  # versus the old any-two-letter rule, only rows whose two-letter tail is
+  # unconfigured change (no real episode file has one).
+  TABLE = %w[
+    pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z pod-2026-01-15-es
+    pod-2026-01-15b-es pod-2026-01-15-ai pod-2026-01-15-jp pod-2026-01-15-esp
+  ].freeze
+  # Selected rows in output order (sorted by filename). LEGACY_PRIMARY is
+  # what the old any-two-letter rule selected.
+  LEGACY_PRIMARY = %w[pod-2026-01-15-esp pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z].freeze
+  ALL_ROWS = %w[
+    pod-2026-01-15-ai pod-2026-01-15-es pod-2026-01-15-esp pod-2026-01-15-jp
+    pod-2026-01-15 pod-2026-01-15a pod-2026-01-15b-es pod-2026-01-15z
+  ].freeze
+  PRIMARY_BY_CONFIG = {
+    %w[en] => ALL_ROWS,
+    %w[en ja] => ALL_ROWS,
+    %w[en es it jp] => %w[pod-2026-01-15-ai pod-2026-01-15-esp pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z]
+  }.freeze
+
+  def test_english_episode_basenames_table_follows_configured_rule
+    PRIMARY_BY_CONFIG.each do |codes, expected|
+      with_episodes_dir(codes) do |config, dir|
+        TABLE.each { |b| File.write(File.join(dir, "#{b}.mp3"), "") }
+        assert_equal expected, Harness.new([]).english_episode_basenames(config), codes.inspect
+        assert_only_unconfigured_rows_differ(expected, codes)
+      end
+    end
+  end
+
+  def test_english_script_basenames_table_follows_configured_rule
+    PRIMARY_BY_CONFIG.each do |codes, expected|
+      with_episodes_dir(codes) do |config, dir|
+        TABLE.each { |b| File.write(File.join(dir, "#{b}_script.md"), "") }
+        assert_equal expected, Harness.new([]).english_script_basenames(config), codes.inspect
+      end
+    end
+  end
+
+  def test_english_episode_basenames_unconfigured_tail_is_its_own_episode
+    with_episodes_dir(%w[en es]) do |config, dir|
+      File.write(File.join(dir, "pod-2026-05-16.mp3"), "")
+      File.write(File.join(dir, "pod-2026-05-16-es.mp3"), "")
+      File.write(File.join(dir, "pod-2026-05-17-ai.mp3"), "")
+      assert_equal %w[pod-2026-05-16 pod-2026-05-17-ai], Harness.new([]).english_episode_basenames(config)
+    end
+  end
+
+  def assert_only_unconfigured_rows_differ(expected, codes)
+    changed = (expected - LEGACY_PRIMARY) | (LEGACY_PRIMARY - expected)
+    changed.each do |b|
+      tail = b[/-([a-z]{2})\z/, 1]
+      assert tail && !codes.include?(tail), "#{b} changed selection under #{codes.inspect}"
     end
   end
 

@@ -68,7 +68,7 @@ module PodgenCLI
       end
 
       # Discover English episodes with _script.md files
-      episodes = discover_episodes(config.episodes_dir)
+      episodes = discover_episodes(config.episodes_dir, languages: config.language_codes)
       if episodes.empty?
         logger.log("No English episodes found in #{config.episodes_dir}")
         return 0
@@ -152,10 +152,11 @@ module PodgenCLI
 
     # Finds English episodes that have both _script.md and .mp3 files.
     # Excludes language-suffixed scripts (e.g. *-it_script.md) and
-    # orphaned scripts without a corresponding English MP3.
-    def discover_episodes(episodes_dir)
+    # orphaned scripts without a corresponding English MP3. `languages:` is
+    # the podcast's configured codes (EpisodeNaming rule; P5-2a, Q-52).
+    def discover_episodes(episodes_dir, languages: nil)
       Dir.glob(File.join(episodes_dir, "*_script.md"))
-        .reject { |f| EpisodeNaming.language_tail(File.basename(f, "_script.md")) }
+        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, "_script.md"), languages: languages) }
         .select { |f| File.exist?(f.sub(/_script\.md$/, ".mp3")) }
         .sort
         .map do |path|

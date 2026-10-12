@@ -46,9 +46,10 @@ module PodgenCLI
       PodcastAgent.logger = logger
 
       md_paths = discover_markdown_paths(config.episodes_dir)
-      md_paths = filter_by_date(md_paths, episode_date, episode_suffix) if episode_date
-      md_paths = filter_by_last_n(md_paths, last_n) if last_n
-      md_paths = filter_by_lang(md_paths, @lang_filter) if @lang_filter
+      languages = config.language_codes
+      md_paths = filter_by_date(md_paths, episode_date, episode_suffix, languages: languages) if episode_date
+      md_paths = filter_by_last_n(md_paths, last_n, languages: languages) if last_n
+      md_paths = filter_by_lang(md_paths, @lang_filter, languages: languages) if @lang_filter
 
       if md_paths.empty?
         msg = "No script files found#{episode_date ? " for #{episode_date}#{episode_suffix}" : ''}#{@lang_filter ? " (lang=#{@lang_filter})" : ''}"
@@ -83,12 +84,13 @@ module PodgenCLI
     end
 
     # When suffix is given, narrow to that exact episode (plus its language
-    # variants); otherwise match every basename on the day.
-    def filter_by_date(paths, date, suffix)
+    # variants); otherwise match every basename on the day. `languages:` is
+    # the podcast's configured codes (EpisodeNaming rule; P5-2a, Q-52).
+    def filter_by_date(paths, date, suffix, languages: nil)
       date_str = date.strftime("%Y-%m-%d")
       if suffix
         paths.select do |p|
-          base = EpisodeNaming.primary_basename(File.basename(p, "_script.md"))
+          base = EpisodeNaming.primary_basename(File.basename(p, "_script.md"), languages: languages)
           base.end_with?("-#{date_str}#{suffix}")
         end
       else
@@ -98,16 +100,16 @@ module PodgenCLI
 
     # Group paths by English basename (strip -<lang> suffix), keep the N most
     # recent groups (English + all language variants for those episodes).
-    def filter_by_last_n(paths, n)
+    def filter_by_last_n(paths, n, languages: nil)
       groups = paths.group_by do |p|
-        EpisodeNaming.primary_basename(File.basename(p, "_script.md"))
+        EpisodeNaming.primary_basename(File.basename(p, "_script.md"), languages: languages)
       end
       groups.keys.sort.last(n).flat_map { |k| groups[k] }
     end
 
-    def filter_by_lang(paths, lang)
+    def filter_by_lang(paths, lang, languages: nil)
       paths.select do |p|
-        EpisodeNaming.matches_language?(File.basename(p, "_script.md"), lang)
+        EpisodeNaming.matches_language?(File.basename(p, "_script.md"), lang, languages: languages)
       end
     end
   end
