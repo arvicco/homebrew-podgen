@@ -197,6 +197,32 @@ class TestHNSource < Minitest::Test
     assert lines.any? { |l| l.include?("no hn_query for 'AI agents in hospitals reshape triage' — skipped") }, lines.inspect
   end
 
+  def test_search_topic_logs_keyword_query_sent
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |msg| lines << msg }
+    topic = "Bitcoin startup seed Series A funding round venture capital October 2026"
+    source = HNSource.new(logger: logger, hn_queries: { topic => "Bitcoin startup funding" })
+    source.define_singleton_method(:request_with_retry) { |**_| { "hits" => [] } }
+
+    source.send(:search_topic, topic, Set.new)
+
+    query_lines = lines.select { |l| l.include?("HN query") }
+    assert_equal ["[HNSource] HN query for '#{topic}': Bitcoin startup funding"], query_lines, lines.inspect
+  end
+
+  def test_search_topic_skip_path_logs_only_skip_line
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |msg| lines << msg }
+    topic = "AI agents in hospitals reshape triage"
+    source = HNSource.new(logger: logger, hn_queries: { "other" => "kw" })
+
+    source.send(:search_topic, topic, Set.new)
+
+    assert_equal ["[HNSource] no hn_query for '#{topic}' — skipped"], lines
+  end
+
   def test_search_topic_short_topic_without_keyword_sends_topic
     source = HNSource.new(hn_queries: { "other" => "kw" })
     sent = nil
