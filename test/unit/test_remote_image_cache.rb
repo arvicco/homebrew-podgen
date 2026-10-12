@@ -96,7 +96,186 @@ class TestRemoteImageCache < Minitest::Test
     assert_raises(RemoteImageCache::FetchError) { cache.fetch(URL) }
   end
 
+  # W3: a temp file left by a killed write must never be taken for the image.
+  def test_fetch_ignores_leftover_temp_file
+    File.binwrite(File.join(@dir, "lingq_image_#{digest(URL)}.png.tmp.123.abcd"), "trunc")
+    cache = build(status: 200, content_type: "image/png", body: PNG)
+
+    path = cache.fetch(URL)
+
+    assert_equal File.join(@dir, "lingq_image_#{digest(URL)}.png"), path
+    assert_equal 1, @calls.length
+  end
+
+  # N5: a signed URL's query (token) never reaches an error message.
+  def test_fetch_error_message_strips_query_string
+    url = "#{URL}.png?X-Amz-Signature=SECRETTOKEN&x=1"
+    cache = build(status: 403, content_type: "text/html", body: "denied")
+
+    err = assert_raises(RemoteImageCache::FetchError) { cache.fetch(url) }
+
+    assert_includes err.message, "#{URL}.png"
+    refute_includes err.message, "SECRETTOKEN"
+  end
+
+  def test_redact_strips_query_and_fragment
+    assert_equal "https://a.example/x.png", RemoteImageCache.redact("https://a.example/x.png?sig=abc#frag")
+    assert_equal "https://a.example/x.png", RemoteImageCache.redact("https://a.example/x.png")
+  end
+
+  # ---------- default network path (W4), Net::HTTP stubbed at .start ----------
+
+  FakeResponse = Struct.new(:code, :headers, :chunks, :reads) do
+    def [](key) = headers[key.downcase]
+
+    def read_body
+      self.reads = (reads || 0) + 1
+      chunks.each { |c| yield c }
+    end
+  end
+
+  def test_http_fetch_success_returns_status_type_and_binary_body
+    res = ok_response([PNG[0, 10], PNG[10..]], "content-length" => PNG.bytesize.to_s)
+    result, requests = with_http([res]) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png") }
+
+    assert_equal({status: 200, content_type: "image/png", body: PNG}, result)
+    assert_equal Encoding::BINARY, result[:body].encoding
+    assert_equal [["cdn.example.com", 443, true, "/a.png"]], requests
+  end
+
+  def test_http_fetch_follows_relative_redirect
+    redirect = FakeResponse.new("302", {"location" => "/img/b.png"}, [])
+    result, requests = with_http([redirect, ok_response([PNG])]) do |cache|
+      cache.send(:http_fetch, "https://cdn.example.com/art/a?x=1")
+    end
+
+    assert_equal PNG, result[:body]
+    assert_equal ["/art/a?x=1", "/img/b.png"], requests.map(&:last)
+    assert_equal ["cdn.example.com"] * 2, requests.map(&:first)
+  end
+
+  def test_http_fetch_follows_absolute_redirect_to_other_host
+    redirect = FakeResponse.new("301", {"location" => "https://img.example.net/c.png"}, [])
+    result, requests = with_http([redirect, ok_response([PNG])]) do |cache|
+      cache.send(:http_fetch, "https://cdn.example.com/a")
+    end
+
+    assert_equal 200, result[:status]
+    assert_equal "img.example.net", requests.last.first
+  end
+
+  def test_http_fetch_stops_after_max_redirects
+    loops = Array.new(RemoteImageCache::MAX_REDIRECTS + 2) { FakeResponse.new("302", {"location" => "/again"}, []) }
+    err = assert_raises(RemoteImageCache::FetchError) do
+      with_http(loops) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a") }
+    end
+
+    assert_includes err.message, "too many redirects"
+    assert_equal RemoteImageCache::MAX_REDIRECTS + 1, @http_requests.length
+  end
+
+  def test_http_fetch_redirect_without_location_raises
+    redirect = FakeResponse.new("302", {}, [])
+    err = assert_raises(RemoteImageCache::FetchError) do
+      with_http([redirect]) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a") }
+    end
+
+    assert_includes err.message, "Location"
+  end
+
+  def test_http_fetch_refuses_https_to_http_downgrade
+    redirect = FakeResponse.new("302", {"location" => "http://cdn.example.com/a.png"}, [])
+    err = assert_raises(RemoteImageCache::FetchError) do
+      with_http([redirect]) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a") }
+    end
+
+    assert_includes err.message, "downgrade"
+    assert_equal 1, @http_requests.length
+  end
+
+  def test_http_fetch_refuses_non_http_scheme
+    err = assert_raises(RemoteImageCache::FetchError) do
+      with_http([]) { |cache| cache.send(:http_fetch, "ftp://cdn.example.com/a.png") }
+    end
+
+    assert_includes err.message, "http(s)"
+    assert_empty @http_requests
+  end
+
+  def test_http_fetch_retries_retriable_status
+    busy = FakeResponse.new("503", {}, ["busy"])
+    result, requests = with_http([busy, ok_response([PNG])]) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png") }
+
+    assert_equal PNG, result[:body]
+    assert_equal 2, requests.length
+    assert_nil busy.reads, "a retriable response body is not read"
+  end
+
+  def test_http_fetch_non_success_does_not_read_body
+    missing = FakeResponse.new("404", {"content-type" => "text/html"}, ["<html>secret</html>"])
+    result, = with_http([missing]) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png") }
+
+    assert_equal({status: 404, content_type: "text/html", body: ""}, result)
+    assert_nil missing.reads
+  end
+
+  def test_http_fetch_content_length_over_cap_raises_before_reading
+    big = ok_response(["x" * 10], "content-length" => "101")
+    err = assert_raises(RemoteImageCache::FetchError) do
+      with_http([big], max_bytes: 100) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png?sig=SECRET") }
+    end
+
+    assert_includes err.message, "over"
+    refute_includes err.message, "SECRET"
+    assert_nil big.reads
+  end
+
+  def test_http_fetch_streamed_body_over_cap_raises_mid_stream
+    consumed = 0
+    big = ok_response([])
+    big.define_singleton_method(:read_body) do |&blk|
+      5.times { (consumed += 1) && blk.call("y" * 40) }
+    end
+
+    assert_raises(RemoteImageCache::FetchError) do
+      with_http([big], max_bytes: 100) { |cache| cache.send(:http_fetch, "https://cdn.example.com/a.png") }
+    end
+    assert_equal 3, consumed, "reading stops at the first chunk past the cap"
+  end
+
+  def test_fetch_with_default_fetcher_writes_cached_file
+    path, = with_http([ok_response([PNG])]) { |cache| cache.fetch("https://cdn.example.com/a.png") }
+
+    assert_equal PNG, File.binread(path)
+    assert_equal ".png", File.extname(path)
+  end
+
   private
+
+  def ok_response(chunks, headers = {})
+    FakeResponse.new("200", {"content-type" => "image/png"}.merge(headers), chunks)
+  end
+
+  # Runs the block with Net::HTTP.start stubbed to serve +responses+ in order.
+  # Returns [block result, requests as [host, port, use_ssl, request_uri]].
+  def with_http(responses, max_bytes: RemoteImageCache::MAX_BYTES)
+    queue = responses.dup
+    @http_requests = requests = []
+    start = ->(host, port, use_ssl: false, **_opts, &blk) {
+      http = Object.new
+      http.define_singleton_method(:request) do |req, &rblk|
+        requests << [host, port, use_ssl, req.path]
+        res = queue.shift or raise "unexpected request #{req.path}"
+        rblk.call(res)
+        res
+      end
+      blk.call(http)
+    }
+    cache = RemoteImageCache.new(cache_dir: @dir, max_bytes: max_bytes)
+    cache.define_singleton_method(:sleep) { |_s| nil }
+    result = Net::HTTP.stub(:start, start) { yield cache }
+    [result, requests]
+  end
 
   def build(status:, content_type:, body:)
     calls = @calls
