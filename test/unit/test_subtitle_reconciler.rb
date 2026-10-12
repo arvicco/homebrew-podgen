@@ -244,4 +244,36 @@ class TestSubtitleReconciler < Minitest::Test
 
     mock_messages.verify
   end
+
+  # P4-1: the sidecar is a frozen schema — reconcile returns the ORIGINAL
+  # start/end values (not the model's epsilon-drifted re-serialization) and
+  # only the original segment's keys (model-invented keys are dropped).
+  def test_reconcile_drift_within_epsilon_returns_original_timestamps
+    segments = [{ "start" => 0.0, "end" => 7.7, "text" => "Garbled." }]
+    reply = [{ "start" => 0.0, "end" => 7.700000001, "text" => "Clean." }]
+
+    result = stub_reconcile_reply(reply) { SubtitleReconciler.reconcile(segments, "Clean.", api_key: "k", model: "m") }
+
+    assert_equal 7.7, result.first["end"]
+    assert_equal "Clean.", result.first["text"]
+  end
+
+  def test_reconcile_model_added_key_is_dropped
+    segments = [{ "start" => 0.0, "end" => 5.0, "text" => "Garbled." }]
+    reply = [{ "start" => 0.0, "end" => 5.0, "text" => "Clean.", "speaker" => "A" }]
+
+    result = stub_reconcile_reply(reply) { SubtitleReconciler.reconcile(segments, "Clean.", api_key: "k", model: "m") }
+
+    assert_equal %w[start end text], result.first.keys
+  end
+
+  private
+
+  def stub_reconcile_reply(reply, &)
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**_|
+      Struct.new(:content).new([Struct.new(:text).new(JSON.generate(reply))])
+    end
+    Anthropic::Client.stub(:new, Struct.new(:messages).new(fake_messages), &)
+  end
 end
