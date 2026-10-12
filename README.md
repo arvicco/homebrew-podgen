@@ -1479,14 +1479,19 @@ bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check s
 
 Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
 `analytics`, and `generate --youtube/--lingq`) refuse to run inside a Claude
-Code session (`CLAUDECODE=1`) with exit 2; `--dry-run` forms still work
-when `--dry-run` cannot be read as another option's value (put it right after
-the podcast name, or use the global `podgen --dry-run <command>`): a
-`--dry-run` that follows a bare option (`publish <pod> --date --dry-run`) may
-be swallowed as that option's value, so it is refused. Abbreviated upload
-flags (`--you`, `--lin`, any prefix OptionParser would expand) and the
-single-dash completions `-y`/`-l` (generate has no short options, so
-OptionParser expands them to `--youtube`/`--lingq`) are refused too. To run
+Code session (`CLAUDECODE=1`) with exit 2. Only `generate`, `publish`,
+`unpublish` and `tweet` honour dry-run, so only their dry runs pass: the
+global `podgen --dry-run <command>`, or `--dry-run` right after the podcast
+name (`unpublish` takes the global flag only). `uploads`, `schedule` and
+`analytics` ignore dry-run and are refused even with it. A `--dry-run` that
+follows a bare option (`publish <pod> --date --dry-run`) may be swallowed as
+that option's value, so it is refused. For `generate` the guard parses the
+arguments with generate's own option list, so it refuses exactly what would
+enable an upload: `--youtube`/`--lingq`, any prefix OptionParser expands
+(`--you`, `--lin`), the single-dash completions `-y`/`-l`, and flags behind a
+`--` that a value-taking option swallowed (`--title -- --you`). Arguments
+generate's parser would reject are refused if any token looks like an upload
+flag. To run
 one deliberately from the Claude Code prompt: `! PODGEN_OWNER=1 bin/podgen publish <pod>`.
 
 The gate is also what CI runs. Adding a hard-coded URL to a new

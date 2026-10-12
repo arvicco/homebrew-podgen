@@ -368,10 +368,20 @@ class TestCharacterizationCLI < Minitest::Test
 
   def test_run_global_dry_run_before_command_passes_guard
     ENV["CLAUDECODE"] = "1"
-    code, _, err = guarded_run("--dry-run", "uploads", "a,b")
+    code, _, err = guarded_run("--dry-run", "publish", "test_pod")
 
     assert_equal 0, code
     assert_equal "", err
+  end
+
+  def test_run_global_dry_run_does_not_exempt_commands_that_ignore_it
+    # uploads/schedule/analytics never read options[:dry_run]: a global
+    # --dry-run would still run them for real.
+    ENV["CLAUDECODE"] = "1"
+    code, _, err = guarded_run("--dry-run", "uploads", "a,b")
+
+    assert_equal 2, code
+    assert err.start_with?(format(REFUSAL, "uploads"))
   end
 
   def test_run_generate_upload_flag_with_dry_run_passes_guard
@@ -393,7 +403,8 @@ class TestCharacterizationCLI < Minitest::Test
       ["publish", ["pod", "--date", "--dry-run"]] => true,
       ["tweet", ["pod", "ep", "--template", "--dry-run"]] => true,
       ["generate", ["pod", "--youtube", "--include", "--dry-run"]] => true,
-      ["generate", ["pod", "--youtube", "--dry-run"]] => true,
+      # generate's own parser reads this --dry-run as its flag: a real dry run.
+      ["generate", ["pod", "--youtube", "--dry-run"]] => false,
       ["publish", ["pod", "--dry"]] => true,
       ["publish", ["pod", "--DRY-RUN"]] => true,
       ["publish", ["pod", "--", "--dry-run"]] => true
@@ -423,7 +434,8 @@ class TestCharacterizationCLI < Minitest::Test
     code, _, err = guarded_run("publish", "test_pod", "--date", "--dry-run")
 
     assert_equal 2, code
-    assert_equal format(REFUSAL, "publish"), err
+    assert_equal format(REFUSAL, "publish"), err.lines.first
+    assert_equal "#{PodgenCLI::DRY_RUN_HINT}\n", err.lines[1]
   end
 
   def test_run_generate_without_upload_flags_not_refused
