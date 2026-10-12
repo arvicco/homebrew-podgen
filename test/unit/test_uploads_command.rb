@@ -304,6 +304,103 @@ class TestUploadsCommand < Minitest::Test
     assert_includes logs.first, "missing_cover"
   end
 
+  # ── same error two rounds running → permanent skip (P3-3) ──
+
+  def test_round_robin_same_error_two_rounds_logs_one_permanent_skip_line
+    logs = []
+    yt_calls = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
+    pending = { "pod_a" => 5, "pod_b" => 4 }
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      if pod == "pod_a"
+        YTResult.new(uploaded: 0, attempted: 1, rate_limited: false,
+          errors: [{ type: :upload, message: "A lesson with the same URL already exists" }])
+      else
+        pending[pod] -= 1
+        YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    tick = nil
+    capture_io { tick = cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    skip_lines = logs.grep(/permanently skipped/)
+    assert_equal 1, skip_lines.length
+    assert_equal "uploads: pod_a permanently skipped — upload: A lesson with the same URL already exists " \
+                 "(same error 2 rounds running)", skip_lines.first
+    assert_equal 2, yt_calls.count("pod_a"), "pod_a must not be retried after the second identical failure"
+    assert_equal 4, tick.per_pod["pod_b"][:uploaded]
+    assert_equal 2, tick.per_pod["pod_a"][:errors]
+  end
+
+  def test_round_robin_publisher_crash_same_class_names_exception_class
+    logs = []
+    ok = ok_yt_result
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
+    cmd.define_singleton_method(:pending_count_for) { |_| 3 }
+    # pod_a goes through the real crash path: no such podcast under PODGEN_ROOT
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      pod == "pod_a" ? super(pod, max: max) : ok
+    end
+
+    capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    skip_lines = logs.grep(/permanently skipped/)
+    assert_equal 1, skip_lines.length
+    assert_includes skip_lines.first, "pod_a permanently skipped — RuntimeError: Unknown podcast: pod_a"
+    assert_includes skip_lines.first, "(same error 2 rounds running)"
+  end
+
+  def test_round_robin_fail_once_then_succeed_is_not_skipped
+    logs = []
+    yt_calls = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
+    pending = { "pod_a" => 2, "pod_b" => 3 }
+    failed_once = false
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      if pod == "pod_a" && !failed_once
+        failed_once = true
+        YTResult.new(uploaded: 0, attempted: 1, rate_limited: false, errors: [{ type: :upload, message: "503" }])
+      else
+        pending[pod] -= 1
+        YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    tick = nil
+    capture_io { tick = cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_empty logs.grep(/permanently skipped/)
+    assert_equal 2, tick.per_pod["pod_a"][:uploaded]
+    assert_equal 3, tick.per_pod["pod_b"][:uploaded]
+  end
+
+  def test_round_robin_alternating_error_classes_not_skipped_but_capped
+    logs = []
+    yt_calls = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
+    cmd.define_singleton_method(:pending_count_for) { |_| 2 } # never drains
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      if pod == "pod_a"
+        type = yt_calls.count("pod_a").odd? ? :upload : :video
+        YTResult.new(uploaded: 0, attempted: 1, rate_limited: false, errors: [{ type: type, message: "x" }])
+      else
+        YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+      end
+    end
+
+    capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_empty logs.grep(/permanently skipped/)
+    # initial pending sum = 4 -> bounded by the round cap
+    assert_equal 4, yt_calls.count("pod_a")
+  end
+
   # ── mode validation happens before side effects ──
 
   def test_bogus_mode_raises_parse_error_at_construction
