@@ -135,6 +135,7 @@ class YouTubePublisher
     require_relative "youtube_uploader"
     require_relative "subtitle_generator"
     require_relative "video_generator"
+    require_relative "video_builder"
 
     base = ep[:base_name]
     yt_config = @config.youtube_config
@@ -154,7 +155,7 @@ class YouTubePublisher
 
     video_path = File.join(@config.episodes_dir, "#{base}.mp4")
     cover_path = CoverResolver.find_episode_cover(@config.episodes_dir, base)
-    unless cover_path || File.exist?(video_path)
+    unless cover_path || VideoBuilder.reusable?(mp3_path: ep[:mp3_path], video_path: video_path)
       say_err "  ✗ #{base} skipped: no cover image found"
       return EpisodeResult.new(status: :skipped, base: base, attempted: false,
         error: { type: :missing_cover, base: base, message: "no cover image" })
@@ -259,13 +260,15 @@ class YouTubePublisher
 
   # Returns nil when the mp4 is ready (built or reused), else a typed error.
   def ensure_video(ep, cover_path, video_path)
-    require_relative "video_builder"
-
-    say "  generating video #{ep[:base_name]}..." if !File.exist?(video_path) && cover_path
+    reusable = VideoBuilder.reusable?(mp3_path: ep[:mp3_path], video_path: video_path)
+    say "  generating video #{ep[:base_name]}..." if !reusable && cover_path
     result = VideoBuilder.build(mp3_path: ep[:mp3_path], cover_path: cover_path, video_path: video_path, logger: @logger)
 
     case result.status
-    when :built, :exists then nil
+    when :built
+      say "  #{ep[:base_name]}: #{result.message}" if result.message.start_with?("video regenerated")
+      nil
+    when :exists then nil
     when :no_cover
       say_err "  ✗ #{ep[:base_name]} skipped: no cover image found"
       { type: :missing_cover, base: ep[:base_name], message: "no cover image" }
