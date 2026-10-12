@@ -31,6 +31,13 @@ module AnthropicClient
     block.text
   end
 
+  # Request params carrying the role's effort level (P5-1): empty when the
+  # registry resolves nil, so the API default applies.
+  def self.effort_params(role)
+    effort = ClaudeModels.effort(role)
+    effort ? {output_config: {effort: effort.to_sym}} : {}
+  end
+
   private
 
   # REQUEST_TIMEOUT bounds one HTTP request (the SDK default is 10 min, and
@@ -41,6 +48,7 @@ module AnthropicClient
   def init_anthropic_client(role:)
     @client = Anthropic::Client.new(timeout: REQUEST_TIMEOUT)
     @model = ClaudeModels.for(role)
+    @effort_params = AnthropicClient.effort_params(role)
   end
 
   # Extract and validate structured output from an API response.

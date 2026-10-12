@@ -10,6 +10,10 @@
 #                     line (ruling R1-a)
 #   3. LINES[line]
 # A drift check against the live Models API lives in test/api (R1-c).
+#
+# Effort (P5-1): EFFORT lists the roles sent a non-default effort level;
+# every other role resolves to nil (the parameter is omitted). Per-role
+# ENV CLAUDE_EFFORT_<ROLE> overrides; an invalid value warns and omits.
 module ClaudeModels
   LINES = {
     opus: "claude-opus-5-5",
@@ -39,6 +43,14 @@ module ClaudeModels
     web_search: "CLAUDE_WEB_MODEL"
   }.freeze
 
+  EFFORT_LEVELS = %w[low medium high].freeze
+
+  # Short-output roles: a title, a description, a one-word language name.
+  EFFORT = {
+    description: "low",
+    language_detect: "low"
+  }.freeze
+
   LINE_ENV = {
     opus: "CLAUDE_OPUS_MODEL",
     sonnet: "CLAUDE_SONNET_MODEL",
@@ -55,6 +67,19 @@ module ClaudeModels
   def line_id(line)
     key = LINE_ENV.fetch(line) { raise ArgumentError, "unknown Claude model line: #{line.inspect}" }
     env(key) || (line == :opus && env("CLAUDE_MODEL")) || LINES.fetch(line)
+  end
+
+  def effort(role)
+    ROLES.fetch(role) { raise ArgumentError, "unknown Claude model role: #{role.inspect}" }
+    key = "CLAUDE_EFFORT_#{role.to_s.upcase}"
+    value = env(key)
+    return EFFORT[role] unless value
+
+    level = value.strip.downcase
+    return level if EFFORT_LEVELS.include?(level)
+
+    warn "Warning: #{key}=#{value.inspect} is not one of #{EFFORT_LEVELS.join("/")}; omitting effort"
+    nil
   end
 
   def role_env(role)

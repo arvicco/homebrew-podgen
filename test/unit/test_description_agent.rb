@@ -221,6 +221,24 @@ class TestDescriptionAgent < Minitest::Test
       "expected the question-shaped title example to be present")
   end
 
+  # --- effort (P5-1): short-output role runs at low effort ---
+
+  def test_every_call_passes_low_effort
+    saved = ENV.delete("CLAUDE_EFFORT_DESCRIPTION")
+    agent = build_agent("Some text")
+    client = agent.instance_variable_get(:@client)
+
+    agent.clean_title(title: "A title")
+    agent.clean(title: "A title", description: "A description")
+    agent.generate_title(transcript: "Once upon a time", language: "English")
+    agent.generate(title: "A title", transcript: "Once upon a time")
+
+    assert_equal 4, client.calls.length
+    client.calls.each { |kw| assert_equal({effort: :low}, kw[:output_config]) }
+  ensure
+    ENV["CLAUDE_EFFORT_DESCRIPTION"] = saved if saved
+  end
+
   private
 
   def build_agent(response_text)
