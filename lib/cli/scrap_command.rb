@@ -61,7 +61,7 @@ module PodgenCLI
       return 1 unless target_base
 
       # Find all files related to this episode (mp3 + scripts, all languages).
-      related_files = EpisodeArtifacts.for_basename(episodes_dir, target_base, languages: config.language_codes)
+      related_files = EpisodeArtifacts.for_basename(episodes_dir, target_base)
 
       if related_files.empty?
         $stderr.puts "No files found for '#{target_base}'"
@@ -147,13 +147,13 @@ module PodgenCLI
     # Returns [base_name, date_string, suffix_index] or nil on error.
     def resolve_target(config, episodes_dir)
       if @episode_id
-        resolve_by_id(episodes_dir, config.language_codes)
+        resolve_by_id(episodes_dir)
       else
         resolve_latest(episodes_dir)
       end
     end
 
-    def resolve_by_id(episodes_dir, languages = nil)
+    def resolve_by_id(episodes_dir)
       # Parse episode_id: "2026-03-31" or "2026-03-31b"
       date, suffix = EpisodeNaming.parse_episode_id(@episode_id)
       unless date
@@ -165,7 +165,7 @@ module PodgenCLI
       base = EpisodeNaming.basename_for(@podcast_name, date, suffix)
 
       # Verify the episode exists.
-      if EpisodeArtifacts.for_basename(episodes_dir, base, languages: languages).empty?
+      if EpisodeArtifacts.for_basename(episodes_dir, base).empty?
         $stderr.puts "No files found matching '#{base}' in #{episodes_dir}"
         return nil
       end

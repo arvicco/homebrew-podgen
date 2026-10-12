@@ -281,24 +281,21 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     assert_equal hm, stats_duration_map(CONFIGURED)
   end
 
-  # With the configured languages, EpisodeArtifacts' `-xx` variants follow
-  # the language rule: "pod-2026-01-15-ai" is its own English episode, not
-  # a variant of "pod-2026-01-15" (was: any dash tail was a variant).
-  # Without configuration the legacy any-tail glob stands.
-  def test_for_basename_unconfigured_dash_tail_follows_language_rule
+  # Divergent by design (P4-9, CRPR round 1): EpisodeArtifacts (what scrap
+  # deletes and move renames) treats ANY `<base>-*` file as part of the
+  # episode, so a language commented out of the config is not left behind;
+  # the configured-language rule is for attribution only, where
+  # "pod-2026-01-15-ai" is its own English episode.
+  def test_for_basename_unconfigured_dash_tail_diverges_from_language_rule
     %w[pod-2026-01-15.mp3 pod-2026-01-15-es.mp3 pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md
       pod-2026-01-15-ai-es.mp3 pod-2026-01-15-esp.mp3].each { |f| touch(f) }
 
-    names = EpisodeArtifacts.for_basename(@episodes_dir, "pod-2026-01-15", languages: CONFIGURED).map { |f| File.basename(f) }
-    assert_equal %w[pod-2026-01-15-es.mp3 pod-2026-01-15.mp3], names
+    names = EpisodeArtifacts.for_basename(@episodes_dir, "pod-2026-01-15").map { |f| File.basename(f) }
+    assert_equal %w[pod-2026-01-15-ai-es.mp3 pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md
+      pod-2026-01-15-es.mp3 pod-2026-01-15-esp.mp3 pod-2026-01-15.mp3], names
     assert EpisodeFiltering.matches_language?("pod-2026-01-15-ai", "en", languages: CONFIGURED),
       "the -ai file is its own English episode under the configured-language rule"
-    ai = EpisodeArtifacts.for_basename(@episodes_dir, "pod-2026-01-15-ai", languages: CONFIGURED).map { |f| File.basename(f) }
-    assert_equal %w[pod-2026-01-15-ai-es.mp3 pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md], ai
-
-    legacy = EpisodeArtifacts.for_basename(@episodes_dir, "pod-2026-01-15").map { |f| File.basename(f) }
-    assert_equal %w[pod-2026-01-15-ai-es.mp3 pod-2026-01-15-ai.mp3 pod-2026-01-15-ai_script.md
-      pod-2026-01-15-es.mp3 pod-2026-01-15-esp.mp3 pod-2026-01-15.mp3], legacy
+    assert_equal 2, EpisodeArtifacts.method(:for_basename).arity, "no languages: narrowing for delete/move"
   end
 
   # The primary language comes from config (languages.first) in
