@@ -155,4 +155,53 @@ class TestSubtitleReconciliationRunner < Minitest::Test
       assert_match(/JSON parse oops/, result.message)
     end
   end
+
+  def test_run_failed_result_carries_error_class
+    write_timestamps
+    write_transcript
+    SubtitleReconciler.stub(:reconcile, ->(*) { raise SubtitleReconciler::ReconciliationError, "bad" }) do
+      result = SubtitleReconciliationRunner.run(ts_path: @ts_path, transcript_path: @tr_path, api_key: "k")
+      assert_equal :failed, result.status
+      assert_equal "bad", result.message
+      assert_equal "SubtitleReconciler::ReconciliationError", result.error_class
+    end
+  end
+
+  # ── text: keyword (in-memory transcript, P4-2) ─────────────────────
+
+  def test_run_with_text_reconciles_text_without_reading_transcript_file
+    write_timestamps
+    calls = []
+    fake = ->(segs, text, api_key:) {
+      calls << [text, api_key]
+      segs
+    }
+    TranscriptParser.stub(:parse_file, ->(_) { flunk "transcript file must not be read when text: is given" }) do
+      SubtitleReconciler.stub(:reconcile, fake) do
+        result = SubtitleReconciliationRunner.run(
+          ts_path: @ts_path, transcript_path: nil, text: "In-memory text.", api_key: "k"
+        )
+        assert_equal :reconciled, result.status
+      end
+    end
+    assert_equal [["In-memory text.", "k"]], calls
+  end
+
+  def test_run_with_blank_text_returns_no_transcript_without_calling_reconciler
+    write_timestamps
+    write_transcript("File body that must be ignored.")
+    SubtitleReconciler.stub(:reconcile, ->(*) { flunk "reconciler must not run on blank text" }) do
+      result = SubtitleReconciliationRunner.run(
+        ts_path: @ts_path, transcript_path: @tr_path, text: "  \n", api_key: "k"
+      )
+      assert_equal :no_transcript, result.status
+    end
+    refute JSON.parse(File.read(@ts_path))["reconciled"]
+  end
+
+  def test_run_with_text_keeps_already_reconciled_guard
+    write_timestamps(reconciled: true)
+    result = SubtitleReconciliationRunner.run(ts_path: @ts_path, transcript_path: nil, text: "T.", api_key: "k")
+    assert_equal :already_reconciled, result.status
+  end
 end
