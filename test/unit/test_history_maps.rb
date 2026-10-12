@@ -170,6 +170,56 @@ class TestHistoryMaps < Minitest::Test
     refute title.key?("test_pod-2026-03-01-en.mp3")
   end
 
+  # --- Per-language duration (P5-0) ---
+
+  def test_build_language_duration_prefers_per_language_value
+    history = [{ "date" => "2026-03-01", "title" => "Episode One", "duration" => 600.5,
+                 "languages" => { "en" => { "duration" => 600.5 }, "es" => { "duration" => 712.25 } } }]
+    path = write_history(history)
+
+    _, _, duration = HistoryMaps.build(
+      history_path: path, podcast_name: "test_pod",
+      episodes_dir: @episodes_dir, languages: ["es"]
+    )
+
+    assert_in_delta 600.5, duration["test_pod-2026-03-01.mp3"]
+    assert_in_delta 712.25, duration["test_pod-2026-03-01-es.mp3"]
+  end
+
+  def test_build_language_duration_missing_falls_back_to_english
+    history = [{ "date" => "2026-03-01", "title" => "Episode One", "duration" => 600.5,
+                 "languages" => { "it" => { "duration" => 650.0 } } }]
+    path = write_history(history)
+
+    _, _, duration = HistoryMaps.build(
+      history_path: path, podcast_name: "test_pod",
+      episodes_dir: @episodes_dir, languages: ["es"]
+    )
+
+    assert_in_delta 600.5, duration["test_pod-2026-03-01-es.mp3"]
+  end
+
+  def test_build_language_duration_zero_nil_or_non_numeric_falls_back_to_english
+    history = [
+      { "date" => "2026-03-01", "title" => "Zero", "basename" => "test_pod-2026-03-01", "duration" => 600.5,
+        "languages" => { "es" => { "duration" => 0 } } },
+      { "date" => "2026-03-02", "title" => "Nil", "basename" => "test_pod-2026-03-02", "duration" => 300.0,
+        "languages" => { "es" => { "duration" => nil, "voiced_at" => "2026-03-02T06:00:00Z" } } },
+      { "date" => "2026-03-03", "title" => "Junk", "basename" => "test_pod-2026-03-03", "duration" => 200.0,
+        "languages" => { "es" => { "duration" => "12:00" } } }
+    ]
+    path = write_history(history)
+
+    _, _, duration = HistoryMaps.build(
+      history_path: path, podcast_name: "test_pod",
+      episodes_dir: @episodes_dir, languages: ["es"]
+    )
+
+    assert_in_delta 600.5, duration["test_pod-2026-03-01-es.mp3"]
+    assert_in_delta 300.0, duration["test_pod-2026-03-02-es.mp3"]
+    assert_in_delta 200.0, duration["test_pod-2026-03-03-es.mp3"]
+  end
+
   # --- Basename-based mapping ---
 
   def test_build_uses_basename_when_present
