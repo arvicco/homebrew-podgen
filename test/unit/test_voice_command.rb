@@ -104,7 +104,8 @@ class TestVoiceCommand < Minitest::Test
   end
 
   def test_resolve_basenames_excludes_language_suffixed_scripts
-    config = setup_fake_podcast("mypod")
+    # jp/it are configured, so their tails are variants (P5-2a, Q-52)
+    config = setup_fake_podcast("mypod", languages: %w[en jp it])
     %w[mypod-2026-04-29 mypod-2026-04-29-jp mypod-2026-04-29-it].each do |b|
       File.write(File.join(config.episodes_dir, "#{b}_script.md"), "# T\n\nC.")
     end
@@ -117,10 +118,11 @@ class TestVoiceCommand < Minitest::Test
 
   private
 
-  def setup_fake_podcast(name)
+  def setup_fake_podcast(name, languages: nil)
     require "podcast_config"
     FileUtils.mkdir_p(File.join(@tmpdir, "podcasts", name))
-    File.write(File.join(@tmpdir, "podcasts", name, "guidelines.md"), "## Podcast\n- name: #{name}\n")
+    language_md = languages ? "## Language\n#{languages.map { |c| "- #{c}\n" }.join}" : ""
+    File.write(File.join(@tmpdir, "podcasts", name, "guidelines.md"), "## Podcast\n- name: #{name}\n#{language_md}")
     ENV["PODGEN_ROOT"] = @tmpdir
     config = PodcastConfig.new(name)
     FileUtils.mkdir_p(config.episodes_dir)
