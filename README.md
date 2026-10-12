@@ -2,11 +2,11 @@
 
 Fully autonomous podcast generation pipeline with two modes, plus a standalone TTS pronunciation tool:
 
-- **News pipeline**: Researches topics, writes a script, generates audio via TTS, and assembles a final MP3.
-- **Language pipeline**: Downloads episodes from RSS feeds, local MP3 files (`--file`), or YouTube videos (`--url`), strips intro/outro music and unwanted segments, transcribes via OpenAI Whisper, and produces a clean MP3 + transcript.
+- **News pipeline**: Picks topics, researches them across configurable sources, writes and reviews a script, generates audio via TTS, assembles a final MP3, and translates and voices the episode in every configured language.
+- **Language pipeline**: Downloads episodes from RSS feeds, local MP3 files (`--file`), or YouTube videos (`--url`), strips intro/outro music and unwanted segments, transcribes (OpenAI, ElevenLabs Scribe or Groq — several engines can be reconciled), annotates vocabulary, and produces a clean MP3 + transcript with timestamps, subtitles and a video for YouTube.
 - **tell**: Interactive TTS pronunciation tool with auto-translation and grammatical glossing for language learning.
 
-Runs on a daily schedule with zero human involvement.
+Runs on a daily schedule with zero human involvement: launchd jobs generate, publish (Cloudflare R2, LingQ, YouTube) and announce (X) episodes, and `podgen status` reports whether every scheduled show is still producing.
 
 ## Prerequisites
 
@@ -51,7 +51,8 @@ EXA_API_KEY=...
 BLUESKY_HANDLE=...            # Optional: your-handle.bsky.social
 BLUESKY_APP_PASSWORD=...      # Optional: https://bsky.app/settings/app-passwords
 SOCIALDATA_API_KEY=...        # Optional: https://socialdata.tools
-OPENAI_API_KEY=...            # Required for language pipeline (Whisper transcription)
+OPENAI_API_KEY=...            # Required for language pipeline (Whisper transcription) and `translator: openai` languages
+OPENAI_TRANSLATION_MODEL=gpt-5 # Optional: OpenAI translation model for `translator: openai` languages (default: gpt-5)
 WHISPER_MODEL=gpt-4o-mini-transcribe  # Optional: default gpt-4o-mini-transcribe, alt whisper-1
 GROQ_API_KEY=...              # Optional: Groq transcription engine (language pipeline)
 GROQ_WHISPER_MODEL=whisper-large-v3   # Optional: Groq Whisper model (default: whisper-large-v3)
@@ -316,10 +317,11 @@ Language pipeline only:
 | `--no-skip`         | Disable skip even when configured                                            |
 | `--no-cut`          | Disable cut even when configured                                             |
 | `--no-autotrim`     | Disable autotrim even when configured                                        |
-| `--image PATH`      | Cover: file path, `thumb` (YouTube), or `last` (latest ~/Desktop screenshot) |
+| `--image PATH`      | Cover: file path, `thumb` (YouTube), `last` (latest ~/Desktop screenshot), or `auto` (web search ranked by Claude vision) |
 | `--base-image PATH` | Base image for title-overlay cover generation                                |
+| `--include WORDS`   | Force-include these vocabulary lemmas (comma-separated) in the annotation   |
 
-`--skip`/`--cut`/`--autotrim` override per-feed and `## Audio` config. The `--no-*` variants force-disable a setting that would otherwise apply.
+`--skip-intro`, `--cut-outro` and `--ask-skip` are aliases of `--skip`, `--cut` and `--ask-trim`. `--skip`/`--cut`/`--autotrim` override per-feed and `## Audio` config. The `--no-*` variants force-disable a setting that would otherwise apply.
 
 ## First Run
 
@@ -329,22 +331,29 @@ podgen generate <podcast_name>
 
 ### News pipeline (default)
 
-1. Research your configured topics via enabled sources (~23s with Exa only, longer with multiple)
-2. Generate a podcast script via Claude (~48s)
-3. Synthesize speech via ElevenLabs (~90s)
-4. Assemble and normalize the final MP3 (~22s)
+1. Topics — Claude turns the guidelines (and `queue.yml` fallbacks) into today's topics, each with a short keyword query for Hacker News
+2. Research — every enabled source runs per topic (Exa, Hacker News, RSS, Claude web search, Bluesky, X); results are merged, deduplicated and cached for 24 h; queued priority links are added
+3. Script — Claude writes the episode from the research, following `## Format`, `## Tone` and `## Links`
+4. Review — deterministic checks plus an AI review against the research (see [Script review](#script-review)); blockers send the script back for a rewrite, warnings are logged and kept
+5. Voice — ElevenLabs TTS per segment, with the pronunciation dictionary applied
+6. Assemble — intro/outro jingles, loudness normalization, 192 kbps MP3 with ID3 title/artist
+7. Per extra language: translate the reviewed script (Claude or OpenAI), then voice and assemble again with that language's voice
 
-Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` (~10 min episode, ~12 MB)
+Measured on a four-language episode (2026-10-12): the English MP3 is ready about 8 minutes after the start (two review rounds), each additional language takes 5–6 minutes more.
+
+Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` (10–15 min, ~20 MB at 192 kbps) plus `<name>-YYYY-MM-DD_script.json` / `.md`, and `-<lang>` siblings per language
 
 ### Language pipeline
 
-1. Fetch the latest episode from configured RSS feeds, a local MP3 (`--file`), or a YouTube video (`--url`)
-2. Download and strip intro/outro/interior segments via unified trimming (outro auto-detection requires `--autotrim`)
-3. Transcribe via OpenAI Whisper (~15s for a 7-min episode)
-4. Clean episode title and description (or generate description from transcript for local files) via Claude Haiku
+1. Fetch the latest episode from configured RSS feeds, a local MP3 (`--file`), or a YouTube video (`--url`); episodes already in history, excluded URLs and episodes outside `min_length`/`max_length` are skipped
+2. Download and strip intro/outro/interior segments via unified trimming (outro auto-detection requires `--autotrim`; `--ask-trim` previews the audio and prompts)
+3. Transcribe with the configured engines (`open` = OpenAI, `elab` = ElevenLabs Scribe, `groq` = Groq Whisper); with several engines Claude reconciles them into one transcript, with YouTube captions as a tiebreaker when available
+4. Clean the episode title and description (or generate a description from the transcript for local files) via Claude (sonnet line)
 5. Assemble with custom intro/outro jingles + loudness normalization
+6. Annotate vocabulary (`## Vocabulary`), write word timestamps and `.srt` subtitles, render the `.mp4` for YouTube, and resolve the episode cover
+7. Optionally upload to LingQ (`--lingq`) and YouTube (`--youtube`)
 
-Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` + `<name>-YYYY-MM-DD_transcript.md`
+Output: `output/<podcast>/episodes/<name>-YYYY-MM-DD.mp3` + `<name>-YYYY-MM-DD_transcript.md`, `_timestamps.json`, `.srt`, `.mp4` and the cover
 
 ## Creating a Podcast
 
@@ -461,6 +470,8 @@ Available sources:
 
 The Exa default category is `news`; override with `- exa: research` in the `## Sources` section.
 
+Hacker News is searched with a 2–4 word keyword query that the topic step emits for each topic (Algolia requires every term to match, so the full topic sentence never would); a topic without a keyword query is skipped rather than searched. The run log shows each query.
+
 
 Add the section to `podcasts/<name>/guidelines.md`:
 
@@ -501,10 +512,11 @@ Add a `language` list to the `## Podcast` section in `podcasts/<name>/guidelines
 - Optionally append `: <voice_id>` to use a different ElevenLabs voice for that language
 - After the voice_id, append space-separated inline options:
   - `translator: openai` — translate via the OpenAI API instead of Claude (recommended for Japanese; requires `OPENAI_API_KEY`). Default `claude`.
-  - `translation_model: <model>` — override the translation model for that language (e.g. `gpt-5`, `claude-haiku-4-5-20251001`). Default: `OPENAI_TRANSLATION_MODEL` env var (default `gpt-5`) for `openai`; `CLAUDE_MODEL` for `claude`.
+  - `translation_model: <model>` — override the translation model for that language (e.g. `gpt-5`, `claude-haiku-4-5-20251001`). Default: `OPENAI_TRANSLATION_MODEL` env var (default `gpt-5`) for `openai`; the translation role of the model registry for `claude` (`CLAUDE_TRANSLATION_MODEL`, else the opus line).
 - If `language` is omitted, only English (`en`) is produced
 - English is never re-translated — the original script is used directly
 - Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
+- Each extra language gets its own feed and site: `output/<podcast>/feed-<code>.xml` and `output/<podcast>/site/<code>/`, published alongside the primary ones
 - Translated episodes report their own duration in the language feeds and on the site (recorded in history.yml when voiced); the English duration is used only when none was recorded
 - Removing a code from `language` does not remove its files: move or scrap the leftover `-<code>` episodes first (`translate`, `voice` and `render` still treat a leftover file as a variant while its English episode exists, but the feed and site would list it as an English episode)
 
@@ -946,6 +958,16 @@ News pipeline episodes can include source links in the transcript. Add a `## Lin
 
 When enabled, the script agent asks Claude to list every source it referenced while writing the episode. Tracking parameters are stripped from URLs. The links render as clickable items on the episode's site page. RSS transcript HTML includes the links but note that most podcast apps (Pocket Casts, Apple Podcasts) do not render HTML links in transcripts.
 
+### Script review
+
+Every news script is reviewed before it is voiced. Deterministic checks run first: weekday/date consistency, stage directions (`[pause]`, `(laughs)`), forbidden filler phrases, leftover Markdown, spelled-out magnitudes ("two million"), a missing title, and whether every queued priority link was used. Then Claude reviews the script against the research under five headings — FACTUAL ACCURACY, HALLUCINATION DETECTION, COVERAGE, NUMBER FORMAT, NATURAL FLOW — and reports each finding as a BLOCKER or a WARNING.
+
+- A BLOCKER sends the script back to the writer with the findings; up to two rewrites, after which the run continues with a warning in the log.
+- A WARNING is logged (the indented `WARNING: [...]` lines in the run log) and the script is kept as written. The reviewer never edits the script itself.
+- Titles are never truncated: the writer is asked for about 40 characters, and a longer title is warned about and kept whole.
+
+The raw script responses are kept under `output/<podcast>/debug/` for inspection.
+
 ### Priority Links
 
 Queue specific URLs for inclusion in the next episode's research. Priority links are consumed during generation and fed to the script agent alongside regular source results.
@@ -1371,120 +1393,207 @@ When hunspell isn't available for a language, body counts use lemma + historical
 ```
 podgen/
 ├── bin/
-│   ├── podgen               # CLI executable
-│   └── tell                 # TTS pronunciation tool (standalone)
+│   ├── podgen                # CLI executable (loads .env, dispatches commands)
+│   └── tell                  # TTS pronunciation tool (standalone)
 ├── podcasts/<name>/
-│   ├── guidelines.md         # Podcast format, style, & sources config
+│   ├── guidelines.md         # Podcast format, style, sources, languages, publishing config
 │   ├── queue.yml             # Fallback topic queue
 │   ├── pronunciation.pls     # TTS pronunciation overrides (optional)
-│   ├── site.css              # Custom CSS for static site (optional)
+│   ├── known_vocabulary.yml  # Words excluded from vocabulary annotation (optional)
+│   ├── intro.mp3 / outro.mp3 # Jingles (optional)
+│   ├── site.css              # Custom CSS for the static site (optional)
 │   ├── favicon.ico           # Site favicon (optional, auto-detected; .png/.svg also work)
 │   └── .env                  # Per-podcast overrides (optional, gitignored)
 ├── lib/
-│   ├── cli.rb                # CLI dispatcher (OptionParser + command registry)
+│   ├── cli.rb                # CLI dispatcher: command registry, help, owner-action guard
 │   ├── cli/
-│   │   ├── version.rb        # PodgenCLI::VERSION
-│   │   ├── podcast_command.rb # Shared mixin: podcast name validation + config loading
-│   │   ├── generate_command.rb # Pipeline dispatcher (news or language)
-│   │   ├── language_pipeline.rb # Language pipeline (phased orchestrator)
-│   │   ├── translate_command.rb # Backfill translations for existing episodes
-│   │   ├── scrap_command.rb  # Remove episode (by name or latest) + history entry
-│   │   ├── rss_command.rb    # RSS feed generation
-│   │   ├── site_command.rb   # Static HTML website generation
-│   │   ├── publish_command.rb # Publish to Cloudflare R2 or LingQ
-│   │   ├── stats_command.rb  # Show podcast statistics + download analytics
-│   │   ├── analytics_command.rb # Manage Cloudflare analytics Worker
-│   │   ├── validate_command.rb # Validate config and output
-│   │   ├── list_command.rb   # List available podcasts
-│   │   ├── add_command.rb    # Queue a priority link for next episode
-│   │   ├── links_command.rb  # List/manage queued priority links
-│   │   ├── vocab_command.rb  # Manage known vocabulary words
-│   │   ├── revocab_command.rb # Re-annotate vocabulary on transcripts
-│   │   ├── reformat_command.rb # Reformat transcripts (paragraph breaks, cleanup)
-│   │   ├── exclude_command.rb # Exclude URLs from future episodes
-│   │   ├── cover_command.rb  # Generate episode cover images
-│   │   ├── fork_command.rb   # Fork podcast into a new namespace
-│   │   ├── unpublish_command.rb # Remove podcast from Cloudflare R2
-│   │   ├── test_command.rb   # Run test scripts
-│   │   └── schedule_command.rb # Install launchd scheduler
-│   ├── time_value.rb          # TimeValue: seconds or min:sec with absolute? flag
-│   ├── snip_interval.rb      # SnipInterval: unified skip/cut/snip interval math
-│   ├── podcast_config.rb     # Config resolver (delegates parsing to GuidelinesParser)
-│   ├── guidelines_parser.rb  # Parses guidelines.md sections into structured config
-│   ├── episode_filtering.rb  # Shared MP3 glob/filter helpers
-│   ├── loggable.rb           # Mixin: logger accessor with $stderr fallback
-│   ├── retryable.rb          # Mixin: exponential backoff retries
-│   ├── source_manager.rb     # Multi-source research coordinator
-│   ├── research_cache.rb     # File-based research cache (24h TTL)
-│   ├── transcription/
-│   │   ├── base_engine.rb    # Shared base class (retries, logging)
-│   │   ├── openai_engine.rb  # OpenAI Whisper (engine: "open")
-│   │   ├── elevenlabs_engine.rb # ElevenLabs Scribe v2 (engine: "elab")
-│   │   ├── groq_engine.rb    # Groq hosted Whisper + word timestamps (engine: "groq")
-│   │   ├── engine_manager.rb # Orchestrator: single or parallel comparison mode
-│   │   └── transcript_merger.rb # Claude merge of multi-engine transcripts
+│   │   ├── generate_command.rb    # Pipeline dispatcher; the news pipeline
+│   │   ├── generate_options.rb    # generate's option list (shared with the guard's dry parse)
+│   │   ├── language_pipeline.rb   # Language pipeline (phased orchestrator)
+│   │   ├── episode_selector.rb    # Shared episode selection (--date, positional, --last)
+│   │   ├── podcast_command.rb     # Shared mixin: podcast name validation + config loading
+│   │   ├── translate_command.rb   # Translate existing episodes to new languages
+│   │   ├── voice_command.rb       # Voice or re-voice from script JSON
+│   │   ├── render_command.rb      # Re-render script markdown from JSON
+│   │   ├── scrap_command.rb       # Remove an episode + history entry
+│   │   ├── move_command.rb        # Move episode artifacts to another date
+│   │   ├── regen_command.rb       # Rebuild .mp4 / .srt / reconciled timestamps
+│   │   ├── rss_command.rb         # RSS feed generation
+│   │   ├── site_command.rb        # Static HTML website generation
+│   │   ├── publish_command.rb     # Publish to Cloudflare R2, LingQ, YouTube
+│   │   ├── unpublish_command.rb   # Remove from R2 or delete YouTube videos
+│   │   ├── uploads_command.rb     # Multi-podcast regen + R2 + LingQ + YouTube batch
+│   │   ├── tweet_command.rb       # Announce an episode on X
+│   │   ├── schedule_command.rb    # Install launchd jobs (generate, uploads, status check)
+│   │   ├── status_command.rb      # OK/OLD/WARN per podcast (content progress, warnings, announcements)
+│   │   ├── stats_command.rb       # Podcast statistics, download analytics, vocabulary frequency
+│   │   ├── analytics_command.rb   # Manage the Cloudflare analytics Worker
+│   │   ├── validate_command.rb    # Validate config and output
+│   │   ├── list_command.rb        # List available podcasts
+│   │   ├── init_command.rb        # Create a podcast (skeleton or from an existing one)
+│   │   ├── fork_command.rb        # Fork a podcast with all content into a new namespace
+│   │   ├── add_command.rb         # Queue a priority link
+│   │   ├── links_command.rb       # List/manage queued priority links
+│   │   ├── exclude_command.rb     # Exclude URLs from future episodes
+│   │   ├── vocab_command.rb       # Manage known vocabulary words
+│   │   ├── revocab_command.rb     # Re-annotate vocabulary on transcripts
+│   │   ├── reformat_command.rb    # Reformat transcripts
+│   │   ├── cover_command.rb       # Generate episode cover images
+│   │   ├── test_command.rb        # Run component test scripts
+│   │   └── version.rb             # PodgenCLI::VERSION
+│   ├── claude_models.rb      # Model registry: lines, roles, per-role effort, ENV overrides
+│   ├── anthropic_client.rb   # Shared Anthropic client setup, text extraction, structured-output checks
+│   ├── openai_client.rb      # Shared OpenAI client setup (transcription, translation)
+│   ├── usage_logger.rb       # Token/cache usage log lines for every Claude call
 │   ├── agents/
-│   │   ├── topic_agent.rb    # Claude topic generation
-│   │   ├── research_agent.rb # Exa.ai search
-│   │   ├── script_agent.rb   # Claude script generation
-│   │   ├── tts_agent.rb      # ElevenLabs TTS (pronunciation dictionaries, hallucination trimming)
-│   │   ├── translation_agent.rb # Claude script translation
-│   │   ├── description_agent.rb # AI description cleanup/generation
+│   │   ├── topic_agent.rb         # Claude topic generation (+ Hacker News keyword queries)
+│   │   ├── research_agent.rb      # Exa.ai search
+│   │   ├── script_agent.rb        # Claude script generation (structured output)
+│   │   ├── script_reviewer.rb     # Deterministic checks + AI review; warns, never edits
+│   │   ├── translation_agent.rb   # Script translation (Claude or OpenAI backend, glossary)
+│   │   ├── tts_agent.rb           # ElevenLabs TTS (pronunciation dictionaries, chunking)
+│   │   ├── description_agent.rb   # Title/description cleanup and generation
 │   │   ├── transcription_agent.rb # Backward-compat shim → OpenAI engine
-│   │   ├── lingq_agent.rb    # LingQ lesson upload
-│   │   └── cover_agent.rb    # ImageMagick cover image generation
+│   │   ├── lingq_agent.rb         # LingQ lesson upload
+│   │   ├── twitter_agent.rb       # X announcements (OAuth 1.0a; 402 = credits depleted)
+│   │   └── cover_agent.rb         # ImageMagick cover image generation
 │   ├── sources/
-│   │   ├── base_source.rb    # Template base class for topic-based sources
-│   │   ├── rss_source.rb     # RSS/Atom feed fetcher + episode fetcher
-│   │   ├── hn_source.rb      # Hacker News Algolia API
-│   │   ├── claude_web_source.rb # Claude + web_search tool
-│   │   ├── bluesky_source.rb # Bluesky AT Protocol post search
-│   │   └── x_source.rb       # X (Twitter) via SocialData.tools API
-│   ├── audio_trimmer.rb      # Audio trimming: skip/cut/snip, autotrim outro
-│   ├── episode_source.rb     # Episode acquisition: local/YouTube/RSS, dedup
-│   ├── youtube_downloader.rb # yt-dlp wrapper (metadata, audio download, captions)
-│   ├── episode_history.rb    # Episode dedup (atomic YAML writes)
-│   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, trim)
-│   ├── rss_generator.rb      # RSS 2.0 + iTunes + Podcasting 2.0 feed
-│   ├── site_generator.rb     # Static HTML website generator (ERB templates)
-│   ├── transcript_renderer.rb # Shared transcript HTML rendering (RSS + site)
-│   ├── vocabulary_annotator.rb # CEFR vocabulary annotation for transcripts
-│   ├── known_vocabulary.rb   # Per-language known word lists (filters annotations)
+│   │   ├── base_source.rb         # Template base class for topic-based sources
+│   │   ├── rss_source.rb          # RSS/Atom feed fetcher + episode fetcher
+│   │   ├── hn_source.rb           # Hacker News Algolia API (keyword queries)
+│   │   ├── claude_web_source.rb   # Claude + web_search tool
+│   │   ├── bluesky_source.rb      # Bluesky AT Protocol post search
+│   │   └── x_source.rb            # X (Twitter) via SocialData.tools API
+│   ├── source_manager.rb     # Multi-source research coordinator
+│   ├── source_registry.rb    # Registry of every external endpoint (rake health; gate scan)
+│   ├── research_cache.rb     # File-based research cache (24h TTL)
 │   ├── priority_links.rb     # YAML-backed priority link queue
 │   ├── url_cleaner.rb        # Strip tracking params (utm_*, fbclid, etc.)
-│   ├── templates/            # ERB templates + CSS for site generator
-│   ├── logger.rb             # Structured logging with phase timings
+│   ├── transcription/
+│   │   ├── base_engine.rb         # Shared base class (retries, logging)
+│   │   ├── openai_engine.rb       # OpenAI Whisper / gpt-4o-transcribe (engine: "open")
+│   │   ├── elevenlabs_engine.rb   # ElevenLabs Scribe (engine: "elab")
+│   │   ├── groq_engine.rb         # Groq hosted Whisper + word timestamps (engine: "groq")
+│   │   ├── engine_manager.rb      # Single or parallel comparison mode
+│   │   └── transcript_merger.rb   # Claude merge of multi-engine transcripts
+│   ├── episode_source.rb     # Episode acquisition: local/YouTube/RSS, dedup, length filter
+│   ├── youtube_downloader.rb # yt-dlp wrapper (metadata, audio download, captions)
+│   ├── audio_trimmer.rb      # Trimming: skip/cut/snip, autotrim outro
+│   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, ID3)
+│   ├── voicer.rb             # Voice a script: TTS per segment + assembly
+│   ├── text_splitter.rb      # TTS chunking at natural boundaries
+│   ├── episode_naming.rb     # The episode basename scheme (date, day slot, language tail)
+│   ├── episode_history.rb    # Episode history (atomic YAML writes)
+│   ├── history_maps.rb       # History lookups for feeds/site (per-language durations)
+│   ├── episode_artifacts.rb  # Every on-disk file of one episode (scrap, move)
+│   ├── episode_filtering.rb  # Shared MP3 glob/filter helpers
+│   ├── episode_scanner.rb    # Episode discovery for stats/validate
+│   ├── script_artifact.rb    # Canonical script JSON read/write
+│   ├── script_renderer.rb    # Script JSON → markdown view (## Links)
+│   ├── legacy_script_parser.rb # Markdown script → JSON for pre-JSON episodes
+│   ├── timestamp_persister.rb # Word/segment timestamps → _timestamps.json
+│   ├── subtitle_generator.rb # _timestamps.json → .srt
+│   ├── subtitle_parser.rb    # SRT/VTT/JSON → plain text
+│   ├── subtitle_reconciler.rb # Claude reconciliation of timestamps against the transcript
+│   ├── subtitle_reconciliation_runner.rb # Runs reconciliation once per episode (regen --reconcile)
+│   ├── video_builder.rb      # Cover + audio → .mp4 (reused while newer than the mp3)
+│   ├── video_generator.rb    # ffmpeg video rendering
+│   ├── rss_generator.rb      # RSS 2.0 + iTunes + Podcasting 2.0 feed, per language
+│   ├── site_generator.rb     # Static HTML website (ERB templates), per language
+│   ├── transcript_renderer.rb # Shared transcript HTML rendering (RSS + site)
+│   ├── transcript_parser.rb  # Transcript markdown structure (segments, vocabulary)
+│   ├── transcript_discovery.rb # Finds transcripts/timestamps for an episode
+│   ├── vocabulary_annotator.rb # CEFR vocabulary annotation (Claude + cognate filtering)
+│   ├── known_vocabulary.rb   # Per-language known word lists
+│   ├── word_stats.rb         # Vocabulary frequency (hunspell forms, language detection)
+│   ├── language_names.rb     # ISO 639-1 → language name
+│   ├── cover_resolver.rb     # Cover priority chain (CLI, per-feed, ## Image, thumbnail)
+│   ├── episode_cover_resolver.rb # Per-episode cover lookup
+│   ├── auto_cover_resolver.rb # image: auto — web search + Claude vision ranking
+│   ├── image_searcher.rb     # Image search for auto covers
+│   ├── image_ranker.rb       # Claude vision ranking of cover candidates
+│   ├── r2_publisher.rb       # rclone sync to Cloudflare R2 + announcements
+│   ├── lingq_publisher.rb    # LingQ bulk publish with tracking
+│   ├── youtube_publisher.rb  # YouTube publish: video, captions, playlist, tracking
+│   ├── youtube_uploader.rb   # YouTube Data API client (OAuth)
+│   ├── post_pipeline_uploads.rb # LingQ/YouTube uploads after generate
+│   ├── publisher_shared.rb   # Shared publish helpers
+│   ├── upload_tracker.rb     # uploads.yml (LingQ, YouTube, X), atomic
+│   ├── regen_cache.rb        # In-process memoization of RSS + site regeneration
 │   ├── analytics_client.rb   # Cloudflare Analytics Engine GraphQL client
-│   ├── http_retryable.rb    # Mixin: HTTP-specific retries (includes Retryable)
+│   ├── validators/           # podgen validate: guidelines, feed, episodes, history, freshness, covers, orphans …
+│   ├── podcast_config.rb     # Config resolver (delegates parsing to GuidelinesParser)
+│   ├── guidelines_parser.rb  # Parses guidelines.md sections into structured config
+│   ├── podcast_validator.rb  # Runs the validators
+│   ├── production_run.rb     # Detects a running production generate (dev-loop yield)
+│   ├── connectivity.rb       # Network preflight before a scheduled run
+│   ├── fixture_recorder.rb   # Records real API responses as test fixtures (rake fixtures:record)
+│   ├── http_downloader.rb    # HTTP file download with retries
+│   ├── http_retryable.rb     # Mixin: HTTP-specific retries (includes Retryable)
+│   ├── retryable.rb          # Mixin: exponential backoff retries
+│   ├── atomic_writer.rb      # Temp file + rename writes
+│   ├── yaml_loader.rb        # Safe YAML loading
+│   ├── time_value.rb         # Seconds or min:sec with absolute? flag
+│   ├── snip_interval.rb      # Unified skip/cut/snip interval math
+│   ├── format_helper.rb      # Human-readable sizes and durations
+│   ├── loggable.rb           # Mixin: logger accessor with $stderr fallback
+│   ├── logger.rb             # Structured logging with phase timings
+│   ├── templates/            # ERB templates + CSS for the site generator
 │   └── tell/                 # TTS pronunciation tool modules
 │       ├── config.rb         # Config loader (~/.tell.yml)
 │       ├── detector.rb       # Language detection (Unicode + stop words)
 │       ├── translator.rb     # Translation engines (DeepL, Claude, OpenAI)
+│       ├── translation_service.rb # Failover chain across translation engines
 │       ├── tts.rb            # TTS engines (ElevenLabs, Google)
+│       ├── engine.rb / engine_pool.rb # Engine abstraction and pooling
 │       ├── glosser.rb        # Grammatical glossing via Claude
 │       ├── espeak.rb         # eSpeak-ng wrapper: IPA phonetic transcription
 │       ├── icu_phonetic.rb   # ICU transliteration: Cyrillic/Greek/Korean romanization
 │       ├── kana.rb           # Japanese kana conversion utilities
+│       ├── japanese_brackets.rb # Japanese reading brackets
+│       ├── phonetic_systems.rb # Phonetic system definitions per language
+│       ├── hunspell.rb       # Hunspell dictionary expansion
 │       ├── hints.rb          # Style hint parser (/p, /c, /m, /f suffixes)
+│       ├── history.rb        # REPL history
 │       ├── colors.rb         # ANSI colorization for gloss/phonetic output
 │       ├── error_formatter.rb # Friendly error messages for API errors
 │       ├── processor.rb      # Main processing pipeline
 │       ├── web.rb            # Sinatra web UI: SSE streaming, /speak, /systems
 │       └── web/views/index.erb # Single-page web UI (HTML + CSS + JS)
 ├── docs/
-│   ├── cloudflare.md          # Cloudflare R2 + Worker + analytics setup guide
-│   └── pronunciation.md      # PLS format guide & IPA reference
+│   ├── quickstart.md         # Your first news podcast in five steps
+│   ├── cloudflare.md         # Cloudflare R2 + Worker + analytics + Tell Web setup
+│   ├── pronunciation.md      # PLS format guide & IPA reference
+│   └── DEV-LOOP.md           # How the project is developed (phases, gates, tiers)
 ├── scripts/
+│   ├── run.sh                # launchd wrapper: generate, optional publish + Telegram alert
+│   ├── run_uploads.sh        # launchd wrapper: podgen uploads
+│   ├── run_status.sh         # launchd wrapper: podgen status → Telegram on non-zero
+│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate runs
 │   ├── serve.rb              # WEBrick static file server
 │   ├── tell_web.rb           # Tell Web UI launcher
-│   └── test_*.rb             # Diagnostic scripts
+│   ├── install_hunspell_dicts.rb # Hunspell dictionaries for vocabulary frequency
+│   └── test_*.rb             # Component tests dispatched by `podgen test`
+├── test/
+│   ├── unit/                 # Fast tier, no I/O (in the gate)
+│   ├── integration/          # Offline subset in the gate
+│   ├── api/                  # Keyed live checks (skip without keys; never in the gate)
+│   ├── browser/              # Tell Web browser checks
+│   └── fixtures/             # Recorded real responses, trimmed
 ├── output/<name>/
-│   ├── episodes/             # MP3s + transcripts/scripts
-│   ├── site/                 # Static HTML website (index + episode pages)
-│   ├── tails/                # Trimmed outro tails for review
-│   ├── history.yml           # Episode history for deduplication
-│   └── feed.xml              # RSS feed
-└── logs/<name>/              # Run logs per podcast
+│   ├── episodes/             # MP3s, scripts/transcripts, timestamps, subtitles, videos, covers
+│   ├── site/                 # Static HTML website (index + episode pages; <lang>/ per extra language)
+│   ├── feed.xml              # RSS feed (feed-<lang>.xml per extra language)
+│   ├── history.yml           # Episode history (dedup, per-language durations)
+│   ├── uploads.yml           # Upload tracking (LingQ, YouTube, X)
+│   ├── priority_links.yml    # Queued priority links
+│   ├── excluded_urls.yml     # URLs excluded from future episodes
+│   ├── research_cache/       # Cached source results (24h)
+│   ├── debug/                # Raw script responses
+│   └── run.lock              # Held while a generate runs
+└── logs/
+    ├── <name>/               # Run logs per podcast (token usage, warnings, phase timings)
+    └── launchd_stderr.log    # Shared stderr of the scheduled jobs (publish markers, warnings)
 ```
 
 ## Development
@@ -1492,6 +1601,7 @@ podgen/
 ```bash
 bundle exec rake gate      # pre-commit gate: syntax + lint (standardrb; new files only — see .standard_todo.yml) + unit + offline integration
 bundle exec rake test      # full suite (API-keyed tiers run only with keys present)
+bundle exec rake test:unit # fast tier only
 bundle exec rake health    # probe every registered external endpoint (network; see lib/source_registry.rb)
 bundle exec rake fixtures:record  # re-record the network sources' test fixtures (network + keys; owner-run, never in the gate)
 bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check sends this output to Telegram, so log lines must stay secret-free
@@ -1537,30 +1647,37 @@ podgen test script         # Claude script generation
 podgen test tts            # ElevenLabs TTS
 podgen test assembly       # ffmpeg assembly
 podgen test translation    # Claude script translation
-podgen test transcription  # OpenAI Whisper transcription
+podgen test transcription  # Transcription engines (podgen test transcription <podcast|file> <open|elab|groq|all>)
+podgen test sources        # Every configured source for a podcast
 ```
 
 ## Cost Estimate
 
-Per daily episode (~10 min), with all sources enabled:
+Claude usage per news episode, as measured in the run log of a four-language episode on 2026-10-12 (all roles on the opus line unless noted; see `lib/claude_models.rb`):
+
+| Stage | Calls | Input tokens | Output tokens |
+| --- | --- | --- | --- |
+| Topics | 1 | 0.7k | 0.3k |
+| Script | 2 (one rewrite after a blocker) | 18k each | 8–9k each |
+| Review | 2 | 23k each | 3–4k each |
+| Translation | 1 per language | 2.9k | 9–14k |
+
+Multiply by the current price list of the resolved models. Other costs per episode:
 
 - Exa.ai: ~$0.03 (4 searches + summaries)
-- Claude Opus 4.6: ~$0.15 (script generation)
-- Claude Opus 4.6: ~$0.10 per extra language (translation)
-- Claude Haiku (web search): ~$0.08 (4 topics × web_search)
+- Claude web search source (haiku line): ~4 `web_search` calls per episode when enabled
 - Hacker News: free (Algolia API)
 - Bluesky: free (AT Protocol, requires account)
-- X (Twitter): ~$0.01 (SocialData.tools, $0.0002/tweet)
+- X (Twitter) source: ~$0.01 (SocialData.tools, $0.0002/tweet); X announcements use the X API's pay-per-use credits
 - RSS feeds: free
-- ElevenLabs: varies by plan ($22-99/month for daily use)
+- ElevenLabs: varies by plan; each language is voiced separately
 
-With Exa only (default), English only: ~$0.18 + ElevenLabs per episode.
-Each additional language adds ~$0.10 (translation) + ElevenLabs TTS cost.
+Every Claude call logs its token counts (`Input: … | Output: …`) in `logs/<podcast>/`, so the real numbers for your show are one grep away.
 
 **Language pipeline** per episode:
 
 - OpenAI transcription (gpt-4o-mini-transcribe): ~$0.01-0.03 depending on duration
-- Claude Haiku (description cleanup/generation): ~$0.001
+- Claude (sonnet line, description cleanup/generation at low effort): a few thousand tokens per episode
 - No TTS or research costs
 
 ## Tell — TTS Pronunciation Tool
@@ -1722,7 +1839,7 @@ GR: dobro(adj.n.sg.A)good jutro(n.n.sg.A)morning
 [audio plays]
 ```
 
-Glossing requires `ANTHROPIC_API_KEY`. The model defaults to Claude Opus 4.6 (configure with `gloss_model` in `~/.tell.yml` or `TELL_GLOSS_MODEL` env).
+Glossing requires `ANTHROPIC_API_KEY`. The model defaults to the opus line of the model registry (`lib/claude_models.rb`; configure with `gloss_model` in `~/.tell.yml` or `TELL_GLOSS_MODEL` env).
 
 Agrammatical forms are detected and marked: `*restavraciju*restavracijo(n.f.A.sg)restaurant` — the asterisks show the error and correction.
 
