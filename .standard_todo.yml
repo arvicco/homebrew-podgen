@@ -4,6 +4,17 @@
 ignore:
 - Gemfile:
   - Layout/ExtraSpacing
+- bin/podgen:
+  - Layout/ExtraSpacing
+  - Style/Semicolon
+- bin/tell:
+  - Style/SafeNavigation
+  - Style/Semicolon
+  - Layout/IndentationWidth
+  - Layout/ElseAlignment
+  - Layout/EndAlignment
+  - Style/ConditionalAssignment
+  - Layout/EmptyLinesAroundExceptionHandlingKeywords
 - lib/agents/cover_agent.rb:
   - Layout/EmptyLinesAfterModuleInclusion
 - lib/agents/description_agent.rb:

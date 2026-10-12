@@ -48,6 +48,13 @@ output/. Every agent prompt carries an explicit
 no-destructive-git-commands constraint (no rm -rf, no git
 checkout/reset of files the agent didn't create).
 
+**Worktree lint parity (Q-49):** Standard ignores `bin/*` by default,
+but RuboCop skips that Exclude during file discovery when the base
+directory has a dot-component (`.claude/worktrees/...`), so a lane's
+gate linted bin/podgen and bin/tell while the checkout and CI did not.
+Their offenses are listed per-cop in .standard_todo.yml (per-cop
+excludes apply on either path), so both now agree.
+
 ## 3. Work packets and the boards
 
 IDs: packets P<phase>-<n>, rulings R<phase>-<nn>, queue Q-n, incidents
