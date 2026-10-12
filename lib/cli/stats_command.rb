@@ -400,10 +400,6 @@ module PodgenCLI
       }
     end
 
-    # Build a map of MP3 filename → duration (seconds) from history entries.
-    # Same suffix logic as RssGenerator to match filenames to history entries.
-    SUFFIXES = EpisodeNaming::SUFFIXES
-
     # Returns nil (with a visible warning) on malformed XML — a wrong count
     # must not be reported silently.
     def count_feed_items(feed_path)

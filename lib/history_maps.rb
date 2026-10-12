@@ -6,8 +6,6 @@ require_relative "episode_naming"
 # Builds filename → title/timestamp/duration maps from history.yml.
 # Shared by RssGenerator and SiteGenerator.
 module HistoryMaps
-  SUFFIXES = EpisodeNaming::SUFFIXES
-
   # Build maps from history.yml entries.
   # Returns [title_map, timestamp_map, duration_map].
   #

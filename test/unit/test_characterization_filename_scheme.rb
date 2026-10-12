@@ -189,7 +189,7 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     title_map.each do |fname, title|
       m = File.basename(fname, ".mp3").match(DAY_LETTER_RE)
       same_day = positional_history.select { |e| e["date"] == m[1] }
-      assert_equal title, same_day[HistoryMaps::SUFFIXES.index(m[2].to_s)]["title"], fname
+      assert_equal title, same_day[EpisodeNaming::SUFFIXES.index(m[2].to_s)]["title"], fname
     end
   end
 
@@ -201,15 +201,13 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     title_map.each do |fname, title|
       write_history(positional_history)
       m = File.basename(fname, ".mp3").match(DAY_LETTER_RE)
-      removed = EpisodeHistory.new(@history_path).remove_by_date!(m[1], HistoryMaps::SUFFIXES.index(m[2].to_s))
+      removed = EpisodeHistory.new(@history_path).remove_by_date!(m[1], EpisodeNaming::SUFFIXES.index(m[2].to_s))
       assert_equal title, removed["title"], fname
     end
   end
 
   def test_suffixes_constants_are_identical_across_implementations
     expected = [""] + ("a".."z").to_a
-    assert_equal expected, HistoryMaps::SUFFIXES
-    assert_equal expected, PodgenCLI::StatsCommand::SUFFIXES
     assert_equal expected, EpisodeNaming::SUFFIXES
     assert_equal DAY_LETTER_RE, EpisodeNaming::DAY_LETTER_RE
   end
