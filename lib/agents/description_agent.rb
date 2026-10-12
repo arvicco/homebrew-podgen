@@ -32,7 +32,8 @@ class DescriptionAgent
         system: clean_title_system_prompt,
         messages: [
           { role: "user", content: title }
-        ]
+        ],
+        **@effort_params
       )
     end
 
@@ -79,7 +80,8 @@ class DescriptionAgent
             role: "user",
             content: "Title: #{title}\n\nDescription:\n#{description}"
           }
-        ]
+        ],
+        **@effort_params
       )
     end
 
@@ -113,7 +115,8 @@ class DescriptionAgent
         system: generate_title_system_prompt(language),
         messages: [
           { role: "user", content: truncated }
-        ]
+        ],
+        **@effort_params
       )
     end
 
@@ -150,7 +153,8 @@ class DescriptionAgent
             role: "user",
             content: "Title: #{title}\n\nTranscript:\n#{truncated}"
           }
-        ]
+        ],
+        **@effort_params
       )
     end
 

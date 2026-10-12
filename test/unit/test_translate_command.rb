@@ -62,6 +62,65 @@ class TestTranslateCommand < Minitest::Test
     assert_equal "mypod-2026-01-16", episodes.last[:basename]
   end
 
+  # --- discover_episodes: configured language rule (P5-2a, Q-52) ---
+  # The 8-row basename table of test_characterization_filename_scheme.rb.
+  # Only rows whose two-letter tail is NOT configured differ from the old
+  # any-two-letter rule (no real episode file has one). A tail whose base
+  # has a primary file on disk stays a variant (CRPR round 1): all rows
+  # share pod-2026-01-15, so only -b-es (no pod-2026-01-15b) moves.
+  TABLE = %w[
+    pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z pod-2026-01-15-es
+    pod-2026-01-15b-es pod-2026-01-15-ai pod-2026-01-15-jp pod-2026-01-15-esp
+  ].freeze
+  LEGACY_ROWS = %w[pod-2026-01-15-esp pod-2026-01-15 pod-2026-01-15a pod-2026-01-15z].freeze
+  NO_SIBLING_ROWS = %w[pod-2026-01-15-esp pod-2026-01-15 pod-2026-01-15a pod-2026-01-15b-es pod-2026-01-15z].freeze
+  DISCOVERED = {
+    nil => LEGACY_ROWS, # old rule
+    %w[en] => NO_SIBLING_ROWS,
+    %w[en ja] => NO_SIBLING_ROWS,
+    %w[en es it jp] => LEGACY_ROWS
+  }.freeze
+
+  def test_discover_episodes_table_follows_configured_rule
+    TABLE.each do |b|
+      create_script("#{b}_script.md", "# T")
+      create_mp3("#{b}.mp3")
+    end
+    cmd = build_command
+
+    DISCOVERED.each do |codes, expected|
+      episodes = cmd.send(:discover_episodes, @episodes_dir, languages: codes)
+      assert_equal expected, episodes.map { |e| e[:basename] }, codes.inspect
+    end
+  end
+
+  def test_discover_episodes_unconfigured_tail_is_its_own_episode
+    create_script("mypod-2026-01-15_script.md", "# English")
+    create_script("mypod-2026-01-15-es_script.md", "# Spanish")
+    create_script("mypod-2026-01-16-ai_script.md", "# AI")
+    create_mp3("mypod-2026-01-15.mp3")
+    create_mp3("mypod-2026-01-16-ai.mp3")
+
+    episodes = build_command.send(:discover_episodes, @episodes_dir, languages: %w[en es])
+
+    assert_equal %w[mypod-2026-01-15 mypod-2026-01-16-ai], episodes.map { |e| e[:basename] }
+  end
+
+  # De-configured language (CRPR round 1): leftover -it files of a
+  # language removed from the config must not be queued as an episode.
+  def test_discover_episodes_deconfigured_tail_with_primary_sibling_is_a_variant
+    create_script("mypod-2026-01-15_script.md", "# English")
+    create_mp3("mypod-2026-01-15.mp3")
+    create_script("mypod-2026-01-15-it_script.md", "# Italiano")
+    create_mp3("mypod-2026-01-15-it.mp3")
+    create_script("mypod-2026-01-16-ai_script.md", "# AI")
+    create_mp3("mypod-2026-01-16-ai.mp3")
+
+    episodes = build_command.send(:discover_episodes, @episodes_dir, languages: %w[en es])
+
+    assert_equal %w[mypod-2026-01-15 mypod-2026-01-16-ai], episodes.map { |e| e[:basename] }
+  end
+
   # --- pending_translations ---
 
   def test_pending_translations_finds_missing_mp3s

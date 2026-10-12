@@ -29,6 +29,25 @@ class TestWordStats < Minitest::Test
     assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
   end
 
+  # P5-1: language detection is a one-word answer, run at low effort.
+  def test_language_detection_passes_low_effort
+    saved = ENV.delete("CLAUDE_EFFORT_LANGUAGE_DETECT")
+    sent = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**kw|
+      sent = kw
+      Struct.new(:content).new([Struct.new(:text).new("Slovenian")])
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+    stats = WordStats.allocate
+    Anthropic::Client.stub(:new, fake_client) do
+      stats.send(:ask_claude_for_language, "dober dan", %w[Slovenian Croatian])
+    end
+    assert_equal({effort: :low}, sent[:output_config])
+  ensure
+    ENV["CLAUDE_EFFORT_LANGUAGE_DETECT"] = saved if saved
+  end
+
   def test_returns_empty_when_no_transcripts
     stats = WordStats.new(config: stub_config).build
     assert_equal [], stats

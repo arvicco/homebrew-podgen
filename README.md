@@ -63,6 +63,14 @@ CLAUDE_HAIKU_MODEL=...        # Optional: override the haiku line (web search so
 CLAUDE_MODEL=...              # Optional: alias of CLAUDE_OPUS_MODEL (no longer steers Tell translation)
 CLAUDE_<ROLE>_MODEL=...       # Optional: per-role override beats the line, e.g. CLAUDE_VOCAB_MODEL, CLAUDE_SCRIPT_MODEL,
                               #   CLAUDE_RECONCILER_MODEL (subtitles), CLAUDE_WEB_MODEL — roles in lib/claude_models.rb
+CLAUDE_EFFORT_<ROLE>=low      # Optional: effort level (low|medium|high) for a role, resolved by ClaudeModels.effort(role).
+                              #   Default policy: DESCRIPTION and LANGUAGE_DETECT (short outputs) at low; every other role
+                              #   omits the parameter (API default). An invalid value warns and omits. Takes effect where the
+                              #   call site passes effort through — today the description and language-detection calls.
+                              #   Effort assumes the resolved model accepts output_config.effort; with a pinned model that
+                              #   rejects it, DescriptionAgent falls back to the original text (or no generated title/description) and WordStats picks the first
+                              #   candidate language, with only a non-fatal warning in the log. Set the override to
+                              #   `default` (or `none`/`off`) to turn effort off for that role without a warning.
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
 ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
 ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription model
@@ -497,6 +505,8 @@ Add a `language` list to the `## Podcast` section in `podcasts/<name>/guidelines
 - If `language` is omitted, only English (`en`) is produced
 - English is never re-translated — the original script is used directly
 - Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
+- Translated episodes report their own duration in the language feeds and on the site (recorded in history.yml when voiced); the English duration is used only when none was recorded
+- Removing a code from `language` does not remove its files: move or scrap the leftover `-<code>` episodes first (`translate`, `voice` and `render` still treat a leftover file as a variant while its English episode exists, but the feed and site would list it as an English episode)
 
 Supported languages (matching ElevenLabs `eleven_multilingual_v2`): Arabic, Chinese, Czech, Danish, Dutch, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, Vietnamese.
 

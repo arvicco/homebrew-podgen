@@ -46,7 +46,12 @@ module HistoryMaps
         end
         title_map[lang_filename] ||= entry["title"] if entry["title"]
         timestamp_map[lang_filename] = entry["timestamp"] if entry["timestamp"]
-        duration_map[lang_filename] = entry["duration"] if entry["duration"]
+        # P5-0: a translated mp3 has its own length (recorded by `voice`);
+        # the English duration is only the fallback.
+        lang_meta = entry["languages"][code] if entry["languages"].is_a?(Hash)
+        lang_duration = lang_meta["duration"] if lang_meta.is_a?(Hash)
+        lang_duration = entry["duration"] unless lang_duration.is_a?(Numeric) && lang_duration.positive?
+        duration_map[lang_filename] = lang_duration if lang_duration
       end
     end
 

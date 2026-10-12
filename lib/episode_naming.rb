@@ -14,7 +14,11 @@ require "date"
 # language tail, so a title-like "-ai" belongs to the primary language
 # (P1-15, Q-06); with no configuration (nil or []) any two-letter tail
 # counts (legacy rule). The primary language is languages.first ("en"
-# when nothing is configured).
+# when nothing is configured). With `episodes_dir:` an unconfigured tail
+# also counts when the stripped base has its own primary file on disk
+# (`<base>_script.md` or `<base>.mp3`), so a de-configured language's
+# leftover files stay variants instead of becoming primary episodes
+# (P5-2a, CRPR round 1). Only the CLI selection paths pass it.
 module EpisodeNaming
   SUFFIXES = ([""] + ("a".."z").to_a).freeze
   DATE_RE = /(\d{4}-\d{2}-\d{2})/
@@ -63,12 +67,20 @@ module EpisodeNaming
   end
 
   # The tail when it counts as a language under the rule above, else nil.
-  def language_suffix(basename, languages: nil)
+  def language_suffix(basename, languages: nil, episodes_dir: nil)
     tail = language_tail(basename)
     return nil unless tail
     return tail if languages.nil? || languages.empty?
+    return tail if languages.include?(tail)
 
-    languages.include?(tail) ? tail : nil
+    primary_sibling?(basename.delete_suffix("-#{tail}"), episodes_dir) ? tail : nil
+  end
+
+  # Whether `base` has its own primary episode file in `episodes_dir`.
+  def primary_sibling?(base, episodes_dir)
+    return false unless episodes_dir
+
+    %w[_script.md .mp3].any? { |ext| File.exist?(File.join(episodes_dir, "#{base}#{ext}")) }
   end
 
   # The language an episode basename belongs to.
@@ -79,17 +91,17 @@ module EpisodeNaming
   # Whether a basename is listed under `code`: the primary language owns
   # every basename without a language tail; any other code owns the
   # basenames ending in "-<code>".
-  def matches_language?(basename, code, languages: nil)
+  def matches_language?(basename, code, languages: nil, episodes_dir: nil)
     if code == primary_language(languages)
-      language_suffix(basename, languages: languages).nil?
+      language_suffix(basename, languages: languages, episodes_dir: episodes_dir).nil?
     else
       basename.end_with?("-#{code}")
     end
   end
 
   # Primary-language basename of a variant ("pod-D-es" → "pod-D").
-  def primary_basename(basename, languages: nil)
-    suffix = language_suffix(basename, languages: languages)
+  def primary_basename(basename, languages: nil, episodes_dir: nil)
+    suffix = language_suffix(basename, languages: languages, episodes_dir: episodes_dir)
     suffix ? basename.delete_suffix("-#{suffix}") : basename
   end
 
@@ -156,14 +168,17 @@ module EpisodeNaming
   end
 
   # Index into `entries` of the entry whose mapped name carries `date` and
-  # day slot `slot` ("" / "a".."z"), or nil.
+  # day slot `slot` ("" / "a".."z"), or nil. When several entries map to
+  # the slot, the LAST wins — the one HistoryMaps (and so the feed) shows
+  # (P5-2a, Q-54).
   def history_entry_index(entries, date, slot)
     pos = -1
+    found = nil
     entries.each_with_index do |entry, global|
       next unless entry["date"].to_s == date.to_s
       pos += 1
-      return global if history_slot(entry, pos) == slot.to_s
+      found = global if history_slot(entry, pos) == slot.to_s
     end
-    nil
+    found
   end
 end
