@@ -84,7 +84,7 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 
 **Why.** Before P1-0, IDs were hard-coded at eleven sites in eight files with ad-hoc ENV knobs, so a generation bump was a hunt and three sites had no override at all. A manual model switch in 2026-10 then exposed a second hazard: thinking-default models put a thinking block first, so `content.first.text` broke.
 
-**Implication.** A generation bump is a three-line change to `LINES`. Overrides resolve per-role ENV (`CLAUDE_<ROLE>_MODEL`) → per-line ENV (`CLAUDE_OPUS_MODEL` etc.; `CLAUDE_MODEL` aliases the opus line) → default. Read response text through `AnthropicClient.text_of(message)`, never `content.first.text`. The keyed drift test under `test/api` tells you when a line has a newer ID.
+**Implication.** A generation bump is a three-line change to `LINES`. Overrides resolve per-role ENV (`CLAUDE_<ROLE>_MODEL`) → per-line ENV (`CLAUDE_OPUS_MODEL` etc.; `CLAUDE_MODEL` aliases the opus line) → default. Read response text through `AnthropicClient.text_of(message)`, never `content.first.text`. The keyed drift test under `test/api` tells you when a line has a newer ID. Effort is per role too: `ClaudeModels.effort(:role)` (nil = omit; `CLAUDE_EFFORT_<ROLE>` overrides) and call sites splat `AnthropicClient.effort_params(role)` (`output_config: {effort:}`) — short-output roles run at low, measured by `test/api/test_effort_policy.rb`.
 
 ## Episode naming lives in one module
 

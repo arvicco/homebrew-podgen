@@ -63,6 +63,10 @@ CLAUDE_HAIKU_MODEL=...        # Optional: override the haiku line (web search so
 CLAUDE_MODEL=...              # Optional: alias of CLAUDE_OPUS_MODEL (no longer steers Tell translation)
 CLAUDE_<ROLE>_MODEL=...       # Optional: per-role override beats the line, e.g. CLAUDE_VOCAB_MODEL, CLAUDE_SCRIPT_MODEL,
                               #   CLAUDE_RECONCILER_MODEL (subtitles), CLAUDE_WEB_MODEL — roles in lib/claude_models.rb
+CLAUDE_EFFORT_<ROLE>=low      # Optional: effort level (low|medium|high) for a role, resolved by ClaudeModels.effort(role).
+                              #   Default policy: DESCRIPTION and LANGUAGE_DETECT (short outputs) at low; every other role
+                              #   omits the parameter (API default). An invalid value warns and omits. Takes effect where the
+                              #   call site passes effort through — today the description and language-detection calls.
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
 ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
 ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription model
