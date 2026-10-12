@@ -46,12 +46,22 @@ class YouTubePublisher
     end
   end
 
-  def initialize(config:, options: {}, uploader: nil, tracker_path: nil, episode_id: nil)
+  # Outcome of #upload_episode. status: :uploaded, :skipped (never reached
+  # upload_video), :failed, or :rate_limited (quota — callers stop a batch).
+  # error is the typed {type:, base:, message:} entry; exception the cause
+  # when one was raised. video_id is set once upload_video succeeded, even
+  # if captions/playlist failed after it (the upload is already recorded).
+  EpisodeResult = Struct.new(:status, :base, :video_id, :attempted, :error, :exception, keyword_init: true)
+
+  # logger: optional; when given, routine output goes to logger.log instead
+  # of stdout/stderr (the generate pipeline passes its run logger).
+  def initialize(config:, options: {}, uploader: nil, tracker_path: nil, episode_id: nil, logger: nil)
     @config = config
     @options = options
     @uploader = uploader
     @tracker_path = tracker_path
     @episode_id = episode_id
+    @logger = logger
   end
 
   def run
@@ -66,7 +76,6 @@ class YouTubePublisher
 
     yt_config = @config.youtube_config
     playlist = yt_config[:playlist] || "default"
-    language = @config.transcription_language || "en"
 
     episodes = scan_episodes
     if episodes.empty? && @episode_id
@@ -98,105 +107,184 @@ class YouTubePublisher
     uploader = active_uploader
 
     if yt_config[:playlist]
-      verify_key = "#{@config.name}:#{yt_config[:playlist]}"
-      unless self.class.playlist_verified?(verify_key)
-        begin
-          uploader.verify_playlist!(yt_config[:playlist])
-          self.class.mark_playlist_verified(verify_key)
-        rescue => e # fatal for this run: uploading into the wrong/missing playlist is worse than not uploading
-          $stderr.puts "YouTube playlist verification failed: #{e.class}: #{e.message}"
-          return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
-                            errors: [{ type: :playlist_verification, message: e.message }])
-        end
+      begin
+        verify_playlist_cached!(uploader, yt_config[:playlist])
+      rescue => e # fatal for this run: uploading into the wrong/missing playlist is worse than not uploading
+        $stderr.puts "YouTube playlist verification failed: #{e.class}: #{e.message}"
+        return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                          errors: [{ type: :playlist_verification, message: e.message }])
       end
     end
 
-    upload_loop(pending, uploader, yt_config, playlist, language)
+    upload_loop(pending)
+  end
+
+  # The one per-episode YouTube upload routine (P4-8), shared by publish /
+  # yt-batch (via #run) and the generate pipeline (PostPipelineUploads).
+  # Steps: verify playlist (cached per pod+playlist) → cover check (before
+  # any paid subtitle work) → subtitles → video (existing mp4 reused) →
+  # upload → record → captions → playlist.
+  #
+  # ep: {base_name:, mp3_path:, transcript_path:}.
+  # metadata: optional {title:, description:} from the caller's in-memory
+  #   episode; a non-nil field wins, the transcript file is the fallback.
+  # timestamps_authoritative: the caller just produced (and, where it could,
+  #   reconciled) the timestamps file itself — skip re-transcription and the
+  #   reconcile pass; only render the srt from whatever file exists.
+  def upload_episode(ep, metadata: nil, timestamps_authoritative: false)
+    require_relative "youtube_uploader"
+    require_relative "subtitle_generator"
+    require_relative "video_generator"
+
+    base = ep[:base_name]
+    yt_config = @config.youtube_config
+    language = @config.transcription_language || "en"
+    video_id = nil
+    attempted = false
+
+    if yt_config[:playlist]
+      begin
+        verify_playlist_cached!(active_uploader, yt_config[:playlist])
+      rescue => e # skippable per-episode: nothing uploaded; the caller decides whether to continue
+        say_err "  ✗ #{base} skipped: YouTube playlist verification failed: #{e.class}: #{e.message}"
+        return EpisodeResult.new(status: :skipped, base: base, attempted: false, exception: e,
+          error: { type: :playlist_verification, base: base, message: e.message })
+      end
+    end
+
+    video_path = File.join(@config.episodes_dir, "#{base}.mp4")
+    cover_path = CoverResolver.find_episode_cover(@config.episodes_dir, base)
+    unless cover_path || File.exist?(video_path)
+      say_err "  ✗ #{base} skipped: no cover image found"
+      return EpisodeResult.new(status: :skipped, base: base, attempted: false,
+        error: { type: :missing_cover, base: base, message: "no cover image" })
+    end
+
+    title, description = episode_metadata(ep, metadata)
+    srt_path = prepare_subtitles(ep, timestamps_authoritative: timestamps_authoritative)
+
+    video_error = ensure_video(ep, cover_path, video_path)
+    if video_error
+      return EpisodeResult.new(status: :skipped, base: base, attempted: false, error: video_error)
+    end
+    attempted = true
+
+    say "  uploading: #{base} — \"#{title}\""
+
+    uploader = active_uploader
+    video_id = uploader.upload_video(
+      video_path,
+      title: title,
+      description: description.to_s,
+      language: language,
+      privacy: yt_config[:privacy] || "unlisted",
+      category: yt_config[:category] || "27",
+      tags: yt_config[:tags] || []
+    )
+
+    tracker.record(:youtube, yt_config[:playlist] || "default", base, video_id)
+
+    uploader.upload_captions(video_id, srt_path, language: language) if srt_path && File.exist?(srt_path)
+    uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
+
+    say "  ✓ #{base} → https://youtu.be/#{video_id}"
+    EpisodeResult.new(status: :uploaded, base: base, video_id: video_id, attempted: true)
+  rescue Google::Apis::ClientError => e
+    say_err "  ✗ #{base} failed: #{e.message}"
+    if e.message.include?("uploadLimitExceeded") || e.message.include?("quotaExceeded")
+      say_err "  YouTube quota exceeded — stopping batch. Retry after quota resets."
+      return EpisodeResult.new(status: :rate_limited, base: base, video_id: video_id, attempted: attempted,
+        exception: e, error: { type: :rate_limit, base: base, message: e.message })
+    end
+    EpisodeResult.new(status: :failed, base: base, video_id: video_id, attempted: attempted,
+      exception: e, error: { type: :upload, base: base, message: e.message })
+  rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
+    say_err "  ✗ #{base} failed: #{e.class}: #{e.message}"
+    EpisodeResult.new(status: :failed, base: base, video_id: video_id, attempted: attempted,
+      exception: e, error: { type: :upload, base: base, message: e.message })
   end
 
   private
 
-  def upload_loop(pending, uploader, yt_config, playlist, language)
+  def upload_loop(pending)
     uploaded = 0
     attempted = 0
     rate_limited = false
     errors = []
 
     pending.each do |ep|
-      begin
-        title, description, _ = parse_transcript(ep[:transcript_path])
-        srt_path = prepare_subtitles(ep)
-
-        video_path = ensure_video(ep, errors) or next
-        attempted += 1
-
-        puts "  uploading: #{ep[:base_name]} — \"#{title}\"" unless quiet?
-
-        video_id = uploader.upload_video(
-          video_path,
-          title: title,
-          description: description.to_s,
-          language: language,
-          privacy: yt_config[:privacy] || "unlisted",
-          category: yt_config[:category] || "27",
-          tags: yt_config[:tags] || []
-        )
-
-        tracker.record(:youtube, playlist, ep[:base_name], video_id)
-
-        uploader.upload_captions(video_id, srt_path, language: language) if srt_path && File.exist?(srt_path)
-        uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
-
-        uploaded += 1
-        puts "  ✓ #{ep[:base_name]} → https://youtu.be/#{video_id}" unless quiet?
-      rescue Google::Apis::ClientError => e
-        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.message}"
-        if e.message.include?("uploadLimitExceeded") || e.message.include?("quotaExceeded")
-          $stderr.puts "  YouTube quota exceeded — stopping batch. Retry after quota resets."
-          rate_limited = true
-          errors << { type: :rate_limit, base: ep[:base_name], message: e.message }
-          break
-        end
-        errors << { type: :upload, base: ep[:base_name], message: e.message }
-      rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
-        $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.class}: #{e.message}"
-        errors << { type: :upload, base: ep[:base_name], message: e.message }
+      result = upload_episode(ep)
+      attempted += 1 if result.attempted
+      uploaded += 1 if result.status == :uploaded
+      errors << result.error if result.error
+      if result.status == :rate_limited
+        rate_limited = true
+        break
       end
     end
 
     Result.new(uploaded: uploaded, attempted: attempted, rate_limited: rate_limited, errors: errors)
   end
 
-  def prepare_subtitles(ep)
+  def verify_playlist_cached!(uploader, playlist_id)
+    verify_key = "#{@config.name}:#{playlist_id}"
+    return if self.class.playlist_verified?(verify_key)
+
+    uploader.verify_playlist!(playlist_id)
+    self.class.mark_playlist_verified(verify_key)
+  end
+
+  def episode_metadata(ep, metadata)
+    title = metadata&.[](:title)
+    description = metadata&.[](:description)
+    if (title.nil? || description.nil?) && ep[:transcript_path] && File.exist?(ep[:transcript_path])
+      file_title, file_description, _ = parse_transcript(ep[:transcript_path])
+      title ||= file_title
+      description ||= file_description
+    end
+    [title, description]
+  end
+
+  def prepare_subtitles(ep, timestamps_authoritative: false)
     episodes_dir = @config.episodes_dir
     ts_path = File.join(episodes_dir, "#{ep[:base_name]}_timestamps.json")
-    retranscribe_for_timestamps(ep[:mp3_path], ts_path, ep[:base_name]) unless File.exist?(ts_path)
-    reconcile_subtitles_if_needed(ts_path, ep[:transcript_path]) if File.exist?(ts_path)
+    unless timestamps_authoritative
+      retranscribe_for_timestamps(ep[:mp3_path], ts_path, ep[:base_name]) unless File.exist?(ts_path)
+      reconcile_subtitles_if_needed(ts_path, ep[:transcript_path]) if File.exist?(ts_path)
+    end
     srt_path = File.join(episodes_dir, "#{ep[:base_name]}.srt")
     SubtitleGenerator.generate_srt(ts_path, srt_path) if File.exist?(ts_path)
     srt_path
   end
 
-  def ensure_video(ep, errors)
+  # Returns nil when the mp4 is ready (built or reused), else a typed error.
+  def ensure_video(ep, cover_path, video_path)
     require_relative "video_builder"
 
-    video_path = File.join(@config.episodes_dir, "#{ep[:base_name]}.mp4")
-    cover_path = CoverResolver.find_episode_cover(@config.episodes_dir, ep[:base_name])
-
-    puts "  generating video #{ep[:base_name]}..." if !File.exist?(video_path) && cover_path && !quiet?
-    result = VideoBuilder.build(mp3_path: ep[:mp3_path], cover_path: cover_path, video_path: video_path)
+    say "  generating video #{ep[:base_name]}..." if !File.exist?(video_path) && cover_path
+    result = VideoBuilder.build(mp3_path: ep[:mp3_path], cover_path: cover_path, video_path: video_path, logger: @logger)
 
     case result.status
-    when :built, :exists then result.video_path
+    when :built, :exists then nil
     when :no_cover
-      $stderr.puts "  ✗ #{ep[:base_name]} skipped: no cover image found"
-      errors << { type: :missing_cover, base: ep[:base_name], message: "no cover image" }
-      nil
+      say_err "  ✗ #{ep[:base_name]} skipped: no cover image found"
+      { type: :missing_cover, base: ep[:base_name], message: "no cover image" }
     when :no_audio, :failed
-      $stderr.puts "  ✗ #{ep[:base_name]} video step failed: #{result.message}"
-      errors << { type: :video, base: ep[:base_name], message: result.message }
-      nil
+      say_err "  ✗ #{ep[:base_name]} video step failed: #{result.message}"
+      { type: :video, base: ep[:base_name], message: result.message }
     end
+  end
+
+  def say(msg)
+    if @logger
+      @logger.log(msg)
+    else
+      puts msg unless quiet?
+    end
+  end
+
+  def say_err(msg)
+    @logger ? @logger.log(msg) : $stderr.puts(msg)
   end
 
   def reconcile_subtitles_if_needed(ts_path, transcript_path)
@@ -259,6 +347,6 @@ class YouTubePublisher
   end
 
   def active_uploader
-    @uploader ||= YouTubeUploader.new
+    @uploader ||= YouTubeUploader.new(logger: @logger)
   end
 end

@@ -5,6 +5,7 @@ require "yaml"
 require "fileutils"
 require "post_pipeline_uploads"
 require "youtube_uploader"
+require "youtube_publisher"
 
 class TestPostPipelineUploads < Minitest::Test
   class CaptureLogger
@@ -141,6 +142,9 @@ class TestPostPipelineUploads < Minitest::Test
   # video untracked (which made the next publish --youtube upload it again).
   def test_upload_to_youtube_captions_failure_still_records_upload
     base = "ep-2026-03-10"
+    # P4-8: the shared routine builds via VideoBuilder, which needs real audio.
+    mp3 = File.join(@episodes_dir, "#{base}.mp3")
+    File.write(mp3, "x" * 100)
     File.write(File.join(@episodes_dir, "#{base}_cover.jpg"), "jpg")
     File.write(File.join(@episodes_dir, "#{base}_timestamps.json"), "{}")
     uploads = build_uploads_with_youtube
@@ -155,7 +159,7 @@ class TestPostPipelineUploads < Minitest::Test
     SubtitleGenerator.stub(:generate_srt, srt) do
       VideoGenerator.stub(:new, ->(**) { video_gen }) do
         YouTubeUploader.stub(:new, ->(**) { uploader }) do
-          uploads.upload_to_youtube(episode: {title: "T"}, base_name: base, output_path: "/tmp/a.mp3")
+          uploads.upload_to_youtube(episode: {title: "T"}, base_name: base, output_path: mp3)
         end
       end
     end
@@ -165,6 +169,53 @@ class TestPostPipelineUploads < Minitest::Test
     assert_equal ["YouTube upload failed (RuntimeError: captions boom)"], uploads.warnings
     assert_includes @logger.messages,
       "Warning: YouTube upload failed: RuntimeError: captions boom (non-fatal, continuing)"
+  end
+
+  # P4-8: the pipeline delegates to the publisher's one per-episode routine,
+  # passing its in-memory metadata and marking its fresh timestamps
+  # authoritative (no re-transcription, no second reconcile).
+  def test_upload_to_youtube_delegates_to_publisher_upload_episode
+    base = "ep-2026-03-10"
+    mp3 = File.join(@episodes_dir, "#{base}.mp3")
+    uploads = build_uploads_with_youtube
+    seen = nil
+    fake = Object.new
+    fake.define_singleton_method(:upload_episode) do |ep, **kw|
+      seen = [ep, kw]
+      YouTubePublisher::EpisodeResult.new(status: :uploaded, base: base, video_id: "vid_d", attempted: true)
+    end
+
+    YouTubePublisher.stub(:new, ->(**) { fake }) do
+      uploads.upload_to_youtube(episode: {title: "T", description: "D"}, base_name: base, output_path: mp3)
+    end
+
+    ep, kw = seen
+    assert_equal({base_name: base, mp3_path: mp3,
+                  transcript_path: File.join(@episodes_dir, "#{base}_transcript.md")}, ep)
+    assert_equal({metadata: {title: "T", description: "D"}, timestamps_authoritative: true}, kw)
+    assert_empty uploads.warnings
+    assert_includes @logger.messages, "Recorded YouTube upload: #{base} → vid_d"
+  end
+
+  def test_upload_to_youtube_reuses_existing_mp4
+    base = "ep-2026-03-10"
+    mp3 = File.join(@episodes_dir, "#{base}.mp3")
+    File.write(mp3, "x" * 100)
+    File.write(File.join(@episodes_dir, "#{base}_cover.jpg"), "jpg")
+    File.write(File.join(@episodes_dir, "#{base}.mp4"), "mp4")
+    uploads = build_uploads_with_youtube
+    uploaded = []
+    uploader = Object.new
+    uploader.define_singleton_method(:upload_video) { |path, **| (uploaded << path) && "vid_r" }
+
+    VideoGenerator.stub(:new, ->(**) { flunk "existing mp4 was regenerated" }) do
+      YouTubeUploader.stub(:new, ->(**) { uploader }) do
+        uploads.upload_to_youtube(episode: {title: "T"}, base_name: base, output_path: mp3)
+      end
+    end
+
+    assert_equal [File.join(@episodes_dir, "#{base}.mp4")], uploaded
+    assert_empty uploads.warnings
   end
 
   private
