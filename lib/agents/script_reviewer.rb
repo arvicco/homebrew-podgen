@@ -26,6 +26,7 @@ class ScriptReviewer
 
   BLOCKER = "BLOCKER"
   WARNING = "WARNING"
+  TITLE_TARGET_CHARS = 40
   NIT     = "NIT"
 
   WEEKDAYS = %w[Monday Tuesday Wednesday Thursday Friday Saturday Sunday].freeze
@@ -172,22 +173,28 @@ class ScriptReviewer
     [corrected, issues]
   end
 
+  # A title is listener-visible and must stay whole: an over-length title is
+  # reported, never cut (13 episodes shipped with a "…" stub between
+  # 2026-04 and 2026-10, P1-17). The 40-char target lives in the script
+  # prompt, where the model can rephrase instead of truncate.
   def check_title_length(script)
     issues = []
-    corrected = deep_copy(script)
-    title = corrected[:title]
+    title = script[:title]
 
-    if title.length > 40
-      truncated = truncate_title(title, 40)
+    if title.to_s.strip.empty?
       issues << {
-        severity: BLOCKER, check: "title_length", segment: "title",
-        message: "Title too long (#{title.length} chars, max 40): '#{title}' → '#{truncated}'",
-        auto_fixed: true
+        severity: BLOCKER, check: "title_missing", segment: "title",
+        message: "Title is missing", auto_fixed: false
       }
-      corrected[:title] = truncated
+    elsif title.length > TITLE_TARGET_CHARS
+      issues << {
+        severity: WARNING, check: "title_length", segment: "title",
+        message: "Title is #{title.length} chars (target #{TITLE_TARGET_CHARS}): '#{title}' — kept whole",
+        auto_fixed: false
+      }
     end
 
-    [corrected, issues]
+    [deep_copy(script), issues]
   end
 
   def check_stage_directions(script)
@@ -419,24 +426,6 @@ class ScriptReviewer
       },
       sources: (script[:sources] || []).map { |s| { title: s[:title].dup, url: s[:url].dup } }
     }
-  end
-
-  def truncate_title(title, max)
-    return title if title.length <= max
-
-    # Try dropping after last comma or dash
-    [", ", " — ", " - ", " & "].each do |sep|
-      idx = title.rindex(sep)
-      if idx && idx > 10 && idx <= max
-        candidate = title[0...idx]
-        return candidate if candidate.length <= max
-      end
-    end
-
-    # Word-boundary truncation
-    truncated = title[0...max - 1].sub(/\s+\S*$/, "")
-    truncated = title[0...max - 1] if truncated.length < 10
-    "#{truncated}\u2026"
   end
 
   def collect_source_urls(script)

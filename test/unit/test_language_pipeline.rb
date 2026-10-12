@@ -159,7 +159,7 @@ class TestLanguagePipeline < Minitest::Test
     pipeline.instance_variable_set(:@staging_dir, @tmpdir)
     pipeline.instance_variable_set(:@base_name, "ep")
 
-    TranscriptParser.stub(:parse, ->(_) { raise "boom" }) do
+    TranscriptParser.stub(:parse_file, ->(_) { raise "boom" }) do
       pipeline.send(:annotate_vocabulary)
     end
 

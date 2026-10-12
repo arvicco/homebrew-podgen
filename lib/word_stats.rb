@@ -142,7 +142,7 @@ class WordStats
     return [] unless Dir.exist?(dir)
 
     EpisodeFiltering.all_transcripts(dir).map do |path|
-      parsed = TranscriptParser.parse(path)
+      parsed = TranscriptParser.parse_file(path)
       vocab_entries = parsed.vocabulary ? parse_vocab_entries(parsed.vocabulary) : nil
       { basename: File.basename(path, "_transcript.md"),
         body: parsed.body,

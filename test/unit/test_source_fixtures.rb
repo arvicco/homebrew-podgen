@@ -176,6 +176,59 @@ class TestSourceFixtures < Minitest::Test
     end
   end
 
+  # Live recording 2026-10-11 wrote an EMPTY hn fixture (zero hits in a 48 h
+  # window) and a TRUNCATED claude_web fixture (stop_reason max_tokens, no
+  # text block) — both useless. The recorder must refuse such bodies.
+  # Recorder tests must never reach the network: every fetcher is stubbed.
+  def offline_recorder(dir, out, hn:)
+    readme = File.join(dir, "README.md")
+    File.write(readme, "| hn | `sources/hn/search_by_date.json` | x | NOT RECORDED | t |\n")
+    rec = FixtureRecorder.new(out: out, fixture_dir: dir, readme: readme)
+    %i[fetch_bluesky fetch_x fetch_claude_web].each { |m| rec.define_singleton_method(m) { raise "stubbed: no network in tests" } }
+    rec.define_singleton_method(:fetch_hn, &hn)
+    rec
+  end
+
+  def test_recorder_refuses_empty_or_truncated_bodies
+    assert FixtureRecorder.unusable?("hn", {"hits" => []})
+    refute FixtureRecorder.unusable?("hn", {"hits" => [{"title" => "t"}]})
+    assert FixtureRecorder.unusable?("bluesky", {"posts" => []})
+    assert FixtureRecorder.unusable?("x", {"tweets" => []})
+    truncated = {"stop_reason" => "max_tokens", "content" => [{"type" => "web_search_tool_result", "content" => []}]}
+    assert FixtureRecorder.unusable?("claude_web", truncated)
+    no_text = {"stop_reason" => "end_turn", "content" => [{"type" => "web_search_tool_result", "content" => []}]}
+    assert FixtureRecorder.unusable?("claude_web", no_text)
+    good = {"stop_reason" => "end_turn", "content" => [{"type" => "text", "text" => "x", "citations" => [{"url" => "https://a"}]}]}
+    refute FixtureRecorder.unusable?("claude_web", good)
+  end
+
+  def test_recorder_hn_window_is_wide_enough_to_find_stories
+    assert_operator FixtureRecorder::HN_RECORD_LOOKBACK_SECONDS, :>=, 7 * 86_400
+  end
+
+  def test_recorder_does_not_write_an_unusable_fixture
+    Dir.mktmpdir do |dir|
+      out = StringIO.new
+      rec = offline_recorder(dir, out, hn: -> { {"hits" => []} })
+      failed = rec.record_all
+      assert_includes failed, "hn"
+      refute File.exist?(File.join(dir, "hn/search_by_date.json")), "empty body must not be written"
+      assert_match(/hn\s+FAILED \(unusable/, out.string)
+    end
+  end
+
+  # Golden rule 8: a fetch error's message may carry a URL or token — only
+  # the recorder's own "unusable" verdict is printed verbatim.
+  def test_recorder_prints_only_the_class_for_fetch_errors
+    Dir.mktmpdir do |dir|
+      out = StringIO.new
+      rec = offline_recorder(dir, out, hn: -> { raise "HTTP 401 for https://x?api_key=SECRET" })
+      rec.record_all
+      refute_includes out.string, "SECRET"
+      assert_match(/hn\s+FAILED \(RuntimeError\)/, out.string)
+    end
+  end
+
   def test_synthetic_trimmers_keep_first_three_and_drop_noise
     hn = FixtureRecorder.trim_hn({"hits" => 5.times.map { |i| {"title" => "t#{i}", "_highlightResult" => {}} }})
     x = FixtureRecorder.trim_x({"tweets" => 5.times.map { |i| {"id_str" => i.to_s, "user" => {"screen_name" => "u", "secret" => 1}, "junk" => 1} }})

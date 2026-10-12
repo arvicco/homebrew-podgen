@@ -234,6 +234,15 @@ class PodcastConfig
     parser.podcast_section[:freshness].to_s.strip.downcase != "off"
   end
 
+  DEFAULT_FRESHNESS_LEAD_DAYS = 3
+
+  # `- freshness_lead_days: N` in ## Podcast: episodes pre-generated up to N
+  # days ahead of today are scheduled, not suspicious (default 3).
+  def freshness_lead_days
+    days = Integer(parser.podcast_section[:freshness_lead_days].to_s.strip, 10, exception: false)
+    (days && days >= 0) ? days : DEFAULT_FRESHNESS_LEAD_DAYS
+  end
+
   def links_enabled?
     !!links_config&.dig(:show)
   end

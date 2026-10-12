@@ -1012,6 +1012,21 @@ class TestPodcastConfig < Minitest::Test
     refute PodcastConfig.new("myshow").freshness_enabled?
   end
 
+  def test_freshness_lead_days_defaults_to_three
+    write_guidelines("## Podcast\n- name: X\n")
+    assert_equal 3, PodcastConfig.new("myshow").freshness_lead_days
+  end
+
+  def test_freshness_lead_days_reads_podcast_section
+    write_guidelines("## Podcast\n- name: X\n- freshness_lead_days: 0\n")
+    assert_equal 0, PodcastConfig.new("myshow").freshness_lead_days
+  end
+
+  def test_freshness_lead_days_invalid_value_falls_back_to_default
+    write_guidelines("## Podcast\n- name: X\n- freshness_lead_days: soon\n")
+    assert_equal 3, PodcastConfig.new("myshow").freshness_lead_days
+  end
+
   def test_site_config_defaults_when_section_missing
     write_guidelines(<<~MD)
       ## Format

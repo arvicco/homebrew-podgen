@@ -2,7 +2,9 @@
 
 *How this project gets built with maximum unattended automation,
 minimum top-tier spend, and explicit human gates. Instantiated from
-the dev-loop skill (ancestry: nabu → mimir → arbot).*
+the dev-loop skill (ancestry: nabu → mimir → arbot); synced to
+dev-loop v2.1 (doctrine.md + boards.md) on 2026-10-11 — those two
+files are binding and are NOT duplicated here.*
 
 ## 1. Preconditions the loop needs
 
@@ -33,7 +35,7 @@ packet carries a one-line justification.
 | Tier | Used for |
 |---|---|
 | **Top** (orchestrator) | Phase/architecture design; packet elaboration; first-of-family patterns; anything touching the frozen domain (feed/site contracts, guid scheme, history/uploads schemas), frozen contracts, or secrets (proposal-only — final say is the owner's); review of every delegated diff; gate reviews; blocked-packet adjudication; upstream-breakage forensics (e.g. dead RTVSLO feeds) |
-| **Implementation** | Standard implementation against a written spec with an oracle; test batteries; glue; refactors the suite pins; fixture entries; doc syncs; worklog/backlog housekeeping — pick the CHEAPEST tier plausibly capable |
+| **Implementation** | Standard implementation against a written spec with an oracle; test batteries; glue; refactors the suite pins; fixture entries; doc syncs; worklog/backlog housekeeping — delegated to Opus-class subagent lanes in worktrees (`model: "opus"`, doctrine §17); the brief carries the file list, the failing-test plan, the house rules and the commands that must be green |
 
 Hard rule regardless of tier: **no model changes the frozen domain,
 frozen contract fields, or owner-governed data files** (history.yml,
@@ -46,13 +48,17 @@ output/. Every agent prompt carries an explicit
 no-destructive-git-commands constraint (no rm -rf, no git
 checkout/reset of files the agent didn't create).
 
-## 3. Work packets and the backlog
+## 3. Work packets and the boards
 
-docs/BACKLOG.md (see its header for the format) is the loop's entire
-coordination state — no external tracker; survives any session dying.
-Research memos, phase plans, and gate runbooks live in gitignored
-.docs/; open owner decisions in .docs/DECISIONS.md (newest first,
-removed once ruled — the ruling lands in the affected packet).
+IDs: packets P<phase>-<n>, rulings R<phase>-<nn>, queue Q-n, incidents
+I-n. BOARDS profile (R1-k, 2026-10-11): gitignored .docs/ holds the
+phase plan (p<N>-plan.md — the owner's one surface per phase; packet
+status and the phase worklog live in it), WORK-QUEUE.md, DECISIONS.md
+(open rulings only, written for the decision-maker; ruled items
+removed entirely; CALENDAR + slate matters), incident-register.md (a
+log, newest first) and old-phases/ (closed plans; the pre-Phase-2
+docs/BACKLOG.md and WORKLOG.md are archived there as
+backlog-2026-10-11.md / worklog-2026-10-11.md).
 
 ## 4. Loop mechanics
 
@@ -91,10 +97,13 @@ removed once ruled — the ruling lands in the affected packet).
 7. **Pre-gate: README.md current** — honest about what does not work
    yet. A phase is not gate-ready with a stale README. Check
    ARCHITECTURE.md freshness the same way.
-8. **Phase gate**: CRPR review (worktree `/cr` agent) of the entire
-   phase diff against ARCHITECTURE.md; resolve blocked packets;
-   update the "Current phase" line in CLAUDE.md; open a PR from
-   `phase-N` to `master`; produce the gate handoff as a RUNBOOK
+8. **Phase gate**: the gate PR is opened at phase START as a living
+   document (body refreshed as packets land; technical content only);
+   CRPR review (worktree `/cr` agent) of the entire phase diff against
+   ARCHITECTURE.md; resolve blocked packets; board hygiene sweep
+   (register/queue residue, incident rows advanced, calendar); update
+   the "Current phase" line in CLAUDE.md; produce the gate handoff as a
+   RUNBOOK
    (numbered steps, one command each, EXPECT lines; background
    quarantined at the end). **The owner executes the gate's human
    actions and merges the PR — the merge IS the gate-closing event.**
@@ -103,9 +112,12 @@ removed once ruled — the ruling lands in the affected packet).
    gate closes, as a FULL plan in `.docs/pXX-plan.md` (scope, packets
    with goals/acceptance, decision items, risks) that the owner signs
    off BEFORE execution starts (owner ruling 2026-09-01).
-9. **Ring for the owner** when the loop stops on something only the
-   owner can do (gate handoff, all-blocked, decision item) — as the
-   LAST tool call of that turn:
+9. **Never idle** (doctrine §6): a turn ends only at the gate or on a
+   genuinely empty workfront; waiting on background work prints
+   "independent items remaining: N" with N = 0; long waits arm the
+   kick/stay waker. **Ring for the owner** when the loop stops on
+   something only the owner can do (gate handoff, all-blocked,
+   decision item) — as the LAST tool call of that turn:
    `nohup "$HOME/.claude/hooks/attention-alarm.sh" sticky >/dev/null 2>&1 &`
    Never for informational turns.
 

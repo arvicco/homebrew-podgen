@@ -1122,6 +1122,10 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
 - **WARN** - the latest run log in `logs/<podcast>/` ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
   the last 3 run logs (`--runs N` to change), or there is no history yet.
+  Indented reviewer findings (`  WARNING: [COVERAGE] …`, the script review's
+  own output) are not pipeline warnings and are ignored. A newest episode
+  dated up to `freshness_lead_days` ahead (`## Podcast` key, default 3) is OK
+  and shown as `(scheduled +Nd)`; further ahead is WARN.
 - **OK** - otherwise.
 
 Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
@@ -1133,7 +1137,8 @@ array; keys are only ever added, never renamed or removed:
 ```
 
 `verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
-when unknown; `reasons` is an array of short strings.
+when unknown (`age_days` is negative for a scheduled, future-dated episode);
+`reasons` is an array of short strings.
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes

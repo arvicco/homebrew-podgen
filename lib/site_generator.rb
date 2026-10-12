@@ -234,13 +234,13 @@ class SiteGenerator
   def transcript_has_vocabulary?(path)
     return false unless path && File.exist?(path)
 
-    TranscriptParser.has_vocabulary?(path)
+    TranscriptParser.file_has_vocabulary?(path)
   end
 
   def extract_title_from_file(path)
     return nil unless path && File.exist?(path)
 
-    TranscriptParser.extract_title(path)
+    TranscriptParser.extract_title_from_file(path)
   end
 
   # --- Transcript parsing ---

@@ -518,7 +518,7 @@ module PodgenCLI
     def annotate_vocabulary
       logger.phase_start("Vocabulary")
       transcript_path = File.join(@staging_dir, "#{@base_name}_transcript.md")
-      parsed = TranscriptParser.parse(transcript_path)
+      parsed = TranscriptParser.parse_file(transcript_path)
 
       unless parsed.body && !parsed.body.empty?
         logger.log("No transcript body found, skipping vocabulary annotation")
