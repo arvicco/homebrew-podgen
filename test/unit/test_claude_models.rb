@@ -118,6 +118,18 @@ class TestClaudeModels < Minitest::Test
     assert_includes err, "turbo"
   end
 
+  def test_effort_opt_out_values_omit_without_warning
+    %w[default none off Default].each do |value|
+      ENV["CLAUDE_EFFORT_DESCRIPTION"] = value
+
+      result = :unset
+      out, err = capture_io { result = ClaudeModels.effort(:description) }
+      assert_nil result, value
+      assert_empty out, value
+      assert_empty err, value
+    end
+  end
+
   def test_no_model_id_literals_outside_the_registry
     lib = File.expand_path("../../lib", __dir__)
     offenders = Dir[File.join(lib, "**", "*.rb")]

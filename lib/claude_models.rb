@@ -13,7 +13,9 @@
 #
 # Effort (P5-1): EFFORT lists the roles sent a non-default effort level;
 # every other role resolves to nil (the parameter is omitted). Per-role
-# ENV CLAUDE_EFFORT_<ROLE> overrides; an invalid value warns and omits.
+# ENV CLAUDE_EFFORT_<ROLE> overrides; default/none/off turns effort off
+# silently, any other invalid value warns and omits. A level takes effect
+# only where the call site passes effort through (see the work queue).
 module ClaudeModels
   LINES = {
     opus: "claude-opus-5-5",
@@ -44,6 +46,8 @@ module ClaudeModels
   }.freeze
 
   EFFORT_LEVELS = %w[low medium high].freeze
+  # Override values that turn effort off (parameter omitted) without a warning.
+  EFFORT_OFF = %w[default none off].freeze
 
   # Short-output roles: a title, a description, a one-word language name.
   EFFORT = {
@@ -77,6 +81,7 @@ module ClaudeModels
 
     level = value.strip.downcase
     return level if EFFORT_LEVELS.include?(level)
+    return nil if EFFORT_OFF.include?(level)
 
     warn "Warning: #{key}=#{value.inspect} is not one of #{EFFORT_LEVELS.join("/")}; omitting effort"
     nil
