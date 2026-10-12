@@ -215,7 +215,7 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       h1_inside: [{token: "abc", level: 3}, []],
       bare_key: [{level: 3}, ["LingQ: '- token' is missing a value (expected '- token: <value>'); ignored"]],
       duplicate_keys: [{token: "xyz"}, []],
-      autolinked_url: [{token: "abc", image: "/pod/https://ex.com/i.png"}, []],
+      autolinked_url: [{token: "abc", image: "https://ex.com/i.png"}, []], # flipped by P5-2a (Q-50)
       hash_comment: [{token: "abc", level: 3}, []],
       indented_item: [{token: "abc", level: 3}, []],
       double_space_bullet: [{token: "abc", level: 3}, []],
@@ -595,13 +595,12 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
 
   def test_cross_parser_autolinked_urls_unwrapped_by_all
     # Unified (P4-7): "[url](url)" with identical halves is unwrapped to the
-    # bare url before any parser sees the item. lingq's image still goes
-    # through resolve_path, which prefixes the podcast dir to any
-    # non-absolute value (a URL included) — unchanged here.
+    # bare url before any parser sees the item. lingq's image goes through
+    # resolve_path, which leaves a URL unchanged (flipped by P5-2a, Q-50).
     SPECS.each_key do |m|
       refute_includes EXPECTED[m][:autolinked_url].inspect, "](", m.to_s
     end
-    assert_equal "/pod/https://ex.com/i.png", EXPECTED[:parse_lingq_section][:autolinked_url].first[:image]
+    assert_equal "https://ex.com/i.png", EXPECTED[:parse_lingq_section][:autolinked_url].first[:image]
     assert_equal({"code" => "fr", "voice_id" => "https://ex.com"}, EXPECTED[:parse_language_section][:autolinked_url].first.last)
     assert_equal "https://ex.com/feed", EXPECTED[:parse_sources_section][:autolinked_url].first["rss"].first[:url]
   end

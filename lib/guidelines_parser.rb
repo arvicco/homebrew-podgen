@@ -131,6 +131,7 @@ class GuidelinesParser
 
   def resolve_path(value)
     return value if value.start_with?("/")
+    return value if value.match?(%r{\Ahttps?://}) # Q-50: URLs are not file paths
     File.join(@podcast_dir, value)
   end
 
