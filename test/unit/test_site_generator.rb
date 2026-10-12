@@ -66,6 +66,17 @@ class TestSiteGenerator < Minitest::Test
     assert_in_delta 120.0, ep[:duration]
   end
 
+  def test_build_episode_language_variant_uses_language_duration
+    create_mp3("mypod-2026-01-15-es.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "History Title", "duration" => 120.0,
+                     "languages" => { "es" => { "duration" => 140.0 } } }])
+
+    gen = build_generator(languages: [{ "code" => "en" }, { "code" => "es" }])
+    ep = gen.send(:build_episode, File.join(@episodes_dir, "mypod-2026-01-15-es.mp3"), "es")
+
+    assert_in_delta 140.0, ep[:duration]
+  end
+
   def test_build_episode_falls_back_to_history_title
     create_mp3("mypod-2026-01-15.mp3")
     write_history([{ "date" => "2026-01-15", "title" => "History Title" }])
