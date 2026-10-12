@@ -1,12 +1,11 @@
 # frozen_string_literal: true
 
 require_relative "yaml_loader"
+require_relative "episode_naming"
 
 # Builds filename → title/timestamp/duration maps from history.yml.
 # Shared by RssGenerator and SiteGenerator.
 module HistoryMaps
-  SUFFIXES = [""] + ("a".."z").to_a
-
   # Build maps from history.yml entries.
   # Returns [title_map, timestamp_map, duration_map].
   #
@@ -22,44 +21,32 @@ module HistoryMaps
     entries = YamlLoader.load(history_path, default: nil)
     return empty unless entries.is_a?(Array)
 
-    by_date = {}
-    entries.each do |entry|
-      date = entry["date"]
-      next unless date
-      (by_date[date] ||= []) << entry
-    end
-
     title_map = {}
     timestamp_map = {}
     duration_map = {}
 
+    # `languages` here is the codes to map variants for (RssGenerator passes
+    # only its own feed language), not a primary-first config list, so the
+    # suffix-less primary is excluded by code.
     non_english = languages.reject { |c| c == "en" }
 
-    by_date.each do |date, date_entries|
-      date_entries.each_with_index do |entry, idx|
-        basename = if entry["basename"]
-          entry["basename"]
-        else
-          suffix = SUFFIXES[idx] || idx.to_s
-          "#{podcast_name}-#{date}#{suffix}"
-        end
+    EpisodeNaming.each_history_basename(entries, podcast_name) do |entry, basename|
+      filename = "#{basename}.mp3"
+      title_map[filename] = entry["title"] if entry["title"]
+      timestamp_map[filename] = entry["timestamp"] if entry["timestamp"]
+      duration_map[filename] = entry["duration"] if entry["duration"]
 
-        filename = "#{basename}.mp3"
-        title_map[filename] = entry["title"] if entry["title"]
-        timestamp_map[filename] = entry["timestamp"] if entry["timestamp"]
-        duration_map[filename] = entry["duration"] if entry["duration"]
-
-        non_english.each do |code|
-          lang_filename = "#{basename}-#{code}.mp3"
-          lang_script = File.join(episodes_dir, "#{basename}-#{code}_script.md")
-          if File.exist?(lang_script)
-            translated_title = File.read(lang_script)[/^# (.+)$/, 1]
-            title_map[lang_filename] = translated_title if translated_title
-          end
-          title_map[lang_filename] ||= entry["title"] if entry["title"]
-          timestamp_map[lang_filename] = entry["timestamp"] if entry["timestamp"]
-          duration_map[lang_filename] = entry["duration"] if entry["duration"]
+      non_english.each do |code|
+        lang_basename = EpisodeNaming.with_language(basename, code)
+        lang_filename = "#{lang_basename}.mp3"
+        lang_script = File.join(episodes_dir, "#{lang_basename}_script.md")
+        if File.exist?(lang_script)
+          translated_title = File.read(lang_script)[/^# (.+)$/, 1]
+          title_map[lang_filename] = translated_title if translated_title
         end
+        title_map[lang_filename] ||= entry["title"] if entry["title"]
+        timestamp_map[lang_filename] = entry["timestamp"] if entry["timestamp"]
+        duration_map[lang_filename] = entry["duration"] if entry["duration"]
       end
     end
 

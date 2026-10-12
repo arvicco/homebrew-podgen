@@ -5,7 +5,6 @@ require_relative "../openai_client"
 require_relative "../loggable"
 require_relative "../retryable"
 require_relative "../language_names"
-require_relative "../usage_logger"
 
 class TranslatedSegment < Anthropic::BaseModel
   required :name, String
@@ -32,10 +31,15 @@ class TranslationAgent
   include OpenAIClient
   include Loggable
   include Retryable
-  include UsageLogger
 
   MAX_RETRIES = 3
+  MAX_OUTPUT_TOKENS = 16384
   SUPPORTED_BACKENDS = %w[claude openai].freeze
+  # Each backend retries only its own SDK's API errors.
+  BACKEND_API_ERRORS = {
+    "claude" => Anthropic::Errors::APIError,
+    "openai" => OpenAI::Errors::APIError
+  }.freeze
 
   def initialize(target_language:, backend: "claude", model_override: nil, glossary: nil, logger: nil)
     @logger = logger
@@ -55,39 +59,24 @@ class TranslationAgent
 
   # Input: { title:, segments: [{ name:, text: }] }
   # Output: { title:, segments: [{ name:, text: }] } translated to target language
+  #
+  # One core for both backends (P4-4): prompt composition, retry policy,
+  # logging and result mapping live here; the backend adapters below only
+  # build the request, read stop reason + usage, and extract/validate the
+  # parsed output.
   def translate(script)
-    case @backend
-    when "openai" then translate_with_openai(script)
-    else translate_with_claude(script)
-    end
-  end
+    log("Translating script to #{@language_name} (#{@target_language}) with #{backend_model} (#{@backend})")
 
-  private
+    system_prompt = build_system_prompt
+    user_message = "Translate this podcast script to #{@language_name}:\n\n#{format_script_for_translation(script)}"
 
-  def translate_with_claude(script)
-    log("Translating script to #{@language_name} (#{@target_language}) with #{@model} (claude)")
+    with_retries(max: MAX_RETRIES, on: [BACKEND_API_ERRORS.fetch(@backend), StructuredOutputError]) do
+      response, elapsed = measure_time { send(:"#{@backend}_request", system_prompt, user_message) }
 
-    script_text = format_script_for_translation(script)
+      stop_reason, usage = send(:"#{@backend}_stop_and_usage", response)
+      log_generation(elapsed, stop_reason, usage)
 
-    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
-      message, elapsed = measure_time do
-        @client.messages.create(
-          model: @model,
-          max_tokens: 16384,
-          system: build_system_prompt,
-          messages: [
-            {
-              role: "user",
-              content: "Translate this podcast script to #{@language_name}:\n\n#{script_text}"
-            }
-          ],
-          output_config: { format: TranslatedScript }
-        )
-      end
-
-      log_api_usage("Translation generated", message, elapsed)
-
-      translated = require_parsed_output!(message, TranslatedScript)
+      translated = send(:"#{@backend}_parsed!", response)
 
       result = {
         title: translated.title,
@@ -100,34 +89,99 @@ class TranslationAgent
     end
   end
 
-  def translate_with_openai(script)
-    log("Translating script to #{@language_name} (#{@target_language}) with #{@openai_model} (openai)")
+  private
 
-    script_text = format_script_for_translation(script)
+  def backend_model
+    (@backend == "openai") ? @openai_model : @model
+  end
 
-    with_retries(max: MAX_RETRIES, on: [OpenAI::Errors::APIError, StructuredOutputError]) do
-      response, elapsed = measure_time do
-        @openai_client.responses.create(
-          model: @openai_model,
-          input: [
-            { role: :system, content: build_system_prompt },
-            { role: :user, content: "Translate this podcast script to #{@language_name}:\n\n#{script_text}" }
-          ],
-          text: OpenAITranslatedScript
-        )
-      end
+  # usage: { input:, output:, cache_create:, cache_read: }, or nil when the
+  # backend reported none (then only the "generated" line is logged).
+  def log_generation(elapsed, stop_reason, usage)
+    log("Translation generated in #{elapsed}s (#{stop_reason})")
+    return unless usage
 
-      translated = extract_openai_parsed!(response)
+    log("  Input: #{usage[:input]} tokens | Output: #{usage[:output]} tokens")
+    cache_create = usage[:cache_create] || 0
+    cache_read = usage[:cache_read] || 0
+    log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
+  end
 
-      result = {
-        title: translated.title,
-        segments: translated.segments.map { |s| { name: s.name, text: s.text } }
-      }
-      result = carry_over_sources(script, result)
+  # --- Claude adapter ---
 
-      log("Translation complete in #{elapsed}s: #{result[:segments].length} segments")
-      result
-    end
+  def claude_request(system_prompt, user_message)
+    @client.messages.create(
+      model: @model,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      system: system_prompt,
+      messages: [{ role: "user", content: user_message }],
+      output_config: { format: TranslatedScript }
+    )
+  end
+
+  def claude_stop_and_usage(message)
+    usage = message.usage
+    [message.stop_reason, {
+      input: usage.input_tokens,
+      output: usage.output_tokens,
+      cache_create: usage.cache_creation_input_tokens,
+      cache_read: usage.cache_read_input_tokens
+    }]
+  end
+
+  # Raises TruncatedOutputError on a max_tokens stop, StructuredOutputError
+  # (retried) on a missing or unparseable output.
+  def claude_parsed!(message)
+    require_parsed_output!(message, TranslatedScript)
+  end
+
+  # --- OpenAI adapter ---
+
+  # No output cap here (unlike Claude): Responses API `max_output_tokens`
+  # counts reasoning tokens too, and reasoning models (gpt-5) could exhaust
+  # it on a long script. The truncation check below still catches a stop at
+  # the model's own ceiling.
+  def openai_request(system_prompt, user_message)
+    @openai_client.responses.create(
+      model: @openai_model,
+      input: [
+        { role: :system, content: system_prompt },
+        { role: :user, content: user_message }
+      ],
+      text: OpenAITranslatedScript
+    )
+  end
+
+  def openai_stop_and_usage(response)
+    usage = response.usage if response.respond_to?(:usage)
+    reported = { input: usage.input_tokens, output: usage.output_tokens } if usage
+    [openai_stop_reason(response) || "?", reported]
+  end
+
+  # The incomplete reason when there is one (e.g. "max_output_tokens"),
+  # else the response status (e.g. "completed").
+  def openai_stop_reason(response)
+    return unless response.respond_to?(:status)
+
+    reason = response.incomplete_details&.reason if response.respond_to?(:incomplete_details)
+    (reason || response.status)&.to_s
+  end
+
+  def openai_parsed!(response)
+    raise_openai_truncated!(response)
+    extract_openai_parsed!(response)
+  end
+
+  # A response cut at the model's output ceiling carries truncated JSON; re-issuing the
+  # identical request cannot succeed, so it is a TruncatedOutputError (not
+  # retried), mirroring the Claude max_tokens check (P4-4).
+  def raise_openai_truncated!(response)
+    return unless openai_stop_reason(response) == "max_output_tokens"
+
+    tokens = response.usage&.output_tokens if response.respond_to?(:usage)
+    raise TruncatedOutputError,
+      "Output truncated at max_output_tokens (#{tokens || "?"} output tokens) — " \
+      "structured response is incomplete; the model's output ceiling was reached"
   end
 
   # Sources are not translated (they're URLs + titles in the source language).
@@ -188,13 +242,19 @@ class TranslationAgent
 
     return base if @glossary.empty?
 
-    pairs = @glossary.map { |term, translation| "      - \"#{term}\" → \"#{translation}\"" }.join("\n")
+    # Pair lines start at column 0 (interpolated text is not de-indented by
+    # the heredoc) and embedded double quotes are escaped (P4-4, Q-42).
+    pairs = @glossary.map { |term, translation| "- \"#{escape_quotes(term)}\" → \"#{escape_quotes(translation)}\"" }.join("\n")
     base + <<~GLOSSARY
 
       GLOSSARY (always use these exact translations for the listed terms,
       overriding the natural-conventions rule above):
-      #{pairs.lstrip.then { |s| s.empty? ? "" : pairs }}
+      #{pairs}
     GLOSSARY
+  end
+
+  def escape_quotes(text)
+    text.to_s.gsub('"', '\"')
   end
 
   def format_script_for_translation(script)

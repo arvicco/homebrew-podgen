@@ -13,6 +13,11 @@
 #                  _timestamps.json, _cover*.{jpg,png,jpeg}
 #   <base>-*    →  per-language variants (-jp.mp3, -jp_script.md, …)
 #
+# Every `<base>-*` file counts, configured language or not: deleting and
+# moving must not leave a temporarily disabled language's files behind
+# (P4-9, CRPR round 1). The configured-language rule (EpisodeNaming) is for
+# language attribution only.
+#
 # `_concat*` intermediates are excluded (scratch files produced during
 # audio assembly). Used by `scrap`, `move`, and any other command that
 # needs to act on every artifact belonging to one episode.

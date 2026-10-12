@@ -9,12 +9,13 @@ require "subtitle_reconciliation_runner"
 require "subtitle_reconciler"
 require "timestamp_persister"
 
-# P3-0 H1 characterization harness: pins the CURRENT behavior of the
-# reconcile-and-persist step as LanguagePipeline#reconcile_subtitles inlines
-# it, side by side with SubtitleReconciliationRunner.run (used by regen and
-# the YouTube publisher), before a later packet consolidates them. The
-# "contrast" tests feed both paths the same fixture so any behavior the
-# dry-up changes on either side goes RED.
+# P3-0 H1 characterization harness: pins the reconcile-and-persist step of
+# LanguagePipeline#reconcile_subtitles side by side with
+# SubtitleReconciliationRunner.run (used by regen and the YouTube publisher).
+# Since P4-2 the pipeline step calls the runner (text: = in-memory reconciled
+# text), so its guards apply: already-reconciled, missing key, missing
+# timestamps and blank text are logged skips with no API call. The
+# "contrast" tests feed both paths the same fixture and show they AGREE.
 #
 # SubtitleReconciler.reconcile is always stubbed: no Anthropic API calls.
 class TestCharacterizationInlineReconcile < Minitest::Test
@@ -92,9 +93,10 @@ class TestCharacterizationInlineReconcile < Minitest::Test
     stub_reconciler(calls) { pipeline.send(:reconcile_subtitles) }
 
     assert_empty calls
-    assert_empty @logger.events
+    assert_equal skip_events("no timestamps at #{staged_ts_path(pipeline)}"), @logger.events
   end
 
+  # Single-engine runs have no reconciled text: the step does not apply.
   def test_reconcile_subtitles_without_reconciled_text_is_silent_noop
     pipeline = build_pipeline(reconciled_text: nil)
     write_staged_timestamps(pipeline)
@@ -107,7 +109,7 @@ class TestCharacterizationInlineReconcile < Minitest::Test
     refute JSON.parse(File.read(staged_ts_path(pipeline)))["reconciled"]
   end
 
-  def test_reconcile_subtitles_without_timestamps_file_is_silent_noop
+  def test_reconcile_subtitles_without_timestamps_file_logs_skip_reason
     pipeline = build_pipeline(reconciled_text: "Text.")
     FileUtils.mkdir_p(staging_dir(pipeline))
     calls = []
@@ -115,11 +117,11 @@ class TestCharacterizationInlineReconcile < Minitest::Test
     stub_reconciler(calls) { pipeline.send(:reconcile_subtitles) }
 
     assert_empty calls
-    assert_empty @logger.events
+    assert_equal skip_events("no timestamps at #{staged_ts_path(pipeline)}"), @logger.events
     assert_empty pipeline.instance_variable_get(:@warnings)
   end
 
-  def test_reconcile_subtitles_without_api_key_is_silent_noop
+  def test_reconcile_subtitles_without_api_key_logs_skip_reason
     pipeline = build_pipeline(reconciled_text: "Text.")
     write_staged_timestamps(pipeline)
     calls = []
@@ -130,30 +132,31 @@ class TestCharacterizationInlineReconcile < Minitest::Test
     end
 
     assert_empty calls
-    assert_empty @logger.events, "inline path logs nothing when the key is missing (runner returns :no_api_key)"
+    assert_equal skip_events("ANTHROPIC_API_KEY not set") * 2, @logger.events
     assert_empty pipeline.instance_variable_get(:@warnings)
   end
 
-  def test_reconcile_subtitles_already_reconciled_file_is_reconciled_again
+  def test_reconcile_subtitles_already_reconciled_file_is_skipped_with_log
     pipeline = build_pipeline(reconciled_text: "Text.")
     write_staged_timestamps(pipeline, reconciled: true)
     calls = []
 
     stub_reconciler(calls) { pipeline.send(:reconcile_subtitles) }
 
-    assert_equal 1, calls.length, "inline path has no already-reconciled guard"
-    assert_equal CLEAN_SEGMENTS, JSON.parse(File.read(staged_ts_path(pipeline)))["segments"]
+    assert_empty calls, "no second API call for an already-reconciled file"
+    assert_equal RAW_SEGMENTS, JSON.parse(File.read(staged_ts_path(pipeline)))["segments"]
+    assert_equal skip_events("already reconciled"), @logger.events
   end
 
-  def test_reconcile_subtitles_blank_reconciled_text_still_calls_reconciler
+  def test_reconcile_subtitles_blank_reconciled_text_skips_reconciler_with_log
     pipeline = build_pipeline(reconciled_text: "   ")
     write_staged_timestamps(pipeline)
     calls = []
 
     stub_reconciler(calls) { pipeline.send(:reconcile_subtitles) }
 
-    assert_equal [[RAW_SEGMENTS, "   ", "test-key-not-real"]], calls,
-      "inline path has no empty-transcript guard (runner returns :no_transcript)"
+    assert_empty calls, "blank text is the runner's :no_transcript, not an API call"
+    assert_equal skip_events("transcript text is empty"), @logger.events
   end
 
   def test_reconcile_subtitles_reconciler_error_is_skippable_warning_and_file_untouched
@@ -189,10 +192,10 @@ class TestCharacterizationInlineReconcile < Minitest::Test
     assert_match(/\ASubtitle reconciliation failed \(TimestampPersister::CorruptSidecarError: /, warnings.first)
   end
 
-  # Pins where the inline step sits in LanguagePipeline#run: after the
-  # timestamps are persisted into staging and BEFORE the transcript file is
-  # written (so it cannot read the transcript from disk the way the runner
-  # does) and before commit / post-commit uploads.
+  # Pins where the step sits in LanguagePipeline#run: after the timestamps
+  # are persisted into staging and BEFORE the transcript file is written
+  # (hence the runner's text: keyword instead of a transcript path) and
+  # before commit / post-commit uploads.
   def test_run_reconcile_subtitles_runs_after_persist_timestamps_and_before_transcript_save
     pipeline = build_pipeline(reconciled_text: "Text.", options: {lingq: true, youtube: true})
     pipeline.instance_variable_set(:@transcription_result, {text: "raw"})
@@ -287,7 +290,7 @@ class TestCharacterizationInlineReconcile < Minitest::Test
   # Contrast — same fixture through both paths
   # ════════════════════════════════════════════════════════════════════
 
-  def test_contrast_already_reconciled_runner_skips_inline_reconciles
+  def test_contrast_already_reconciled_both_paths_skip
     pipeline = build_pipeline(reconciled_text: "Text.")
     write_staged_timestamps(pipeline, reconciled: true)
     tr = File.join(@tmpdir, "c_transcript.md")
@@ -302,7 +305,7 @@ class TestCharacterizationInlineReconcile < Minitest::Test
 
     assert_equal :already_reconciled, result.status
     assert_equal 0, runner_calls
-    assert_equal 1, calls.length
+    assert_empty calls, "pipeline step agrees with the runner: no second API call"
   end
 
   def test_contrast_reconciler_error_runner_returns_failed_inline_records_warning
@@ -318,7 +321,9 @@ class TestCharacterizationInlineReconcile < Minitest::Test
       pipeline.send(:reconcile_subtitles)
     end
 
-    assert_equal SubtitleReconciliationRunner::Result.new(status: :failed, message: "boom"), result
+    assert_equal SubtitleReconciliationRunner::Result.new(
+      status: :failed, message: "boom", error_class: "SubtitleReconciler::ReconciliationError"
+    ), result
     assert_equal ["Subtitle reconciliation failed (SubtitleReconciler::ReconciliationError: boom)"],
       pipeline.instance_variable_get(:@warnings)
   end
@@ -338,6 +343,14 @@ class TestCharacterizationInlineReconcile < Minitest::Test
     pipeline.instance_variable_set(:@base_name, BASE)
     pipeline.instance_variable_set(:@reconciled_text, reconciled_text)
     pipeline
+  end
+
+  def skip_events(reason)
+    [
+      [:phase_start, "Subtitle Reconciliation"],
+      [:log, "Subtitle reconciliation skipped: #{reason}"],
+      [:phase_end, "Subtitle Reconciliation"]
+    ]
   end
 
   def staging_dir(pipeline) = pipeline.instance_variable_get(:@staging_dir)

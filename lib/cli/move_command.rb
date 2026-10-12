@@ -10,6 +10,7 @@ require_relative File.join(root, "lib", "cli", "episode_selector")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "episode_artifacts")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "upload_tracker")
 
 module PodgenCLI
@@ -27,7 +28,7 @@ module PodgenCLI
   class MoveCommand
     include PodcastCommand
 
-    SUFFIXES = [""] + ("a".."z").to_a
+    SUFFIXES = EpisodeNaming::SUFFIXES
 
     def initialize(args, options)
       @options = options
@@ -126,7 +127,7 @@ module PodgenCLI
       podcast = config.name
 
       if to_suffix
-        candidate = "#{podcast}-#{to_date_str}#{to_suffix}"
+        candidate = EpisodeNaming.basename_for(podcast, to_date_str, to_suffix)
         if EpisodeArtifacts.for_basename(config.episodes_dir, candidate).any?
           $stderr.puts "Error: target '#{candidate}' already exists. Scrap it first or pick another suffix."
           return nil
@@ -135,7 +136,7 @@ module PodgenCLI
       end
 
       SUFFIXES.each do |s|
-        candidate = "#{podcast}-#{to_date_str}#{s}"
+        candidate = EpisodeNaming.basename_for(podcast, to_date_str, s)
         return candidate if EpisodeArtifacts.for_basename(config.episodes_dir, candidate).empty?
       end
       $stderr.puts "Error: target date #{to_date_str} has no free suffix slots (a..z all taken)"
@@ -242,17 +243,20 @@ module PodgenCLI
 
     # ── helpers ──────────────────────────────────────────────────────
 
-    # English (non-language-variant) basenames on a given date.
+    # Primary (non-language-variant) basenames on a given date. Any
+    # two-letter tail is a variant (no configured-code narrowing), matching
+    # EpisodeArtifacts: a disabled language's files move with their episode
+    # (P4-9, CRPR round 1).
     def same_day_basenames(config, date_str)
       podcast = config.name
       Dir.glob(File.join(config.episodes_dir, "#{podcast}-#{date_str}*.mp3"))
-        .reject { |f| File.basename(f).match?(/-[a-z]{2}\.mp3\z/) }
+        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, ".mp3")) }
         .map { |f| File.basename(f, ".mp3") }
         .sort
     end
 
     def base_for(config, date, suffix)
-      "#{config.name}-#{date.strftime('%Y-%m-%d')}#{suffix}"
+      EpisodeNaming.basename_for(config.name, date.strftime("%Y-%m-%d"), suffix)
     end
 
     def quiet?

@@ -1,11 +1,16 @@
 # frozen_string_literal: true
 
 require_relative "../podcast_config"
+require_relative "podcast_command"
 
 module PodgenCLI
   class ListCommand
+    include PodcastCommand
+
     def initialize(args, options)
       @options = options
+      # list takes no arguments; reject leftovers like every other command (P4-6).
+      reject_leftover_args!(args)
     end
 
     def run

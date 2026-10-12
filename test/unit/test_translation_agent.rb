@@ -252,6 +252,65 @@ class TestTranslationAgent < Minitest::Test
     assert_equal "Hello", result[:segments].first[:text]
   end
 
+  # --- P4-4: one core — no OpenAI output cap, truncation check, shared log shape ---
+
+  # No output cap on the OpenAI path: Responses API `max_output_tokens`
+  # counts reasoning tokens too, and the production ja translator (gpt-5)
+  # reasons by default — a cap could truncate a long script and drop the
+  # episode. Only the model's own ceiling can produce an incomplete response.
+  def test_openai_backend_request_carries_no_max_output_tokens
+    agent = build_openai_agent("jp")
+    client = stub_openai_client(agent, title: "T", segments: [])
+
+    agent.translate(sample_script)
+
+    refute client.last_call.key?(:max_output_tokens)
+  end
+
+  def test_openai_backend_does_not_retry_when_incomplete_at_max_output_tokens
+    agent = build_openai_agent("jp")
+    response = OpenAI::Internal::Type::Converter.coerce(
+      OpenAI::Models::Responses::Response,
+      { status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [],
+        usage: openai_usage_hash(output_tokens: 16384) }
+    )
+    client = MockOpenAIClient.new(response)
+    agent.instance_variable_set(:@openai_client, client)
+
+    err = assert_raises(TruncatedOutputError) { agent.translate(sample_script) }
+    assert_match(/\AOutput truncated at max_output_tokens \(16384 output tokens\)/, err.message)
+    assert_equal 1, client.calls.length, "a max-output truncation is deterministic; must not be retried"
+  end
+
+  def test_openai_backend_logs_same_four_line_shape_as_claude
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |msg| lines << msg }
+    agent = TranslationAgent.new(target_language: "sl", backend: "openai", logger: logger)
+    response = stub_openai_client(agent, title: "T", segments: [{ name: "A", text: "a" }]).response
+    response.status = :completed
+    response.usage = OpenAI::Internal::Type::Converter.coerce(
+      OpenAI::Models::Responses::ResponseUsage, openai_usage_hash(output_tokens: 400)
+    )
+
+    agent.translate(sample_script)
+
+    assert_equal 4, lines.length
+    assert_match(/\A\[TranslationAgent\] Translation generated in [\d.]+s \(completed\)\z/, lines[1])
+    assert_equal "[TranslationAgent]   Input: 500 tokens | Output: 400 tokens", lines[2]
+    assert_equal "[TranslationAgent] Translation complete: 1 segments", lines[3]
+  end
+
+  def test_prompt_glossary_block_unindented_with_escaped_quotes
+    agent = TranslationAgent.new(target_language: "sl", glossary: { "say \"hi\"" => "x", "Bitcoin" => "bitcoin" })
+
+    prompt = agent.send(:build_system_prompt)
+
+    assert prompt.end_with?("overriding the natural-conventions rule above):\n" \
+      "- \"say \\\"hi\\\"\" → \"x\"\n" \
+      "- \"Bitcoin\" → \"bitcoin\"\n"), prompt
+  end
+
   private
 
   def sample_script
@@ -290,6 +349,11 @@ class TestTranslationAgent < Minitest::Test
     client = MockOpenAIClient.new(response)
     agent.instance_variable_set(:@openai_client, client)
     client
+  end
+
+  def openai_usage_hash(output_tokens:)
+    { input_tokens: 500, output_tokens: output_tokens, total_tokens: 500 + output_tokens,
+      input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } }
   end
 
   def stub_client(agent, title: nil, segments: nil, nil_output: false)
@@ -333,10 +397,10 @@ class TestTranslationAgent < Minitest::Test
   # The output items must be real OpenAI::Models::Responses::ResponseOutputMessage instances
   # because the production code filters via Array#grep on that class.
   MockOpenAIContent = Struct.new(:parsed)
-  MockOpenAIResponse = Struct.new(:output)
+  MockOpenAIResponse = Struct.new(:output, :status, :usage, :incomplete_details)
 
   class MockOpenAIClient
-    attr_reader :calls, :api_called
+    attr_reader :calls, :api_called, :response
     def initialize(response) = (@response = response; @calls = [])
     def responses
       @api_called = :responses

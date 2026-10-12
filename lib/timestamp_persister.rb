@@ -110,23 +110,37 @@ module TimestampPersister
     [nil, nil]
   end
 
-  # Build sentence-level segments from word-level timestamps.
-  # Splits on sentence-ending punctuation (.!?).
+  # Sentence terminators: ASCII .!? plus CJK full-width 。！？ (P4-3). Anchored
+  # with \z so a newline inside a word does not count as a sentence end.
+  SENTENCE_END = /[.!?。！？]\s*\z/
+
+  # Build sentence-level segments from word-level timestamps. The one shared
+  # builder (P4-3); ElevenlabsEngine delegates here.
+  #   - text: "word" then "text", string or symbol keys, per word
+  #   - tokens typed "spacing" (ElevenLabs Scribe) are skipped; untyped
+  #     empty/whitespace tokens are kept as words (joined text keeps their gap)
+  #   - splits on SENTENCE_END
+  #   - timings: Float() coercion, nil/unparseable -> 0.0; end clamped >= start
+  # Words are always joined with a single space; language-aware joining (no
+  # spaces for CJK) is deferred.
   def self.build_segments_from_words(words)
     segments = []
     current_words = []
     current_start = nil
+    last_end = 0.0
 
     words.each do |w|
-      text = (w[:word] || w["word"]).to_s
-      word_start = (w[:start] || w["start"]).to_f
-      word_end = (w[:end] || w["end"]).to_f
+      next if word_field(w, :type).to_s == "spacing"
+
+      text = (word_field(w, :word) || word_field(w, :text)).to_s
+      word_start = word_time(word_field(w, :start))
+      last_end = word_time(word_field(w, :end))
 
       current_start ||= word_start
       current_words << text
 
-      if text.match?(/[.!?]\s*$/)
-        segments << { start: current_start, end: word_end, text: current_words.join(" ").strip }
+      if text.match?(SENTENCE_END)
+        segments << { start: current_start, end: [last_end, current_start].max, text: current_words.join(" ").strip }
         current_words = []
         current_start = nil
       end
@@ -134,10 +148,21 @@ module TimestampPersister
 
     # Flush remaining words as final segment
     unless current_words.empty?
-      last_end = (words.last[:end] || words.last["end"]).to_f
-      segments << { start: current_start, end: last_end, text: current_words.join(" ").strip }
+      segments << { start: current_start, end: [last_end, current_start].max, text: current_words.join(" ").strip }
     end
 
     segments
   end
+
+  def self.word_field(word, key)
+    word.key?(key) ? word[key] : word[key.to_s]
+  end
+  private_class_method :word_field
+
+  def self.word_time(value)
+    Float(value)
+  rescue ArgumentError, TypeError
+    0.0
+  end
+  private_class_method :word_time
 end
