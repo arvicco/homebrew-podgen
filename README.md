@@ -120,6 +120,8 @@ ruby bin/podgen <command> [options]
 | `podgen fork <old> <new>`             | Fork podcast into a new namespace                        |
 | `podgen test <name>`                  | Run a component test (research, hn, rss, tts, etc.)      |
 | `podgen schedule <podcast>`           | Install, remove, or inspect a daily launchd scheduler    |
+| `podgen uploads <pods>`               | Per-pod regen + R2 + LingQ, then a YouTube batch across pods (`--mode`, `--max`) |
+| `podgen init <podcast>`               | Initialize a new podcast (skeleton or from existing) |
 
 Per-command flags are documented in the dedicated sections below (e.g. [Generate command](#generate-command-options), [Publish command](#publishing-to-cloudflare-r2)).
 
