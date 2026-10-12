@@ -298,4 +298,79 @@ class TestTimestampPersister < Minitest::Test
     assert_equal 1, segments.length
     assert_equal "Hello.", segments[0][:text]
   end
+
+  # --- P4-3: the one canonical word-to-segment builder ---
+
+  def test_build_segments_from_words_text_key_read_when_word_key_absent
+    words = [{ "text" => "Hi", "start" => 0.0, "end" => 0.2 }, { "text" => "there.", "start" => 0.3, "end" => 0.6 }]
+
+    assert_equal [{ start: 0.0, end: 0.6, text: "Hi there." }], TimestampPersister.build_segments_from_words(words)
+  end
+
+  def test_build_segments_from_words_word_key_preferred_over_text_key
+    words = [{ "text" => "fromtext.", "word" => "fromword.", "start" => 0.0, "end" => 0.5 }]
+
+    assert_equal "fromword.", TimestampPersister.build_segments_from_words(words).first[:text]
+  end
+
+  def test_build_segments_from_words_symbol_text_key_read
+    words = [{ text: "One", start: 0.0, end: 0.3 }, { text: "two.", start: 0.4, end: 0.8 }]
+
+    assert_equal [{ start: 0.0, end: 0.8, text: "One two." }], TimestampPersister.build_segments_from_words(words)
+  end
+
+  def test_build_segments_from_words_spacing_tokens_skipped
+    words = [
+      { "text" => "Hi", "start" => 0.0, "end" => 0.2, "type" => "word" },
+      { "text" => " ", "start" => 0.2, "end" => 0.3, "type" => "spacing" },
+      { text: "there.", start: 0.3, end: 0.6, type: "word" },
+      { text: "  ", start: 0.6, end: 0.9, type: "spacing" }
+    ]
+
+    assert_equal [{ start: 0.0, end: 0.6, text: "Hi there." }], TimestampPersister.build_segments_from_words(words)
+  end
+
+  def test_build_segments_from_words_only_spacing_tokens_yields_no_segments
+    words = [{ "text" => " ", "start" => 0.0, "end" => 0.1, "type" => "spacing" }]
+
+    assert_equal [], TimestampPersister.build_segments_from_words(words)
+  end
+
+  def test_build_segments_from_words_untyped_empty_token_kept
+    words = [{ "word" => "a", "start" => 0.0, "end" => 0.1 }, { "word" => "", "start" => 0.1, "end" => 0.2 },
+      { "word" => "b.", "start" => 0.2, "end" => 0.3 }]
+
+    assert_equal "a  b.", TimestampPersister.build_segments_from_words(words).first[:text]
+  end
+
+  def test_build_segments_from_words_newline_inside_word_does_not_split
+    words = [{ "word" => "a.\nb", "start" => 0.0, "end" => 1.0 }, { "word" => "c", "start" => 1.0, "end" => 2.0 }]
+
+    assert_equal [{ start: 0.0, end: 2.0, text: "a.\nb c" }], TimestampPersister.build_segments_from_words(words)
+  end
+
+  def test_build_segments_from_words_cjk_fullwidth_terminators_split
+    words = [{ "word" => "こんにちは。", "start" => 0.0, "end" => 1.0 }, { "word" => "元気？", "start" => 1.0, "end" => 2.0 },
+      { "word" => "はい！", "start" => 2.0, "end" => 2.5 }, { "word" => "次", "start" => 2.5, "end" => 3.0 }]
+
+    assert_equal ["こんにちは。", "元気？", "はい！", "次"], TimestampPersister.build_segments_from_words(words).map { |s| s[:text] }
+  end
+
+  def test_build_segments_from_words_unparseable_end_clamped_to_start
+    words = [{ "word" => "x.", "start" => "1.5", "end" => "abc" }]
+
+    assert_equal [{ start: 1.5, end: 1.5, text: "x." }], TimestampPersister.build_segments_from_words(words)
+  end
+
+  def test_build_segments_from_words_end_before_start_clamped_on_flush
+    words = [{ "word" => "late", "start" => 4.0, "end" => 4.5 }, { "word" => "early", "start" => 1.0, "end" => 1.2 }]
+
+    assert_equal [{ start: 4.0, end: 4.0, text: "late early" }], TimestampPersister.build_segments_from_words(words)
+  end
+
+  def test_build_segments_from_words_nil_timings_become_zero
+    words = [{ "word" => "A.", "start" => nil, "end" => nil }]
+
+    assert_equal [{ start: 0.0, end: 0.0, text: "A." }], TimestampPersister.build_segments_from_words(words)
+  end
 end

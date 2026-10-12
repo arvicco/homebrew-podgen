@@ -3,6 +3,7 @@
 require "httparty"
 require "json"
 require_relative "base_engine"
+require_relative "../timestamp_persister"
 
 module Transcription
   class ElevenlabsEngine < BaseEngine
@@ -64,51 +65,15 @@ module Transcription
 
     private
 
-    # Aggregates word-level timestamps into sentence-level segments.
-    # Splits on sentence-ending punctuation (.!?).
+    # Engine segment contract: start/end/text plus the whisper-style quality
+    # fields every engine returns (see BaseEngine#parse_segments). Scribe has
+    # no such scores, so they default to 0.0.
+    QUALITY_DEFAULTS = { no_speech_prob: 0.0, compression_ratio: 0.0, avg_logprob: 0.0 }.freeze
+
+    # Aggregates word-level timestamps into sentence-level segments via the
+    # shared TimestampPersister builder (P4-3), then adds QUALITY_DEFAULTS.
     def build_segments_from_words(words)
-      return [] if words.empty?
-
-      segments = []
-      current_words = []
-      current_start = nil
-
-      words.each do |w|
-        text = w["text"] || w["word"] || ""
-        word_start = w["start"].to_f
-        word_end = w["end"].to_f
-
-        current_start ||= word_start
-        current_words << text
-
-        if text.match?(/[.!?]\s*$/)
-          segments << {
-            start: current_start,
-            end: word_end,
-            text: current_words.join(" ").strip,
-            no_speech_prob: 0.0,
-            compression_ratio: 0.0,
-            avg_logprob: 0.0
-          }
-          current_words = []
-          current_start = nil
-        end
-      end
-
-      # Flush remaining words as a final segment
-      if current_words.any?
-        last_word = words.last
-        segments << {
-          start: current_start,
-          end: last_word["end"].to_f,
-          text: current_words.join(" ").strip,
-          no_speech_prob: 0.0,
-          compression_ratio: 0.0,
-          avg_logprob: 0.0
-        }
-      end
-
-      segments
+      TimestampPersister.build_segments_from_words(words).map { |seg| seg.merge(QUALITY_DEFAULTS) }
     end
   end
 end

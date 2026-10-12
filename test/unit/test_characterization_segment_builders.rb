@@ -15,6 +15,9 @@ ENV["ELEVENLABS_API_KEY"] ||= "test-key"
 # output is pinned. Rows where the two differ pin both outputs explicitly in
 # the DIVERGENT section, so a consolidation has to pick one visibly.
 # These tests pin CURRENT behavior, quirks included; they are not a spec.
+#
+# P4-3 consolidated both into TimestampPersister (ELAB delegates). Flipped
+# pins are marked "P4-3"; only D1 (ELAB quality fields) remains divergent.
 class TestCharacterizationSegmentBuilders < Minitest::Test
   ELAB_DEFAULTS = {no_speech_prob: 0.0, compression_ratio: 0.0, avg_logprob: 0.0}.freeze
 
@@ -67,10 +70,10 @@ class TestCharacterizationSegmentBuilders < Minitest::Test
         [w("End. ", 0.0, 0.5), w("Next.", 0.6, 1.0)],
         [{start: 0.0, end: 0.5, text: "End."}, {start: 0.6, end: 1.0, text: "Next."}]
       ],
-      # `$` matches before an embedded newline, so "a.\nb" counts as terminated.
-      embedded_newline_after_period_splits: [
+      # P4-3: the terminator is anchored with \z, so "a.\nb" is not terminated.
+      embedded_newline_after_period_does_not_split: [
         [w("a.\nb", 0.0, 1.0), w("c", 1.0, 2.0)],
-        [{start: 0.0, end: 1.0, text: "a.\nb"}, {start: 1.0, end: 2.0, text: "c"}]
+        [{start: 0.0, end: 2.0, text: "a.\nb c"}]
       ],
       # No length cap: a long unpunctuated run becomes one segment.
       long_run_without_punctuation: [
@@ -101,11 +104,11 @@ class TestCharacterizationSegmentBuilders < Minitest::Test
         [w("Zero", 0.0, 0.0), w("time.", 0.0, 0.0)],
         [{start: 0.0, end: 0.0, text: "Zero time."}]
       ],
-      # Unparseable timing strings coerce through String#to_f: "abc" -> 0.0,
-      # yielding end < start. No validation.
-      string_timings_coerced: [
+      # P4-3: timing strings coerce through Float() ("abc" -> 0.0) and the
+      # segment end is clamped to be >= its start.
+      string_timings_coerced_end_clamped: [
         [{"word" => "x.", "start" => "1.5", "end" => "abc"}],
-        [{start: 1.5, end: 0.0, text: "x."}]
+        [{start: 1.5, end: 1.5, text: "x."}]
       ],
       # nil word text becomes "" and still joins with a space.
       nil_word_text: [
@@ -120,10 +123,14 @@ class TestCharacterizationSegmentBuilders < Minitest::Test
         [w("Привет", 0.0, 0.5), w("мир.", 0.6, 1.0), w("Как", 1.1, 1.3), w("дела?", 1.4, 1.8)],
         [{start: 0.0, end: 1.0, text: "Привет мир."}, {start: 1.1, end: 1.8, text: "Как дела?"}]
       ],
-      # CJK full-width terminators (。？！) are NOT recognized: no split.
-      non_latin_cjk_fullwidth_terminators_do_not_split: [
+      # P4-3: CJK full-width terminators (。？！) split like ASCII ones.
+      non_latin_cjk_fullwidth_terminators_split: [
         [w("こんにちは。", 0.0, 1.0), w("元気？", 1.0, 2.0), w("はい！", 2.0, 2.5)],
-        [{start: 0.0, end: 2.5, text: "こんにちは。 元気？ はい！"}]
+        [
+          {start: 0.0, end: 1.0, text: "こんにちは。"},
+          {start: 1.0, end: 2.0, text: "元気？"},
+          {start: 2.0, end: 2.5, text: "はい！"}
+        ]
       ],
       # ASCII terminator after CJK text does split.
       non_latin_cjk_ascii_terminator_splits: [
@@ -131,6 +138,7 @@ class TestCharacterizationSegmentBuilders < Minitest::Test
         [{start: 0.0, end: 1.0, text: "ビットコイン."}, {start: 1.0, end: 1.5, text: "次"}]
       ],
       # Words are joined with a space even when the language does not use them.
+      # Language-aware joining is deferred (P4-3).
       non_latin_cjk_words_joined_with_space: [
         [w("日本", 0.0, 0.5), w("語", 0.5, 0.8)],
         [{start: 0.0, end: 0.8, text: "日本 語"}]
@@ -180,58 +188,57 @@ class TestCharacterizationSegmentBuilders < Minitest::Test
       elab_build(words)
   end
 
-  # D2: ElevenLabs-native "text" key. ELAB reads it; TP ignores it -> empty text.
-  def test_build_segments_from_words_text_key_divergent_between_implementations
+  # D2 (P4-3, converged): ElevenLabs-native "text" key is read by both.
+  def test_build_segments_from_words_text_key_converged_between_implementations
     words = [{"text" => "Hi", "start" => 0.0, "end" => 0.2}, {"text" => "there.", "start" => 0.3, "end" => 0.6}]
 
-    assert_equal [{start: 0.0, end: 0.6, text: ""}], tp_build(words)
+    assert_equal [{start: 0.0, end: 0.6, text: "Hi there."}], tp_build(words)
     assert_equal [{start: 0.0, end: 0.6, text: "Hi there."}.merge(ELAB_DEFAULTS)], elab_build(words)
   end
 
-  # D2b: with "text" keys TP sees no terminators, so a multi-sentence list
-  # collapses into ONE empty segment, while ELAB splits per sentence.
-  def test_build_segments_from_words_text_key_multi_sentence_divergent_between_implementations
+  # D2b (P4-3, converged): with "text" keys both split per sentence.
+  def test_build_segments_from_words_text_key_multi_sentence_converged_between_implementations
     words = [{"text" => "A.", "start" => 0.0, "end" => 0.5}, {"text" => "B.", "start" => 0.6, "end" => 1.0}]
+    expected = [{start: 0.0, end: 0.5, text: "A."}, {start: 0.6, end: 1.0, text: "B."}]
 
-    assert_equal [{start: 0.0, end: 1.0, text: ""}], tp_build(words)
-    assert_equal [{start: 0.0, end: 0.5, text: "A."}.merge(ELAB_DEFAULTS), {start: 0.6, end: 1.0, text: "B."}.merge(ELAB_DEFAULTS)],
-      elab_build(words)
+    assert_equal expected, tp_build(words)
+    assert_equal expected.map { |s| s.merge(ELAB_DEFAULTS) }, elab_build(words)
   end
 
-  # D2c: when both "text" and "word" are present, ELAB prefers "text"; TP uses "word".
-  def test_build_segments_from_words_text_and_word_keys_divergent_between_implementations
+  # D2c (P4-3, converged): when both "text" and "word" are present, "word" wins.
+  def test_build_segments_from_words_text_and_word_keys_converged_between_implementations
     words = [{"text" => "fromtext.", "word" => "fromword.", "start" => 0.0, "end" => 0.5}]
 
     assert_equal [{start: 0.0, end: 0.5, text: "fromword."}], tp_build(words)
-    assert_equal [{start: 0.0, end: 0.5, text: "fromtext."}.merge(ELAB_DEFAULTS)], elab_build(words)
+    assert_equal [{start: 0.0, end: 0.5, text: "fromword."}.merge(ELAB_DEFAULTS)], elab_build(words)
   end
 
-  # D3: symbol keys. TP reads them; ELAB only reads string keys -> empty text, 0.0 timings.
-  def test_build_segments_from_words_symbol_keys_divergent_between_implementations
+  # D3 (P4-3, converged): symbol keys are read by both.
+  def test_build_segments_from_words_symbol_keys_converged_between_implementations
     words = [{word: "Hi.", start: 1.0, end: 1.5}, {word: "Bye", start: 2.0, end: 2.5}]
+    expected = [{start: 1.0, end: 1.5, text: "Hi."}, {start: 2.0, end: 2.5, text: "Bye"}]
 
-    assert_equal [{start: 1.0, end: 1.5, text: "Hi."}, {start: 2.0, end: 2.5, text: "Bye"}], tp_build(words)
-    assert_equal [{start: 0.0, end: 0.0, text: ""}.merge(ELAB_DEFAULTS)], elab_build(words)
+    assert_equal expected, tp_build(words)
+    assert_equal expected.map { |s| s.merge(ELAB_DEFAULTS) }, elab_build(words)
   end
 
-  # D4: Scribe-style "spacing" tokens (text " "). ELAB treats them as words, so
-  # each one adds spaces to the joined text; TP (no "text" key) yields "".
-  def test_build_segments_from_words_spacing_tokens_divergent_between_implementations
+  # D4 (P4-3, converged): Scribe "spacing" tokens are skipped by both.
+  def test_build_segments_from_words_spacing_tokens_converged_between_implementations
     words = [
       {"text" => "Hi", "start" => 0.0, "end" => 0.2, "type" => "word"},
       {"text" => " ", "start" => 0.2, "end" => 0.3, "type" => "spacing"},
       {"text" => "there.", "start" => 0.3, "end" => 0.6, "type" => "word"}
     ]
 
-    assert_equal [{start: 0.0, end: 0.6, text: ""}], tp_build(words)
-    assert_equal [{start: 0.0, end: 0.6, text: "Hi   there."}.merge(ELAB_DEFAULTS)], elab_build(words)
+    assert_equal [{start: 0.0, end: 0.6, text: "Hi there."}], tp_build(words)
+    assert_equal [{start: 0.0, end: 0.6, text: "Hi there."}.merge(ELAB_DEFAULTS)], elab_build(words)
   end
 
-  # D5: mixed key styles inside one list (TP accepts per-word, ELAB string only).
-  def test_build_segments_from_words_mixed_key_styles_divergent_between_implementations
+  # D5 (P4-3, converged): mixed key styles inside one list are read per word.
+  def test_build_segments_from_words_mixed_key_styles_converged_between_implementations
     words = [{word: "One", start: 0.0, end: 0.3}, {"word" => "two.", "start" => 0.4, "end" => 0.8}]
 
     assert_equal [{start: 0.0, end: 0.8, text: "One two."}], tp_build(words)
-    assert_equal [{start: 0.0, end: 0.8, text: "two."}.merge(ELAB_DEFAULTS)], elab_build(words)
+    assert_equal [{start: 0.0, end: 0.8, text: "One two."}.merge(ELAB_DEFAULTS)], elab_build(words)
   end
 end
