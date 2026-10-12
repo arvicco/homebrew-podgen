@@ -260,14 +260,56 @@ class TestCharacterizationCLI < Minitest::Test
     refute PodgenCLI.owner_action?("regen", ["p", "--lingq"], {lingq: true})
   end
 
-  def test_owner_action_predicate_abbreviated_generate_upload_flags_not_detected
-    # FLAG (guard bypass, reported by P3-0 H4): GenerateCommand's OptionParser
-    # expands unique prefixes, so `generate p --you` sets youtube and
-    # `generate p --lin`/`--ling` sets lingq, but the guard only matches the
-    # exact strings in OWNER_FLAGS. Pinned as current behavior; not fixed here.
-    refute PodgenCLI.owner_action?("generate", ["p", "--you"], {})
-    refute PodgenCLI.owner_action?("generate", ["p", "--lin"], {})
-    refute PodgenCLI.owner_action?("generate", ["p", "--ling"], {})
+  def test_owner_action_predicate_abbreviated_generate_upload_flags_detected
+    # P3-7: GenerateCommand's OptionParser expands unique (case-insensitive)
+    # prefixes, so `generate p --you` sets youtube and `--lin` sets lingq. The
+    # guard treats any prefix of an owner flag as that flag.
+    [
+      ["p", "--you"], ["p", "--y"], ["p", "--yout"], ["p", "--lin"], ["p", "--ling"],
+      ["p", "--l"], ["p", "--YOU"], ["p", "--you=1"], ["p", "--youtube=1"],
+      ["--you", "p"], ["p", "--force", "--lin", "--dry"]
+    ].each do |argv|
+      assert PodgenCLI.owner_action?("generate", argv, {}), argv.join(" ")
+    end
+  end
+
+  def test_owner_action_predicate_non_prefix_flags_not_detected
+    [
+      ["p", "--yes"], ["p", "--youtuber"], ["p", "--lingqs"], ["p", "--no-youtube"],
+      ["p", "--"], ["p", "-y"], ["p", "--force"], ["p", "--lang", "you"]
+    ].each do |argv|
+      refute PodgenCLI.owner_action?("generate", argv, {}), argv.join(" ")
+    end
+  end
+
+  def test_owner_action_predicate_tokens_after_terminator_not_detected
+    # Everything after a lone `--` is positional to OptionParser, never a flag.
+    refute PodgenCLI.owner_action?("generate", ["p", "--", "--you"], {})
+    refute PodgenCLI.owner_action?("generate", ["p", "--", "--youtube"], {})
+    assert PodgenCLI.owner_action?("generate", ["p", "--lin", "--", "x"], {})
+  end
+
+  def test_owner_action_predicate_abbreviations_on_other_commands_ignored
+    refute PodgenCLI.owner_action?("rss", ["p", "--you"], {})
+    refute PodgenCLI.owner_action?("regen", ["p", "--lin"], {})
+  end
+
+  def test_run_refusal_for_abbreviated_generate_upload_flag_command_never_built
+    ENV["CLAUDECODE"] = "1"
+    [%w[generate test_pod --you], %w[generate --lin test_pod]].each do |argv|
+      built = false
+      fake = ->(*) {
+        built = true
+        FakeCommand
+      }
+
+      code, out, err = PodgenCLI.stub(:const_get, fake) { run_cli(*argv) }
+
+      assert_equal 2, code, argv.join(" ")
+      assert_equal "", out, argv.join(" ")
+      assert_equal format(REFUSAL, "generate"), err, argv.join(" ")
+      refute built, "#{argv.join(" ")}: refused command must never be resolved"
+    end
   end
 
   def test_run_refusal_message_exact_and_command_never_built

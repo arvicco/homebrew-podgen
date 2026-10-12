@@ -44,7 +44,16 @@ module PodgenCLI
   def self.owner_action?(command_name, argv, options)
     return true if OWNER_ACTIONS.include?(command_name)
 
-    command_name == "generate" && (options[:lingq] || argv.intersect?(OWNER_FLAGS))
+    command_name == "generate" &&
+      (options[:lingq] || argv.take_while { it != "--" }.any? { owner_flag?(it) })
+  end
+
+  # OptionParser accepts any unique, case-insensitive prefix of a long option
+  # (`--you`, `--LIN=x`), so every prefix of an owner flag counts as that flag
+  # (P3-7). Tokens after a lone `--` are positional and never reach here.
+  def self.owner_flag?(token)
+    name = token[/\A--([^=]+)/, 1]&.downcase
+    !name.nil? && OWNER_FLAGS.any? { it.start_with?("--#{name}") }
   end
 
   # Second layer behind the settings.json deny list (P1-1): inside a Claude
