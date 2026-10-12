@@ -26,6 +26,55 @@ class TestVideoBuilder < Minitest::Test
     assert_equal @mp4, result.video_path
   end
 
+  # P4-8 rider: an mp4 older than the audio is stale (an earlier run with the
+  # same basename) and is regenerated, never reused.
+  def test_build_regenerates_existing_mp4_older_than_audio
+    File.write(@mp4, "stale")
+    File.utime(Time.now - 120, Time.now - 120, @mp4)
+    fake_gen = Object.new
+    fake_gen.define_singleton_method(:generate) { |_a, _i, output| File.write(output, "new") && output }
+
+    result = VideoGenerator.stub(:new, fake_gen) do
+      VideoBuilder.build(mp3_path: @mp3, cover_path: @cover, video_path: @mp4)
+    end
+
+    assert_equal :built, result.status
+    assert_equal "video regenerated: mp4 older than audio", result.message
+    assert_equal "new", File.read(@mp4)
+  end
+
+  def test_build_reuses_existing_mp4_with_same_mtime_as_audio
+    File.write(@mp4, "video")
+    t = Time.now - 60
+    File.utime(t, t, @mp3)
+    File.utime(t, t, @mp4)
+
+    result = VideoGenerator.stub(:new, ->(**) { flunk "same-age mp4 regenerated" }) do
+      VideoBuilder.build(mp3_path: @mp3, cover_path: @cover, video_path: @mp4)
+    end
+
+    assert_equal :exists, result.status
+  end
+
+  def test_build_reuses_existing_mp4_newer_than_audio
+    File.utime(Time.now - 120, Time.now - 120, @mp3)
+    File.write(@mp4, "video")
+
+    result = VideoGenerator.stub(:new, ->(**) { flunk "newer mp4 regenerated" }) do
+      VideoBuilder.build(mp3_path: @mp3, cover_path: @cover, video_path: @mp4)
+    end
+
+    assert_equal :exists, result.status
+  end
+
+  def test_reusable_only_when_mp4_exists_and_not_older_than_audio
+    refute VideoBuilder.reusable?(mp3_path: @mp3, video_path: @mp4)
+    File.write(@mp4, "video")
+    assert VideoBuilder.reusable?(mp3_path: @mp3, video_path: @mp4)
+    File.utime(Time.now - 120, Time.now - 120, @mp4)
+    refute VideoBuilder.reusable?(mp3_path: @mp3, video_path: @mp4)
+  end
+
   # ── status: :no_cover ──────────────────────────────────────────────
 
   def test_build_returns_no_cover_when_cover_missing

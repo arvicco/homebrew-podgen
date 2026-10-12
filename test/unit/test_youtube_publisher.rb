@@ -393,6 +393,29 @@ class TestYouTubePublisher < Minitest::Test
     assert_equal "vid_default", result.video_id
   end
 
+  def test_upload_episode_regenerates_mp4_older_than_audio
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    mp4 = File.join(@episodes_dir, "#{base}.mp4")
+    File.utime(Time.now - 120, Time.now - 120, mp4)
+    File.write(File.join(@episodes_dir, "#{base}_cover.jpg"), "jpg")
+    generated = []
+    gen = Object.new
+    gen.define_singleton_method(:generate) { |_a, _i, out| (generated << out) && File.write(out, "new") && out }
+    uploader = stub_uploader
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    out = nil
+    result = nil
+    VideoGenerator.stub(:new, ->(**) { gen }) do
+      out, _ = capture_io { result = publisher.upload_episode(ep_hash(base)) }
+    end
+
+    assert_equal [mp4], generated
+    assert_includes out, "video regenerated: mp4 older than audio"
+    assert_equal :uploaded, result.status
+  end
+
   private
 
   def ep_hash(base)
