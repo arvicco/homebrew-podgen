@@ -185,6 +185,6 @@ Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Gate 1
 CLOSED 2026-10-11 12:57 (owner merged PR #2 at 94f0123, merge 6d869e4).
 Gate 2 CLOSED 2026-10-12 08:50 (owner merged PR #3, merge 494c000). Gate 3
 CLOSED 2026-10-12 11:45 (owner merged PR #4, merge 35592dd). Phase 4 (the
-dry-up; signed 2026-10-12 11:55) AT GATE 4 pending CRPR: all ten packets
-on phase-4, PR #5 open — the owner merges; runbook in .docs/p04-plan.md.
-Update this line at each gate.
+dry-up) AT GATE 4 (2026-10-12 13:45): all ten packets on phase-4, CRPR
+APPROVED after two rounds (refs/cr/reviewed = 6b4f089), PR #5 open — the
+owner merges; runbook in .docs/p04-plan.md. Update this line at each gate.
