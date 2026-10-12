@@ -54,6 +54,8 @@ Two mixins exist (`lib/retryable.rb`, `lib/http_retryable.rb`) with overlapping-
 
 **Implication.** Use `HttpRetryable` for anything that hits an HTTP endpoint; `Retryable` for non-HTTP flakiness (filesystem, subprocesses, etc.). Don't merge them.
 
+`RemoteImageCache` (`lib/remote_image_cache.rb`, a LingQ `image:` given as a URL) follows the seam pattern: an injected `fetcher` callable in tests, `with_http_retries` by default; it caches into `output/<podcast>/cache/` keyed by a URL digest.
+
 ---
 
 ## Atomic writes for history and cache

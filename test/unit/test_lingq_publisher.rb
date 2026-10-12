@@ -212,29 +212,83 @@ class TestLingQPublisher < Minitest::Test
     assert_match(/ep-2026-01-15/, agent.uploads.first[:title])
   end
 
+  # Q-56 / P6-3: a URL `image:` is fetched into output/<pod>/cache and the
+  # cached path is what LingQ receives (it used to be silently dropped).
+  def test_url_static_image_is_cached_and_uploaded
+    seed_ep("ep-2026-01-15")
+    seed_ep("ep-2026-01-16")
+    url = "https://cdn.example.com/cover.png"
+    config = stub_config(lingq_enabled: true, static_image: url)
+    agent = stub_agent
+    fetched = []
+    fetcher = ->(u) { (fetched << u) && { status: 200, content_type: "image/png", body: "\x89PNG\r\n\x1A\n".b } }
+    publisher = build_publisher(config: config, agent: agent, image_fetcher: fetcher)
+
+    capture_io { publisher.run }
+
+    paths = agent.uploads.map { |u| u[:image_path] }
+    assert_equal 2, paths.length
+    assert paths.all? { |p| p.start_with?(File.join(@tmpdir, "cache", "lingq_image_")) && p.end_with?(".png") }, paths.inspect
+    assert File.exist?(paths.first), "cached image must survive the upload loop"
+    assert_equal [url], fetched
+  end
+
+  def test_url_static_image_fetch_failure_warns_and_uploads_without_image
+    seed_ep("ep-2026-01-15")
+    url = "https://cdn.example.com/cover.png"
+    config = stub_config(lingq_enabled: true, static_image: url)
+    agent = stub_agent
+    fetcher = ->(_u) { { status: 500, content_type: "text/html", body: "<html>internal trace</html>" } }
+    publisher = build_publisher(config: config, agent: agent, image_fetcher: fetcher)
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert result.success?
+    assert_equal 1, result.uploaded
+    assert_nil agent.uploads.first[:image_path]
+    assert_includes err, "RemoteImageCache::FetchError"
+    assert_includes err, "HTTP 500"
+    refute_includes err, "internal trace"
+  end
+
+  def test_file_static_image_is_passed_through_unchanged
+    seed_ep("ep-2026-01-15")
+    path = File.join(@tmpdir, "static.png")
+    config = stub_config(lingq_enabled: true, static_image: path)
+    agent = stub_agent
+    fetcher = ->(_u) { flunk "file paths must not be fetched" }
+    publisher = build_publisher(config: config, agent: agent, image_fetcher: fetcher)
+
+    capture_io { publisher.run }
+
+    assert_equal path, agent.uploads.first[:image_path]
+  end
+
   private
 
   StubLingQConfig = Struct.new(:episodes_dir, :name, :transcription_language,
-    :_lingq, :base_url, keyword_init: true) do
+    :_lingq, :base_url, :_static_image, keyword_init: true) do
     def initialize(episodes_dir:, name: "test_pod", transcription_language: "en",
-                   _lingq: nil, base_url: "https://example.com")
+                   _lingq: nil, base_url: "https://example.com", _static_image: nil)
       super
     end
     def lingq_enabled? = !_lingq.nil?
     def lingq_config = _lingq
     def cover_generation_enabled? = false
-    def cover_static_image = nil
+    def cover_static_image = _static_image
     def cover_base_image = nil
     def cover_options = {}
   end
 
-  def stub_config(lingq_enabled:, transcription_language: "en")
+  def stub_config(lingq_enabled:, transcription_language: "en", static_image: nil)
     lq = lingq_enabled ? { collection: "mycollection", token: "k", level: 2, tags: ["t"], status: 0 } : nil
     StubLingQConfig.new(
       episodes_dir: @episodes_dir,
       name: "test_pod",
       transcription_language: transcription_language,
-      _lingq: lq
+      _lingq: lq,
+      _static_image: static_image
     )
   end
 
@@ -244,13 +298,14 @@ class TestLingQPublisher < Minitest::Test
                "# Title #{base}\n\nDescription.\n\n## Transcript\n\nBody text.\n")
   end
 
-  def build_publisher(config:, agent: nil, options: {}, episode_id: nil)
+  def build_publisher(config:, agent: nil, options: {}, episode_id: nil, image_fetcher: nil)
     LingQPublisher.new(
       config: config,
       options: options,
       agent: agent,
       tracker_path: @uploads_path,
-      episode_id: episode_id
+      episode_id: episode_id,
+      image_fetcher: image_fetcher
     )
   end
 
