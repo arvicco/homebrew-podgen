@@ -19,7 +19,8 @@ module PodgenCLI
   #          or the same publish warning in the last PUBLISH_REPEAT scheduled
   #          publishes (shared launchd stderr), or Twitter announcements
   #          stalled behind the newest episode (P3-2)
-  #   OK   - otherwise
+  #   OK   - otherwise; a show with no cadence whose newest episode is old is
+  #          noted "dormant — no cadence" (P3-4)
   # Exit 0 when every podcast is OK, 1 otherwise, so a scheduled run can alert.
   class StatusCommand
     VERDICT_RANK = {"OK" => 0, "WARN" => 1, "OLD" => 2}.freeze
@@ -117,7 +118,7 @@ module PodgenCLI
     def assess(name)
       verdict = "OK"
       reasons = []
-      newest = age = nil
+      newest = age = note = nil
       escalate = ->(v, reason) {
         verdict = v if VERDICT_RANK[v] > VERDICT_RANK[verdict]
         reasons << reason
@@ -125,14 +126,16 @@ module PodgenCLI
 
       config = PodcastConfig.new(name)
       if config.freshness_enabled?
-        newest, age = freshness(config, escalate)
+        newest, age, note = freshness(config, escalate)
       else
         reasons << "(freshness off)"
       end
       log_findings(config).each { |reason| escalate.call("WARN", reason) }
       publish_findings(config).each { |reason| escalate.call("WARN", reason) }
       announcements = announcement_progress(config, escalate)
-      reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"})" if verdict == "OK" && newest
+      if verdict == "OK" && newest
+        reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
+      end
 
       {podcast: name, verdict: verdict, newest: newest&.to_s, age_days: age, reasons: reasons,
        announcements: announcements}
@@ -145,7 +148,7 @@ module PodgenCLI
     def freshness(config, escalate)
       unless File.exist?(config.history_path.to_s)
         escalate.call("WARN", "no history (no episodes yet)")
-        return [nil, nil]
+        return [nil, nil, nil]
       end
 
       validator = Validators::FreshnessValidator.new(config, today: @today)
@@ -154,7 +157,7 @@ module PodgenCLI
         escalate.call(w.include?("OLD") ? "OLD" : "WARN", w.delete_prefix("Freshness: "))
       end
       escalate.call("WARN", "no dated episodes in history") if validator.newest.nil?
-      [validator.newest, validator.age_days]
+      [validator.newest, validator.age_days, validator.note]
     end
 
     # --- run-log findings ---

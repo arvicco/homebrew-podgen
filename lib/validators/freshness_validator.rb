@@ -15,9 +15,15 @@ module Validators
     MIN_STALE_DAYS = 2      # never flag faster than this
     STALE_FACTOR = 2        # stale when age > factor × median gap
     RECENT_GAPS = 12        # infer cadence from this many recent gaps
+    # P3-4: with no cadence (fewer than two distinct dates, no cadence_days)
+    # there is no threshold, so a newest episode older than this many days is
+    # noted as dormant - still a pass, but visible on `podgen status`.
+    DORMANT_DAYS = 30
+    DORMANT_NOTE = "dormant — no cadence"
 
     # Set by #validate once history has dated entries (used by `podgen status`).
-    attr_reader :newest, :age_days
+    # note is DORMANT_NOTE for a dormant show, nil otherwise.
+    attr_reader :newest, :age_days, :note
 
     def initialize(config, today: Date.today)
       super(config)
@@ -37,13 +43,23 @@ module Validators
       dates = entries.filter_map { |e| parse_date(e["date"]) if e.is_a?(Hash) }.uniq.sort
       @newest = dates.last
       @age_days = (@today - @newest).to_i if @newest
-      if dates.size < 2
-        @passes << "Freshness: cannot infer cadence (#{dates.size} dated entries)"
+      configured = @config.cadence_days
+      if configured && @newest
+        cadence = configured
+        cadence_label = "#{cadence}d configured"
+      elsif dates.size < 2
+        message = "Freshness: cannot infer cadence (#{dates.size} dated entries)"
+        if @age_days && @age_days > DORMANT_DAYS
+          @note = DORMANT_NOTE
+          message += "; #{DORMANT_NOTE}, newest #{@newest} is #{@age_days}d old"
+        end
+        @passes << message
         return
+      else
+        gaps = dates.each_cons(2).map { |a, b| (b - a).to_i }.last(RECENT_GAPS)
+        cadence = median(gaps)
+        cadence_label = "~#{cadence}d"
       end
-
-      gaps = dates.each_cons(2).map { |a, b| (b - a).to_i }.last(RECENT_GAPS)
-      cadence = median(gaps)
       threshold = [cadence * STALE_FACTOR, MIN_STALE_DAYS].max
       newest = @newest
       age = @age_days
@@ -54,9 +70,9 @@ module Validators
         @warnings << "Freshness: newest episode #{newest} is dated in the future (#{-age} days ahead)"
       elsif age > threshold
         @warnings << "Freshness: OLD — newest episode #{newest} is #{age} days old " \
-          "(cadence ~#{cadence}d, threshold #{threshold}d)"
+          "(cadence #{cadence_label}, threshold #{threshold}d)"
       else
-        @passes << "Freshness: newest #{newest} (#{age}d old, cadence ~#{cadence}d)"
+        @passes << "Freshness: newest #{newest} (#{age}d old, cadence #{cadence_label})"
       end
     end
 

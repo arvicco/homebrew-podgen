@@ -1119,6 +1119,15 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
 
 - **OLD** - newest episode older than the cadence threshold (same rule as the
   `podgen validate` freshness check; `- freshness: off` in `## Podcast` reports OK).
+  The cadence is the median gap between recent episode dates, or
+  `- cadence_days: N` in `## Podcast` when set (a positive integer; anything
+  else is ignored); the threshold is twice the cadence, at least 2 days:
+  `newest episode 2026-10-01 is 10 days old (cadence 2d configured, threshold 4d)`.
+  With no cadence (episodes on a single date and no `cadence_days`) there is no
+  threshold: the show stays OK, and once its newest episode is more than 30
+  days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
+  Set `cadence_days` to make such a show go OLD, or `freshness: off` if it has
+  concluded.
 - **WARN** - the latest run log in `logs/<podcast>/` ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
   the last 3 run logs (`--runs N` to change), or there is no history yet.

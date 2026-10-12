@@ -268,6 +268,44 @@ class TestStatusCommand < Minitest::Test
     refute File.exist?(File.join(@tmpdir, "output", "alpha", "uploads.yml"))
   end
 
+  # --- dormant shows and configured cadence (P3-4) ---
+
+  def test_run_single_day_show_long_ago_reports_ok_with_dormant_note
+    # ruby_world shape: four episodes on one date, months old.
+    make_pod("alpha", dates: %w[2026-02-19 2026-02-19 2026-02-19 2026-02-19])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+newest 2026-02-19 \(234d old; dormant — no cadence\)/, out)
+  end
+
+  def test_run_single_day_show_yesterday_reports_plain_ok
+    make_pod("alpha", dates: %w[2026-10-10])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+newest 2026-10-10 \(1d old\)$/, out)
+  end
+
+  def test_run_configured_cadence_reports_old
+    make_pod("alpha", dates: %w[2026-10-01], extra: "- cadence_days: 2\n")
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+OLD\s+.*newest episode 2026-10-01 is 10 days old \(cadence 2d configured, threshold 4d\)/, out)
+  end
+
+  def test_run_invalid_cadence_days_is_ignored
+    make_pod("alpha", dates: %w[2026-10-01], extra: "- cadence_days: often\n")
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+newest 2026-10-01 \(10d old\)$/, out)
+  end
+
+  def test_run_json_dormant_show_keeps_key_set
+    make_pod("alpha", dates: %w[2026-02-19])
+    rows = JSON.parse(run_status("--json").first)
+    assert_equal JSON_KEYS, rows.first.keys.sort
+    assert_includes rows.first["reasons"], "newest 2026-02-19 (234d old; dormant — no cadence)"
+  end
+
   # --- pre-generated episodes (freshness_lead_days) ---
 
   def test_run_newest_one_day_ahead_reports_ok_scheduled
