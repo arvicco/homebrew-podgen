@@ -1041,7 +1041,7 @@ TWITTER_ACCESS_SECRET=...
 - `since`: Only tweet episodes from the last N days (default: 7). Prevents tweeting the entire backlog when first enabling
 - `languages`: Comma-separated list of language codes whose episodes get announced. Default when omitted: only the primary language. Use `languages: all` to announce every configured language. Older builds tweeted every language MP3 indiscriminately — set `languages: all` if you want that back.
 
-Tweets fire automatically after a successful `podgen publish` to R2. Each episode is tweeted once — tracked in `uploads.yml` under the `twitter` platform. The site URL in the tweet correctly points at the language-specific page (e.g. `/site/it/episodes/...` for Italian). Tweeting is non-fatal: if it fails, publish still succeeds.
+Tweets fire automatically after a successful `podgen publish` to R2. Each episode is tweeted once — tracked in `uploads.yml` under the `twitter` platform. The site URL in the tweet correctly points at the language-specific page (e.g. `/site/it/episodes/...` for Italian). Tweeting is non-fatal: if it fails, publish still succeeds. Failed posts are retried twice, except HTTP 402 (X pay-per-use credits at zero), which fails after one call with "X API credits depleted — top up in the developer console"; `podgen status` flags repeated publish warnings and stalled announcements.
 
 To manually tweet about a specific (e.g. older) episode:
 
@@ -1113,7 +1113,7 @@ scheduler first). It is read-only and makes no network calls.
 
 ```
 ruby_world  OK    newest 2026-10-10 (1d old)
-fulgur_news WARN  repeated in last 3 runs: Warning: Twitter credits depleted (#)
+fulgur_news WARN  announcements stalled since 2026-08-19 (newest episode 2026-10-11)
 old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, threshold 2d)
 ```
 
@@ -1126,6 +1126,28 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   own output) are not pipeline warnings and are ignored. A newest episode
   dated up to `freshness_lead_days` ahead (`## Podcast` key, default 3) is OK
   and shown as `(scheduled +Nd)`; further ahead is WARN.
+- **WARN (publish)** - the same `Warning:` line in each of the last 3 or more
+  scheduled publishes, read from `logs/launchd_stderr.log` (the shared stderr
+  of the per-podcast launchd jobs). A dated rclone line
+  (`2026/09/20 16:52:04 NOTICE: ...`) starts a publish; undated `Warning:`
+  lines after it belong to that publish; generate output
+  (`[2026-10-08 19:19:21] ERROR ...`, `Generate failed ...`) is skipped since
+  the run logs above already cover it. The stderr does not name the podcast,
+  so Twitter warnings are attributed to every podcast with a `## Twitter`
+  section and other warnings to every podcast with an installed launchd
+  scheduler. Shown as
+  `publish warning in last 44 publishes (since 2026-08-20): Warning: Twitter posting failed: ...`.
+  If rclone ever stops printing a dated line, publishes can no longer be told
+  apart and this check goes quiet - the announcement check below does not
+  depend on the stderr.
+- **WARN (announcements)** - for podcasts with a `## Twitter` section only:
+  the newest episode (on disk, in the Twitter `languages`) is more than
+  `since` days (default 7) newer than the newest tweeted episode in
+  `output/<podcast>/uploads.yml` (`twitter: posts:`):
+  `announcements stalled since 2026-08-19 (newest episode 2026-10-11)`.
+  With no tweet recorded at all, it warns
+  (`announcements never posted (...)`) only once some announced episode is
+  older than `since` days, so a brand-new show is not flagged.
 - **OK** - otherwise.
 
 Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
@@ -1133,12 +1155,15 @@ podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
 array; keys are only ever added, never renamed or removed:
 
 ```json
-[{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"]}]
+[{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"],
+  "announcements": {"last_tweeted": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}]
 ```
 
 `verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
 when unknown (`age_days` is negative for a scheduled, future-dated episode);
-`reasons` is an array of short strings.
+`reasons` is an array of short strings. `announcements` is `null` without a
+`## Twitter` section; otherwise `last_tweeted` and `newest_episode` are ISO
+dates (`null` when none) and `stalled` is the announcement check's verdict.
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes

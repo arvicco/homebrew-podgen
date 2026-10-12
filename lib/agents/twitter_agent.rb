@@ -11,6 +11,11 @@ class TwitterAgent
   DEFAULT_TEMPLATE = "\u{1f399} {title}\n\n{site_url}"
   MAX_RETRIES = 2
 
+  # HTTP 402 (pay-per-use balance at zero) is deterministic: retrying only
+  # burns calls, so it is raised after exactly one attempt (P3-2).
+  class CreditsDepleted < StandardError; end
+  CREDITS_DEPLETED = "X API credits depleted — top up in the developer console"
+
   def initialize(logger: nil, skip_auth: false)
     @logger = logger
     return if skip_auth
@@ -27,9 +32,15 @@ class TwitterAgent
     text = expand_template(template || DEFAULT_TEMPLATE, title: title, description: description, site_url: site_url, mp3_url: mp3_url)
     log("Posting tweet (#{text.length} chars): #{text.lines.first&.strip}")
 
+    payment_required = nil
     response = with_retries(max: MAX_RETRIES, label: "Twitter post") do
       @client.post("tweets", "{\"text\":#{text.to_json}}", headers: { "Content-Type" => "application/json" })
+    rescue X::HTTPError => e
+      raise unless e.code.to_s == "402"
+      payment_required = e # leave the retry loop after one call
+      nil
     end
+    raise CreditsDepleted, "#{CREDITS_DEPLETED} (HTTP 402: #{payment_required.message})" if payment_required
 
     tweet_id = response["data"]&.[]("id")
     log("Tweet posted: #{tweet_id}")
