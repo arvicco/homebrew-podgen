@@ -53,7 +53,9 @@ but RuboCop skips that Exclude during file discovery when the base
 directory has a dot-component (`.claude/worktrees/...`), so a lane's
 gate linted bin/podgen and bin/tell while the checkout and CI did not.
 Their offenses are listed per-cop in .standard_todo.yml (per-cop
-excludes apply on either path), so both now agree.
+excludes apply on either path), so both agree on the offenses that
+exist today; a new offense in bin/ under another cop would still fail
+only in a worktree until it is added there too.
 
 ## 3. Work packets and the boards
 

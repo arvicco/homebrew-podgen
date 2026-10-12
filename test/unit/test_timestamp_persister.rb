@@ -334,7 +334,7 @@ class TestTimestampPersister < Minitest::Test
   SCRIBE_FIXTURE = File.join(__dir__, "..", "fixtures", "transcription", "elevenlabs_scribe_words.json")
 
   def test_build_segments_from_words_recorded_scribe_response_skips_spacing_tokens
-    skip "Scribe fixture not recorded: #{SCRIBE_FIXTURE}" unless File.exist?(SCRIBE_FIXTURE)
+    assert File.exist?(SCRIBE_FIXTURE), "Scribe fixture missing: #{SCRIBE_FIXTURE}"
     body = JSON.parse(File.read(SCRIBE_FIXTURE))
     words = body["words"]
     spoken = words.reject { |w| w["type"] == "spacing" }
