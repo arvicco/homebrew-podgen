@@ -24,7 +24,7 @@ class TestNewsPipeline < Minitest::Test
 
   def test_source_manager_output_feeds_script_agent
     # HN is free — no API key needed
-    manager = SourceManager.new(source_config: { "hackernews" => true })
+    manager = SourceManager.new(source_config: { "hackernews" => true }, hn_queries: { "Ruby programming" => "Ruby" })
     results = manager.research(["Ruby programming"])
 
     assert_kind_of Array, results
@@ -50,7 +50,7 @@ class TestNewsPipeline < Minitest::Test
   def test_script_generation_from_live_sources
     skip_unless_env("ANTHROPIC_API_KEY")
 
-    manager = SourceManager.new(source_config: { "hackernews" => true })
+    manager = SourceManager.new(source_config: { "hackernews" => true }, hn_queries: { "AI" => "AI" })
     research = manager.research(["AI"])
 
     skip "HN returned no findings" if research.all? { |r| r[:findings].empty? }
@@ -124,7 +124,7 @@ class TestNewsPipeline < Minitest::Test
     skip_unless_env("ANTHROPIC_API_KEY")
 
     # Source → Script → Translate — verify the chain produces consistent shapes
-    manager = SourceManager.new(source_config: { "hackernews" => true })
+    manager = SourceManager.new(source_config: { "hackernews" => true }, hn_queries: { "Bitcoin" => "Bitcoin" })
     research = manager.research(["Bitcoin"])
 
     skip "HN returned no findings" if research.all? { |r| r[:findings].empty? }
@@ -205,7 +205,8 @@ class TestNewsPipeline < Minitest::Test
 
     manager = SourceManager.new(
       source_config: { "hackernews" => true },
-      cache_dir: cache_dir
+      cache_dir: cache_dir,
+      hn_queries: { "Ruby" => "Ruby" }
     )
 
     results1 = manager.research(["Ruby"])

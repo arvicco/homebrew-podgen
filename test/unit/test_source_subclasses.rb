@@ -15,7 +15,9 @@ require "sources/claude_web_source"
 
 class TestHNSource < Minitest::Test
   def setup
-    @source = HNSource.new
+    # P3-1: HN only searches topics that carry a keyword query.
+    keywords = %w[Ruby languages projects test].to_h { |t| [t, t] }
+    @source = HNSource.new(hn_queries: keywords)
   end
 
   def test_search_topic_parses_hits
@@ -166,6 +168,41 @@ class TestHNSource < Minitest::Test
 
   def test_available_returns_true
     assert_equal true, @source.send(:available?)
+  end
+
+  def test_search_topic_sends_keyword_query_not_topic
+    topic = "Bitcoin startup seed Series A funding round venture capital October 2026"
+    source = HNSource.new(hn_queries: { topic => "Bitcoin startup funding" })
+    sent = nil
+    source.define_singleton_method(:request_with_retry) { |**params| (sent = params) && { "hits" => [] } }
+
+    source.send(:search_topic, topic, Set.new)
+
+    assert_equal "Bitcoin startup funding", sent[:query]
+    assert_equal "story", sent[:tags]
+  end
+
+  def test_search_topic_without_keyword_skips_api_and_logs
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |msg| lines << msg }
+    source = HNSource.new(logger: logger, hn_queries: { "other" => "kw", "blank" => "  " })
+    calls = 0
+    source.define_singleton_method(:request_with_retry) { |**_| (calls += 1) && { "hits" => [] } }
+
+    assert_equal [], source.send(:search_topic, "AI agents in hospitals", Set.new)
+    assert_equal [], source.send(:search_topic, "blank", Set.new)
+    assert_equal 0, calls, "HN API must not be called without a keyword query"
+    assert lines.any? { |l| l.include?("no hn_query for 'AI agents in hospitals' — skipped") }, lines.inspect
+  end
+
+  def test_search_topic_without_any_keyword_map_skips_api
+    source = HNSource.new
+    calls = 0
+    source.define_singleton_method(:request_with_retry) { |**_| (calls += 1) && { "hits" => [] } }
+
+    assert_equal [], source.send(:search_topic, "Ruby", Set.new)
+    assert_equal 0, calls, "HN API must not be called"
   end
 end
 

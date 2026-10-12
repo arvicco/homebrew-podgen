@@ -88,6 +88,60 @@ class TestTopicAgent < Minitest::Test
     assert_equal ClaudeModels.for(:topic), client.last_call[:model]
   end
 
+  # P3-1: per-topic HN keyword queries ride alongside the string array.
+  def test_generate_keeps_string_array_when_hn_queries_present
+    agent = build_agent("Guidelines")
+    stub_client(agent, [["AI agents in hospitals October 2026", "AI agents healthcare"], "Ruby updates"])
+
+    assert_equal ["AI agents in hospitals October 2026", "Ruby updates"], agent.generate
+  end
+
+  def test_hn_queries_maps_topic_to_keywords_and_tolerates_missing
+    agent = build_agent("Guidelines")
+    stub_client(agent, [["Bitcoin startup funding rounds October 2026", "Bitcoin startup funding"], ["Ruby updates", "   "], "Rust news"])
+
+    agent.generate
+
+    expected = {
+      "Bitcoin startup funding rounds October 2026" => "Bitcoin startup funding",
+      "Ruby updates" => nil,
+      "Rust news" => nil
+    }
+    assert_equal expected, agent.hn_queries
+  end
+
+  def test_hn_queries_capped_at_four_words
+    agent = build_agent("Guidelines")
+    stub_client(agent, [["topic", "OpenAI GPT xAI Grok Meta Llama"]])
+
+    agent.generate
+
+    assert_equal({ "topic" => "OpenAI GPT xAI Grok" }, agent.hn_queries)
+  end
+
+  def test_hn_queries_empty_before_generate
+    assert_equal({}, build_agent("Guidelines").hn_queries)
+  end
+
+  def test_system_prompt_asks_for_hn_query_keywords
+    agent = build_agent("Guidelines")
+    client = stub_client(agent, ["q1"])
+
+    agent.generate
+    instructions = client.last_call[:system].first[:text]
+    assert_match(/hn_query/, instructions)
+    assert_match(/2.4 defining keywords/, instructions)
+    assert_match(/proper nouns first/, instructions)
+  end
+
+  def test_schema_declares_optional_hn_query
+    fields = TopicQuery.fields
+    assert fields.dig(:query, :required)
+    assert fields.key?(:hn_query)
+    refute fields.dig(:hn_query, :required)
+    assert TopicQuery.new(query: "x").hn_query.nil?
+  end
+
   private
 
   def build_agent(guidelines, recent_topics: nil)
@@ -103,12 +157,13 @@ class TestTopicAgent < Minitest::Test
     client
   end
 
-  MockTopicQuery = Struct.new(:query)
+  MockTopicQuery = Struct.new(:query, :hn_query)
 
   class MockTopicList
     attr_reader :queries
-    def initialize(strings)
-      @queries = strings.map { |q| MockTopicQuery.new(q) }
+    # Each item is a query string, or [query, hn_query].
+    def initialize(items)
+      @queries = items.map { |q| MockTopicQuery.new(*Array(q)) }
     end
   end
 
