@@ -1472,9 +1472,14 @@ bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check s
 
 Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
 `analytics`, and `generate --youtube/--lingq`) refuse to run inside a Claude
-Code session (`CLAUDECODE=1`) with exit 2; `--dry-run` forms still work.
-Abbreviated upload flags (`--you`, `--lin`, any prefix OptionParser would
-expand) are refused too. To run
+Code session (`CLAUDECODE=1`) with exit 2; `--dry-run` forms still work
+when `--dry-run` cannot be read as another option's value (put it right after
+the podcast name, or use the global `podgen --dry-run <command>`): a
+`--dry-run` that follows a bare option (`publish <pod> --date --dry-run`) may
+be swallowed as that option's value, so it is refused. Abbreviated upload
+flags (`--you`, `--lin`, any prefix OptionParser would expand) and the
+single-dash completions `-y`/`-l` (generate has no short options, so
+OptionParser expands them to `--youtube`/`--lingq`) are refused too. To run
 one deliberately from the Claude Code prompt: `! PODGEN_OWNER=1 bin/podgen publish <pod>`.
 
 The gate is also what CI runs. Adding a hard-coded URL to a new

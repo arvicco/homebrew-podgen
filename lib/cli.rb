@@ -50,8 +50,13 @@ module PodgenCLI
 
   # OptionParser accepts any unique, case-insensitive prefix of a long option
   # (`--you`, `--LIN=x`), so every prefix of an owner flag counts as that flag
-  # (P3-7). Tokens after a lone `--` are positional and never reach here.
+  # (P3-7). GenerateCommand defines no short options, so OptionParser also
+  # completes a single-dash letter against the long options (`-y` sets
+  # youtube, `-l` sets lingq): any `-y…` / `-l…` token counts too. Tokens
+  # after a lone `--` are positional and never reach here.
   def self.owner_flag?(token)
+    return true if token.match?(/\A-[yl]/i)
+
     name = token[/\A--([^=]+)/, 1]&.downcase
     !name.nil? && OWNER_FLAGS.any? { it.start_with?("--#{name}") }
   end
@@ -62,9 +67,22 @@ module PodgenCLI
   # bin/podgen publish x` from the Claude Code prompt).
   def self.refuse_owner_action?(command_name, argv, options)
     return false unless ENV["CLAUDECODE"] == "1" && ENV["PODGEN_OWNER"] != "1"
-    return false if options[:dry_run] || argv.include?("--dry-run")
+    return false if options[:dry_run] || dry_run_token?(argv)
 
     owner_action?(command_name, argv, options)
+  end
+
+  # A literal `--dry-run` exempts the call only when it cannot be the value of
+  # a preceding option (`publish p --date --dry-run` is a real sync): it is the
+  # first token, or follows a non-option or an `--opt=value` token (P3-7).
+  def self.dry_run_token?(argv)
+    tokens = argv.take_while { it != "--" }
+    tokens.each_with_index.any? do |token, i|
+      next false unless token == "--dry-run"
+
+      prev = i.zero? ? nil : tokens[i - 1]
+      prev.nil? || !prev.start_with?("-") || prev.include?("=")
+    end
   end
 
   def self.run(argv)
