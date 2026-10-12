@@ -147,11 +147,11 @@ module PodgenCLI
       opts.separator "Commands:"
       command_help_lines.each { opts.separator(it) }
       opts.separator ""
-      opts.separator "Pipelines (configured via ## Type in guidelines.md):"
+      opts.separator "Pipelines (`- type:` under ## Podcast in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"
       opts.separator "  language  Download from RSS, --file, or --url (YouTube), transcribe, assemble MP3"
       opts.separator ""
-      opts.separator "Transcription engines (## Transcription Engine in guidelines.md):"
+      opts.separator "Transcription engines (`- engine:` under ## Audio in guidelines.md):"
       opts.separator "  open      OpenAI Whisper / gpt-4o-transcribe (default)"
       opts.separator "  elab      ElevenLabs Scribe v2"
       opts.separator "  groq      Groq hosted Whisper"
