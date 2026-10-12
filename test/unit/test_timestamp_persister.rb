@@ -330,6 +330,26 @@ class TestTimestampPersister < Minitest::Test
     assert_equal [{ start: 0.0, end: 0.6, text: "Hi there." }], TimestampPersister.build_segments_from_words(words)
   end
 
+  # P5-2b (Q-53): a recorded ElevenLabs Scribe response (see test/fixtures/README.md).
+  SCRIBE_FIXTURE = File.join(__dir__, "..", "fixtures", "transcription", "elevenlabs_scribe_words.json")
+
+  def test_build_segments_from_words_recorded_scribe_response_skips_spacing_tokens
+    skip "Scribe fixture not recorded: #{SCRIBE_FIXTURE}" unless File.exist?(SCRIBE_FIXTURE)
+    body = JSON.parse(File.read(SCRIBE_FIXTURE))
+    words = body["words"]
+    spoken = words.reject { |w| w["type"] == "spacing" }
+
+    assert_operator words.count { |w| w["type"] == "spacing" }, :>, 0
+    segments = TimestampPersister.build_segments_from_words(words)
+
+    texts = segments.map { |s| s[:text] }
+    assert_equal spoken.map { |w| w["text"] }.join(" "), texts.join(" ")
+    texts.each { |t| refute_match(/\s{2,}|\A\s|\s\z/, t) }
+    assert_equal ["Hello there.", "This is a short test of the transcription service"], texts
+    assert_equal spoken.first["start"], segments.first[:start]
+    assert_equal spoken.last["end"], segments.last[:end]
+  end
+
   def test_build_segments_from_words_only_spacing_tokens_yields_no_segments
     words = [{ "text" => " ", "start" => 0.0, "end" => 0.1, "type" => "spacing" }]
 

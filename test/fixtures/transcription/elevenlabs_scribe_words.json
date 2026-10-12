@@ -1,0 +1,155 @@
+{
+  "language_code": "eng",
+  "language_probability": 1.0,
+  "text": "Hello there. This is a short test of the transcription service",
+  "words": [
+    {
+      "text": "Hello",
+      "start": 0.04,
+      "end": 0.3,
+      "type": "word",
+      "logprob": -0.000014305012882687151
+    },
+    {
+      "text": " ",
+      "start": 0.3,
+      "end": 0.36,
+      "type": "spacing",
+      "logprob": -0.000058530047681415454
+    },
+    {
+      "text": "there.",
+      "start": 0.36,
+      "end": 0.6,
+      "type": "word",
+      "logprob": -0.0005196416053270999
+    },
+    {
+      "text": " ",
+      "start": 0.6,
+      "end": 0.82,
+      "type": "spacing",
+      "logprob": -0.00000011920928244535389
+    },
+    {
+      "text": "This",
+      "start": 0.82,
+      "end": 0.96,
+      "type": "word",
+      "logprob": -0.00000011920928244535389
+    },
+    {
+      "text": " ",
+      "start": 0.96,
+      "end": 1.02,
+      "type": "spacing",
+      "logprob": 0.0
+    },
+    {
+      "text": "is",
+      "start": 1.02,
+      "end": 1.1,
+      "type": "word",
+      "logprob": 0.0
+    },
+    {
+      "text": " ",
+      "start": 1.1,
+      "end": 1.14,
+      "type": "spacing",
+      "logprob": 0.0
+    },
+    {
+      "text": "a",
+      "start": 1.14,
+      "end": 1.2,
+      "type": "word",
+      "logprob": 0.0
+    },
+    {
+      "text": " ",
+      "start": 1.2,
+      "end": 1.26,
+      "type": "spacing",
+      "logprob": 0.0
+    },
+    {
+      "text": "short",
+      "start": 1.26,
+      "end": 1.5,
+      "type": "word",
+      "logprob": 0.0
+    },
+    {
+      "text": " ",
+      "start": 1.5,
+      "end": 1.56,
+      "type": "spacing",
+      "logprob": 0.0
+    },
+    {
+      "text": "test",
+      "start": 1.56,
+      "end": 1.9,
+      "type": "word",
+      "logprob": 0.0
+    },
+    {
+      "text": " ",
+      "start": 1.9,
+      "end": 2.24,
+      "type": "spacing",
+      "logprob": 0.0
+    },
+    {
+      "text": "of",
+      "start": 2.24,
+      "end": 2.3,
+      "type": "word",
+      "logprob": 0.0
+    },
+    {
+      "text": " ",
+      "start": 2.3,
+      "end": 2.34,
+      "type": "spacing",
+      "logprob": 0.0
+    },
+    {
+      "text": "the",
+      "start": 2.34,
+      "end": 2.4,
+      "type": "word",
+      "logprob": 0.0
+    },
+    {
+      "text": " ",
+      "start": 2.4,
+      "end": 2.44,
+      "type": "spacing",
+      "logprob": -0.000025748875486897305
+    },
+    {
+      "text": "transcription",
+      "start": 2.44,
+      "end": 3.0,
+      "type": "word",
+      "logprob": -0.000025748875486897305
+    },
+    {
+      "text": " ",
+      "start": 3.0,
+      "end": 3.1,
+      "type": "spacing",
+      "logprob": -0.00000011920928244535389
+    },
+    {
+      "text": "service",
+      "start": 3.1,
+      "end": 3.5,
+      "type": "word",
+      "logprob": -0.00000011920928244535389
+    }
+  ],
+  "audio_duration_secs": 3.5679375
+}
