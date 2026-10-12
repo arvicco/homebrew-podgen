@@ -67,6 +67,10 @@ CLAUDE_EFFORT_<ROLE>=low      # Optional: effort level (low|medium|high) for a r
                               #   Default policy: DESCRIPTION and LANGUAGE_DETECT (short outputs) at low; every other role
                               #   omits the parameter (API default). An invalid value warns and omits. Takes effect where the
                               #   call site passes effort through — today the description and language-detection calls.
+                              #   Effort assumes the resolved model accepts output_config.effort; with a pinned model that
+                              #   rejects it, DescriptionAgent falls back to the original text and WordStats picks the first
+                              #   candidate language, with only a non-fatal warning in the log. Set the override to
+                              #   `default` (or `none`/`off`) to turn effort off for that role without a warning.
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2  # Optional: ElevenLabs TTS model
 ELEVENLABS_OUTPUT_FORMAT=mp3_44100_128      # Optional: ElevenLabs output format
 ELEVENLABS_SCRIBE_MODEL=scribe_v2           # Optional: ElevenLabs transcription model
