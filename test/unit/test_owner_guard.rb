@@ -107,12 +107,15 @@ class TestOwnerGuard < Minitest::Test
     ENV["PODGEN_ROOT"] = @tmpdir
     ENV["CLAUDECODE"] = "1"
     ENV.delete("PODGEN_OWNER")
+    # The probe verdicts assume OptionParser's default (permute) mode.
+    @posixly_correct = ENV.delete("POSIXLY_CORRECT")
   end
 
   def teardown
     ENV.delete("PODGEN_ROOT")
     ENV.delete("CLAUDECODE")
     ENV.delete("PODGEN_OWNER")
+    ENV["POSIXLY_CORRECT"] = @posixly_correct if @posixly_correct
     FileUtils.rm_rf(@tmpdir)
   end
 
