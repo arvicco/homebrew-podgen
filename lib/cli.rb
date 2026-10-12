@@ -41,19 +41,40 @@ module PodgenCLI
   OWNER_ACTIONS = %w[publish unpublish uploads tweet schedule analytics].freeze
   OWNER_FLAGS = %w[--youtube --lingq].freeze
 
+  # Owner commands whose run honours --dry-run. uploads, schedule and
+  # analytics ignore it, so no dry-run flag ever exempts them.
+  DRY_RUN_HONOURED = %w[generate publish unpublish tweet].freeze
+
+  DRY_RUN_HINT = "note: --dry-run was read as an option value or is not honoured by this command; " \
+    "put it right after the podcast name (generate/publish/tweet) or before the command " \
+    "(podgen --dry-run <command>, honoured by generate/publish/unpublish/tweet only)"
+
   def self.owner_action?(command_name, argv, options)
     return true if OWNER_ACTIONS.include?(command_name)
+    return false unless command_name == "generate"
+    return true if options[:lingq]
 
-    command_name == "generate" &&
-      (options[:lingq] || argv.take_while { it != "--" }.any? { owner_flag?(it) })
+    parsed = generate_dry_parse(argv)
+    return !!(parsed[:youtube] || parsed[:lingq]) if parsed
+
+    argv.any? { owner_flag?(it) }
   end
 
-  # OptionParser accepts any unique, case-insensitive prefix of a long option
-  # (`--you`, `--LIN=x`), so every prefix of an owner flag counts as that flag
-  # (P3-7). GenerateCommand defines no short options, so OptionParser also
-  # completes a single-dash letter against the long options (`-y` sets
-  # youtube, `-l` sets lingq): any `-y…` / `-l…` token counts too. Tokens
-  # after a lone `--` are positional and never reach here.
+  # What GenerateCommand's own parser would set for this argv (P3-7): the
+  # guard answers from the real option list, so a value-taking option that
+  # swallows `--` or a flag-looking token is read exactly as the command
+  # reads it. Nil when the real parse would fail. Loaded lazily; the options
+  # module is small and never pulls in the command class.
+  def self.generate_dry_parse(argv)
+    require_relative "cli/generate_options"
+    GenerateOptions.dry_parse(argv)
+  end
+
+  # Conservative fallback, used only when generate's argv does not parse:
+  # checks EVERY token, including those after `--`. OptionParser accepts any
+  # unique, case-insensitive prefix of a long option (`--you`, `--LIN=x`), so
+  # every prefix of an owner flag counts as that flag; a single dash
+  # completes against the long options (`-y` youtube, `-l` lingq).
   def self.owner_flag?(token)
     return true if token.match?(/\A-[yl]/i)
 
@@ -63,18 +84,29 @@ module PodgenCLI
 
   # Second layer behind the settings.json deny list (P1-1): inside a Claude
   # Code session (CLAUDECODE=1) owner actions are refused unless the call is a
-  # --dry-run or the owner opts in with PODGEN_OWNER=1 (e.g. `! PODGEN_OWNER=1
-  # bin/podgen publish x` from the Claude Code prompt).
+  # dry run the command honours, or the owner opts in with PODGEN_OWNER=1
+  # (e.g. `! PODGEN_OWNER=1 bin/podgen publish x` from the Claude Code prompt).
   def self.refuse_owner_action?(command_name, argv, options)
     return false unless ENV["CLAUDECODE"] == "1" && ENV["PODGEN_OWNER"] != "1"
-    return false if options[:dry_run] || dry_run_token?(argv)
+    return false if dry_run_exempt?(command_name, argv, options)
 
     owner_action?(command_name, argv, options)
   end
 
-  # A literal `--dry-run` exempts the call only when it cannot be the value of
-  # a preceding option (`publish p --date --dry-run` is a real sync): it is the
-  # first token, or follows a non-option or an `--opt=value` token (P3-7).
+  # generate: the global flag, or its own --dry-run as its parser reads it.
+  # publish/unpublish/tweet: the global flag or a literal --dry-run token.
+  def self.dry_run_exempt?(command_name, argv, options)
+    return false unless DRY_RUN_HONOURED.include?(command_name)
+    return true if options[:dry_run]
+    return !!generate_dry_parse(argv)&.dig(:dry_run) if command_name == "generate"
+
+    dry_run_token?(argv)
+  end
+
+  # A literal `--dry-run` exempts publish/unpublish/tweet only when it cannot
+  # be the value of a preceding option (`publish p --date --dry-run` is a real
+  # sync): it is the first token, or follows a non-option or an
+  # `--opt=value` token (P3-7).
   def self.dry_run_token?(argv)
     tokens = argv.take_while { it != "--" }
     tokens.each_with_index.any? do |token, i|
@@ -178,6 +210,7 @@ module PodgenCLI
 
     if refuse_owner_action?(command_name, argv, options)
       $stderr.puts "podgen: '#{command_name}' is an owner action; refusing inside a Claude Code session (PODGEN_OWNER=1 overrides)"
+      $stderr.puts DRY_RUN_HINT if options[:dry_run] || argv.include?("--dry-run")
       return 2
     end
 
