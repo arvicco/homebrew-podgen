@@ -616,6 +616,17 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "private", c[:status]
   end
 
+  # Q-50 (P5-2a): a URL image is not prefixed with the podcast dir
+  def test_lingq_config_image_url_is_unchanged
+    parser = build_parser("## LingQ\n- image: https://x/y.png\n")
+    assert_equal "https://x/y.png", parser.lingq_config[:image]
+  end
+
+  def test_lingq_config_image_relative_path_still_resolves
+    parser = build_parser("## LingQ\n- image: covers/a.png\n")
+    assert_equal File.join(@podcast_dir, "covers/a.png"), parser.lingq_config[:image]
+  end
+
   # --- youtube_config ---
 
   def test_parses_youtube_section
@@ -1413,6 +1424,12 @@ class TestGuidelinesParser < Minitest::Test
     assert_nil parser.links_config
     assert_nil parser.send(:parse_kv_section, "Generic") { |k, v| {k => v} }
     assert_empty parser.warnings
+  end
+
+  def test_lingq_image_uppercase_scheme_url_is_left_unchanged
+    parser = build_parser("## LingQ\n- image: HTTPS://x/y.png\n")
+
+    assert_equal "HTTPS://x/y.png", parser.lingq_config[:image]
   end
 
   private

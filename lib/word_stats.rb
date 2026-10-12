@@ -313,7 +313,8 @@ class WordStats
     response = client.messages.create(
       model: ClaudeModels.for(:language_detect),
       max_tokens: 30,
-      messages: [{ role: "user", content: prompt }]
+      messages: [{ role: "user", content: prompt }],
+      **AnthropicClient.effort_params(:language_detect)
     )
     AnthropicClient.text_of(response).to_s.strip.split(/\s+/).first
   end

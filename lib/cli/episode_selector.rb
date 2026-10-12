@@ -153,7 +153,7 @@ module PodgenCLI
     # podcasts never produce `_script.md` so this returns [] for them.
     def english_script_basenames(config)
       Dir.glob(File.join(config.episodes_dir, "*_script.md"))
-        .reject { |f| EpisodeNaming.language_tail(File.basename(f, "_script.md")) }
+        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, "_script.md"), languages: config.language_codes, episodes_dir: config.episodes_dir) }
         .sort
         .map { |f| File.basename(f, "_script.md") }
     end
@@ -165,7 +165,7 @@ module PodgenCLI
     # etc. Excludes per-language MP3s like `-jp.mp3`.
     def english_episode_basenames(config)
       EpisodeFiltering.all_episodes(config.episodes_dir)
-        .reject { |f| EpisodeNaming.language_tail(File.basename(f, ".mp3")) }
+        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, ".mp3"), languages: config.language_codes, episodes_dir: config.episodes_dir) }
         .sort
         .map { |f| File.basename(f, ".mp3") }
     end

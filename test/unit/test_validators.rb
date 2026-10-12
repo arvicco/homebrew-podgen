@@ -217,6 +217,15 @@ class TestValidators < Minitest::Test
     assert result[:warnings].any? { |w| w.include?("LingQ: image file not found") }
   end
 
+  def test_language_pipeline_lingq_image_url_not_supported
+    result = validate(Validators::LanguagePipelineValidator,
+      transcription_engines: ["openai"],
+      lingq_config: { image: "https://example.com/cover.png", base_image: nil })
+
+    assert_includes result[:warnings], "LingQ: URL images are not supported (file path expected): https://example.com/cover.png"
+    refute result[:warnings].any? { |w| w.include?("image file not found") }
+  end
+
   def test_language_pipeline_lingq_base_image_missing
     result = validate(Validators::LanguagePipelineValidator,
       transcription_engines: ["openai"],

@@ -79,6 +79,57 @@ class TestClaudeModels < Minitest::Test
     assert_equal ClaudeModels::LINES[:opus], ClaudeModels.line_id(:opus)
   end
 
+  # -- effort (P5-1) --
+
+  def test_effort_default_policy_for_every_role
+    expected = {description: "low", language_detect: "low"}
+    ClaudeModels::ROLES.each_key do |role|
+      assert_equal expected[role], ClaudeModels.effort(role), "role #{role}"
+    end
+  end
+
+  def test_effort_unknown_role_raises_argument_error
+    err = assert_raises(ArgumentError) { ClaudeModels.effort(:nope) }
+    assert_includes err.message, ":nope"
+  end
+
+  def test_effort_role_env_beats_default
+    ENV["CLAUDE_EFFORT_DESCRIPTION"] = "High"
+    ENV["CLAUDE_EFFORT_SCRIPT"] = "medium"
+
+    assert_equal "high", ClaudeModels.effort(:description)
+    assert_equal "medium", ClaudeModels.effort(:script)
+    assert_equal "low", ClaudeModels.effort(:language_detect)
+  end
+
+  def test_effort_blank_env_keeps_default
+    ENV["CLAUDE_EFFORT_DESCRIPTION"] = " "
+
+    assert_equal "low", ClaudeModels.effort(:description)
+  end
+
+  def test_effort_invalid_env_warns_and_omits
+    ENV["CLAUDE_EFFORT_DESCRIPTION"] = "turbo"
+
+    result = nil
+    _out, err = capture_io { result = ClaudeModels.effort(:description) }
+    assert_nil result
+    assert_includes err, "CLAUDE_EFFORT_DESCRIPTION"
+    assert_includes err, "turbo"
+  end
+
+  def test_effort_opt_out_values_omit_without_warning
+    %w[default none off Default].each do |value|
+      ENV["CLAUDE_EFFORT_DESCRIPTION"] = value
+
+      result = :unset
+      out, err = capture_io { result = ClaudeModels.effort(:description) }
+      assert_nil result, value
+      assert_empty out, value
+      assert_empty err, value
+    end
+  end
+
   def test_no_model_id_literals_outside_the_registry
     lib = File.expand_path("../../lib", __dir__)
     offenders = Dir[File.join(lib, "**", "*.rb")]

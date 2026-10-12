@@ -23,7 +23,10 @@ module Validators
 
       if @config.lingq_config
         lc = @config.lingq_config
-        if lc[:image] && !File.exist?(lc[:image])
+        # A URL is not fetched (yet: see the work queue); say so, not "not found".
+        if lc[:image]&.match?(%r{\Ahttps?://}i)
+          @warnings << "LingQ: URL images are not supported (file path expected): #{lc[:image]}"
+        elsif lc[:image] && !File.exist?(lc[:image])
           @warnings << "LingQ: image file not found: #{lc[:image]}"
         end
         if lc[:base_image] && !File.exist?(lc[:base_image])

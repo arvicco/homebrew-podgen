@@ -373,6 +373,23 @@ class TestRssGenerator < Minitest::Test
     assert_equal "Título en Español", title_map["mypod-2026-01-15-es.mp3"]
   end
 
+  def test_generate_language_feed_item_carries_language_duration
+    history_path = File.join(@dir, "history.yml")
+    File.write(history_path, [
+      { "date" => "2026-01-15", "title" => "English Title", "duration" => 60.0,
+        "languages" => { "es" => { "duration" => 125.0 } } }
+    ].to_yaml)
+    ep_dir = File.join(@dir, "mypod", "episodes")
+    FileUtils.mkdir_p(ep_dir)
+    File.write(File.join(ep_dir, "mypod-2026-01-15-es.mp3"), "x" * 1000)
+
+    RssGenerator.new(episodes_dir: ep_dir, feed_path: @feed_path, language: "es",
+      languages: %w[en es], history_path: history_path).generate
+
+    item = REXML::Document.new(File.read(@feed_path)).elements["//item"]
+    assert_equal "2:05", item.elements["itunes:duration"].text
+  end
+
   # --- RSS XML structure ---
 
   def test_generate_rss_has_channel_element

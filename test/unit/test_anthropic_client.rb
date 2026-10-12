@@ -93,6 +93,44 @@ class TestAnthropicClient < Minitest::Test
     assert_operator captured[:timeout], :>=, 120, "scripts and reconciliation take ~1-2 min"
   end
 
+  # -- effort_params (P5-1): the effort parameter rides only when the registry sets one --
+
+  def test_effort_params_shape_for_a_lowered_role
+    with_effort_env do
+      assert_equal({output_config: {effort: :low}}, AnthropicClient.effort_params(:description))
+    end
+  end
+
+  def test_effort_params_empty_for_a_default_role
+    with_effort_env do
+      assert_equal({}, AnthropicClient.effort_params(:script))
+    end
+  end
+
+  def test_effort_params_follow_the_env_override
+    with_effort_env("CLAUDE_EFFORT_SCRIPT" => "medium") do
+      assert_equal({output_config: {effort: :medium}}, AnthropicClient.effort_params(:script))
+    end
+  end
+
+  def test_effort_params_key_is_the_sdk_output_config_effort
+    with_effort_env do
+      config = Anthropic::Models::OutputConfig.new(**AnthropicClient.effort_params(:language_detect)[:output_config])
+      assert_equal :low, config.effort
+      assert_includes Anthropic::Models::OutputConfig::Effort.values, config.effort
+    end
+  end
+
+  def test_init_anthropic_client_resolves_effort_params_for_the_role
+    h = Class.new { include AnthropicClient }.new
+    with_effort_env do
+      Anthropic::Client.stub(:new, ->(**) { Object.new }) do
+        h.send(:init_anthropic_client, role: :description)
+      end
+    end
+    assert_equal({output_config: {effort: :low}}, h.instance_variable_get(:@effort_params))
+  end
+
   # -- text_of (P1-0 hazard H1): thinking-default models put a thinking block first --
 
   def test_text_of_skips_a_leading_thinking_block
@@ -126,6 +164,16 @@ class TestAnthropicClient < Minitest::Test
   end
 
   private
+
+  def with_effort_env(overrides = {})
+    saved = ENV.to_h.select { |k, _| k.start_with?("CLAUDE_EFFORT_") }
+    saved.each_key { |k| ENV.delete(k) }
+    overrides.each { |k, v| ENV[k] = v }
+    yield
+  ensure
+    ENV.keys.select { |k| k.start_with?("CLAUDE_EFFORT_") }.each { |k| ENV.delete(k) }
+    saved.each { |k, v| ENV[k] = v }
+  end
 
   def stub_message(parsed:, stop_reason: "end_turn")
     usage = Struct.new(:output_tokens).new(8192)

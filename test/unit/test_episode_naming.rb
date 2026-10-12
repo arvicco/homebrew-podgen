@@ -126,4 +126,51 @@ class TestEpisodeNaming < Minitest::Test
     assert_equal 2, EpisodeNaming.history_entry_index(entries, "2026-01-15", "b")
     assert_equal 1, EpisodeNaming.history_entry_index(entries, "2026-01-16", "")
   end
+
+  # Q-54 (P5-2a): an older positional entry and a newer explicit-basename
+  # entry resolve to the same slot; HistoryMaps keeps the last one, so the
+  # slot lookup must pick that same entry (what the feed shows).
+  def test_history_entry_index_mixed_day_agrees_with_history_maps
+    require "history_maps"
+    require "yaml"
+    entries = [
+      {"date" => "2026-01-15", "title" => "Old positional"},
+      {"date" => "2026-01-15", "title" => "New explicit", "basename" => "pod-2026-01-15"}
+    ]
+    Dir.mktmpdir("p52a_q54") do |dir|
+      path = File.join(dir, "history.yml")
+      File.write(path, entries.to_yaml)
+      titles, = HistoryMaps.build(history_path: path, podcast_name: "pod", episodes_dir: dir)
+
+      idx = EpisodeNaming.history_entry_index(entries, "2026-01-15", "")
+      assert_equal 1, idx
+      assert_equal titles["pod-2026-01-15.mp3"], entries[idx]["title"]
+    end
+  end
+
+  # ── de-configured language: primary sibling on disk (CRPR round 1) ──
+
+  def test_language_suffix_unconfigured_tail_with_primary_sibling_is_a_variant
+    Dir.mktmpdir("naming_sibling") do |dir|
+      File.write(File.join(dir, "pod-2026-01-15.mp3"), "")
+      assert_equal "it", EpisodeNaming.language_suffix("pod-2026-01-15-it", languages: %w[en es], episodes_dir: dir)
+      assert_equal "pod-2026-01-15", EpisodeNaming.primary_basename("pod-2026-01-15-it", languages: %w[en es], episodes_dir: dir)
+      refute EpisodeNaming.matches_language?("pod-2026-01-15-it", "en", languages: %w[en es], episodes_dir: dir)
+    end
+  end
+
+  def test_language_suffix_unconfigured_tail_with_script_sibling_is_a_variant
+    Dir.mktmpdir("naming_sibling") do |dir|
+      File.write(File.join(dir, "pod-2026-01-15_script.md"), "")
+      assert_equal "it", EpisodeNaming.language_suffix("pod-2026-01-15-it", languages: %w[en es], episodes_dir: dir)
+    end
+  end
+
+  def test_language_suffix_unconfigured_tail_without_sibling_is_primary
+    Dir.mktmpdir("naming_sibling") do |dir|
+      File.write(File.join(dir, "pod-2026-01-15-ai_script.md"), "")
+      assert_nil EpisodeNaming.language_suffix("pod-2026-01-15-ai", languages: %w[en es], episodes_dir: dir)
+      assert_nil EpisodeNaming.language_suffix("pod-2026-01-15-it", languages: %w[en es])
+    end
+  end
 end
