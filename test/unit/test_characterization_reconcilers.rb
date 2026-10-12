@@ -83,9 +83,9 @@ class TestCharacterizationReconcilers < Minitest::Test
     assert_equal 4800, fake2.calls.first[:max_tokens]
   end
 
-  # Drift within epsilon is ACCEPTED and the LLM's drifted values are
-  # returned (not snapped back to the originals).
-  def test_reconcile_subtitle_drift_within_epsilon_returns_llm_values_not_originals
+  # Drift within epsilon is ACCEPTED, but the ORIGINAL values are returned
+  # (P4-1 flipped this pin: the LLM's drifted values used to leak through).
+  def test_reconcile_subtitle_drift_within_epsilon_returns_original_values
     reply = [{"start" => 0.0, "end" => 2.5, "text" => "a"}, {"start" => 2.5, "end" => 7.700000001, "text" => "b"}]
     fake = FakeSubtitleClient.new(JSON.generate(reply))
 
@@ -93,10 +93,11 @@ class TestCharacterizationReconcilers < Minitest::Test
       SubtitleReconciler.reconcile(SEGMENTS, TRANSCRIPT, api_key: "k", model: "m")
     end
 
-    assert_equal 7.700000001, result.last["end"]
+    assert_equal 7.7, result.last["end"]
   end
 
-  def test_reconcile_subtitle_extra_keys_in_reply_pass_through
+  # P4-1 flipped this pin: model-added keys used to pass through.
+  def test_reconcile_subtitle_extra_keys_in_reply_are_dropped
     reply = SEGMENTS.map { |s| s.merge("speaker" => "x") }
     fake = FakeSubtitleClient.new(JSON.generate(reply))
 
@@ -104,7 +105,7 @@ class TestCharacterizationReconcilers < Minitest::Test
       SubtitleReconciler.reconcile(SEGMENTS, TRANSCRIPT, api_key: "k", model: "m")
     end
 
-    assert_equal %w[start end text speaker], result.first.keys
+    assert_equal %w[start end text], result.first.keys
   end
 
   def test_reconcile_subtitle_api_error_is_not_retried

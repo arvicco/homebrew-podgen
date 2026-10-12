@@ -16,6 +16,11 @@ module SubtitleReconciler
 
   # Reconcile raw segments with a corrected transcript via Claude API.
   # Returns an array of segments with corrected text (same start/end values).
+  # The result is built from the ORIGINAL segments (P4-1): their exact
+  # start/end values and keys, with only "text" taken from the model. Drift
+  # within TIMESTAMP_EPSILON is validated but never persisted, and keys the
+  # model invents (e.g. "speaker") are dropped — the *_timestamps.json
+  # sidecar schema is frozen.
   def self.reconcile(segments, reconciled_text, api_key:, model: nil)
     model ||= ClaudeModels.for(:subtitle_reconciler)
     prompt = build_prompt(segments, reconciled_text)
@@ -31,7 +36,7 @@ module SubtitleReconciler
     text = AnthropicClient.text_of(response)
     result = parse_response(text)
     validate!(result, segments)
-    result
+    segments.each_with_index.map { |orig, i| orig.merge("text" => result[i]["text"]) }
   end
 
   # Build the prompt for Claude. Exposed for testing.
