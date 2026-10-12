@@ -1426,6 +1426,12 @@ class TestGuidelinesParser < Minitest::Test
     assert_empty parser.warnings
   end
 
+  def test_lingq_image_uppercase_scheme_url_is_left_unchanged
+    parser = build_parser("## LingQ\n- image: HTTPS://x/y.png\n")
+
+    assert_equal "HTTPS://x/y.png", parser.lingq_config[:image]
+  end
+
   private
 
   def build_parser(text)
