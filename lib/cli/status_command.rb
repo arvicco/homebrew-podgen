@@ -39,9 +39,13 @@ module PodgenCLI
     # undated "Warning:" lines after it belong to that publish. Generate
     # output ("[2026-10-08 19:19:21] ERROR ...", "Generate failed ...") closes
     # the entry and is ignored here - the run logs already cover it.
+    # run.sh now brackets each publish with dated markers ("... podgen publish
+    # <pod> begin" / "... end exit=N"): a marked entry is named and owns every
+    # "Warning:" line up to its end marker; the legacy rule covers older lines.
     PUBLISH_LOG = File.join("logs", "launchd_stderr.log")
     PUBLISH_REPEAT = 3
     PUBLISH_ENTRY_RE = %r{\A(\d{4})/(\d{2})/(\d{2}) \d{2}:\d{2}:\d{2} }
+    PUBLISH_MARKER_RE = %r{\A(\d{4})/(\d{2})/(\d{2}) \d{2}:\d{2}:\d{2} podgen publish (\S+) (begin|end)\b}
     PUBLISH_WARNING_RE = /\AWarning:/
     GENERATE_LINE_RE = /\A(?:\[\d{4}-\d{2}-\d{2}[^\]]*\]|Generate failed)/
     TWITTER_RE = /Twitter/
@@ -194,15 +198,18 @@ module PodgenCLI
     # --- publish findings (shared launchd stderr, P3-2) ---
 
     # A warning in the latest publish entry that also appears in each of the
-    # PUBLISH_REPEAT (or more) consecutive entries before it. The stderr names
-    # no podcast: Twitter warnings go to podcasts with a ## Twitter section,
+    # PUBLISH_REPEAT (or more) consecutive entries before it, counted over the
+    # entries named for this podcast plus the unnamed (pre-marker) ones. A
+    # named entry's warnings are its podcast's; unnamed entries name no
+    # podcast: Twitter warnings go to podcasts with a ## Twitter section,
     # other warnings to podcasts with an installed launchd scheduler.
     def publish_findings(config)
-      entries = publish_entries
+      entries = publish_entries.select { |e| e[:podcast].nil? || e[:podcast] == config.name }
       return [] if entries.empty?
 
-      entries.last[:warnings].filter_map do |key, raw|
-        next unless publish_warning_for?(config, raw)
+      latest = entries.last
+      latest[:warnings].filter_map do |key, raw|
+        next unless latest[:podcast] || publish_warning_for?(config, raw)
         streak = entries.reverse.take_while { |e| e[:warnings].key?(key) }
         next if streak.size < PUBLISH_REPEAT
 
@@ -218,9 +225,11 @@ module PodgenCLI
       @publish_entries ||= parse_publish_log
     end
 
-    # [{date: "YYYY-MM-DD", warnings: {normalized => raw}}], oldest first.
-    # Contiguous dated lines of the same day are one publish (rclone may
-    # print several); clean publishes on adjacent lines stay separate.
+    # [{date: "YYYY-MM-DD", podcast: name_or_nil, warnings: {normalized => raw}}],
+    # oldest first. A begin marker opens a named entry that owns every
+    # "Warning:" line up to its end marker. Outside markers (legacy lines):
+    # contiguous dated lines of the same day are one unnamed publish (rclone
+    # may print several); clean publishes on adjacent lines stay separate.
     def parse_publish_log
       return [] unless File.exist?(@publish_log)
 
@@ -229,10 +238,24 @@ module PodgenCLI
       previous_dated = false
       File.foreach(@publish_log) do |raw|
         line = raw.scrub.chomp
+        if (m = line.match(PUBLISH_MARKER_RE))
+          previous_dated = false
+          if m[5] == "begin"
+            current = {date: "#{m[1]}-#{m[2]}-#{m[3]}", podcast: m[4], warnings: {}}
+            entries << current
+          elsif [nil, m[4]].include?(current&.dig(:podcast))
+            current = nil
+          end
+          next
+        end
+        if current&.dig(:podcast)
+          current[:warnings][normalize(line)] ||= line if line.match?(PUBLISH_WARNING_RE)
+          next
+        end
         if (m = line.match(PUBLISH_ENTRY_RE))
           date = "#{m[1]}-#{m[2]}-#{m[3]}"
           unless previous_dated && current&.dig(:date) == date
-            current = {date: date, warnings: {}}
+            current = {date: date, podcast: nil, warnings: {}}
             entries << current
           end
           previous_dated = true

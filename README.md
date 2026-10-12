@@ -1137,18 +1137,25 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   and shown as `(scheduled +Nd)`; further ahead is WARN.
 - **WARN (publish)** - the same `Warning:` line in each of the last 3 or more
   scheduled publishes, read from `logs/launchd_stderr.log` (the shared stderr
-  of the per-podcast launchd jobs). A dated rclone line
-  (`2026/09/20 16:52:04 NOTICE: ...`) starts a publish; undated `Warning:`
-  lines after it belong to that publish; generate output
-  (`[2026-10-08 19:19:21] ERROR ...`, `Generate failed ...`) is skipped since
-  the run logs above already cover it. The stderr does not name the podcast,
-  so Twitter warnings are attributed to every podcast with a `## Twitter`
-  section and other warnings to every podcast with an installed launchd
-  scheduler. Shown as
+  of the per-podcast launchd jobs). `scripts/run.sh` brackets each publish
+  with dated markers (`2026/10/12 16:52:00 podgen publish <pod> begin` …
+  `podgen publish <pod> end exit=N`): every `Warning:` line between them
+  belongs to that podcast's publish, and the streak counts only that
+  podcast's publishes. Lines written before the markers existed are read by
+  the legacy rule: a dated rclone line (`2026/09/20 16:52:04 NOTICE: ...`)
+  starts a publish; undated `Warning:` lines after it belong to that publish;
+  generate output (`[2026-10-08 19:19:21] ERROR ...`, `Generate failed ...`)
+  is skipped since the run logs above already cover it. Legacy publishes name
+  no podcast, so their Twitter warnings are attributed to every podcast with
+  a `## Twitter` section and other warnings to every podcast with an
+  installed launchd scheduler; the streak runs across legacy and marked
+  publishes. Legacy limitation: an undated generate-time warning that follows
+  a publish is counted with that publish, and when several podcasts publish
+  only the last one's warnings are visible. Shown as
   `publish warning in last 44 publishes (since 2026-08-20): Warning: Twitter posting failed: ...`.
-  If rclone ever stops printing a dated line, publishes can no longer be told
-  apart and this check goes quiet - the announcement check below does not
-  depend on the stderr.
+  Without markers, if rclone ever stops printing a dated line, publishes can
+  no longer be told apart and this check goes quiet - the announcement check
+  below does not depend on the stderr.
 - **WARN (announcements)** - for podcasts with a `## Twitter` section only:
   the newest episode (on disk, in the Twitter `languages`) is more than
   `since` days (default 7) newer than the newest tweeted episode in
