@@ -186,6 +186,7 @@ Gate 0 CLOSED 2026-09-02 (PR #1, merge 4298988). Gate 1 CLOSED 2026-10-11
 494c000). Gate 3 CLOSED 2026-10-12 11:45 (PR #4, merge 35592dd). Gate 4
 CLOSED 2026-10-12 12:55 (PR #5, merge 8e454c6 — the dry-up). Gate 5
 CLOSED 2026-10-12 18:25 (PR #6, merge e3106e2 — correctness and cost
-sweep). Phase 6: slate presented (.docs/p06-slate.md), awaiting the
-owner's naming; branch phase-6 carries this line. Update this line at
-each gate.
+sweep). Phase 6 (spend measured, observability, docs refresh, refill) AT
+GATE 6 (2026-10-12 19:25): all packets on phase-6, CRPR APPROVED after
+three rounds (refs/cr/reviewed = e42d834), PR #7 open — the owner merges;
+runbook in .docs/p06-plan.md. Update this line at each gate.
