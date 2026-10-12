@@ -276,10 +276,23 @@ class TestCharacterizationCLI < Minitest::Test
   def test_owner_action_predicate_non_prefix_flags_not_detected
     [
       ["p", "--yes"], ["p", "--youtuber"], ["p", "--lingqs"], ["p", "--no-youtube"],
-      ["p", "--"], ["p", "-y"], ["p", "--force"], ["p", "--lang", "you"]
+      ["p", "--"], ["p", "--force"], ["p", "--lang", "you"], ["p", "-f"], ["p", "-x"]
     ].each do |argv|
       refute PodgenCLI.owner_action?("generate", argv, {}), argv.join(" ")
     end
+  end
+
+  def test_owner_action_predicate_single_dash_completions_detected
+    # GenerateCommand defines no short options, so OptionParser completes a
+    # single-dash letter against the long options: `-y` sets youtube, `-l`
+    # sets lingq. Any `-y…` / `-l…` token counts as an owner flag.
+    [
+      ["p", "-y"], ["p", "-Y"], ["p", "-l"], ["p", "-L"], ["p", "-yfoo"], ["p", "-y=1"],
+      ["-y", "p"]
+    ].each do |argv|
+      assert PodgenCLI.owner_action?("generate", argv, {}), argv.join(" ")
+    end
+    refute PodgenCLI.owner_action?("generate", ["p", "--", "-y"], {})
   end
 
   def test_owner_action_predicate_tokens_after_terminator_not_detected
@@ -363,10 +376,54 @@ class TestCharacterizationCLI < Minitest::Test
 
   def test_run_generate_upload_flag_with_dry_run_passes_guard
     ENV["CLAUDECODE"] = "1"
-    code, _, err = guarded_run("generate", "test_pod", "--youtube", "--dry-run")
+    code, _, err = guarded_run("generate", "test_pod", "--dry-run", "--youtube")
 
     assert_equal 0, code
     assert_equal "", err
+  end
+
+  def test_refuse_owner_action_dry_run_exempt_only_when_not_a_value
+    ENV["CLAUDECODE"] = "1"
+    # An option taking a value swallows the next token, so `--dry-run` right
+    # after a bare option may be that option's value: no exemption then.
+    {
+      ["publish", ["pod", "--dry-run"]] => false,
+      ["publish", ["pod", "--date=2026-01-01", "--dry-run"]] => false,
+      ["publish", ["--dry-run", "pod"]] => false,
+      ["publish", ["pod", "--date", "--dry-run"]] => true,
+      ["tweet", ["pod", "ep", "--template", "--dry-run"]] => true,
+      ["generate", ["pod", "--youtube", "--include", "--dry-run"]] => true,
+      ["generate", ["pod", "--youtube", "--dry-run"]] => true,
+      ["publish", ["pod", "--dry"]] => true,
+      ["publish", ["pod", "--DRY-RUN"]] => true,
+      ["publish", ["pod", "--", "--dry-run"]] => true
+    }.each do |(cmd, argv), refused|
+      assert_equal refused, PodgenCLI.refuse_owner_action?(cmd, argv, {}), "#{cmd} #{argv.join(" ")}"
+    end
+  end
+
+  def test_run_refusal_for_single_dash_youtube_command_never_built
+    ENV["CLAUDECODE"] = "1"
+    built = false
+    fake = ->(*) {
+      built = true
+      FakeCommand
+    }
+
+    code, out, err = PodgenCLI.stub(:const_get, fake) { run_cli("generate", "test_pod", "-y") }
+
+    assert_equal 2, code
+    assert_equal "", out
+    assert_equal format(REFUSAL, "generate"), err
+    refute built, "refused command must never be resolved"
+  end
+
+  def test_run_refusal_for_publish_with_value_swallowed_dry_run
+    ENV["CLAUDECODE"] = "1"
+    code, _, err = guarded_run("publish", "test_pod", "--date", "--dry-run")
+
+    assert_equal 2, code
+    assert_equal format(REFUSAL, "publish"), err
   end
 
   def test_run_generate_without_upload_flags_not_refused
