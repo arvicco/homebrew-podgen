@@ -186,14 +186,35 @@ class TestHNSource < Minitest::Test
     lines = []
     logger = Object.new
     logger.define_singleton_method(:log) { |msg| lines << msg }
-    source = HNSource.new(logger: logger, hn_queries: { "other" => "kw", "blank" => "  " })
+    blank = "Quantum error correction milestones at IBM and Google"
+    source = HNSource.new(logger: logger, hn_queries: { "other" => "kw", blank => "  " })
     calls = 0
     source.define_singleton_method(:request_with_retry) { |**_| (calls += 1) && { "hits" => [] } }
 
-    assert_equal [], source.send(:search_topic, "AI agents in hospitals", Set.new)
-    assert_equal [], source.send(:search_topic, "blank", Set.new)
+    assert_equal [], source.send(:search_topic, "AI agents in hospitals reshape triage", Set.new)
+    assert_equal [], source.send(:search_topic, blank, Set.new)
     assert_equal 0, calls, "HN API must not be called without a keyword query"
-    assert lines.any? { |l| l.include?("no hn_query for 'AI agents in hospitals' — skipped") }, lines.inspect
+    assert lines.any? { |l| l.include?("no hn_query for 'AI agents in hospitals reshape triage' — skipped") }, lines.inspect
+  end
+
+  def test_search_topic_short_topic_without_keyword_sends_topic
+    source = HNSource.new(hn_queries: { "other" => "kw" })
+    sent = nil
+    source.define_singleton_method(:request_with_retry) { |**params| (sent = params) && { "hits" => [] } }
+
+    source.send(:search_topic, "Rust async runtimes", Set.new)
+
+    assert_equal "Rust async runtimes", sent[:query]
+  end
+
+  def test_search_topic_long_topic_without_keyword_skipped
+    source = HNSource.new(hn_queries: { "other" => "kw" })
+    calls = 0
+    source.define_singleton_method(:request_with_retry) { |**_| (calls += 1) && { "hits" => [] } }
+
+    topic = "Bitcoin startup seed Series A funding round venture capital October 2026"
+    assert_equal [], source.send(:search_topic, topic, Set.new)
+    assert_equal 0, calls
   end
 
   def test_search_topic_without_any_keyword_map_skips_api
@@ -201,7 +222,7 @@ class TestHNSource < Minitest::Test
     calls = 0
     source.define_singleton_method(:request_with_retry) { |**_| (calls += 1) && { "hits" => [] } }
 
-    assert_equal [], source.send(:search_topic, "Ruby", Set.new)
+    assert_equal [], source.send(:search_topic, "Ruby on Rails 9 release notes and upgrade path", Set.new)
     assert_equal 0, calls, "HN API must not be called"
   end
 end
