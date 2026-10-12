@@ -202,12 +202,15 @@ module PodgenCLI
     # entries named for this podcast plus the unnamed (pre-marker) ones. A
     # named entry's warnings are its podcast's; unnamed entries name no
     # podcast: Twitter warnings go to podcasts with a ## Twitter section,
-    # other warnings to podcasts with an installed launchd scheduler.
+    # other warnings to podcasts with an installed launchd scheduler. An
+    # unnamed latest entry counts only while it is the newest entry in the
+    # whole log; once marked publishes follow, a legacy streak is history.
     def publish_findings(config)
       entries = publish_entries.select { |e| e[:podcast].nil? || e[:podcast] == config.name }
       return [] if entries.empty?
 
       latest = entries.last
+      return [] unless latest[:podcast] || latest.equal?(publish_entries.last)
       latest[:warnings].filter_map do |key, raw|
         next unless latest[:podcast] || publish_warning_for?(config, raw)
         streak = entries.reverse.take_while { |e| e[:warnings].key?(key) }
@@ -227,7 +230,9 @@ module PodgenCLI
 
     # [{date: "YYYY-MM-DD", podcast: name_or_nil, warnings: {normalized => raw}}],
     # oldest first. A begin marker opens a named entry that owns every
-    # "Warning:" line up to its end marker. Outside markers (legacy lines):
+    # "Warning:" line up to its end marker (an end marker naming another
+    # podcast does not close it; a missing one closes at generate output or a
+    # later day's dated line). Outside markers (legacy lines):
     # contiguous dated lines of the same day are one unnamed publish (rclone
     # may print several); clean publishes on adjacent lines stay separate.
     def parse_publish_log
@@ -249,8 +254,18 @@ module PodgenCLI
           next
         end
         if current&.dig(:podcast)
-          current[:warnings][normalize(line)] ||= line if line.match?(PUBLISH_WARNING_RE)
-          next
+          # A named entry whose end marker never came (publish killed) closes
+          # on generate output or on a dated line from a later day.
+          if line.match?(GENERATE_LINE_RE)
+            current = nil
+            next
+          end
+          m = line.match(PUBLISH_ENTRY_RE)
+          if m.nil? || "#{m[1]}-#{m[2]}-#{m[3]}" <= current[:date]
+            current[:warnings][normalize(line)] ||= line if line.match?(PUBLISH_WARNING_RE)
+            next
+          end
+          current = nil
         end
         if (m = line.match(PUBLISH_ENTRY_RE))
           date = "#{m[1]}-#{m[2]}-#{m[3]}"

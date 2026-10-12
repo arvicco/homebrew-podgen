@@ -234,6 +234,62 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+.*last 4 publishes \(since 2026-10-07\)/, out)
   end
 
+  def test_run_legacy_latest_superseded_by_later_marked_publish_not_reported
+    # Once run.sh marks publishes, unnamed entries stop growing; a stale legacy
+    # streak must not stay frozen as "latest" for a podcast with no named entry.
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-07 2026-10-08 2026-10-09], CREDITS) +
+      marked_publish("beta", "2026-10-10", nil))
+    out, code = run_status
+    assert_equal 0, code, out
+    refute_match(/credits depleted/, out)
+  end
+
+  def test_run_legacy_latest_still_reported_when_it_is_the_last_entry
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-07 2026-10-08 2026-10-09], CREDITS))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*last 3 publishes \(since 2026-10-07\)/, out)
+  end
+
+  def test_run_mismatched_end_marker_does_not_close_named_entry
+    make_pod("alpha", dates: fresh_dates)
+    write_publish_log(%w[2026-10-08 2026-10-09 2026-10-10].flat_map { |d|
+      stamp = "#{d.tr("-", "/")} 16:52:00"
+      ["#{stamp} podgen publish alpha begin", "#{stamp} podgen publish beta end exit=0",
+        CREDITS, "#{stamp} podgen publish alpha end exit=0"]
+    })
+    entries = publish_entries
+    assert_equal %w[alpha alpha alpha], entries.map { it[:podcast] }
+    assert(entries.all? { it[:warnings].values == [CREDITS] })
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*last 3 publishes/, out)
+  end
+
+  def test_parse_orphan_named_entry_closes_on_generate_line
+    write_publish_log(["2026/10/09 16:52:00 podgen publish alpha begin",
+      "[2026-10-10 07:00:01] ERROR RuntimeError: boom",
+      "Warning: guidelines.md: unknown section ## Foo"])
+    entries = publish_entries
+    assert_equal [["alpha", {}]], entries.map { [it[:podcast], it[:warnings]] }
+  end
+
+  def test_parse_orphan_named_entry_closes_on_dated_line_of_a_later_day
+    write_publish_log(["2026/10/09 16:52:00 podgen publish alpha begin",
+      rclone_line("2026-10-10"), "Warning: guidelines.md: unknown section ## Foo"])
+    entries = publish_entries
+    assert_equal [["alpha", "2026-10-09", []], [nil, "2026-10-10", ["Warning: guidelines.md: unknown section ## Foo"]]],
+      entries.map { [it[:podcast], it[:date], it[:warnings].values] }
+  end
+
+  def test_parse_named_entry_keeps_same_day_dated_lines
+    write_publish_log(marked_publish("alpha", "2026-10-09", CREDITS))
+    entries = publish_entries
+    assert_equal [["alpha", [CREDITS]]], entries.map { [it[:podcast], it[:warnings].values] }
+  end
+
   def test_run_publish_log_path_is_injectable
     make_pod("alpha", dates: fresh_dates, sections: TWITTER)
     path = File.join(@tmpdir, "elsewhere.log")
@@ -473,6 +529,8 @@ class TestStatusCommand < Minitest::Test
   def status_command(args)
     PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY)
   end
+
+  def publish_entries = status_command([]).send(:publish_entries)
 
   def run_status(*args)
     code = nil
