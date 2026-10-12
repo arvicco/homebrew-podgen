@@ -4,6 +4,7 @@ require_relative "../test_helper"
 require "yaml"
 require "fileutils"
 require "post_pipeline_uploads"
+require "youtube_uploader"
 
 class TestPostPipelineUploads < Minitest::Test
   class CaptureLogger
@@ -133,6 +134,37 @@ class TestPostPipelineUploads < Minitest::Test
     assert_equal 1, uploads.warnings.size
     assert_includes uploads.warnings.first, "YouTube upload failed"
     assert_includes uploads.warnings.first, "No episode cover"
+  end
+
+  # P4-0: the upload is recorded right after upload_video succeeds, so a
+  # captions failure stays a non-fatal warning without leaving the uploaded
+  # video untracked (which made the next publish --youtube upload it again).
+  def test_upload_to_youtube_captions_failure_still_records_upload
+    base = "ep-2026-03-10"
+    File.write(File.join(@episodes_dir, "#{base}_cover.jpg"), "jpg")
+    File.write(File.join(@episodes_dir, "#{base}_timestamps.json"), "{}")
+    uploads = build_uploads_with_youtube
+    uploader = Object.new
+    uploader.define_singleton_method(:authorize!) {}
+    uploader.define_singleton_method(:upload_video) { |_path, **| "vid_c" }
+    uploader.define_singleton_method(:upload_captions) { |*, **| raise "captions boom" }
+    video_gen = Object.new
+    video_gen.define_singleton_method(:generate) { |_a, _i, out| File.write(out, "mp4") && out }
+    srt = ->(_ts, out) { File.write(out, "1\n") }
+
+    SubtitleGenerator.stub(:generate_srt, srt) do
+      VideoGenerator.stub(:new, ->(**) { video_gen }) do
+        YouTubeUploader.stub(:new, ->(**) { uploader }) do
+          uploads.upload_to_youtube(episode: {title: "T"}, base_name: base, output_path: "/tmp/a.mp3")
+        end
+      end
+    end
+
+    data = YAML.load_file(File.join(@tmpdir, "uploads.yml"))
+    assert_equal "vid_c", data["youtube"]["default"][base]
+    assert_equal ["YouTube upload failed (RuntimeError: captions boom)"], uploads.warnings
+    assert_includes @logger.messages,
+      "Warning: YouTube upload failed: RuntimeError: captions boom (non-fatal, continuing)"
   end
 
   private

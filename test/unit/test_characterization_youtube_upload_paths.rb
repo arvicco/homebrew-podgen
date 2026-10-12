@@ -164,7 +164,8 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     end
 
     # No retranscription, no reconciliation; video always regenerated;
-    # explicit authorize!; verify_playlist per call; tracker record LAST.
+    # explicit authorize!; verify_playlist per call; tracker record right
+    # after upload_video, before captions and playlist (P4-0).
     assert_equal [
       [:generate_srt, "#{BASE}_timestamps.json"],
       [:video_generate, "#{BASE}.mp4"],
@@ -172,9 +173,9 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
       [:authorize],
       [:verify_playlist, "PLx"],
       [:upload_video, "#{BASE}.mp4"],
+      [:record, :youtube, "PLx", BASE, "vid_p"],
       [:upload_captions, "vid_p", "#{BASE}.srt", "sl"],
-      [:add_to_playlist, "vid_p", "PLx"],
-      [:record, :youtube, "PLx", BASE, "vid_p"]
+      [:add_to_playlist, "vid_p", "PLx"]
     ], calls
     assert_empty uploads.warnings
   end
@@ -203,7 +204,9 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     end
 
     refute(calls.any? { |c| c[0] == :verify_playlist || c[0] == :add_to_playlist })
-    assert_equal [:record, :youtube, "default", BASE, "vid_d"], calls.last
+    record_at = calls.index { |c| c[0] == :record }
+    assert_equal [:record, :youtube, "default", BASE, "vid_d"], calls[record_at]
+    assert_equal :upload_video, calls[record_at - 1][0]
   end
 
   def test_upload_to_youtube_without_timestamps_skips_srt_and_captions_and_never_retranscribes
@@ -294,10 +297,10 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_includes calls, [:upload_captions, "vid_en", "#{BASE}.srt", "en"]
   end
 
-  # Divergence pin: the pipeline records the upload only AFTER captions and
-  # playlist insertion, so a captions failure leaves an uploaded video
-  # untracked (the publisher path records first — see the Path B twin).
-  def test_upload_to_youtube_captions_failure_leaves_upload_unrecorded
+  # P4-0 flipped this former divergence pin: the pipeline now records the
+  # upload right after upload_video, like the publisher path (see the Path B
+  # twin), so a captions failure is a warning and the upload stays tracked.
+  def test_upload_to_youtube_captions_failure_keeps_upload_recorded
     seed_episode(timestamps: true, cover: true)
     calls = []
     uploads = build_pipeline_uploads(yt: {playlist: "PLx"})
@@ -309,7 +312,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     kinds = calls.map(&:first)
     assert_includes kinds, :upload_video
     refute_includes kinds, :add_to_playlist
-    refute_includes kinds, :record
+    assert_includes calls, [:record, :youtube, "PLx", BASE, "vid_c"]
     assert_equal ["YouTube upload failed (RuntimeError: upload_captions boom)"], uploads.warnings
   end
 
@@ -567,7 +570,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_equal [{type: :video, base: BASE, message: "ffmpeg exploded"}], result.errors
   end
 
-  # Divergence twin of the Path A captions test: the publisher records the
+  # Twin of the Path A captions test (both paths agree since P4-0): the publisher records the
   # upload BEFORE captions, so the video stays tracked when captions fail.
   def test_upload_loop_captions_failure_keeps_upload_recorded_and_counts_error
     seed_episode(timestamps: true, cover: true)

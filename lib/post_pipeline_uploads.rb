@@ -113,16 +113,17 @@ class PostPipelineUploads
       tags: yt_config[:tags] || []
     )
 
+    # Record upload right away (P4-0): a captions/playlist failure below must
+    # not leave an uploaded video untracked, or the next publish re-uploads it.
+    playlist = yt_config[:playlist] || "default"
+    UploadTracker.for_config(@config).record(:youtube, playlist, base_name, video_id)
+    @logger.log("Recorded YouTube upload: #{base_name} → #{video_id}")
+
     # Upload captions if SRT exists
     uploader.upload_captions(video_id, srt_path, language: language) if File.exist?(srt_path)
 
     # Add to playlist if configured
     uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
-
-    # Record upload
-    playlist = yt_config[:playlist] || "default"
-    UploadTracker.for_config(@config).record(:youtube, playlist, base_name, video_id)
-    @logger.log("Recorded YouTube upload: #{base_name} → #{video_id}")
 
     @logger.phase_end("YouTube Upload")
   rescue => e # skippable: side effect after commit; tracker-based retry on next publish
