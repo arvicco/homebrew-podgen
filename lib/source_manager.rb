@@ -21,8 +21,9 @@ class SourceManager
     "x" => ->(opts) { XSource.new(**opts) }
   }.freeze
 
-  def initialize(source_config:, exclude_urls: Set.new, logger: nil, cache_dir: nil)
+  def initialize(source_config:, exclude_urls: Set.new, logger: nil, cache_dir: nil, hn_queries: {})
     @source_config = source_config
+    @hn_queries = hn_queries
     @exclude_urls = exclude_urls
     @logger = logger
     @cache = if cache_dir
@@ -119,6 +120,8 @@ class SourceManager
         opts[:category] = config.first if config.is_a?(Array)
       when "rss"
         opts[:feeds] = config.is_a?(Array) ? config : []
+      when "hackernews"
+        opts[:hn_queries] = @hn_queries
       when "x"
         opts[:priority_handles] = config.is_a?(Array) ? config : []
       end

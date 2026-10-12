@@ -243,6 +243,14 @@ class PodcastConfig
     (days && days >= 0) ? days : DEFAULT_FRESHNESS_LEAD_DAYS
   end
 
+  # `- cadence_days: N` in ## Podcast: expected days between episodes, used
+  # by the freshness check instead of inferring cadence from history (P3-4).
+  # nil when absent or not a positive integer.
+  def cadence_days
+    days = Integer(parser.podcast_section[:cadence_days].to_s.strip, 10, exception: false)
+    days if days&.positive?
+  end
+
   def links_enabled?
     !!links_config&.dig(:show)
   end

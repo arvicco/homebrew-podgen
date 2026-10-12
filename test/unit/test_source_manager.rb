@@ -151,6 +151,16 @@ class TestSourceManager < Minitest::Test
     assert_equal "Kept", results.first[:findings].first[:title]
   end
 
+  # P3-1: the keyword map reaches the HN source only.
+  def test_enabled_sources_passes_hn_queries_to_hackernews
+    keywords = { "Long topic" => "kw" }
+    manager = SourceManager.new(source_config: { "hackernews" => true }, hn_queries: keywords)
+
+    hn = manager.send(:enabled_sources).to_h["hackernews"]
+
+    assert_equal keywords, hn.instance_variable_get(:@hn_queries)
+  end
+
   private
 
   def build_manager(exclude_urls: Set.new)

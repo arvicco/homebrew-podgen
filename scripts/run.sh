@@ -73,8 +73,10 @@ fi
 
 # ── Run publish (only if generate succeeded) ──
 if [ "$PUBLISH" = true ]; then
+  echo "$(date '+%Y/%m/%d %H:%M:%S') podgen publish $PODCAST_NAME begin" >&2
   bundle exec ruby bin/podgen publish "$PODCAST_NAME"
   PUB_EXIT=$?
+  echo "$(date '+%Y/%m/%d %H:%M:%S') podgen publish $PODCAST_NAME end exit=$PUB_EXIT" >&2
   if [ $PUB_EXIT -ne 0 ]; then
     echo "Publish failed with exit code $PUB_EXIT" >&2
     if [ "$TELEGRAM" = true ]; then

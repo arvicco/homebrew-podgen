@@ -441,7 +441,7 @@ Available sources:
 | Source      | Key          | API needed                  | Cost/run     | Description                  |
 | ----------- | ------------ | --------------------------- | ------------ | ---------------------------- |
 | Exa.ai      | `exa`        | EXA_API_KEY                 | ~$0.03       | AI search (default category) |
-| Hacker News | `hackernews` | None                        | $0           | HN Algolia top stories       |
+| Hacker News | `hackernews` | None                        | $0           | HN Algolia by topic keywords |
 | RSS feeds   | `rss`        | None                        | $0           | Any RSS/Atom feed            |
 | Claude Web  | `claude_web` | ANTHROPIC_API_KEY           | ~$0.02/topic | Claude `web_search` (Haiku)  |
 | Bluesky     | `bluesky`    | BLUESKY_HANDLE + APP_PASSWD | $0           | AT Protocol post search      |
@@ -1041,7 +1041,7 @@ TWITTER_ACCESS_SECRET=...
 - `since`: Only tweet episodes from the last N days (default: 7). Prevents tweeting the entire backlog when first enabling
 - `languages`: Comma-separated list of language codes whose episodes get announced. Default when omitted: only the primary language. Use `languages: all` to announce every configured language. Older builds tweeted every language MP3 indiscriminately — set `languages: all` if you want that back.
 
-Tweets fire automatically after a successful `podgen publish` to R2. Each episode is tweeted once — tracked in `uploads.yml` under the `twitter` platform. The site URL in the tweet correctly points at the language-specific page (e.g. `/site/it/episodes/...` for Italian). Tweeting is non-fatal: if it fails, publish still succeeds.
+Tweets fire automatically after a successful `podgen publish` to R2. Each episode is tweeted once — tracked in `uploads.yml` under the `twitter` platform. The site URL in the tweet correctly points at the language-specific page (e.g. `/site/it/episodes/...` for Italian). Tweeting is non-fatal: if it fails, publish still succeeds. Failed posts are retried twice, except HTTP 402 (X pay-per-use credits at zero), which fails after one call with "X API credits depleted — top up in the developer console"; `podgen status` flags repeated publish warnings and stalled announcements.
 
 To manually tweet about a specific (e.g. older) episode:
 
@@ -1113,12 +1113,21 @@ scheduler first). It is read-only and makes no network calls.
 
 ```
 ruby_world  OK    newest 2026-10-10 (1d old)
-fulgur_news WARN  repeated in last 3 runs: Warning: Twitter credits depleted (#)
+fulgur_news WARN  announcements stalled since 2026-08-19 (newest episode 2026-10-11)
 old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, threshold 2d)
 ```
 
 - **OLD** - newest episode older than the cadence threshold (same rule as the
   `podgen validate` freshness check; `- freshness: off` in `## Podcast` reports OK).
+  The cadence is the median gap between recent episode dates, or
+  `- cadence_days: N` in `## Podcast` when set (a positive integer; anything
+  else is ignored); the threshold is twice the cadence, at least 2 days:
+  `newest episode 2026-10-01 is 10 days old (cadence 2d configured, threshold 4d)`.
+  With no cadence (episodes on a single date and no `cadence_days`) there is no
+  threshold: the show stays OK, and once its newest episode is more than 30
+  days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
+  Set `cadence_days` to make such a show go OLD, or `freshness: off` if it has
+  concluded.
 - **WARN** - the latest run log in `logs/<podcast>/` ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
   the last 3 run logs (`--runs N` to change), or there is no history yet.
@@ -1126,6 +1135,41 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   own output) are not pipeline warnings and are ignored. A newest episode
   dated up to `freshness_lead_days` ahead (`## Podcast` key, default 3) is OK
   and shown as `(scheduled +Nd)`; further ahead is WARN.
+- **WARN (publish)** - the same `Warning:` line in each of the last 3 or more
+  scheduled publishes, read from `logs/launchd_stderr.log` (the shared stderr
+  of the per-podcast launchd jobs). `scripts/run.sh` brackets each publish
+  with dated markers (`2026/10/12 16:52:00 podgen publish <pod> begin` …
+  `podgen publish <pod> end exit=N`): every `Warning:` line between them
+  belongs to that podcast's publish, and the streak counts only that
+  podcast's publishes. Lines written before the markers existed are read by
+  the legacy rule: a dated rclone line (`2026/09/20 16:52:04 NOTICE: ...`)
+  starts a publish; undated `Warning:` lines after it belong to that publish;
+  generate output (`[2026-10-08 19:19:21] ERROR ...`, `Generate failed ...`)
+  is skipped since the run logs above already cover it. Legacy publishes name
+  no podcast, so their Twitter warnings are attributed to every podcast with
+  a `## Twitter` section and other warnings to every podcast with an
+  installed launchd scheduler; the streak runs across legacy and marked
+  publishes. Legacy limitation: an undated generate-time warning that follows
+  a publish is counted with that publish, and when several podcasts publish
+  only the last one's warnings are visible. A legacy publish counts as latest
+  only while no marked publish follows it. A publish whose end marker never
+  came closes at the next generate output or dated line of a later day.
+  Marker limitation: overlapping launchd jobs (two publishes interleaved in
+  the shared stderr) can misattribute warnings between begin/end markers. A marked publish that runs past midnight is split at the
+  first next-day rclone line; the later warnings land in an unnamed entry.
+  Shown as
+  `publish warning in last 44 publishes (since 2026-08-20): Warning: Twitter posting failed: ...`.
+  Without markers, if rclone ever stops printing a dated line, publishes can
+  no longer be told apart and this check goes quiet - the announcement check
+  below does not depend on the stderr.
+- **WARN (announcements)** - for podcasts with a `## Twitter` section only:
+  the newest episode (on disk, in the Twitter `languages`) is more than
+  `since` days (default 7) newer than the newest tweeted episode in
+  `output/<podcast>/uploads.yml` (`twitter: posts:`):
+  `announcements stalled since 2026-08-19 (newest episode 2026-10-11)`.
+  With no tweet recorded at all, it warns
+  (`announcements never posted (...)`) only once some announced episode is
+  older than `since` days, so a brand-new show is not flagged.
 - **OK** - otherwise.
 
 Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
@@ -1133,12 +1177,15 @@ podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
 array; keys are only ever added, never renamed or removed:
 
 ```json
-[{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"]}]
+[{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"],
+  "announcements": {"last_tweeted": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}]
 ```
 
 `verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
 when unknown (`age_days` is negative for a scheduled, future-dated episode);
-`reasons` is an array of short strings.
+`reasons` is an array of short strings. `announcements` is `null` without a
+`## Twitter` section; otherwise `last_tweeted` and `newest_episode` are ISO
+dates (`null` when none) and `stalled` is the announcement check's verdict.
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes
@@ -1171,6 +1218,7 @@ Failure rules:
 - **R2 sync fail** for a pod is fatal — that pod is skipped from LingQ + YouTube for the tick.
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
+- **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
 
 Run ad-hoc (no schedule) with the same semantics:
 
@@ -1437,7 +1485,21 @@ bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check s
 
 Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
 `analytics`, and `generate --youtube/--lingq`) refuse to run inside a Claude
-Code session (`CLAUDECODE=1`) with exit 2; `--dry-run` forms still work. To run
+Code session (`CLAUDECODE=1`) with exit 2. Only `generate`, `publish`,
+`unpublish` and `tweet` honour dry-run, so only their dry runs pass: the
+global `podgen --dry-run <command>`, or `--dry-run` right after the podcast
+name (`unpublish` takes the global flag only). `uploads`, `schedule` and
+`analytics` ignore dry-run and are refused even with it. With `POSIXLY_CORRECT`
+set the option parser stops at the first positional, so only the global flag
+counts for `publish`/`tweet` under that variable. A `--dry-run` that
+follows a bare option (`publish <pod> --date --dry-run`) may be swallowed as
+that option's value, so it is refused. For `generate` the guard parses the
+arguments with generate's own option list, so it refuses exactly what would
+enable an upload: `--youtube`/`--lingq`, any prefix OptionParser expands
+(`--you`, `--lin`), the single-dash completions `-y`/`-l`, and flags behind a
+`--` that a value-taking option swallowed (`--title -- --you`). Arguments
+generate's parser would reject are refused if any token looks like an upload
+flag. To run
 one deliberately from the Claude Code prompt: `! PODGEN_OWNER=1 bin/podgen publish <pod>`.
 
 The gate is also what CI runs. Adding a hard-coded URL to a new
