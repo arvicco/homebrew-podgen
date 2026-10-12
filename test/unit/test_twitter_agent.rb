@@ -73,6 +73,33 @@ class TestTwitterAgent < Minitest::Test
     mock_client.verify
   end
 
+  # --- 402 Payment Required (P3-2): deterministic, never retried ---
+
+  def test_post_episode_payment_required_makes_one_call_and_names_the_fix
+    agent = build_agent
+    client = RaisingClient.new { X::HTTPError.new(response: FakeResponse.new("402", "Payment Required", PAYMENT_BODY)) }
+    agent.instance_variable_set(:@client, client)
+    def agent.sleep(_) = raise("402 must not be retried")
+
+    err = assert_raises(TwitterAgent::CreditsDepleted) { agent.post_episode(title: "Ep", site_url: "https://x.com") }
+
+    assert_equal 1, client.calls
+    assert_includes err.message, "X API credits depleted"
+    assert_includes err.message, "top up in the developer console"
+  end
+
+  def test_post_episode_other_http_errors_still_retried
+    agent = build_agent
+    client = RaisingClient.new { X::ServiceUnavailable.new(response: FakeResponse.new("503", "Service Unavailable", "{}")) }
+    agent.instance_variable_set(:@client, client)
+    def agent.sleep(_) = nil
+
+    err = assert_raises(RuntimeError) { agent.post_episode(title: "Ep", site_url: "https://x.com") }
+
+    assert_equal TwitterAgent::MAX_RETRIES + 1, client.calls
+    assert_match(/Twitter post failed after 3 attempts/, err.message)
+  end
+
   # --- truncate (characterization: t.co counts any URL as 23 chars) ---
 
   def test_truncate_under_limit_unchanged
@@ -118,6 +145,27 @@ class TestTwitterAgent < Minitest::Test
   end
 
   private
+
+  PAYMENT_BODY = '{"title":"Payment Required","detail":"credits depleted","type":"about:blank","status":402}'
+
+  # Minimal Net::HTTPResponse stand-in for X::HTTPError.new(response:).
+  FakeResponse = Struct.new(:code, :message, :body) do
+    def [](header) = (header == "content-type") ? "application/problem+json" : nil
+  end
+
+  class RaisingClient
+    attr_reader :calls
+
+    def initialize(&error)
+      @error = error
+      @calls = 0
+    end
+
+    def post(*, **)
+      @calls += 1
+      raise @error.call
+    end
+  end
 
   def build_agent
     keys = %w[TWITTER_CONSUMER_KEY TWITTER_CONSUMER_SECRET TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET]

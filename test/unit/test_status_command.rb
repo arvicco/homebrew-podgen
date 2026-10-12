@@ -8,7 +8,7 @@ require "cli/status_command"
 
 class TestStatusCommand < Minitest::Test
   TODAY = Date.new(2026, 10, 11)
-  JSON_KEYS = %w[podcast verdict newest age_days reasons].sort.freeze
+  JSON_KEYS = %w[podcast verdict newest age_days reasons announcements].sort.freeze
 
   def setup
     @tmpdir = Dir.mktmpdir("podgen_status")
@@ -118,6 +118,154 @@ class TestStatusCommand < Minitest::Test
     out, code = run_status
     assert_equal 1, code
     assert_match(/alpha\s+WARN\s+.*repeated in last 3 runs: \[TweetAgent\] Warning: credits depleted/, out)
+  end
+
+  # --- publish stderr (launchd_stderr.log, P3-2) ---
+
+  def test_run_twitter_warning_in_three_publishes_reports_warn_with_count_and_since
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-08 2026-10-09 2026-10-10], CREDITS))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*publish warning in last 3 publishes \(since 2026-10-08\): .*credits depleted/, out)
+  end
+
+  def test_run_twitter_warning_in_two_publishes_is_ok
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-09 2026-10-10], CREDITS))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_clean_latest_publish_breaks_the_streak
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-07 2026-10-08 2026-10-09], CREDITS) + publishes(%w[2026-10-10], nil))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_generate_errors_between_publishes_do_not_break_the_streak
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-07 2026-10-08], CREDITS) +
+      ["[2026-10-09 19:19:21] ERROR RuntimeError: ScriptAgent failed after 4 attempts: Connection error.",
+        "/x/lib/retryable.rb:35:in 'Retryable#with_retries'", "Generate failed with exit code 1"] +
+      publishes(%w[2026-10-10], CREDITS))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*last 3 publishes \(since 2026-10-07\)/, out)
+  end
+
+  def test_run_contiguous_rclone_lines_form_one_publish
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(%w[2026-10-08 2026-10-09 2026-10-10].flat_map { |d|
+      [rclone_line(d), "#{d.tr("-", "/")} 16:52:09 NOTICE: second rclone line", CREDITS]
+    })
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*last 3 publishes/, out)
+  end
+
+  def test_run_clean_publishes_on_adjacent_lines_stay_separate
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    write_publish_log(publishes(%w[2026-10-04 2026-10-05 2026-10-06], nil) +
+      publishes(%w[2026-10-07 2026-10-08 2026-10-09], CREDITS))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*last 3 publishes \(since 2026-10-07\)/, out)
+  end
+
+  def test_run_twitter_warning_not_attributed_to_podcast_without_twitter_section
+    make_pod("beta", dates: fresh_dates)
+    File.write(File.join(@plist_dir, "com.podcastagent.beta.plist"), "<plist/>")
+    write_publish_log(publishes(%w[2026-10-08 2026-10-09 2026-10-10], CREDITS))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_other_publish_warning_attributed_to_scheduled_podcast_only
+    make_pod("alpha", dates: fresh_dates)
+    make_pod("beta", dates: fresh_dates)
+    File.write(File.join(@plist_dir, "com.podcastagent.beta.plist"), "<plist/>")
+    write_publish_log(publishes(%w[2026-10-08 2026-10-09 2026-10-10], "Warning: site/feed regen failed: IOError: x"))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/beta\s+WARN\s+.*regen failed/, out)
+    assert_match(/alpha\s+OK/, out)
+  end
+
+  def test_run_publish_log_path_is_injectable
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    path = File.join(@tmpdir, "elsewhere.log")
+    File.write(path, publishes(%w[2026-10-08 2026-10-09 2026-10-10], CREDITS).join("\n"))
+    code = nil
+    out, = capture_io { code = PodgenCLI::StatusCommand.new([], {}, plist_dir: @plist_dir, today: TODAY, publish_log: path).run }
+    assert_equal 1, code
+    assert_match(/credits depleted/, out)
+  end
+
+  # --- announcement progress (Twitter, P3-2) ---
+
+  def test_run_announcements_stalled_reports_warn_with_last_tweet_date
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    make_episodes("alpha", %w[alpha-2026-08-19 alpha-2026-10-09 alpha-2026-10-10])
+    write_tracker("alpha", %w[alpha-2026-08-19])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*announcements stalled since 2026-08-19/, out)
+    row = JSON.parse(run_status("--json").first).first
+    assert_equal({"last_tweeted" => "2026-08-19", "newest_episode" => "2026-10-10", "stalled" => true}, row["announcements"])
+  end
+
+  def test_run_recent_tweet_within_since_is_ok
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    write_tracker("alpha", %w[alpha-2026-10-05])
+    out, code = run_status
+    assert_equal 0, code, out
+    row = JSON.parse(run_status("--json").first).first
+    assert_equal false, row["announcements"]["stalled"]
+  end
+
+  def test_run_announcements_ignore_languages_not_announced
+    make_pod("alpha", dates: fresh_dates, extra: "- language:\n  - en\n  - es\n", sections: TWITTER)
+    make_episodes("alpha", %w[alpha-2026-10-01 alpha-2026-10-10-es])
+    write_tracker("alpha", %w[alpha-2026-10-01])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_equal "2026-10-01", JSON.parse(run_status("--json").first).first["announcements"]["newest_episode"]
+  end
+
+  def test_run_never_tweeted_brand_new_show_is_ok
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    make_episodes("alpha", %w[alpha-2026-10-09 alpha-2026-10-10])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_nil JSON.parse(run_status("--json").first).first["announcements"]["last_tweeted"]
+  end
+
+  def test_run_never_tweeted_with_episode_older_than_since_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    make_episodes("alpha", %w[alpha-2026-10-01 alpha-2026-10-10])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*announcements never posted/, out)
+  end
+
+  def test_run_without_twitter_section_skips_announcement_check
+    make_pod("alpha", dates: fresh_dates)
+    make_episodes("alpha", %w[alpha-2026-08-19 alpha-2026-10-10])
+    write_tracker("alpha", %w[alpha-2026-08-19])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_nil JSON.parse(run_status("--json").first).first["announcements"]
+  end
+
+  def test_run_never_creates_tracker_file
+    make_pod("alpha", dates: fresh_dates, sections: TWITTER)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    File.write(File.join(@tmpdir, "output", "alpha", "lingq_uploads.yml"), {"c1" => {"alpha-2026-10-10" => 1}}.to_yaml)
+    run_status
+    refute File.exist?(File.join(@tmpdir, "output", "alpha", "uploads.yml"))
   end
 
   # --- pre-generated episodes (freshness_lead_days) ---
@@ -253,17 +401,49 @@ class TestStatusCommand < Minitest::Test
     [out, code]
   end
 
-  def make_pod(name, dates:, freshness_off: false, extra: "")
+  def make_pod(name, dates:, freshness_off: false, extra: "", sections: "")
     dir = File.join(@tmpdir, "podcasts", name)
     FileUtils.mkdir_p(dir)
     File.write(File.join(dir, "guidelines.md"),
-      "## Podcast\n- name: #{name}\n#{"- freshness: off\n" if freshness_off}#{extra}\n## Topics\n- x\n")
+      "## Podcast\n- name: #{name}\n#{"- freshness: off\n" if freshness_off}#{extra}\n## Topics\n- x\n#{sections}")
     return unless dates
 
     out = File.join(@tmpdir, "output", name)
     FileUtils.mkdir_p(out)
     File.write(File.join(out, "history.yml"),
       dates.map { |d| {"date" => d, "title" => "t", "topics" => []} }.to_yaml)
+  end
+
+  TWITTER = "\n## Twitter\n- since: 5\n- languages: en\n"
+  CREDITS = "Warning: Twitter posting failed: RuntimeError: Twitter post failed after 3 attempts: " \
+    "Payment Required: credits depleted (non-fatal)"
+
+  def rclone_line(date) = "#{date.tr("-", "/")} 16:52:04 NOTICE: Config file \"/x/rclone.conf\" not found - using defaults"
+
+  # Shared launchd stderr (scripts/run.sh output): one rclone line per publish.
+  def write_publish_log(lines)
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "launchd_stderr.log"), lines.join("\n") + "\n")
+  end
+
+  def publishes(dates, warning)
+    dates.flat_map { |d| [rclone_line(d), *warning] }
+  end
+
+  def make_episodes(pod, basenames)
+    dir = File.join(@tmpdir, "output", pod, "episodes")
+    FileUtils.mkdir_p(dir)
+    basenames.each do |b|
+      File.write(File.join(dir, "#{b}.mp3"), "")
+      File.write(File.join(dir, "#{b}_script.md"), "# t\n")
+    end
+  end
+
+  def write_tracker(pod, basenames)
+    dir = File.join(@tmpdir, "output", pod)
+    FileUtils.mkdir_p(dir)
+    posts = basenames.to_h { |b| [b, "id-#{b}"] }
+    File.write(File.join(dir, "uploads.yml"), {"twitter" => {"posts" => posts}}.to_yaml)
   end
 
   def write_log(pod, file, lines, mtime:)
