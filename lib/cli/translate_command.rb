@@ -156,7 +156,7 @@ module PodgenCLI
     # the podcast's configured codes (EpisodeNaming rule; P5-2a, Q-52).
     def discover_episodes(episodes_dir, languages: nil)
       Dir.glob(File.join(episodes_dir, "*_script.md"))
-        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, "_script.md"), languages: languages) }
+        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, "_script.md"), languages: languages, episodes_dir: episodes_dir) }
         .select { |f| File.exist?(f.sub(/_script\.md$/, ".mp3")) }
         .sort
         .map do |path|

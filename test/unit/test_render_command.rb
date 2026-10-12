@@ -146,6 +146,25 @@ class TestRenderCommand < Minitest::Test
     assert_equal %w[/x/pod-2026-04-26-ai_script.md], result
   end
 
+  # De-configured language (CRPR round 1): with the episodes dir given, a
+  # tail whose stripped base has a primary sibling on disk is a variant.
+  def test_filters_deconfigured_tail_with_primary_sibling_is_a_variant
+    %w[pod-2026-01-15.mp3 pod-2026-01-15_script.md pod-2026-01-15-it_script.md pod-2026-01-15-it.mp3 pod-2026-01-16-ai_script.md]
+      .each { |f| File.write(File.join(@episodes_dir, f), "") }
+    paths = Dir.glob(File.join(@episodes_dir, "*_script.md")).sort
+    cmd = build_command
+    langs = %w[en es]
+
+    by_lang = cmd.send(:filter_by_lang, paths, "en", languages: langs, episodes_dir: @episodes_dir)
+    by_date = cmd.send(:filter_by_date, paths, Date.parse("2026-01-15"), "", languages: langs, episodes_dir: @episodes_dir)
+    by_last = cmd.send(:filter_by_last_n, paths, 2, languages: langs, episodes_dir: @episodes_dir)
+
+    names = ->(ps) { ps.map { |p| File.basename(p, "_script.md") } }
+    assert_equal %w[pod-2026-01-15 pod-2026-01-16-ai], names.call(by_lang)
+    assert_equal %w[pod-2026-01-15-it pod-2026-01-15], names.call(by_date)
+    assert_equal %w[pod-2026-01-15-it pod-2026-01-15 pod-2026-01-16-ai], names.call(by_last)
+  end
+
   def test_render_rebuilds_md_from_json_with_inline_links
     json_path = File.join(@episodes_dir, "pod-2026-04-26_script.json")
     script = {
