@@ -130,6 +130,7 @@ module PodgenCLI
       per_pod = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
       rate_limited = false
       drained = {}
+      last_failure = {} # pod => [label, message] of the previous round's failure (P3-3)
       # Runaway guard: every round that continues uploaded >= 1 item, so more
       # rounds than the initial pending total can only mean a drifting count.
       rounds_left = pods.sum { |pod| pending_count_for(pod) }
@@ -166,13 +167,33 @@ module PodgenCLI
               if permanent_skip_only
                 @log.call "uploads: #{pod} permanently skipped for this tick (missing_cover; items remain pending)"
               end
+              next
             end
+
+            # P3-3: the same error two rounds running (keyed on the error
+            # class when present, else the error type) will not clear this
+            # tick — stop retrying the pod and say so once.
+            failure = failure_signature(result)
+            if failure && last_failure[pod] && last_failure[pod][0] == failure[0]
+              drained[pod] = true
+              @log.call "uploads: #{pod} permanently skipped — #{failure[0]}: #{failure[1]} (same error 2 rounds running)"
+            end
+            last_failure[pod] = failure
           end
           break if uploaded_this_round == 0
         end
       end
 
       Tick.new(per_pod: per_pod, rate_limited: rate_limited)
+    end
+
+    # [error class or type label, message] of a round that uploaded nothing,
+    # else nil.
+    def failure_signature(result)
+      return nil unless result.uploaded == 0 && result.errors.any?
+
+      error = result.errors.first
+      [(error[:error_class] || error[:type]).to_s, error[:message]]
     end
 
     def parse_pods(arg)
@@ -209,7 +230,7 @@ module PodgenCLI
     rescue => e
       $stderr.puts "uploads: YT publisher crash for #{pod} (#{e.message})"
       YouTubePublisher::Result.new(uploaded: 0, attempted: 0, rate_limited: false,
-                                   errors: [{ type: :publisher_crash, message: e.message }])
+                                   errors: [{ type: :publisher_crash, error_class: e.class.name, message: e.message }])
     end
 
     def pending_count_for(pod)

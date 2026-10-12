@@ -24,7 +24,7 @@ module SourceFixtureParsing
   end
 
   def parse_hn(body, topic: "Bitcoin", exclude: Set.new)
-    src = HNSource.new
+    src = HNSource.new(hn_queries: {topic => topic})
     src.define_singleton_method(:request_with_retry) { |**_| body }
     src.send(:search_topic, topic, exclude)
   end

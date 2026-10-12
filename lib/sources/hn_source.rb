@@ -7,14 +7,31 @@ class HNSource < BaseSource
   RESULTS_PER_TOPIC = 3
   LOOKBACK_HOURS = 48
   API_BASE = "https://hn.algolia.com/api/v1/search_by_date"
+  SHORT_TOPIC_WORDS = 4
+
+  # hn_queries: topic string => short keyword query (P3-1). Algolia ANDs
+  # every term, so a full research topic never matches; topics without a
+  # keyword query are skipped rather than sent, unless the topic itself is
+  # short enough to serve as the query (queue.yml fallback topics).
+  def initialize(hn_queries: {}, **options)
+    super(**options)
+    @hn_queries = hn_queries || {}
+  end
 
   private
 
   def search_topic(topic, exclude_urls)
+    keywords = @hn_queries[topic].to_s.strip
+    keywords = topic.to_s.strip if keywords.empty? && topic.to_s.split.size <= SHORT_TOPIC_WORDS
+    if keywords.empty?
+      log("no hn_query for '#{topic}' — skipped")
+      return []
+    end
+
     cutoff_timestamp = (Time.now - (LOOKBACK_HOURS * 3600)).to_i
 
     response = request_with_retry(
-      query: topic,
+      query: keywords,
       tags: "story",
       numericFilters: "created_at_i>#{cutoff_timestamp}",
       hitsPerPage: RESULTS_PER_TOPIC

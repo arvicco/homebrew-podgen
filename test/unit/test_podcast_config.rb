@@ -1027,6 +1027,23 @@ class TestPodcastConfig < Minitest::Test
     assert_equal 3, PodcastConfig.new("myshow").freshness_lead_days
   end
 
+  def test_cadence_days_defaults_to_nil
+    write_guidelines("## Podcast\n- name: X\n")
+    assert_nil PodcastConfig.new("myshow").cadence_days
+  end
+
+  def test_cadence_days_reads_podcast_section
+    write_guidelines("## Podcast\n- name: X\n- cadence_days: 7\n")
+    assert_equal 7, PodcastConfig.new("myshow").cadence_days
+  end
+
+  def test_cadence_days_invalid_value_is_ignored
+    %w[weekly 0 -3 2.5].each do |value|
+      write_guidelines("## Podcast\n- name: X\n- cadence_days: #{value}\n")
+      assert_nil PodcastConfig.new("myshow").cadence_days, value
+    end
+  end
+
   def test_site_config_defaults_when_section_missing
     write_guidelines(<<~MD)
       ## Format
