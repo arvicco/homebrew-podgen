@@ -99,6 +99,7 @@ module PodgenCLI
     return false unless DRY_RUN_HONOURED.include?(command_name)
     return true if options[:dry_run]
     return !!generate_dry_parse(argv)&.dig(:dry_run) if command_name == "generate"
+    return false if command_name == "unpublish" # no local --dry-run: global flag only
 
     dry_run_token?(argv)
   end
@@ -108,6 +109,10 @@ module PodgenCLI
   # sync): it is the first token, or follows a non-option or an
   # `--opt=value` token (P3-7).
   def self.dry_run_token?(argv)
+    # Under POSIXLY_CORRECT OptionParser stops at the first positional, so a
+    # later --dry-run would be an argument, not a flag (CRPR Gate 3 round 3).
+    return false if ENV.key?("POSIXLY_CORRECT")
+
     tokens = argv.take_while { it != "--" }
     tokens.each_with_index.any? do |token, i|
       next false unless token == "--dry-run"

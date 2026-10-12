@@ -252,6 +252,28 @@ class TestOwnerGuard < Minitest::Test
     assert_equal "", err
   end
 
+  # CRPR round 3: with POSIXLY_CORRECT set, OptionParser#parse! behaves like
+  # order! and stops at the first positional, so `publish pod --dry-run`
+  # would never be read as a flag (it becomes the episode id) and a real
+  # publish would run. The token rule must not exempt under that env.
+  def test_dry_run_token_rule_is_off_under_posixly_correct
+    previous = ENV["POSIXLY_CORRECT"]
+    ENV["POSIXLY_CORRECT"] = "1"
+
+    assert PodgenCLI.refuse_owner_action?("publish", %w[pod --dry-run], {}),
+      "publish pod --dry-run must be refused under POSIXLY_CORRECT"
+    refute PodgenCLI.refuse_owner_action?("publish", %w[pod --dry-run], {dry_run: true}),
+      "the global --dry-run flag still exempts"
+  ensure
+    previous ? ENV["POSIXLY_CORRECT"] = previous : ENV.delete("POSIXLY_CORRECT")
+  end
+
+  # unpublish defines no local --dry-run: only the global flag counts.
+  def test_unpublish_dry_run_exempt_only_via_global_flag
+    assert PodgenCLI.refuse_owner_action?("unpublish", %w[pod --dry-run], {})
+    refute PodgenCLI.refuse_owner_action?("unpublish", %w[pod], {dry_run: true})
+  end
+
   private
 
   def label(globals, cmd, argv)
