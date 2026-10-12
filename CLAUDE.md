@@ -183,9 +183,7 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 
 Gate 0 CLOSED 2026-09-02 (owner merged PR #1, merge 4298988). Gate 1
 CLOSED 2026-10-11 12:57 (owner merged PR #2 at 94f0123, merge 6d869e4).
-Six commits pushed to phase-1 AFTER that merge (P1-10 live-smoke fixes,
-v2 docs sync, P1-0 outcome, P1-17 title fix) were carried onto phase-2
-as the Gate 1 tail — they reach master at Gate 2. Phase 2 AT GATE 2
-(2026-10-11 23:50): all packets landed on phase-2, CRPR APPROVED after
-seven rounds (refs/cr/reviewed = 3a2e19f), PR #3 open — the owner
-merges; runbook in .docs/p02-plan.md. Update this line at each gate.
+Gate 2 CLOSED 2026-10-12 08:50 (owner merged PR #3, merge 494c000; the
+Gate 1 tail reached master here). Phase 3 not yet named: the slate was
+presented 2026-10-12 and awaits the owner's pick; this line rides
+phase-3 as a carried edit. Update this line at each gate.
