@@ -424,12 +424,14 @@ module PodgenCLI
       0
     end
 
-    # Same filename → duration map HistoryMaps builds (P4-9, Q-44): explicit
-    # history basenames win, and per-language variants are keyed too.
+    # Primary-episode filename → duration via HistoryMaps (P4-9, Q-44):
+    # explicit history basenames win. No language variants: a translated
+    # mp3 is not the English episode's length, so those fall back to
+    # ffprobe (P4-9, CRPR round 1).
     def build_duration_map(config)
       podcast_name = File.basename(File.dirname(config.episodes_dir))
       HistoryMaps.build(history_path: config.history_path, podcast_name: podcast_name,
-        episodes_dir: config.episodes_dir, languages: config.language_codes)[2]
+        episodes_dir: config.episodes_dir)[2]
     end
 
     # Renders pre-formatted text columns side by side.

@@ -269,16 +269,18 @@ class TestCharacterizationFilenameScheme < Minitest::Test
     assert_equal "pod-2026-01-15b", removed["basename"]
   end
 
-  # Stats maps the per-language filenames HistoryMaps maps (was: primary
-  # only; language mp3s fell through to ffprobe/size estimate).
-  def test_build_language_variants_history_maps_and_stats_agree
+  # HistoryMaps maps per-language filenames (to the English duration);
+  # Stats maps primary only, so language mp3s fall through to ffprobe/size
+  # estimate (P4-9, CRPR round 1: a translation's length is not the
+  # English episode's).
+  def test_build_language_variants_diverge_history_maps_maps_them_stats_does_not
     write_history([{"date" => "2026-01-15", "title" => "T", "duration" => 10.0}])
 
     _, _, hm = HistoryMaps.build(history_path: @history_path, podcast_name: "pod",
       episodes_dir: @episodes_dir, languages: CONFIGURED)
 
     assert_equal({"pod-2026-01-15.mp3" => 10.0, "pod-2026-01-15-es.mp3" => 10.0}, hm)
-    assert_equal hm, stats_duration_map(CONFIGURED)
+    assert_equal({"pod-2026-01-15.mp3" => 10.0}, stats_duration_map(CONFIGURED))
   end
 
   # Divergent by design (P4-9, CRPR round 1): EpisodeArtifacts (what scrap
