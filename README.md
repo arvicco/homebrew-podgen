@@ -840,7 +840,7 @@ Per-feed image overrides go inline with RSS URLs:
 
 Cover generation requires `imagemagick` + `librsvg` (`brew install imagemagick librsvg`) and fonts via `fontconfig`. Falls back to static cover or YouTube thumbnail on failure. Non-fatal.
 
-**Backward compatibility:** Image keys in `## LingQ` (`image`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset`) continue to work as fallbacks. The `## Image` section takes priority when present. A `## LingQ` `image:` may be an `https://` URL: it is downloaded once into `output/<podcast>/cache/` when lessons are uploaded (a failed download warns and the lesson uploads without an image).
+**Backward compatibility:** Image keys in `## LingQ` (`image`, `base_image`, `font`, `font_color`, `font_size`, `text_width`, `text_gravity`, `text_x_offset`, `text_y_offset`) continue to work as fallbacks. The `## Image` section takes priority when present. A `## LingQ` `image:` may be an `https://` URL: `podgen publish --lingq` (and the `uploads` batch) downloads it once into `output/<podcast>/cache/` before uploading (a failed download warns and the lesson uploads without an image); `generate --lingq` takes its image from the episode cover chain instead.
 
 #### Cover command
 
@@ -960,11 +960,11 @@ When enabled, the script agent asks Claude to list every source it referenced wh
 
 ### Script review
 
-Every news script is reviewed before it is voiced. Deterministic checks run first: weekday/date consistency, stage directions (`[pause]`, `(laughs)`), forbidden filler phrases, leftover Markdown, spelled-out magnitudes ("two million"), a missing title, and whether every queued priority link was used. Then Claude reviews the script against the research under five headings — FACTUAL ACCURACY, HALLUCINATION DETECTION, COVERAGE, NUMBER FORMAT, NATURAL FLOW — and reports each finding as a BLOCKER or a WARNING.
+Every news script is reviewed before it is voiced. Deterministic checks run first. Three of them apply a mechanical fix and log it as auto-fixed: a weekday that does not match its date is corrected, stage directions (`[pause]`, `(laughs)`) are removed, and leftover Markdown is stripped. The others only report: forbidden filler phrases, spelled-out magnitudes ("two million"), a missing title, a title over the target length, and queued priority links that went unused. Then Claude reviews the script against the research under six headings — FACTUAL ACCURACY, HALLUCINATION DETECTION, COVERAGE, TONE, NUMBER FORMAT, NATURAL FLOW — and reports each finding as a BLOCKER, a WARNING or a NIT.
 
-- A BLOCKER sends the script back to the writer with the findings; up to two rewrites, after which the run continues with a warning in the log.
-- A WARNING is logged (the indented `WARNING: [...]` lines in the run log) and the script is kept as written. The reviewer never edits the script itself.
-- Titles are never truncated: the writer is asked for about 40 characters, and a longer title is warned about and kept whole.
+- An unfixed BLOCKER sends the script back to the writer with the findings; up to two rewrites, after which the run continues with a warning in the log.
+- A WARNING or NIT is logged (the indented `WARNING: [...]` lines in the run log) and the script is kept as written.
+- Beyond the three mechanical fixes above, the reviewer never rewrites content. Titles in particular are never truncated: the writer is asked for about 40 characters, and a longer title is warned about and kept whole.
 
 The raw script responses are kept under `output/<podcast>/debug/` for inspection.
 
@@ -1449,7 +1449,7 @@ podgen/
 │   │   ├── topic_agent.rb         # Claude topic generation (+ Hacker News keyword queries)
 │   │   ├── research_agent.rb      # Exa.ai search
 │   │   ├── script_agent.rb        # Claude script generation (structured output)
-│   │   ├── script_reviewer.rb     # Deterministic checks + AI review; warns, never edits
+│   │   ├── script_reviewer.rb     # Deterministic checks (three mechanical auto-fixes) + AI review; never rewrites content
 │   │   ├── translation_agent.rb   # Script translation (Claude or OpenAI backend, glossary)
 │   │   ├── tts_agent.rb           # ElevenLabs TTS (pronunciation dictionaries, chunking)
 │   │   ├── description_agent.rb   # Title/description cleanup and generation
@@ -1574,7 +1574,7 @@ podgen/
 │   ├── serve.rb              # WEBrick static file server
 │   ├── tell_web.rb           # Tell Web UI launcher
 │   ├── install_hunspell_dicts.rb # Hunspell dictionaries for vocabulary frequency
-│   └── test_*.rb             # Component tests dispatched by `podgen test`
+│   └── test_*.rb             # Manual component tests (most dispatched by `podgen test`)
 ├── test/
 │   ├── unit/                 # Fast tier, no I/O (in the gate)
 │   ├── integration/          # Offline subset in the gate
@@ -1648,7 +1648,7 @@ podgen test script         # Claude script generation
 podgen test tts            # ElevenLabs TTS
 podgen test assembly       # ffmpeg assembly
 podgen test translation    # Claude script translation
-podgen test transcription  # Transcription engines (podgen test transcription <podcast|file> <open|elab|groq|all>)
+podgen test transcription  # Transcription engines (podgen test transcription <podcast|file> [open|elab|groq|all])
 podgen test sources        # Every configured source for a podcast
 ```
 

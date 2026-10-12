@@ -96,13 +96,13 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 
 **Implication.** A new generate option that uploads is added to `OWNER_FLAGS` and to the probe table in `test/unit/test_owner_guard.rb` in the same commit. The same rule applies to any future guard over argv or shell text: probe table first, then the real parser; token rules only as the fallback.
 
-## The script reviewer warns, it never edits
+## The script reviewer reports; it does not rewrite content
 
-`ScriptReviewer` (`lib/agents/script_reviewer.rb`) reports BLOCKERs and WARNINGs; the only way a script changes is a rewrite by `ScriptAgent` with the findings attached (at most two retries). Titles are never truncated: the prompt states the ~40-character target, and a longer title is a WARNING.
+`ScriptReviewer` (`lib/agents/script_reviewer.rb`) reports BLOCKERs, WARNINGs and NITs. Exactly three deterministic checks change the script, each a mechanical fix logged as auto-fixed: a weekday corrected to match its date, stage directions removed, Markdown stripped. Every other change to a script is a rewrite by `ScriptAgent` with the findings attached (at most two retries). Titles are never truncated: the prompt states the ~40-character target, and a longer title is a WARNING.
 
 **Why.** The reviewer once auto-fixed titles over 40 characters by cutting them with an ellipsis. Thirteen episodes shipped with half titles in every feed, on the site and in the ID3 tags before anyone noticed, because the cut happened after the writer had done its job and nothing downstream could object. An editor that silently rewrites output is a second writer with no accountability.
 
-**Implication.** Checks that find a problem send it back to the producer with the finding; they do not patch the artifact. If a check must change the output, it is a WARNING with the before/after in the log.
+**Implication.** Checks that find a problem send it back to the producer with the finding; they do not patch the artifact. The only exceptions are mechanical, deterministic fixes that cannot lose content (the three above), and each is logged as auto-fixed. A fix that would shorten, rephrase or drop content is never auto-applied.
 
 ## Episode naming lives in one module
 
