@@ -4,37 +4,51 @@ require "optparse"
 require_relative "cli/version"
 
 module PodgenCLI
+  # One source of truth for dispatch and the help screen (P4-6): each entry is
+  # [description, require path, class name, usage synopsis]. `podgen --help`
+  # lists the commands in this order as "<name> <synopsis>  <description>".
   COMMANDS = {
-    "generate"  => ["Run the full podcast pipeline",       "cli/generate_command",    "GenerateCommand"],
-    "translate" => ["Translate episodes to new languages",  "cli/translate_command",   "TranslateCommand"],
-    "render"    => ["Re-render script markdown from JSON",   "cli/render_command",      "RenderCommand"],
-    "voice"     => ["Voice or re-voice an episode from JSON", "cli/voice_command",       "VoiceCommand"],
-    "scrap"     => ["Remove episode and history entry",     "cli/scrap_command",       "ScrapCommand"],
-    "move"      => ["Move an episode (or whole day) to a different date", "cli/move_command", "MoveCommand"],
-    "rss"       => ["Generate RSS feed for a podcast",     "cli/rss_command",         "RssCommand"],
-    "site"      => ["Generate static HTML website",        "cli/site_command",        "SiteCommand"],
-    "publish"   => ["Publish to Cloudflare R2 or LingQ",    "cli/publish_command",    "PublishCommand"],
-    "stats"     => ["Show podcast statistics",             "cli/stats_command",       "StatsCommand"],
-    "validate"  => ["Validate podcast config and output",  "cli/validate_command",    "ValidateCommand"],
-    "status"    => ["One-line OK/OLD/WARN verdict per podcast", "cli/status_command",    "StatusCommand"],
-    "list"      => ["List available podcasts",             "cli/list_command",        "ListCommand"],
-    "test"      => ["Run a standalone test script",        "cli/test_command",        "TestCommand"],
-    "schedule"  => ["Install launchd scheduler",           "cli/schedule_command",    "ScheduleCommand"],
-    "analytics" => ["Manage download analytics Worker",    "cli/analytics_command",   "AnalyticsCommand"],
-    "add"       => ["Add a priority link for next episode", "cli/add_command",         "AddCommand"],
-    "links"     => ["List or manage queued priority links", "cli/links_command",       "LinksCommand"],
-    "vocab"     => ["Manage known vocabulary words",        "cli/vocab_command",       "VocabCommand"],
-    "revocab"   => ["Re-annotate vocabulary on transcripts", "cli/revocab_command",     "RevocabCommand"],
-    "reformat"  => ["Reformat transcripts with paragraph breaks", "cli/reformat_command",    "ReformatCommand"],
-    "exclude"   => ["Exclude URLs from future episodes",    "cli/exclude_command",     "ExcludeCommand"],
-    "cover"     => ["Generate episode cover image",          "cli/cover_command",       "CoverCommand"],
-    "regen"     => ["Regenerate video / subtitles / reconciliation for an existing episode", "cli/regen_command", "RegenCommand"],
-    "init"      => ["Initialize a new podcast",              "cli/init_command",        "InitCommand"],
-    "fork"      => ["Fork podcast into a new namespace",    "cli/fork_command",        "ForkCommand"],
-    "unpublish" => ["Remove podcast from Cloudflare R2",    "cli/unpublish_command",   "UnpublishCommand"],
-    "tweet"     => ["Tweet about an episode",               "cli/tweet_command",       "TweetCommand"],
-    "uploads"   => ["Per-pod regen+R2+LingQ then YT batch across pods", "cli/uploads_command", "UploadsCommand"]
+    "generate"  => ["Run the full pipeline (news or language)",                          "cli/generate_command",  "GenerateCommand",  "<podcast>"],
+    "translate" => ["Translate episodes to new languages",                               "cli/translate_command", "TranslateCommand", "<podcast>"],
+    "render"    => ["Re-render script markdown from canonical JSON",                     "cli/render_command",    "RenderCommand",    "<podcast> [--date|--lang]"],
+    "voice"     => ["Voice or re-voice an episode from script JSON (recover from TTS failure)", "cli/voice_command", "VoiceCommand", "<podcast> [--date|--lang|--force]"],
+    "scrap"     => ["Remove episode files + history entry",                              "cli/scrap_command",     "ScrapCommand",     "<podcast> [episode|path]"],
+    "move"      => ["Move episode to another date (suffix '+' = whole day)",             "cli/move_command",      "MoveCommand",      "<podcast> <from> <to>"],
+    "rss"       => ["Generate RSS feed",                                                 "cli/rss_command",       "RssCommand",       "<podcast>"],
+    "site"      => ["Generate static HTML website",                                      "cli/site_command",      "SiteCommand",      "<podcast>"],
+    "publish"   => ["Publish to Cloudflare R2 (--lingq for LingQ)",                      "cli/publish_command",   "PublishCommand",   "<podcast>"],
+    "stats"     => ["Show podcast statistics",                                           "cli/stats_command",     "StatsCommand",     "<podcast> | --all"],
+    "validate"  => ["Validate podcast config and output",                                "cli/validate_command",  "ValidateCommand",  "<podcast> | --all"],
+    "status"    => ["One-line OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)", "cli/status_command",    "StatusCommand",    "[podcast] [--json]"],
+    "list"      => ["List available podcasts",                                           "cli/list_command",      "ListCommand",      ""],
+    "test"      => ["Run a standalone test script",                                      "cli/test_command",      "TestCommand",      "<name> [args]"],
+    "schedule"  => ["Install launchd scheduler (--time, --publish, --telegram)",         "cli/schedule_command",  "ScheduleCommand",  "<podcast>"],
+    "uploads"   => ["Per-pod regen+R2+LingQ then YT batch across pods (--mode, --max)",  "cli/uploads_command",   "UploadsCommand",   "<pod1,pod2,...>"],
+    "analytics" => ["Manage download analytics Worker",                                  "cli/analytics_command", "AnalyticsCommand", "<setup|deploy|tail|status>"],
+    "add"       => ["Queue a priority link for next episode",                            "cli/add_command",       "AddCommand",       "<podcast> <url> [--note ...]"],
+    "links"     => ["List or manage queued priority links",                              "cli/links_command",     "LinksCommand",     "<podcast> [--remove|--clear]"],
+    "vocab"     => ["Manage known vocabulary words",                                     "cli/vocab_command",     "VocabCommand",     "<add|remove|list> <podcast>"],
+    "revocab"   => ["Re-annotate vocabulary on transcripts",                             "cli/revocab_command",   "RevocabCommand",   "<podcast> [episode] [--missing-only]"],
+    "reformat"  => ["Reformat transcripts (paragraph breaks, cleanup)",                  "cli/reformat_command",  "ReformatCommand",  "<podcast> [episode]"],
+    "exclude"   => ["Exclude URLs from future episodes",                                 "cli/exclude_command",   "ExcludeCommand",   "<podcast> <url> [url...]"],
+    "cover"     => ["Generate episode cover image",                                      "cli/cover_command",     "CoverCommand",     "<podcast> <title|episode-id>"],
+    "regen"     => ["Regenerate post-pipeline artifacts",                                "cli/regen_command",     "RegenCommand",     "<podcast> [date] [--video|--subtitles|--reconcile|--all]"],
+    "init"      => ["Initialize a new podcast (skeleton or from existing)",              "cli/init_command",      "InitCommand",      "<name> | <source> <name>"],
+    "fork"      => ["Fork podcast with all content into a new namespace",                "cli/fork_command",      "ForkCommand",      "<old> <new>"],
+    "unpublish" => ["Remove podcast from Cloudflare R2",                                 "cli/unpublish_command", "UnpublishCommand", "<podcast>"],
+    "tweet"     => ["Tweet about an episode (--force, --dry-run)",                       "cli/tweet_command",     "TweetCommand",     "<podcast> <episode-id>"]
   }.freeze
+
+  # Width of the "<name> <synopsis>" column on the help screen; a longer
+  # label pushes its description right. At least two spaces separate them.
+  HELP_LABEL_WIDTH = 29
+
+  def self.command_help_lines
+    COMMANDS.map do |name, (desc, _path, _klass, synopsis)|
+      label = [name, synopsis].reject(&:empty?).join(" ")
+      "  #{label.ljust(HELP_LABEL_WIDTH)}  #{desc}"
+    end
+  end
 
   # Owner-only commands (CLAUDE.md golden rule 3) and the generate flags that
   # upload to listener-facing services.
@@ -131,35 +145,7 @@ module PodgenCLI
       opts.separator "Fully autonomous podcast generation pipeline."
       opts.separator ""
       opts.separator "Commands:"
-      opts.separator "  generate <podcast>             Run the full pipeline (news or language)"
-      opts.separator "  translate <podcast>            Translate episodes to new languages"
-      opts.separator "  render <podcast> [--date|--lang] Re-render script markdown from canonical JSON"
-      opts.separator "  voice <podcast> [--date|--lang|--force] Voice/re-voice from script JSON (recover from TTS failure)"
-      opts.separator "  scrap <podcast> [episode|path]  Remove episode files + history entry"
-      opts.separator "  move <podcast> <from> <to>     Move episode to another date (suffix '+' = whole day)"
-      opts.separator "  rss <podcast>                  Generate RSS feed"
-      opts.separator "  site <podcast>                 Generate static HTML website"
-      opts.separator "  publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)"
-      opts.separator "  stats <podcast> | --all        Show podcast statistics"
-      opts.separator "  validate <podcast> | --all     Validate config and output"
-      opts.separator "  status [podcast] [--json]      OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)"
-      opts.separator "  list                           List available podcasts"
-      opts.separator "  test <name> [args]             Run a standalone test"
-      opts.separator "  schedule <podcast>             Install launchd scheduler (--time, --publish, --telegram)"
-      opts.separator "  uploads <pod1,pod2,...>        Per-pod regen+R2+LingQ then YT batch (--mode, --max)"
-      opts.separator "  analytics <setup|deploy|tail|status>  Manage download analytics Worker"
-      opts.separator "  add <podcast> <url> [--note ...]     Queue a priority link for next episode"
-      opts.separator "  links <podcast> [--remove|--clear]   List or manage queued priority links"
-      opts.separator "  vocab <add|remove|list> <podcast>    Manage known vocabulary words"
-      opts.separator "  revocab <podcast> [episode] [--missing-only]  Re-annotate vocabulary"
-      opts.separator "  reformat <podcast> [episode]         Reformat transcripts (paragraph breaks, cleanup)"
-      opts.separator "  exclude <podcast> <url> [url...]     Exclude URLs from future episodes"
-      opts.separator "  cover <podcast> <title|episode-id>   Generate episode cover image"
-      opts.separator "  regen <podcast> [date] [--video|--subtitles|--reconcile|--all]  Regenerate post-pipeline artifacts"
-      opts.separator "  init <name> | <source> <name>      Initialize a new podcast (skeleton or from existing)"
-      opts.separator "  fork <old> <new>                   Fork podcast with all content into a new namespace"
-      opts.separator "  unpublish <podcast>                Remove podcast from Cloudflare R2"
-      opts.separator "  tweet <podcast> <episode-id>       Tweet about an episode (--force, --dry-run)"
+      command_help_lines.each { opts.separator(it) }
       opts.separator ""
       opts.separator "Pipelines (configured via ## Type in guidelines.md):"
       opts.separator "  news      Research topics, write script, TTS, assemble MP3 (default)"
