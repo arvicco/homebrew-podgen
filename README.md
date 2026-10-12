@@ -502,6 +502,7 @@ Add a `language` list to the `## Podcast` section in `podcasts/<name>/guidelines
 - English is never re-translated — the original script is used directly
 - Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
 - Translated episodes report their own duration in the language feeds and on the site (recorded in history.yml when voiced); the English duration is used only when none was recorded
+- Removing a code from `language` does not remove its files: move or scrap the leftover `-<code>` episodes first (`translate`, `voice` and `render` still treat a leftover file as a variant while its English episode exists, but the feed and site would list it as an English episode)
 
 Supported languages (matching ElevenLabs `eleven_multilingual_v2`): Arabic, Chinese, Czech, Danish, Dutch, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Polish, Portuguese, Romanian, Russian, Spanish, Swedish, Thai, Turkish, Ukrainian, Vietnamese.
 

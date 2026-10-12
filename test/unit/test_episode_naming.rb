@@ -147,4 +147,30 @@ class TestEpisodeNaming < Minitest::Test
       assert_equal titles["pod-2026-01-15.mp3"], entries[idx]["title"]
     end
   end
+
+  # ── de-configured language: primary sibling on disk (CRPR round 1) ──
+
+  def test_language_suffix_unconfigured_tail_with_primary_sibling_is_a_variant
+    Dir.mktmpdir("naming_sibling") do |dir|
+      File.write(File.join(dir, "pod-2026-01-15.mp3"), "")
+      assert_equal "it", EpisodeNaming.language_suffix("pod-2026-01-15-it", languages: %w[en es], episodes_dir: dir)
+      assert_equal "pod-2026-01-15", EpisodeNaming.primary_basename("pod-2026-01-15-it", languages: %w[en es], episodes_dir: dir)
+      refute EpisodeNaming.matches_language?("pod-2026-01-15-it", "en", languages: %w[en es], episodes_dir: dir)
+    end
+  end
+
+  def test_language_suffix_unconfigured_tail_with_script_sibling_is_a_variant
+    Dir.mktmpdir("naming_sibling") do |dir|
+      File.write(File.join(dir, "pod-2026-01-15_script.md"), "")
+      assert_equal "it", EpisodeNaming.language_suffix("pod-2026-01-15-it", languages: %w[en es], episodes_dir: dir)
+    end
+  end
+
+  def test_language_suffix_unconfigured_tail_without_sibling_is_primary
+    Dir.mktmpdir("naming_sibling") do |dir|
+      File.write(File.join(dir, "pod-2026-01-15-ai_script.md"), "")
+      assert_nil EpisodeNaming.language_suffix("pod-2026-01-15-ai", languages: %w[en es], episodes_dir: dir)
+      assert_nil EpisodeNaming.language_suffix("pod-2026-01-15-it", languages: %w[en es])
+    end
+  end
 end
