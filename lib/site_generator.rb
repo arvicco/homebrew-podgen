@@ -12,6 +12,7 @@ require_relative "format_helper"
 require_relative "language_names"
 require_relative "audio_assembler"
 require_relative "episode_filtering"
+require_relative "episode_naming"
 require_relative "cover_resolver"
 require_relative "transcript_parser"
 require_relative "transcript_renderer"
@@ -360,10 +361,10 @@ class SiteGenerator
       # Derive the episode basename for the target language
       base = episode[:basename]
       if current_code != primary_language
-        # Strip current language suffix to get the English base
-        base = base.sub(/-#{current_code}$/, "")
+        # Strip current language suffix to get the primary base
+        base = base.delete_suffix("-#{current_code}")
       end
-      target_basename = code == primary_language ? base : "#{base}-#{code}"
+      target_basename = (code == primary_language) ? base : EpisodeNaming.with_language(base, code)
 
       # The episode is "available" in this language when its MP3 exists on
       # disk. The current language itself is always considered available

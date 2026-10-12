@@ -6,6 +6,7 @@ require "optparse"
 require "fileutils"
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "episode_selector")
+require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "logger")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "agents", "tts_agent")
@@ -154,7 +155,7 @@ module PodgenCLI
     # orphaned scripts without a corresponding English MP3.
     def discover_episodes(episodes_dir)
       Dir.glob(File.join(episodes_dir, "*_script.md"))
-        .reject { |f| File.basename(f).match?(/-[a-z]{2}_script\.md$/) }
+        .reject { |f| EpisodeNaming.language_tail(File.basename(f, "_script.md")) }
         .select { |f| File.exist?(f.sub(/_script\.md$/, ".mp3")) }
         .sort
         .map do |path|

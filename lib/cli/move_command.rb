@@ -10,6 +10,7 @@ require_relative File.join(root, "lib", "cli", "episode_selector")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "episode_artifacts")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "upload_tracker")
 
 module PodgenCLI
@@ -27,7 +28,7 @@ module PodgenCLI
   class MoveCommand
     include PodcastCommand
 
-    SUFFIXES = [""] + ("a".."z").to_a
+    SUFFIXES = EpisodeNaming::SUFFIXES
 
     def initialize(args, options)
       @options = options
@@ -105,7 +106,7 @@ module PodgenCLI
         return 1
       end
 
-      artifacts = EpisodeArtifacts.for_basename(config.episodes_dir, from_base)
+      artifacts = EpisodeArtifacts.for_basename(config.episodes_dir, from_base, languages: config.language_codes)
       if artifacts.empty?
         $stderr.puts "No episode found at '#{from_base}' in #{config.episodes_dir}"
         nearby = same_day_basenames(config, from_date_str)
@@ -126,8 +127,8 @@ module PodgenCLI
       podcast = config.name
 
       if to_suffix
-        candidate = "#{podcast}-#{to_date_str}#{to_suffix}"
-        if EpisodeArtifacts.for_basename(config.episodes_dir, candidate).any?
+        candidate = EpisodeNaming.basename_for(podcast, to_date_str, to_suffix)
+        if EpisodeArtifacts.for_basename(config.episodes_dir, candidate, languages: config.language_codes).any?
           $stderr.puts "Error: target '#{candidate}' already exists. Scrap it first or pick another suffix."
           return nil
         end
@@ -135,8 +136,8 @@ module PodgenCLI
       end
 
       SUFFIXES.each do |s|
-        candidate = "#{podcast}-#{to_date_str}#{s}"
-        return candidate if EpisodeArtifacts.for_basename(config.episodes_dir, candidate).empty?
+        candidate = EpisodeNaming.basename_for(podcast, to_date_str, s)
+        return candidate if EpisodeArtifacts.for_basename(config.episodes_dir, candidate, languages: config.language_codes).empty?
       end
       $stderr.puts "Error: target date #{to_date_str} has no free suffix slots (a..z all taken)"
       nil
@@ -172,7 +173,7 @@ module PodgenCLI
         [from_base, "#{config.name}-#{to_date_str}#{suffix}"]
       end
 
-      artifacts_per_base = pairs.to_h { |from_base, _| [from_base, EpisodeArtifacts.for_basename(config.episodes_dir, from_base)] }
+      artifacts_per_base = pairs.to_h { |from_base, _| [from_base, EpisodeArtifacts.for_basename(config.episodes_dir, from_base, languages: config.language_codes)] }
       perform_move(config, pairs, to_date, artifacts_per_base: artifacts_per_base)
     end
 
@@ -242,17 +243,18 @@ module PodgenCLI
 
     # ── helpers ──────────────────────────────────────────────────────
 
-    # English (non-language-variant) basenames on a given date.
+    # Primary (non-language-variant) basenames on a given date; the variant
+    # rule matches EpisodeArtifacts' (configured codes only — P4-9, Q-44).
     def same_day_basenames(config, date_str)
       podcast = config.name
       Dir.glob(File.join(config.episodes_dir, "#{podcast}-#{date_str}*.mp3"))
-        .reject { |f| File.basename(f).match?(/-[a-z]{2}\.mp3\z/) }
+        .reject { |f| EpisodeNaming.language_suffix(File.basename(f, ".mp3"), languages: config.language_codes) }
         .map { |f| File.basename(f, ".mp3") }
         .sort
     end
 
     def base_for(config, date, suffix)
-      "#{config.name}-#{date.strftime('%Y-%m-%d')}#{suffix}"
+      EpisodeNaming.basename_for(config.name, date.strftime("%Y-%m-%d"), suffix)
     end
 
     def quiet?

@@ -193,7 +193,9 @@ class TestStatsCommand < Minitest::Test
     File.write(File.join(@episodes_dir, name), "x" * size)
   end
 
-  StubStatsConfig = Struct.new(:episodes_dir, :history_path, keyword_init: true)
+  StubStatsConfig = Struct.new(:episodes_dir, :history_path, keyword_init: true) do
+    def language_codes = %w[en]
+  end
 
   def stub_config(**overrides)
     defaults = {

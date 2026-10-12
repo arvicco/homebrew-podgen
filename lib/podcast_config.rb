@@ -5,6 +5,7 @@ require "date"
 require_relative "yaml_loader"
 require_relative "time_value"
 require_relative "episode_filtering"
+require_relative "episode_naming"
 require_relative "guidelines_parser"
 require_relative "cover_resolver"
 
@@ -287,16 +288,10 @@ class PodcastConfig
   end
 
   # Extracts the language code from an episode basename. Basenames with a
-  # trailing `-xx` (two-letter ISO code) are non-primary; otherwise the
-  # episode is in the primary language.
+  # trailing configured `-xx` code are non-primary; otherwise the episode
+  # is in the primary language (rule: EpisodeNaming).
   def language_for_episode(basename)
-    match = basename.match(/-([a-z]{2})\z/)
-    return primary_language unless match
-    code = match[1]
-    # Defensive: the regex accepts any two-letter suffix, but only a code
-    # actually configured for this podcast counts as a language.
-    configured = languages.map { |l| l["code"] }
-    configured.include?(code) ? code : primary_language
+    EpisodeNaming.language_of(basename, languages: language_codes)
   end
 
   def primary_language
@@ -347,11 +342,11 @@ class PodcastConfig
     prefix = "#{@name}-#{date_str}"
     existing = Dir.glob(File.join(@episodes_dir, "#{prefix}*.mp3"))
       .reject { |f| File.basename(f).include?("_concat") }
-      .select { |f| EpisodeFiltering.matches_language?(File.basename(f, ".mp3"), "en", languages: language_codes) }
+      .select { |f| EpisodeFiltering.matches_language?(File.basename(f, ".mp3"), primary_language, languages: language_codes) }
       .map { |f| File.basename(f, ".mp3") }
       .to_set
 
-    ([""] + ("a".."z").to_a).each do |suffix|
+    EpisodeNaming::SUFFIXES.each do |suffix|
       candidate = "#{prefix}#{suffix}"
       return candidate unless existing.include?(candidate)
     end

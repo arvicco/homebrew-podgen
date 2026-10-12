@@ -85,3 +85,11 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 **Why.** Before P1-0, IDs were hard-coded at eleven sites in eight files with ad-hoc ENV knobs, so a generation bump was a hunt and three sites had no override at all. A manual model switch in 2026-10 then exposed a second hazard: thinking-default models put a thinking block first, so `content.first.text` broke.
 
 **Implication.** A generation bump is a three-line change to `LINES`. Overrides resolve per-role ENV (`CLAUDE_<ROLE>_MODEL`) → per-line ENV (`CLAUDE_OPUS_MODEL` etc.; `CLAUDE_MODEL` aliases the opus line) → default. Read response text through `AnthropicClient.text_of(message)`, never `content.first.text`. The keyed drift test under `test/api` tells you when a line has a newer ID.
+
+## Episode naming lives in one module
+
+`lib/episode_naming.rb` (`EpisodeNaming`) owns the frozen basename scheme `<podcast>-<YYYY-MM-DD><slot>[-<lang>]`: the day-slot table (`SUFFIXES`, numeric fallback past `z`), `parse`/`basename_for`, the `-<lang>` rule (only a configured code is a language tail; no config = any two-letter tail; the primary is `languages.first`), and the history mapping (explicit `basename` wins, else same-day position). HistoryMaps, StatsCommand, EpisodeHistory, EpisodeFiltering, SiteGenerator, PodcastConfig, EpisodeArtifacts and the scrap/move/render/translate/selector/validator code all call it.
+
+**Why.** Until P4-9 the rule had eleven copies that disagreed at the edges (Q-44): stats ignored explicit basenames and language variants, `remove_by_date!` was positional only, `scrap`/`move` treated any `-xx` tail as a variant, and the site hard-coded `"en"` as the suffix-less language.
+
+**Implication.** A naming change is a change to one module plus `test/unit/test_characterization_filename_scheme.rb` (the 8-row oracle). Callers that pass no `languages:` get the legacy any-tail rule; pass the configured codes wherever a config is at hand.
