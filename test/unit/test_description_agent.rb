@@ -57,6 +57,22 @@ class TestDescriptionAgent < Minitest::Test
     assert_equal 1, logs.count { |l| l.include?("Warning:") && l.include?("bare number") }
   end
 
+  def test_clean_title_warns_even_for_a_real_title_ending_in_a_number
+    # Intended: the warning is a glance point for a human reading the run
+    # log, not a verdict; "Hiša številka 203" is kept AND flagged.
+    logs = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| logs << m }
+    logger.define_singleton_method(:error) { |m| logs << m }
+    agent = DescriptionAgent.new(logger: logger)
+    agent.instance_variable_set(:@client, MockTextClient.new("Hiša številka 203"))
+
+    result = agent.clean_title(title: "Hiša številka 203")
+
+    assert_equal "Hiša številka 203", result
+    assert_equal 1, logs.count { |l| l.include?("bare number") }
+  end
+
   def test_clean_title_does_not_warn_for_a_clean_title
     logs = []
     logger = Object.new

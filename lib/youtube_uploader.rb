@@ -99,10 +99,12 @@ class YouTubeUploader
     end
   end
 
-  def initialize(logger: nil, consent: nil)
+  # token_file: injectable so tests never touch the owner's real token.
+  def initialize(logger: nil, consent: nil, token_file: TOKEN_FILE)
     @logger = logger
     @service = nil
     @consent = consent || LoopbackConsent.new
+    @token_file = token_file
   end
 
   # Authorize and return a configured YouTube service.
@@ -113,10 +115,10 @@ class YouTubeUploader
     raise "YOUTUBE_CLIENT_ID not set" unless client_id && !client_id.empty?
     raise "YOUTUBE_CLIENT_SECRET not set" unless client_secret && !client_secret.empty?
 
-    FileUtils.mkdir_p(TOKEN_DIR)
+    FileUtils.mkdir_p(File.dirname(@token_file))
 
     client_id_obj = Google::Auth::ClientId.new(client_id, client_secret)
-    token_store = Google::Auth::Stores::FileTokenStore.new(file: TOKEN_FILE)
+    token_store = Google::Auth::Stores::FileTokenStore.new(file: @token_file)
     authorizer = Google::Auth::UserAuthorizer.new(client_id_obj, SCOPE, token_store)
 
     credentials = authorizer.get_credentials("default")
@@ -286,12 +288,12 @@ class YouTubeUploader
 
   # One line a log reader can act on: which file, what state, what to run.
   def not_interactive_message
-    state = if File.exist?(TOKEN_FILE)
-      "#{File.size(TOKEN_FILE)} bytes, modified #{File.mtime(TOKEN_FILE).strftime("%Y-%m-%d")}"
-    else
-      "missing"
+    state = begin
+      "#{File.size(@token_file)} bytes, modified #{File.mtime(@token_file).strftime("%Y-%m-%d")}"
+    rescue SystemCallError
+      "missing or unreadable"
     end
-    "YouTube token missing or expired (#{TOKEN_FILE}: #{state}) and no terminal to authorize " \
+    "YouTube token missing or expired (#{@token_file}: #{state}) and no terminal to authorize " \
       "— run `podgen publish <podcast> --youtube` from a terminal once"
   end
 

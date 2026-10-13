@@ -175,6 +175,24 @@ class TestYouTubePublisher < Minitest::Test
     assert_match(/YouTube not authorized: no terminal/, err)
   end
 
+  def test_upload_episode_types_not_interactive_from_playlist_verification
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true, playlist: "PLx")
+    uploader = stub_uploader { |b| b.verify_playlist_raises YouTubeUploader::NotInteractive.new("no terminal") }
+    publisher = build_publisher(config: config, uploader: uploader)
+    ep = { base_name: "ep-2026-01-15", mp3_path: File.join(@episodes_dir, "ep-2026-01-15.mp3"),
+           transcript_path: File.join(@episodes_dir, "ep-2026-01-15_transcript.md") }
+
+    result = nil
+    capture_io { result = publisher.upload_episode(ep) }
+
+    assert_equal :not_authorized, result.status
+    assert_equal :not_authorized, result.error[:type]
+    assert_kind_of YouTubeUploader::NotInteractive, result.exception
+    assert_empty uploader.uploads
+  end
+
   def test_not_interactive_during_upload_stops_the_loop_after_one_episode
     seed_ep("ep-2026-01-15")
     seed_ep("ep-2026-01-16")
@@ -536,7 +554,11 @@ class TestYouTubePublisher < Minitest::Test
       @verify_block = ->(id) { raise msg }
     end
 
-    def authorize! = nil
+    def authorize_raises(err)
+      @authorize_block = -> { raise err }
+    end
+
+    def authorize! = @authorize_block&.call
     def verify_playlist!(id) = @verify_block.call(id)
     def upload_video(*args, **kw)
       @uploads << [args, kw]
