@@ -205,6 +205,7 @@ class TestYouTubePublisher < Minitest::Test
     capture_io { result = publisher.run }
 
     assert_equal 1, uploader.uploads.length, "the second episode is not attempted"
+    assert_equal 0, result.attempted, "a refused upload never reached YouTube"
     assert_equal 1, result.errors.length
     assert_equal :not_authorized, result.errors.first[:type]
     refute result.rate_limited

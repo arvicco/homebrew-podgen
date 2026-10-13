@@ -154,6 +154,34 @@ class TestYouTubeUploader < Minitest::Test
     FileUtils.rm_rf(File.dirname(token_file)) if token_file
   end
 
+  def test_not_interactive_message_survives_an_unreadable_token_file
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+
+    mock_authorizer = Minitest::Mock.new
+    mock_authorizer.expect(:get_credentials, nil, ["default"])
+    consent = Object.new
+    consent.define_singleton_method(:interactive?) { false }
+    dir = Dir.mktmpdir("podgen_yt_token")
+    token_file = File.join(dir, "gone", "youtube_token.json") # parent created by authorize!, file never written
+    uploader = YouTubeUploader.new(consent: consent, token_file: token_file)
+
+    error = nil
+    Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
+      Google::Auth::Stores::FileTokenStore.stub(:new, Object.new) do
+        error = assert_raises(YouTubeUploader::NotInteractive) { uploader.authorize! }
+      end
+    end
+
+    assert_includes error.message, "#{token_file}: missing or unreadable"
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+    FileUtils.rm_rf(dir) if dir
+  end
+
   def test_loopback_consent_serves_the_callback_and_returns_code_and_redirect
     out = StringIO.new
     authorizer = Object.new

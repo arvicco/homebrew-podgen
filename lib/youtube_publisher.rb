@@ -207,7 +207,7 @@ class YouTubePublisher
       exception: e, error: { type: :upload, base: base, message: e.message })
   rescue YouTubeUploader::NotInteractive => e # fatal for the batch: no human can authorize; later episodes would fail the same way (Q-77)
     say_err "  ✗ #{base} skipped: YouTube not authorized: #{e.message}"
-    EpisodeResult.new(status: :not_authorized, base: base, attempted: attempted,
+    EpisodeResult.new(status: :not_authorized, base: base, attempted: false, # nothing reached YouTube
       exception: e, error: not_authorized_error(e, base: base))
   rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
     say_err "  ✗ #{base} failed: #{e.class}: #{e.message}"
