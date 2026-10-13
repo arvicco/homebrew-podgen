@@ -104,6 +104,14 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 
 **Implication.** Checks that find a problem send it back to the producer with the finding; they do not patch the artifact. The only exceptions are mechanical, deterministic fixes that cannot lose content (the three above), and each is logged as auto-fixed. A fix that would shorten, rephrase or drop content is never auto-applied.
 
+## A fresh YouTube consent needs a terminal
+
+`YouTubeUploader::LoopbackConsent` (`lib/youtube_uploader.rb`) opens the browser and listens for the OAuth redirect only when stdin and stderr are both terminals; otherwise it raises `YouTubeUploader::NotInteractive` before touching a port, and `authorize!` raises the same error with the token file's path, size and date. `YouTubePublisher` types that error (`:not_authorized`) and stops its loop; the batch upload command ends the YouTube phase after the first pod and exits non-zero.
+
+**Why.** The consent collaborator used to default to "open a browser and wait five minutes" wherever an uploader was built, including the daily launchd batch. With an empty token file that meant four Google sign-in tabs on the owner's desktop every morning, one per podcast, each waiting for a click nobody could give; before that it meant a URL printed into a log nobody read. An authorization that cannot complete must fail once, fast and legibly, not per podcast and not interactively.
+
+**Implication.** Any new scheduled caller of the uploader inherits the refusal for free. A new interactive entry point that should prompt passes `interactive: true` explicitly rather than widening the probe. The token refill itself stays an owner act from a terminal.
+
 ## Episode naming lives in one module
 
 `lib/episode_naming.rb` (`EpisodeNaming`) owns the frozen basename scheme `<podcast>-<YYYY-MM-DD><slot>[-<lang>]`: the day-slot table (`SUFFIXES`, numeric fallback past `z`), `parse`/`basename_for`, the `-<lang>` rule (only a configured code is a language tail; no config = any two-letter tail; the primary is `languages.first`; with `episodes_dir:`, which the render/translate/selector commands pass, an unconfigured tail whose stripped base has its own primary file on disk is still a variant, so a de-configured language is never re-voiced or re-translated as a primary episode), and the history mapping (explicit `basename` wins, else same-day position). The naming helpers (HistoryMaps, EpisodeHistory, EpisodeFiltering, SiteGenerator, StatsCommand) and the scrap/move/render/translate/selector/validator commands call it; a few producers still build `base-code` inline (generate, voice, translate, podcast_config) — see the work queue.

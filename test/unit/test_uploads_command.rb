@@ -440,6 +440,57 @@ class TestUploadsCommand < Minitest::Test
     end
   end
 
+  # ── Q-77 / I-9: YouTube not authorized (no terminal) ends the YT phase once ──
+
+  def test_priority_stops_the_yt_phase_on_not_authorized_and_exits_non_zero
+    yt_calls = []
+    ok = ok_r2_result
+    na = not_authorized_yt_result
+    logs = []
+    cmd = stub_cmd(["pod_a,pod_b"])
+    cmd.instance_variable_set(:@log, ->(m) { logs << m })
+    cmd.define_singleton_method(:run_r2_for) { |_| ok }
+    cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
+    cmd.define_singleton_method(:pending_count_for) { |_| 1 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      na
+    end
+
+    out, _err = capture_io { @code = cmd.run }
+
+    assert_equal %w[pod_a], yt_calls, "pod_b must not be asked to authorize again"
+    assert_equal 1, @code, "the status board must see it"
+    assert_equal 1, logs.count { |l| l.include?("YouTube not authorized") }
+    assert_match(/YouTube NOT AUTHORIZED/, out)
+  end
+
+  def test_round_robin_stops_the_yt_phase_on_not_authorized
+    yt_calls = []
+    ok = ok_r2_result
+    na = not_authorized_yt_result
+    cmd = stub_cmd(["--mode", "round-robin", "pod_a,pod_b"])
+    cmd.instance_variable_set(:@log, ->(_) {})
+    cmd.define_singleton_method(:run_r2_for) { |_| ok }
+    cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
+    cmd.define_singleton_method(:pending_count_for) { |_| 2 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+      yt_calls << pod
+      na
+    end
+
+    capture_io { @code = cmd.run }
+
+    assert_equal %w[pod_a], yt_calls
+    assert_equal 1, @code
+  end
+
+  def not_authorized_yt_result
+    YTResult.new(uploaded: 0, attempted: 0, rate_limited: false,
+      errors: [{ type: :not_authorized, error_class: "YouTubeUploader::NotInteractive",
+                 message: "YouTube token missing (x: 7 bytes)" }])
+  end
+
   private
 
   # Round-robin harness: each yt call uploads 1 and decrements pending.

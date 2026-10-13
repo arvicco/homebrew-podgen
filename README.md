@@ -758,6 +758,8 @@ podgen publish lahko_noc --youtube --lingq
 
 Old episodes without timestamps are automatically retranscribed (single-engine, best available) to generate subtitles. The YouTube daily quota allows ~5 video uploads; the batch stops on quota exhaustion and resumes where it left off on the next run.
 
+**Authorization.** The token lives in `~/.config/podgen/youtube_token.json` and is shared by every podcast. When it is missing or can no longer be refreshed, the next upload opens the Google consent page in your browser and listens on a local port for the redirect. That happens only from a terminal: a scheduled run (launchd, cron, a redirected log) has nobody to click, so it refuses with one log line naming the token file, its size and date, ends the YouTube phase for the whole batch, and exits non-zero. Authorize once with `podgen publish <podcast> --youtube` from a terminal; the scheduled runs pick the token up from there.
+
 Each episode produces:
 - `{basename}_timestamps.json` — segment-level timestamps from transcription
 - `{basename}.srt` — SRT subtitles synchronized with the audio
