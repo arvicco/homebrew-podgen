@@ -19,6 +19,8 @@ class DescriptionAgent
   # Cleans a YouTube/RSS episode title by stripping category prefixes, labels, and noise.
   # e.g. "PRAVLJICA ZA OTROKE: Lačni medved" → "Lačni medved"
   # Returns cleaned title, or original on failure.
+  TRAILING_BARE_NUMBER = /\s\d{1,4}\z/
+
   def clean_title(title:)
     return title if title.to_s.strip.empty?
 
@@ -55,6 +57,11 @@ class DescriptionAgent
       log("Title cleaned: \"#{title}\" → \"#{result}\"")
     else
       log("Title already clean")
+    end
+    # Q-78: an unlabelled counter the model kept ("… Cleo 291") is a
+    # listener-visible title; say so in the run log, keep the answer.
+    if result.match?(TRAILING_BARE_NUMBER)
+      log("Warning: cleaned title still ends in a bare number — an episode counter? \"#{result}\"")
     end
     result
   rescue => e
@@ -202,6 +209,9 @@ class DescriptionAgent
       - Subtitles/taglines after colon or dash (e.g. "Title: gentle bedtime story" → "Title")
       - Content descriptions (e.g. "mirna Grimmova pravljica za lahko noč")
       - Series labels (e.g. "S1E3 -", "Episode 12:")
+      - A bare number at the END of the name that is an episode counter
+        (feeds number their items: "Story 291 | Channel" → "Story"); keep a
+        number that belongs to the name ("House number 203" stays)
       - Channel names, emoji, audience labels, mood/tone descriptors
       - Redundant quotes or brackets around the title
 
@@ -211,6 +221,8 @@ class DescriptionAgent
       - "The Three Bears - A Bedtime Story for Kids" → "The Three Bears"
       - "Sleeping Beauty" → "Sleeping Beauty"
       - "Kaj delam narobe" → "Kaj delam narobe"
+      - "El jardín de doña Cleo 291 | Cuentos infantiles" → "El jardín de doña Cleo"
+      - "Hiša številka 203" → "Hiša številka 203"
 
       Rules:
       - The entire input IS a title. Even if it reads like a question or a
