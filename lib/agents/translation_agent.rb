@@ -115,7 +115,7 @@ class TranslationAgent
       max_tokens: MAX_OUTPUT_TOKENS,
       system: system_prompt,
       messages: [{ role: "user", content: user_message }],
-      output_config: { format: TranslatedScript }
+      **AnthropicClient.effort_params(:translation, format: TranslatedScript)
     )
   end
 

@@ -225,7 +225,8 @@ module Tell
       message = @client.messages.create(
         model: @model,
         max_tokens: max_tokens,
-        messages: [{ role: "user", content: prompt }]
+        messages: [{ role: "user", content: prompt }],
+        **AnthropicClient.effort_params(:gloss)
       )
       AnthropicClient.text_of(message).strip
     end

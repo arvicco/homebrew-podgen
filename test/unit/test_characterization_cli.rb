@@ -50,11 +50,11 @@ class TestCharacterizationCLI < Minitest::Test
       unpublish <podcast>            Remove podcast from Cloudflare R2
       tweet <podcast> <episode-id>   Tweet about an episode (--force, --dry-run)
 
-    Pipelines (configured via ## Type in guidelines.md):
+    Pipelines (`- type:` under ## Podcast in guidelines.md):
       news      Research topics, write script, TTS, assemble MP3 (default)
       language  Download from RSS, --file, or --url (YouTube), transcribe, assemble MP3
 
-    Transcription engines (## Transcription Engine in guidelines.md):
+    Transcription engines (`- engine:` under ## Audio in guidelines.md):
       open      OpenAI Whisper / gpt-4o-transcribe (default)
       elab      ElevenLabs Scribe v2
       groq      Groq hosted Whisper

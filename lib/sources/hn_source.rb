@@ -27,6 +27,7 @@ class HNSource < BaseSource
       log("no hn_query for '#{topic}' — skipped")
       return []
     end
+    log("HN query for '#{topic}': #{keywords}")
 
     cutoff_timestamp = (Time.now - (LOOKBACK_HOURS * 3600)).to_i
 

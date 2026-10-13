@@ -141,6 +141,7 @@ module PodgenCLI
       end
       return 2 if not_configured
       return 1 if result.errors.any? { |e| e[:type] == :playlist_verification }
+      return 1 if result.errors.any? { |e| e[:type] == :not_authorized } # Q-77: no terminal, nothing uploaded
       0
     end
 

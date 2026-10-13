@@ -340,7 +340,7 @@ class ScriptReviewer
           max_tokens: 4096,
           system: build_review_system_prompt,
           messages: [{ role: "user", content: build_review_user_message(script) }],
-          output_config: { format: ScriptReview }
+          **AnthropicClient.effort_params(:reviewer, format: ScriptReview)
         )
       end
 

@@ -15,6 +15,12 @@ class YouTubeUploader
   TOKEN_DIR = File.join(Dir.home, ".config", "podgen")
   TOKEN_FILE = File.join(TOKEN_DIR, "youtube_token.json")
 
+  # A fresh authorization needs a human at a terminal. Under launchd or
+  # cron there is none, so the consent flow refuses before it opens a
+  # port or a browser (Q-77, I-9) instead of waiting for a click that
+  # cannot come.
+  class NotInteractive < StandardError; end
+
   # Loopback-redirect consent (P1-16, Q-07): Google shut off the out-of-band
   # flow, so a fresh authorization listens on an ephemeral 127.0.0.1 port,
   # sends the owner to the consent URL, and reads the code from the browser's
@@ -27,15 +33,25 @@ class YouTubeUploader
     # wait: overall seconds to wait for the browser callback; idle_timeout:
     # seconds a connection may stay silent before it is dropped — browsers
     # open speculative pre-connect sockets that never send a request.
-    def initialize(io: $stderr, open_browser: true, wait: 300, idle_timeout: 5)
+    # interactive: nil probes the ttys at call time; true/false overrides.
+    def initialize(io: $stderr, open_browser: true, wait: 300, idle_timeout: 5, interactive: nil)
       @io = io
       @open_browser = open_browser
       @wait = wait
       @idle_timeout = idle_timeout
+      @interactive = interactive
       @port = nil
     end
 
+    # A human can complete the consent only when stdin AND stderr are
+    # terminals: launchd has neither, a log redirect loses the URL.
+    def interactive?
+      @interactive.nil? ? ($stdin.tty? && $stderr.tty?) : @interactive
+    end
+
     def call(authorizer)
+      raise NotInteractive, "no terminal to complete the YouTube consent" unless interactive?
+
       server = TCPServer.new("127.0.0.1", 0)
       @port = server.addr[1]
       redirect = "http://127.0.0.1:#{@port}"
@@ -83,10 +99,12 @@ class YouTubeUploader
     end
   end
 
-  def initialize(logger: nil, consent: nil)
+  # token_file: injectable so tests never touch the owner's real token.
+  def initialize(logger: nil, consent: nil, token_file: TOKEN_FILE)
     @logger = logger
     @service = nil
     @consent = consent || LoopbackConsent.new
+    @token_file = token_file
   end
 
   # Authorize and return a configured YouTube service.
@@ -97,10 +115,10 @@ class YouTubeUploader
     raise "YOUTUBE_CLIENT_ID not set" unless client_id && !client_id.empty?
     raise "YOUTUBE_CLIENT_SECRET not set" unless client_secret && !client_secret.empty?
 
-    FileUtils.mkdir_p(TOKEN_DIR)
+    FileUtils.mkdir_p(File.dirname(@token_file))
 
     client_id_obj = Google::Auth::ClientId.new(client_id, client_secret)
-    token_store = Google::Auth::Stores::FileTokenStore.new(file: TOKEN_FILE)
+    token_store = Google::Auth::Stores::FileTokenStore.new(file: @token_file)
     authorizer = Google::Auth::UserAuthorizer.new(client_id_obj, SCOPE, token_store)
 
     credentials = authorizer.get_credentials("default")
@@ -117,6 +135,8 @@ class YouTubeUploader
     end
 
     if credentials.nil?
+      raise NotInteractive, not_interactive_message unless interactive_consent?
+
       code, redirect = @consent.call(authorizer)
       raise "No authorization code provided" if code.nil? || code.empty?
       credentials = authorizer.get_and_store_credentials_from_code(
@@ -259,6 +279,23 @@ class YouTubeUploader
   end
 
   private
+
+  # Consent collaborators without the probe (lambdas in tests) count as
+  # interactive; LoopbackConsent answers for itself.
+  def interactive_consent?
+    @consent.respond_to?(:interactive?) ? @consent.interactive? : true
+  end
+
+  # One line a log reader can act on: which file, what state, what to run.
+  def not_interactive_message
+    state = begin
+      "#{File.size(@token_file)} bytes, modified #{File.mtime(@token_file).strftime("%Y-%m-%d")}"
+    rescue SystemCallError
+      "missing or unreadable"
+    end
+    "YouTube token missing or expired (#{@token_file}: #{state}) and no terminal to authorize " \
+      "— run `podgen publish <podcast> --youtube` from a terminal once"
+  end
 
   def ensure_authorized!
     authorize! unless @service

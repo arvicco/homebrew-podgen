@@ -43,7 +43,8 @@ class ImageRanker
     response = @client.messages.create(
       model: @model,
       max_tokens: 2000,
-      messages: [{ role: "user", content: build_content(candidates, title, description) }]
+      messages: [{ role: "user", content: build_content(candidates, title, description) }],
+      **AnthropicClient.effort_params(:image_rank)
     )
 
     parsed = parse_response(response)

@@ -6,6 +6,7 @@ require_relative "episode_scanner"
 require_relative "transcript_parser"
 require_relative "cover_resolver"
 require_relative "publisher_shared"
+require_relative "remote_image_cache"
 
 # Uploads pending episodes to LingQ for a single podcast configuration.
 #
@@ -20,12 +21,13 @@ class LingQPublisher
     def failed? = !success?
   end
 
-  def initialize(config:, options: {}, agent: nil, tracker_path: nil, episode_id: nil)
+  def initialize(config:, options: {}, agent: nil, tracker_path: nil, episode_id: nil, image_fetcher: nil)
     @config = config
     @options = options
     @agent = agent
     @tracker_path = tracker_path
     @episode_id = episode_id
+    @image_fetcher = image_fetcher
   end
 
   def run
@@ -114,7 +116,8 @@ class LingQPublisher
         $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.class}: #{e.message}"
         errors << { type: :upload, base: ep[:base_name], message: e.message }
       ensure
-        CoverResolver.cleanup(image_path)
+        # The cached URL image is kept; cleanup only deletes under Dir.tmpdir, so this matters only when the cache dir is there.
+        CoverResolver.cleanup(image_path) unless image_path && image_path == @cached_static_image
       end
     end
 
@@ -132,7 +135,7 @@ class LingQPublisher
   end
 
   def generate_cover_image(title, description: nil)
-    return @config.cover_static_image unless @config.cover_generation_enabled?
+    return static_image unless @config.cover_generation_enabled?
 
     result = CoverResolver.generate(
       title: title,
@@ -142,6 +145,21 @@ class LingQPublisher
     unless result
       $stderr.puts "  Warning: cover generation failed (using static image)" if @options[:verbosity] == :verbose
     end
-    result || @config.cover_static_image
+    result || static_image
+  end
+
+  # The configured static cover. A URL (LingQ `image: https://...`, Q-56) is
+  # fetched once per run into output/<podcast>/cache/; a failed fetch is
+  # skippable: warn and upload without an image. File paths pass through.
+  def static_image
+    value = @config.cover_static_image
+    return value unless value.is_a?(String) && value.match?(%r{\Ahttps?://}i)
+    return @cached_static_image if defined?(@cached_static_image)
+
+    cache_dir = File.join(File.dirname(@config.episodes_dir), "cache")
+    @cached_static_image = RemoteImageCache.new(cache_dir: cache_dir, fetcher: @image_fetcher).fetch(value)
+  rescue => e # skippable: the lesson uploads without an image
+    $stderr.puts "  Warning: LingQ image download failed: #{e.class}: #{e.message} (uploading without image)"
+    @cached_static_image = nil
   end
 end
