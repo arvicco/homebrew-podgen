@@ -63,7 +63,7 @@ class ScriptAgent
               content: "Write a podcast script based on this research:\n\n#{research_text}"
             }
           ],
-          output_config: { format: PodcastScript }
+          **AnthropicClient.effort_params(:script, format: PodcastScript)
         )
       end
 

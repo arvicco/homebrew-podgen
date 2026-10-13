@@ -71,7 +71,8 @@ module Tell
       message = @client.messages.create(
         model: @model,
         max_tokens: 4096,
-        messages: [{ role: "user", content: prompt }]
+        messages: [{ role: "user", content: prompt }],
+        **AnthropicClient.effort_params(:tell_translate)
       )
 
       Tell.extract_translation(AnthropicClient.text_of(message))

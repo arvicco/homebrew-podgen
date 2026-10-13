@@ -155,7 +155,8 @@ class VocabularyAnnotator
           system: classify_prompt(language, cutoff, filters),
           messages: [
             { role: "user", content: text }
-          ]
+          ],
+          **AnthropicClient.effort_params(:vocab)
         )
       end
 
@@ -388,7 +389,8 @@ class VocabularyAnnotator
           model: @model,
           max_tokens: 16384,
           system: prompt,
-          messages: [{ role: "user", content: lemmas.join("\n") }]
+          messages: [{ role: "user", content: lemmas.join("\n") }],
+          **AnthropicClient.effort_params(:vocab)
         )
       end
 

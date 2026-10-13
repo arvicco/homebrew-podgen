@@ -6,6 +6,7 @@ require "yaml"
 require "cli/publish_command"
 require "regen_cache"
 require "youtube_publisher"
+require "youtube_uploader"
 
 class TestPublishCommand < Minitest::Test
   def setup
@@ -137,6 +138,30 @@ class TestPublishCommand < Minitest::Test
     assert required[0...build_called_at].any? { |r| r.end_with?("youtube_uploader") },
       "publish_to_youtube must require_relative 'youtube_uploader' BEFORE calling build_youtube_uploader; " \
       "saw requires before build: #{required[0...build_called_at].inspect}"
+  end
+
+  # Q-77 (CRPR W1): a consent that cannot happen is exit 1, like a bad playlist.
+  # Auth is lazy (first API call), so the refusal surfaces from verify_playlist!.
+  def test_publish_to_youtube_returns_1_when_not_authorized
+    create_mp3("ep-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# Title\n\n## Transcript\n\nHello.")
+
+    yt_config = { playlist: "PLx", privacy: "unlisted", category: "27", tags: [] }
+    cmd = build_command(youtube_config: yt_config)
+
+    uploaded = []
+    stub_uploader = Object.new
+    stub_uploader.define_singleton_method(:authorize!) { nil }
+    stub_uploader.define_singleton_method(:verify_playlist!) { |_id| raise YouTubeUploader::NotInteractive, "no terminal" }
+    stub_uploader.define_singleton_method(:upload_video) { |*args, **kw| uploaded << args; "vid_123" }
+    cmd.define_singleton_method(:build_youtube_uploader) { stub_uploader }
+
+    code = nil
+    _, err = capture_io { code = cmd.send(:publish_to_youtube) }
+
+    assert_equal 1, code
+    assert_empty uploaded
+    assert_includes err, "YouTube not authorized: no terminal"
   end
 
   def test_publish_to_youtube_returns_2_when_youtube_not_configured

@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "youtube_publisher"
+require "youtube_uploader"
 require "regen_cache"
 require "google/apis/errors"
 require "transcription/engine_manager"
@@ -152,6 +153,62 @@ class TestYouTubePublisher < Minitest::Test
     refute_empty result.errors
     assert_equal :playlist_verification, result.errors.first[:type]
     assert_empty uploader.uploads
+  end
+
+  # Q-77 / I-9: a consent that cannot happen (no terminal) is fatal for the
+  # run, typed so the batch can stop, and never retried per episode.
+
+  def test_not_interactive_at_playlist_verification_returns_not_authorized
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true, playlist: "PLx")
+    uploader = stub_uploader { |b| b.verify_playlist_raises YouTubeUploader::NotInteractive.new("no terminal") }
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_equal 0, result.uploaded
+    assert_equal :not_authorized, result.errors.first[:type]
+    assert_equal "YouTubeUploader::NotInteractive", result.errors.first[:error_class]
+    assert_empty uploader.uploads
+    assert_match(/YouTube not authorized: no terminal/, err)
+  end
+
+  def test_upload_episode_types_not_interactive_from_playlist_verification
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true, playlist: "PLx")
+    uploader = stub_uploader { |b| b.verify_playlist_raises YouTubeUploader::NotInteractive.new("no terminal") }
+    publisher = build_publisher(config: config, uploader: uploader)
+    ep = { base_name: "ep-2026-01-15", mp3_path: File.join(@episodes_dir, "ep-2026-01-15.mp3"),
+           transcript_path: File.join(@episodes_dir, "ep-2026-01-15_transcript.md") }
+
+    result = nil
+    capture_io { result = publisher.upload_episode(ep) }
+
+    assert_equal :not_authorized, result.status
+    assert_equal :not_authorized, result.error[:type]
+    assert_kind_of YouTubeUploader::NotInteractive, result.exception
+    assert_empty uploader.uploads
+  end
+
+  def test_not_interactive_during_upload_stops_the_loop_after_one_episode
+    seed_ep("ep-2026-01-15")
+    seed_ep("ep-2026-01-16")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.upload_video_raises YouTubeUploader::NotInteractive.new("no terminal") }
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_equal 1, uploader.uploads.length, "the second episode is not attempted"
+    assert_equal 0, result.attempted, "a refused upload never reached YouTube"
+    assert_equal 1, result.errors.length
+    assert_equal :not_authorized, result.errors.first[:type]
+    refute result.rate_limited
   end
 
   def test_calls_regen_cache_so_block_runs_once_per_pod
@@ -498,7 +555,11 @@ class TestYouTubePublisher < Minitest::Test
       @verify_block = ->(id) { raise msg }
     end
 
-    def authorize! = nil
+    def authorize_raises(err)
+      @authorize_block = -> { raise err }
+    end
+
+    def authorize! = @authorize_block&.call
     def verify_playlist!(id) = @verify_block.call(id)
     def upload_video(*args, **kw)
       @uploads << [args, kw]
