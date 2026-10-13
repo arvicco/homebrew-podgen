@@ -141,7 +141,6 @@ class TestPublishCommand < Minitest::Test
   end
 
   # Q-77 (CRPR W1): a consent that cannot happen is exit 1, like a bad playlist.
-  # Q-77 (CRPR W1): a consent that cannot happen is exit 1, like a bad playlist.
   # Auth is lazy (first API call), so the refusal surfaces from verify_playlist!.
   def test_publish_to_youtube_returns_1_when_not_authorized
     create_mp3("ep-2026-01-15.mp3")
