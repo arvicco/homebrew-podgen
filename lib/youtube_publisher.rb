@@ -109,6 +109,10 @@ class YouTubePublisher
     if yt_config[:playlist]
       begin
         verify_playlist_cached!(uploader, yt_config[:playlist])
+      rescue YouTubeUploader::NotInteractive => e # fatal for the whole batch: nobody can authorize (Q-77)
+        $stderr.puts "YouTube not authorized: #{e.message}"
+        return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                          errors: [not_authorized_error(e)])
       rescue => e # fatal for this run: uploading into the wrong/missing playlist is worse than not uploading
         $stderr.puts "YouTube playlist verification failed: #{e.class}: #{e.message}"
         return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
@@ -146,6 +150,8 @@ class YouTubePublisher
     if yt_config[:playlist]
       begin
         verify_playlist_cached!(active_uploader, yt_config[:playlist])
+      rescue YouTubeUploader::NotInteractive
+        raise # typed below: the batch stops, it does not retry per episode
       rescue => e # skippable per-episode: nothing uploaded; the caller decides whether to continue
         say_err "  ✗ #{base} skipped: YouTube playlist verification failed: #{e.class}: #{e.message}"
         return EpisodeResult.new(status: :skipped, base: base, attempted: false, exception: e,
@@ -199,6 +205,10 @@ class YouTubePublisher
     end
     EpisodeResult.new(status: :failed, base: base, video_id: video_id, attempted: attempted,
       exception: e, error: { type: :upload, base: base, message: e.message })
+  rescue YouTubeUploader::NotInteractive => e # fatal for the batch: no human can authorize; later episodes would fail the same way (Q-77)
+    say_err "  ✗ #{base} skipped: YouTube not authorized: #{e.message}"
+    EpisodeResult.new(status: :not_authorized, base: base, attempted: attempted,
+      exception: e, error: not_authorized_error(e, base: base))
   rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
     say_err "  ✗ #{base} failed: #{e.class}: #{e.message}"
     EpisodeResult.new(status: :failed, base: base, video_id: video_id, attempted: attempted,
@@ -218,6 +228,7 @@ class YouTubePublisher
       attempted += 1 if result.attempted
       uploaded += 1 if result.status == :uploaded
       errors << result.error if result.error
+      break if result.status == :not_authorized # Q-77: one attempt per run, never per episode
       if result.status == :rate_limited
         rate_limited = true
         break
@@ -225,6 +236,10 @@ class YouTubePublisher
     end
 
     Result.new(uploaded: uploaded, attempted: attempted, rate_limited: rate_limited, errors: errors)
+  end
+
+  def not_authorized_error(e, base: nil)
+    { type: :not_authorized, error_class: e.class.name, message: e.message, base: base }.compact
   end
 
   def verify_playlist_cached!(uploader, playlist_id)

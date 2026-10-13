@@ -23,6 +23,8 @@ module PodgenCLI
   #      round-robin (one ep per pod per round), capped by --max if set.
   #      Rate-limit halts the YT phase but is an EXPECTED daily occurrence
   #      and does NOT contribute to a non-zero overall exit code.
+  #      "Not authorized" (no token, no terminal — Q-77) halts the YT phase
+  #      after ONE pod and DOES exit non-zero: it needs the owner.
   class UploadsCommand
     MODES = %i[priority round_robin].freeze
 
@@ -94,18 +96,20 @@ module PodgenCLI
       print_summary(tick, failures)
 
       # Rate limit is expected/daily, not a failure.
-      # Any other failure (R2, LingQ non-:not_configured) → exit 1.
-      failures.empty? ? 0 : 1
+      # Any other failure (R2, LingQ non-:not_configured, YouTube not
+      # authorized) → exit 1.
+      failures.empty? && tick.not_authorized.nil? ? 0 : 1
     end
 
     private
 
-    Tick = Struct.new(:per_pod, :rate_limited, keyword_init: true)
+    Tick = Struct.new(:per_pod, :rate_limited, :not_authorized, keyword_init: true)
 
     def run_priority(pods)
       remaining = @max
       per_pod = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
       rate_limited = false
+      not_authorized = nil
 
       pods.each do |pod|
         break if remaining == 0
@@ -116,13 +120,16 @@ module PodgenCLI
         per_pod[pod][:errors] += result.errors.length
         remaining -= result.uploaded if remaining
 
+        if (not_authorized = not_authorized_message(result))
+          break
+        end
         if result.rate_limited
           rate_limited = true
           break
         end
       end
 
-      Tick.new(per_pod: per_pod, rate_limited: rate_limited)
+      Tick.new(per_pod: per_pod, rate_limited: rate_limited, not_authorized: not_authorized)
     end
 
     def run_round_robin(pods)
@@ -130,6 +137,7 @@ module PodgenCLI
       per_pod = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
       rate_limited = false
       drained = {}
+      not_authorized = nil
       last_failure = {} # pod => [label, message] of the previous round's failure (P3-3)
       # Runaway guard: every round that continues uploaded >= 1 item, so more
       # rounds than the initial pending total can only mean a drifting count.
@@ -154,6 +162,9 @@ module PodgenCLI
             remaining -= result.uploaded if remaining
             uploaded_this_round += result.uploaded
 
+            if (not_authorized = not_authorized_message(result))
+              throw :stop
+            end
             if result.rate_limited
               rate_limited = true
               throw :stop
@@ -184,7 +195,17 @@ module PodgenCLI
         end
       end
 
-      Tick.new(per_pod: per_pod, rate_limited: rate_limited)
+      Tick.new(per_pod: per_pod, rate_limited: rate_limited, not_authorized: not_authorized)
+    end
+
+    # Q-77: the message of a :not_authorized error, logged once; nil
+    # otherwise. Every later pod would hit the same wall, so the YouTube
+    # phase ends here.
+    def not_authorized_message(result)
+      error = result.errors.find { |e| e[:type] == :not_authorized } or return nil
+
+      @log.call "uploads: YouTube not authorized — skipping the YouTube phase for the remaining pods (#{error[:message]})"
+      error[:message]
     end
 
     # [error class or type label, message] of a round that uploaded nothing,
@@ -267,6 +288,7 @@ module PodgenCLI
       end
       total = tick.per_pod.values.sum { |v| v[:uploaded] }
       puts "uploads: total YT uploaded #{total}#{tick.rate_limited ? ' — STOPPED on YouTube rate limit' : ''}"
+      puts "uploads: YouTube NOT AUTHORIZED — #{tick.not_authorized}" if tick.not_authorized
       unless failures.empty?
         puts "uploads: #{failures.length} pod(s) had non-YT failures:"
         failures.each { |f| puts "  - #{f[:pod]}: #{f[:phase]} (#{f[:errors].first&.[](:message)})" }

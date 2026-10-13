@@ -94,11 +94,66 @@ class TestYouTubeUploader < Minitest::Test
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
   end
 
+  # --- Q-77 / I-9: no browser, no port, no wait without a terminal ---
+
+  def test_loopback_consent_refuses_without_a_terminal_before_opening_a_port
+    out = StringIO.new
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_authorization_url) { |base_url:| flunk "URL must not be built" }
+    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false, interactive: false)
+
+    assert_raises(YouTubeUploader::NotInteractive) { consent.call(authorizer) }
+
+    assert_nil consent.port, "no listener may be opened"
+    assert_empty out.string, "nothing printed to a log nobody reads"
+  end
+
+  def test_loopback_consent_interactive_probe_needs_stdin_and_stderr_ttys
+    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false)
+
+    $stdin.stub(:tty?, false) do
+      $stderr.stub(:tty?, true) { refute consent.interactive?, "launchd: no stdin tty" }
+    end
+    $stdin.stub(:tty?, true) do
+      $stderr.stub(:tty?, false) { refute consent.interactive?, "stderr redirected to a log" }
+      $stderr.stub(:tty?, true) { assert consent.interactive?, "a terminal session" }
+    end
+  end
+
+  def test_authorize_raises_not_interactive_before_consent_when_no_terminal
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+
+    mock_authorizer = Minitest::Mock.new
+    mock_authorizer.expect(:get_credentials, nil, ["default"])
+
+    consent = Object.new
+    consent.define_singleton_method(:interactive?) { false }
+    consent.define_singleton_method(:call) { |_authorizer| flunk "consent must not run without a terminal" }
+    uploader = YouTubeUploader.new(consent: consent)
+
+    error = nil
+    Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
+      Google::Auth::Stores::FileTokenStore.stub(:new, Object.new) do
+        error = assert_raises(YouTubeUploader::NotInteractive) { uploader.authorize! }
+      end
+    end
+    mock_authorizer.verify
+
+    assert_includes error.message, YouTubeUploader::TOKEN_FILE, "names the token file"
+    assert_match(/from a terminal/, error.message, "tells the owner where to authorize")
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+  end
+
   def test_loopback_consent_serves_the_callback_and_returns_code_and_redirect
     out = StringIO.new
     authorizer = Object.new
     authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://accounts.example/auth?redirect_uri=#{base_url}" }
-    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false)
+    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false, interactive: true)
 
     result = nil
     t = Thread.new { result = consent.call(authorizer) }
@@ -121,7 +176,7 @@ class TestYouTubeUploader < Minitest::Test
     out = StringIO.new
     authorizer = Object.new
     authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
-    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false, idle_timeout: 0.2)
+    consent = YouTubeUploader::LoopbackConsent.new(io: out, open_browser: false, interactive: true, idle_timeout: 0.2)
 
     result = nil
     t = Thread.new { result = consent.call(authorizer) }
@@ -141,7 +196,7 @@ class TestYouTubeUploader < Minitest::Test
   def test_loopback_consent_gives_up_after_the_overall_wait
     authorizer = Object.new
     authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
-    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false, wait: 0.2)
+    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false, interactive: true, wait: 0.2)
 
     code, redirect = consent.call(authorizer)
 
@@ -152,7 +207,7 @@ class TestYouTubeUploader < Minitest::Test
   def test_loopback_consent_returns_nil_code_when_callback_has_no_code
     authorizer = Object.new
     authorizer.define_singleton_method(:get_authorization_url) { |base_url:| "https://x/#{base_url}" }
-    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false)
+    consent = YouTubeUploader::LoopbackConsent.new(io: StringIO.new, open_browser: false, interactive: true)
 
     result = nil
     t = Thread.new { result = consent.call(authorizer) }
