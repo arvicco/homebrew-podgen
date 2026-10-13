@@ -4,6 +4,8 @@ require_relative "../test_helper"
 require "youtube_uploader"
 require "socket"
 require "stringio"
+require "tmpdir"
+require "fileutils"
 
 class TestYouTubeUploader < Minitest::Test
   def setup
@@ -132,7 +134,9 @@ class TestYouTubeUploader < Minitest::Test
     consent = Object.new
     consent.define_singleton_method(:interactive?) { false }
     consent.define_singleton_method(:call) { |_authorizer| flunk "consent must not run without a terminal" }
-    uploader = YouTubeUploader.new(consent: consent)
+    token_file = File.join(Dir.mktmpdir("podgen_yt_token"), "youtube_token.json")
+    File.write(token_file, "{}\n")
+    uploader = YouTubeUploader.new(consent: consent, token_file: token_file)
 
     error = nil
     Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
@@ -142,11 +146,12 @@ class TestYouTubeUploader < Minitest::Test
     end
     mock_authorizer.verify
 
-    assert_includes error.message, YouTubeUploader::TOKEN_FILE, "names the token file"
+    assert_includes error.message, "#{token_file}: 3 bytes, modified", "names the token file and its state"
     assert_match(/from a terminal/, error.message, "tells the owner where to authorize")
   ensure
     ENV["YOUTUBE_CLIENT_ID"] = original_id
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+    FileUtils.rm_rf(File.dirname(token_file)) if token_file
   end
 
   def test_loopback_consent_serves_the_callback_and_returns_code_and_redirect

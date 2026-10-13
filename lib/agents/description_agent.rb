@@ -16,11 +16,13 @@ class DescriptionAgent
     init_anthropic_client(role: :description)
   end
 
+  # A cleaned title that still ends in a bare number ("… Cleo 291") is
+  # flagged in the run log (Q-78); the model's answer is kept.
+  TRAILING_BARE_NUMBER = /\s\d{1,4}\z/
+
   # Cleans a YouTube/RSS episode title by stripping category prefixes, labels, and noise.
   # e.g. "PRAVLJICA ZA OTROKE: Lačni medved" → "Lačni medved"
   # Returns cleaned title, or original on failure.
-  TRAILING_BARE_NUMBER = /\s\d{1,4}\z/
-
   def clean_title(title:)
     return title if title.to_s.strip.empty?
 
