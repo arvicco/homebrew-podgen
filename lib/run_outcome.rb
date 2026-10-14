@@ -7,7 +7,8 @@
 # status: error when the run exited non-zero, warn when it succeeded with
 # warnings or logged errors, ok otherwise. warnings counts the run's
 # degradations (the end-of-run summary plus logged library warnings),
-# errors counts ERROR log entries. first is the first warning (else the
+# errors counts ERROR log entries. first is the first error for an error
+# run (else the first warning) and the first warning otherwise (else the
 # first error), flattened to one line and clipped; it is always the last
 # field, so it may contain spaces. `podgen status` reads it before any
 # regex scan of the log. Additive to the log; written by GenerateCommand.
@@ -26,7 +27,8 @@ module RunOutcome
     else
       "ok"
     end
-    first = warnings.first || first_error
+    # A failed run names what killed it; a degraded one its first warning.
+    first = (status == "error") ? first_error || warnings.first : warnings.first || first_error
     text = "#{PREFIX} status=#{status} warnings=#{warnings.size} errors=#{errors}"
     first ? "#{text} first=#{flatten(first)}" : text
   end
