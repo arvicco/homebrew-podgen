@@ -63,6 +63,58 @@ class TestYouTubeUploader < Minitest::Test
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
   end
 
+  # --- Q-79: a transient refresh failure must not wipe the refresh token ---
+
+  def test_authorize_refresh_socket_error_keeps_token_and_propagates
+    store, _logs = refresh_failing_with(SocketError.new("getaddrinfo: nodename nor servname provided")) do |run|
+      assert_raises(SocketError) { run.call }
+    end
+
+    assert_empty store.deleted, "a DNS blip must leave the stored refresh token intact"
+  end
+
+  # googleauth retries a transport error five times, then re-raises it as
+  # Google::Auth::AuthorizationError (a Signet::AuthorizationError) with the
+  # transport error as its cause — the shape a real outage arrives in.
+  def test_authorize_refresh_retries_exhausted_transport_error_keeps_token_and_propagates
+    wrapped = googleauth_wrapped(Faraday::ConnectionFailed.new("Failed to open TCP connection"), "Unexpected error: #<Faraday::ConnectionFailed>")
+    store, _logs = refresh_failing_with(wrapped) do |run|
+      error = assert_raises(Google::Auth::AuthorizationError) { run.call }
+      assert_kind_of Faraday::ConnectionFailed, error.cause
+    end
+
+    assert_empty store.deleted, "an exhausted retry on a transport error is not a revoked grant"
+  end
+
+  def test_authorize_refresh_remote_server_error_keeps_token_and_propagates
+    wrapped = googleauth_wrapped(Signet::RemoteServerError.new("Remote server error."), "Unexpected error: #<Signet::RemoteServerError>")
+    store, _logs = refresh_failing_with(wrapped) do |run|
+      assert_raises(Google::Auth::AuthorizationError) { run.call }
+    end
+
+    assert_empty store.deleted, "a Google 5xx must leave the stored refresh token intact"
+  end
+
+  def test_authorize_refresh_rejected_grant_deletes_token_and_logs_without_reauthorizing_claim
+    message = "Authorization failed.  Server message: invalid_grant"
+    wrapped = googleauth_wrapped(Signet::AuthorizationError.new(message), message)
+    store, logs = refresh_failing_with(wrapped, interactive: false) do |run|
+      assert_raises(YouTubeUploader::NotInteractive) { run.call }
+    end
+
+    assert_equal ["default"], store.deleted, "invalid_grant / revoked: the token is dead, clear it"
+    refute(logs.any? { |l| l.include?("re-authorizing") }, "no re-authorization happens without a terminal")
+    assert(logs.any? { |l| l.include?("rejected") }, "says why the token was cleared")
+  end
+
+  def test_authorize_refresh_rejected_grant_interactive_logs_reauthorizing
+    _store, logs = refresh_failing_with(Signet::AuthorizationError.new("expired"), interactive: true) do |run|
+      assert_raises(RuntimeError, /No authorization code/) { run.call }
+    end
+
+    assert(logs.any? { |l| l.include?("re-authorizing") })
+  end
+
   # --- P1-16: loopback consent replaces the discontinued OOB flow ---
 
   def test_authorize_exchanges_the_code_against_the_loopback_redirect
@@ -351,5 +403,66 @@ class TestYouTubeUploader < Minitest::Test
 
   def test_scope_is_youtube
     assert_includes YouTubeUploader::SCOPE.to_s, "youtube"
+  end
+
+  private
+
+  class RecordingTokenStore
+    attr_reader :deleted
+
+    def initialize = @deleted = []
+    def delete(id) = @deleted << id
+  end
+
+  class RecordingLogger
+    attr_reader :lines
+
+    def initialize = @lines = []
+    def log(msg) = @lines << msg
+  end
+
+  # Raises error_class.new(message) from inside a rescue of cause, as
+  # googleauth's retry_with_error does, so #cause is set the real way.
+  def googleauth_wrapped(cause, message)
+    raise cause
+  rescue
+    begin
+      raise Google::Auth::AuthorizationError, message
+    rescue Google::Auth::AuthorizationError => e
+      e
+    end
+  end
+
+  # Stored credentials are expired and refresh! raises error; consent yields
+  # no code. Yields a runner for authorize!; returns [token_store, log lines].
+  def refresh_failing_with(error, interactive: true)
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+    dir = Dir.mktmpdir("podgen_yt_token")
+
+    expired_cred = Object.new
+    expired_cred.define_singleton_method(:expired?) { true }
+    expired_cred.define_singleton_method(:refresh!) { raise error }
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_credentials) { |_| expired_cred }
+    consent = Object.new
+    consent.define_singleton_method(:interactive?) { interactive }
+    consent.define_singleton_method(:call) { |_| [nil, "http://127.0.0.1:1"] }
+    store = RecordingTokenStore.new
+    logger = RecordingLogger.new
+    uploader = YouTubeUploader.new(logger: logger, consent: consent, token_file: File.join(dir, "youtube_token.json"))
+
+    Google::Auth::UserAuthorizer.stub(:new, authorizer) do
+      Google::Auth::Stores::FileTokenStore.stub(:new, store) do
+        yield -> { uploader.authorize! }
+      end
+    end
+    [store, logger.lines]
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+    FileUtils.rm_rf(dir) if dir
   end
 end

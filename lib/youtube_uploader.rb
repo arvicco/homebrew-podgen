@@ -123,12 +123,17 @@ class YouTubeUploader
 
     credentials = authorizer.get_credentials("default")
 
-    # If token is expired, try to refresh; if that fails, clear and re-prompt
+    # If token is expired, try to refresh. Only a grant Google rejected
+    # (invalid_grant / revoked) clears the token; a transport error or 5xx
+    # propagates with the token intact so the next run can refresh (Q-79).
     if credentials && credentials.expired?
       begin
         credentials.refresh!
-      rescue StandardError
-        log("Stored YouTube token expired — re-authorizing")
+      rescue Signet::AuthorizationError => e
+        raise if transient_refresh_failure?(e)
+
+        log(interactive_consent? ? "Stored YouTube token rejected — re-authorizing" :
+                                   "Stored YouTube token rejected by Google — cleared; a terminal consent is needed")
         token_store.delete("default")
         credentials = nil
       end
@@ -284,6 +289,15 @@ class YouTubeUploader
   # interactive; LoopbackConsent answers for itself.
   def interactive_consent?
     @consent.respond_to?(:interactive?) ? @consent.interactive? : true
+  end
+
+  # googleauth retries any non-authorization error five times, then re-raises
+  # it as Google::Auth::AuthorizationError with the original as its cause
+  # (Faraday::ConnectionFailed/TimeoutError, Signet::RemoteServerError, ...).
+  # A rejected grant (400/401/403) arrives with a Signet::AuthorizationError
+  # cause, or none.
+  def transient_refresh_failure?(error)
+    !error.cause.nil? && !error.cause.is_a?(Signet::AuthorizationError)
   end
 
   # One line a log reader can act on: which file, what state, what to run.
