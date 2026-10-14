@@ -211,6 +211,50 @@ class TestYouTubePublisher < Minitest::Test
     refute result.rate_limited
   end
 
+  # Q-80: run authorizes before any per-episode work, so a refused consent
+  # never costs a (possibly paid) retranscription or an mp4 build first.
+
+  def test_run_without_playlist_not_interactive_authorize_prepares_nothing_and_returns_not_authorized
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.authorize_raises YouTubeUploader::NotInteractive.new("no terminal") }
+    publisher = build_publisher(config: config, uploader: uploader)
+    prepared = []
+    publisher.define_singleton_method(:prepare_subtitles) { |ep, **_kw| prepared << ep[:base_name] }
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_empty prepared, "no subtitle work before authorization"
+    assert_equal 0, result.attempted
+    assert_equal 0, result.uploaded
+    assert_equal [:not_authorized], result.errors.map { |e| e[:type] }
+    assert_equal "YouTubeUploader::NotInteractive", result.errors.first[:error_class]
+    assert_empty uploader.uploads
+    assert_match(/YouTube not authorized: no terminal/, err)
+  end
+
+  def test_run_authorize_transport_failure_prepares_nothing_and_returns_typed_error
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.authorize_raises SocketError.new("getaddrinfo failed") }
+    publisher = build_publisher(config: config, uploader: uploader)
+    prepared = []
+    publisher.define_singleton_method(:prepare_subtitles) { |ep, **_kw| prepared << ep[:base_name] }
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_empty prepared, "no subtitle work before authorization"
+    assert_equal 0, result.attempted
+    assert_equal [:authorization], result.errors.map { |e| e[:type] }
+    assert_equal "SocketError", result.errors.first[:error_class]
+    assert_empty uploader.uploads
+    assert_match(/YouTube authorization failed: SocketError/, err)
+  end
+
   def test_calls_regen_cache_so_block_runs_once_per_pod
     seed_ep("ep-2026-01-15")
 

@@ -106,6 +106,20 @@ class YouTubePublisher
 
     uploader = active_uploader
 
+    # Q-80: authorize before any per-episode work (subtitles, mp4), so a
+    # refused consent or an auth failure costs nothing.
+    begin
+      uploader.authorize!
+    rescue YouTubeUploader::NotInteractive => e # fatal for the whole batch: nobody can authorize (Q-77)
+      $stderr.puts "YouTube not authorized: #{e.message}"
+      return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                        errors: [not_authorized_error(e)])
+    rescue => e # fatal for this run: every episode would fail the same way; the token is kept (Q-79)
+      $stderr.puts "YouTube authorization failed: #{e.class}: #{e.message}"
+      return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                        errors: [{ type: :authorization, error_class: e.class.name, message: e.message }])
+    end
+
     if yt_config[:playlist]
       begin
         verify_playlist_cached!(uploader, yt_config[:playlist])
