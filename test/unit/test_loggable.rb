@@ -75,6 +75,33 @@ class TestLoggable < Minitest::Test
     assert_includes messages.first, "[InnerAgent]"
   end
 
+  # --- log_warning (P7-0: counted in the run's RUN-OUTCOME) ---
+
+  def test_log_warning_records_tagged_warning_on_logger
+    received = nil
+    logger = Object.new
+    logger.define_singleton_method(:warning) { |msg| received = msg }
+
+    DummyAgent.new(logger: logger).send(:log_warning, "Source 'exa' failed: 401")
+
+    assert_equal "[DummyAgent] Warning: Source 'exa' failed: 401", received
+  end
+
+  def test_log_warning_falls_back_to_log_on_logger_without_warning
+    messages = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |msg| messages << msg }
+
+    DummyAgent.new(logger: logger).send(:log_warning, "degraded")
+
+    assert_equal ["[DummyAgent] Warning: degraded"], messages
+  end
+
+  def test_log_warning_with_default_ambient_is_silent
+    PodcastAgent.logger = nil
+    assert_silent { DummyAgent.new.send(:log_warning, "quiet") }
+  end
+
   def test_log_without_logger_falls_back_to_ambient
     received = nil
     ambient = Object.new

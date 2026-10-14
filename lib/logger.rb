@@ -36,6 +36,7 @@ module PodcastAgent
   class NullLogger
     def log(_message); end
     def error(_message); end
+    def warning(_message); end
     def phase_start(_name); end
     def phase_end(_name); end
     def log_file_path; nil; end
@@ -46,8 +47,9 @@ module PodcastAgent
     # calls would otherwise interleave entries mid-line.
     FILE_MUTEX = Mutex.new
 
-    # ERROR entries written so far (the run's RUN-OUTCOME line reports them).
-    attr_reader :error_count, :first_error
+    # ERROR entries and #warning messages written so far (the run's
+    # RUN-OUTCOME line reports them).
+    attr_reader :error_count, :first_error, :logged_warnings
 
     # verbosity: :normal (default), :verbose, or :quiet
     # File logging always writes full detail regardless of verbosity.
@@ -66,12 +68,20 @@ module PodcastAgent
       @start_times = {}
       @error_count = 0
       @first_error = nil
+      @logged_warnings = []
     end
 
     def log(message)
       entry = "[#{Time.now.strftime('%Y-%m-%d %H:%M:%S')}] #{message}"
       puts entry unless @verbosity == :quiet
       FILE_MUTEX.synchronize { File.open(@log_file, "a") { |f| f.puts(entry) } }
+    end
+
+    # A degradation the run survived (a source down, a fallback taken): logged
+    # like any line and counted as a warning in RUN-OUTCOME.
+    def warning(message)
+      log(message)
+      FILE_MUTEX.synchronize { @logged_warnings << message }
     end
 
     def phase_start(name)

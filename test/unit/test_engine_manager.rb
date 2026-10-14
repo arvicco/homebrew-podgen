@@ -120,6 +120,24 @@ class TestEngineManager < Minitest::Test
     assert_includes output[:errors], "open"
   end
 
+  def test_comparison_mode_engine_and_reconcile_failures_record_run_warnings
+    mock_open = MockTranscriptionEngine.new(result: {text: "open text", segments: []})
+    mock_groq = MockTranscriptionEngine.new(error: RuntimeError.new("API error"))
+    manager = build_manager(%w[open groq])
+    stub_engine(manager, "open", mock_open)
+    stub_engine(manager, "groq", mock_groq)
+    stub_reconciler(manager, MockReconciler.new(reconcile_error: RuntimeError.new("boom")))
+
+    logger = Dir.mktmpdir do |dir|
+      PodcastAgent::Logger.new(log_path: File.join(dir, "e.log"), verbosity: :quiet).tap do |l|
+        PodcastAgent.with_logger(l) { manager.transcribe("/fake.mp3", captions: "caption text") }
+      end
+    end
+
+    assert_equal ["[EngineManager] Warning: Engine 'groq' failed: API error",
+      "[EngineManager] Warning: Reconciliation failed (non-fatal): boom"], logger.logged_warnings
+  end
+
   def test_comparison_mode_raises_when_all_fail
     mock_open = MockTranscriptionEngine.new(error: RuntimeError.new("fail 1"))
     mock_groq = MockTranscriptionEngine.new(error: RuntimeError.new("fail 2"))

@@ -387,6 +387,33 @@ class TestGenerateCommand < Minitest::Test
       last_log_line
   end
 
+  def test_run_outcome_counts_logged_library_warnings
+    cmd = runnable_command("news")
+    cmd.define_singleton_method(:research_topics) do |_|
+      @logger.warning("[ResearchAgent] Warning: Failed to research 'x' after 3 attempts: 401")
+      []
+    end
+    capture_io { cmd.run }
+
+    assert_equal "RUN-OUTCOME status=warn warnings=1 errors=0 " \
+      "first=[ResearchAgent] Warning: Failed to research 'x' after 3 attempts: 401", last_log_line
+  end
+
+  def test_generate_topics_fallback_to_queue_is_a_run_warning
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    cmd.instance_variable_set(:@warnings, [])
+    cmd.instance_variable_set(:@history, Struct.new(:recent_topics_summary).new(nil))
+    cmd.instance_variable_set(:@config, Struct.new(:queue_topics).new(["q1"]))
+
+    topics = TopicAgent.stub(:new, ->(**) { raise "401 revoked" }) { cmd.send(:generate_topics) }
+
+    assert_equal ["q1"], topics
+    assert_equal ["Topic generation failed (RuntimeError: 401 revoked), fell back to queue.yml"],
+      cmd.instance_variable_get(:@warnings)
+  end
+
   def test_language_pipeline_warnings_reader_exposes_collected_warnings
     pipeline = PodgenCLI::LanguagePipeline.allocate
     pipeline.instance_variable_set(:@warnings, ["w1"])

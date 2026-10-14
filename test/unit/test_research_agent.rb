@@ -43,6 +43,19 @@ class TestResearchAgent < Minitest::Test
     assert_empty results.first[:findings]
   end
 
+  def test_research_exa_error_records_run_warning
+    agent = build_agent
+    agent.instance_variable_set(:@client, MockExaClientWithError.new)
+    logger = Dir.mktmpdir do |dir|
+      PodcastAgent::Logger.new(log_path: File.join(dir, "r.log"), verbosity: :quiet).tap do |l|
+        PodcastAgent.with_logger(l) { agent.research(["topic"]) }
+      end
+    end
+
+    assert_equal 1, logger.logged_warnings.size
+    assert_match(/Warning: Failed to research 'topic'/, logger.logged_warnings.first)
+  end
+
   def test_research_multiple_topics
     agent = build_agent
     stub_search(agent, [{ "title" => "Result", "url" => "https://example.com", "summary" => "..." }])

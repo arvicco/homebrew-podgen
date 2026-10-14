@@ -181,9 +181,10 @@ module PodgenCLI
 
     # Ends the run log with its one machine-readable RUN-OUTCOME line (P7-0)
     # and passes the exit code through. The language pipeline keeps its own
-    # warnings; the logger counts ERROR entries for both pipelines.
+    # warnings; the logger counts ERROR entries and library warnings
+    # (Loggable#log_warning) for both pipelines.
     def finish_run(code)
-      warnings = @language_pipeline ? @language_pipeline.warnings : @warnings
+      warnings = (@language_pipeline ? @language_pipeline.warnings : @warnings) + @logger.logged_warnings
       @logger.log(RunOutcome.line(code: code, warnings: warnings, errors: @logger.error_count,
         first_error: @logger.first_error))
       code
@@ -210,6 +211,7 @@ module PodgenCLI
           t
         rescue => e
           @logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+          @warnings << "Topic generation failed (#{e.class}: #{e.message}), fell back to queue.yml"
           t = @config.queue_topics
           @logger.log("Loaded #{t.length} fallback topics: #{t.join(', ')}")
           t

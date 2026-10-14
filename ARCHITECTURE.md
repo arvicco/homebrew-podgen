@@ -126,4 +126,4 @@ Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|
 
 **Why.** The status board guessed at degradation with `/Warning:|WARNING/` and an `ERROR` on the last line, but the pipelines report trouble in their own words (`⚠ N episode(s) produced (with warnings)`, `  - Language es failed: ...`, a mid-log `ERROR`). A daily translation failure ended its log cleanly and stayed green. The producer knows its outcome; the reader should not reverse-engineer it from prose.
 
-**Implication.** A new degradation joins the run's warnings (the pipeline's `@warnings`), not just the log text. Keep the line additive: new fields go before `first=`, and the parser in `RunOutcome` changes in the same commit.
+**Implication.** A new degradation joins the run's warnings — the pipeline's `@warnings`, or `Loggable#log_warning` in a library class (a source down, a research or engine failure, a skipped AI review), which the logger counts — not just the log text. Keep the line additive: new fields go before `first=`, and the parser in `RunOutcome` changes in the same commit.
