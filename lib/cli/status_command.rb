@@ -464,8 +464,10 @@ module PodgenCLI
       "#{text[0, half]}...#{text[-(LINE_MAX - 3 - half)..]}"
     end
 
+    # The RUN-OUTCOME line quotes a warning in first=; it is judged as an
+    # outcome, never counted as a warning line itself.
     def warning?(line)
-      line.match?(WARNING_RE) && !line.match?(REVIEWER_FINDING_RE)
+      line.match?(WARNING_RE) && !line.match?(REVIEWER_FINDING_RE) && RunOutcome.parse(line).nil?
     end
 
     def normalize(line)
