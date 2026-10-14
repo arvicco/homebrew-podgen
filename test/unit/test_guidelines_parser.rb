@@ -683,6 +683,14 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "fr", parser.languages[1]["code"]
   end
 
+  def test_languages_inline_single_podcast_language_is_the_primary
+    # P7-6: `- language: es` under ## Podcast declares a one-language
+    # podcast (primary es) — before, the inline form was silently dropped
+    # and the podcast fell back to en.
+    parser = build_parser("## Podcast\n- name: Test\n- language: es\n")
+    assert_equal [{ "code" => "es" }], parser.languages
+  end
+
   def test_languages_defaults_to_english
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_equal [{ "code" => "en" }], parser.languages

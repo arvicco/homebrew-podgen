@@ -236,6 +236,10 @@ class GuidelinesParser
           config[:languages] ||= []
           config[:languages] << parse_language_entry(entry)
         end
+      elsif item.key == "language"
+        # Inline `- language: es` — a single-language podcast (P7-6).
+        warn_sub_items("Podcast", item)
+        config[:languages] = [parse_language_entry(item.value)]
       else
         warn_sub_items("Podcast", item)
         config[item.key.to_sym] = item.value unless item.value.empty?
