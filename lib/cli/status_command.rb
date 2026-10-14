@@ -20,7 +20,9 @@ module PodgenCLI
   #          repeated across the last N run logs (silent-for-weeks failures),
   #          or the same publish warning in the last PUBLISH_REPEAT scheduled
   #          publishes (shared launchd stderr), or Twitter announcements
-  #          stalled behind the newest episode (P3-2)
+  #          stalled behind the newest episode (P3-2), or YouTube/LingQ
+  #          uploads stalled the same way, or the upload batch's stderr
+  #          names a not-authorized / quota condition (P7-1)
   #   OK   - otherwise; a show with no cadence whose newest episode is old is
   #          noted "dormant — no cadence" (P3-4)
   # Exit 0 when every podcast is OK, 1 otherwise, so a scheduled run can alert.
@@ -52,12 +54,25 @@ module PodgenCLI
     GENERATE_LINE_RE = /\A(?:\[\d{4}-\d{2}-\d{2}[^\]]*\]|Generate failed)/
     TWITTER_RE = /Twitter/
     DEFAULT_TWEET_SINCE = 7
+    # Upload progress (P7-1): per configured platform, the newest tracked
+    # upload vs the newest episode, stalled past UPLOAD_SINCE days. The upload
+    # batch's shared stderr (launchd, logs/uploads_stderr.log) is scanned only
+    # while written within that window; it names conditions, never bodies.
+    UPLOAD_SINCE = 7
+    UPLOAD_LOG = File.join("logs", "uploads_stderr.log")
+    UPLOAD_LOG_TAIL = 200
+    UPLOAD_CONDITIONS = {
+      /not authorized/i => "YouTube not authorized",
+      /uploadLimitExceeded|quotaExceeded/ => "YouTube upload quota exceeded"
+    }.freeze
 
-    def initialize(args, options, plist_dir: ScheduleCommand::LAUNCH_AGENTS_DIR, today: Date.today, publish_log: nil)
+    def initialize(args, options, plist_dir: ScheduleCommand::LAUNCH_AGENTS_DIR, today: Date.today, publish_log: nil,
+      uploads_log: nil)
       @options = options
       @plist_dir = plist_dir
       @today = today
       @publish_log = publish_log || File.join(PodcastConfig.root, PUBLISH_LOG)
+      @uploads_log = uploads_log || File.join(PodcastConfig.root, UPLOAD_LOG)
       @json = false
       @hint = false
       @runs = DEFAULT_RUNS
@@ -139,15 +154,17 @@ module PodgenCLI
       log_findings(config).each { |reason| escalate.call("WARN", reason) }
       publish_findings(config).each { |reason| escalate.call("WARN", reason) }
       announcements = announcement_progress(config, escalate)
+      uploads = upload_progress(config, escalate)
       if verdict == "OK" && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
       end
 
       {podcast: name, verdict: verdict, newest: newest&.to_s, age_days: age, reasons: reasons,
-       announcements: announcements}
+       announcements: announcements, uploads: uploads}
     rescue => e
       {podcast: name, verdict: "WARN", newest: nil, age_days: nil,
-       reasons: ["status check failed: #{e.class}: #{e.message}"[0, LINE_MAX]], announcements: nil}
+       reasons: ["status check failed: #{e.class}: #{e.message}"[0, LINE_MAX]], announcements: nil,
+       uploads: nil}
     end
 
     # Delegates the staleness rule to Validators::FreshnessValidator.
@@ -316,18 +333,71 @@ module PodgenCLI
       dates = announced_episode_dates(config, tc[:languages])
       last = tweeted_dates(config).max
       newest = dates.max
-      stalled = if newest.nil?
+      stalled = progress_stalled?(dates, last, since)
+      if stalled
+        escalate.call("WARN", last ? "announcements stalled since #{last} (newest episode #{newest})" :
+          "announcements never posted (newest episode #{newest})")
+      end
+      {last_tweeted: last&.to_s, newest_episode: newest&.to_s, stalled: stalled}
+    end
+
+    # Stalled when the newest episode is more than `since` days past the last
+    # one sent; never sent only counts once an episode is older than `since`
+    # (a brand-new show is not stalled).
+    def progress_stalled?(dates, last, since)
+      newest = dates.max
+      if newest.nil?
         false
       elsif last
         (newest - last).to_i > since
       else
         (@today - dates.min).to_i > since
       end
-      if stalled
-        escalate.call("WARN", last ? "announcements stalled since #{last} (newest episode #{newest})" :
-          "announcements never posted (newest episode #{newest})")
+    end
+
+    # --- upload progress (YouTube, LingQ; P7-1) ---
+
+    # {platform => {last_uploaded:, newest_episode:, stalled:}} for each
+    # platform the podcast configures, nil when none. Eligible episodes and
+    # tracker groups mirror YouTubePublisher / LingQPublisher (every scanned
+    # episode; playlist or "default", collection id).
+    def upload_progress(config, escalate)
+      platforms = upload_platforms(config)
+      return nil if platforms.empty?
+
+      dates = EpisodeScanner.scan(config.episodes_dir).filter_map { |ep| EpisodeFiltering.parse_date(ep[:base_name]) }
+      newest = dates.max
+      progress = platforms.to_h do |platform, group|
+        last = tracked_dates(config, platform, group).max
+        stalled = progress_stalled?(dates, last, UPLOAD_SINCE)
+        if stalled
+          escalate.call("WARN", last ? "#{platform} uploads stalled since #{last} (newest episode #{newest})" :
+            "#{platform} uploads never made (newest episode #{newest})")
+        end
+        [platform, {last_uploaded: last&.to_s, newest_episode: newest&.to_s, stalled: stalled}]
       end
-      {last_tweeted: last&.to_s, newest_episode: newest&.to_s, stalled: stalled}
+      if platforms.key?("youtube")
+        upload_log_conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
+      end
+      progress
+    end
+
+    def upload_platforms(config)
+      platforms = {}
+      platforms["youtube"] = (config.youtube_config[:playlist] || "default").to_s if config.youtube_config
+      collection = config.lingq_config&.dig(:collection)
+      platforms["lingq"] = collection.to_s if collection
+      platforms
+    end
+
+    # Condition names found in the tail of the upload batch's stderr, when it
+    # was written within UPLOAD_SINCE days. Never the matched line itself.
+    def upload_log_conditions
+      return [] unless File.exist?(@uploads_log)
+      return [] if (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
+
+      tail = File.readlines(@uploads_log).last(UPLOAD_LOG_TAIL).map(&:scrub)
+      UPLOAD_CONDITIONS.filter_map { |re, condition| condition if tail.any? { |l| l.match?(re) } }
     end
 
     # Same language filter as R2Publisher#scan_eligible_episodes.
@@ -346,10 +416,14 @@ module PodgenCLI
     # Only reads an existing tracker: UploadTracker#load would otherwise
     # migrate a legacy lingq_uploads.yml, and status never writes.
     def tweeted_dates(config)
+      tracked_dates(config, :twitter, "posts")
+    end
+
+    def tracked_dates(config, platform, group)
       path = File.join(File.dirname(config.episodes_dir), "uploads.yml") # UploadTracker.for_config
       return [] unless File.exist?(path)
 
-      UploadTracker.new(path).entries_for(:twitter, "posts").keys.filter_map { |b| EpisodeFiltering.parse_date(b) }
+      UploadTracker.new(path).entries_for(platform, group).keys.filter_map { |b| EpisodeFiltering.parse_date(b) }
     end
 
     def clip_middle(line)

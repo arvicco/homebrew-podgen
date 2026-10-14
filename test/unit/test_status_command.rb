@@ -8,7 +8,7 @@ require "cli/status_command"
 
 class TestStatusCommand < Minitest::Test
   TODAY = Date.new(2026, 10, 11)
-  JSON_KEYS = %w[podcast verdict newest age_days reasons announcements].sort.freeze
+  JSON_KEYS = %w[podcast verdict newest age_days reasons announcements uploads].sort.freeze
 
   def setup
     @tmpdir = Dir.mktmpdir("podgen_status")
@@ -406,6 +406,99 @@ class TestStatusCommand < Minitest::Test
     refute File.exist?(File.join(@tmpdir, "output", "alpha", "uploads.yml"))
   end
 
+  # --- upload progress per platform (P7-1) ---
+
+  def test_run_youtube_uploads_ten_days_behind_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-30 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-09-30" => "v1"}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-30 \(newest episode 2026-10-10\)/, out)
+    row = JSON.parse(run_status("--json").first).first
+    assert_equal({"youtube" => {"last_uploaded" => "2026-09-30", "newest_episode" => "2026-10-10", "stalled" => true}},
+      row["uploads"])
+  end
+
+  def test_run_lingq_uploads_ten_days_behind_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: LINGQ)
+    make_episodes("alpha", %w[alpha-2026-09-30 alpha-2026-10-10])
+    write_uploads("alpha", "lingq" => {"123" => {"alpha-2026-09-30" => 11}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*lingq uploads stalled since 2026-09-30/, out)
+  end
+
+  def test_run_uploads_within_since_window_are_ok
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE + LINGQ)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-10-05" => "v1"}},
+      "lingq" => {"123" => {"alpha-2026-10-10" => 11}})
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_uploads_counted_per_configured_group_only
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-30 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"OTHER" => {"alpha-2026-10-10" => "v9"}, "PL1" => {"alpha-2026-09-30" => "v1"}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/youtube uploads stalled since 2026-09-30/, out)
+  end
+
+  def test_run_youtube_never_uploaded_with_old_episode_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-20 alpha-2026-10-10])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads never made \(newest episode 2026-10-10\)/, out)
+  end
+
+  def test_run_no_upload_platform_configured_skips_check
+    make_pod("alpha", dates: fresh_dates)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-08-01" => "v1"}})
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_nil JSON.parse(run_status("--json").first).first["uploads"]
+  end
+
+  def test_run_uploads_stderr_not_authorized_reports_one_warn_line
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-10-10 skipped: YouTube not authorized: token file /x/y.json empty (0 bytes)",
+      "  ✗ alpha-2026-10-09 skipped: YouTube not authorized: token file /x/y.json empty (0 bytes)"])
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal 1, out.scan("YouTube not authorized").size, out
+    assert_match(/alpha\s+WARN\s+.*uploads_stderr\.log: YouTube not authorized/, out)
+    refute_includes out, "/x/y.json"
+  end
+
+  def test_run_uploads_stderr_quota_exceeded_reports_warn_without_body
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-10-10 failed: uploadLimitExceeded: The user has exceeded the number " \
+      "of videos they may upload. https://example.invalid/x"])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+    refute_includes out, "https://"
+  end
+
+  def test_run_uploads_stderr_older_than_since_is_ignored
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-09-01 skipped: YouTube not authorized: x"], mtime: Time.new(2026, 9, 1, 12))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_uploads_stderr_ignored_for_podcast_without_youtube
+    make_pod("alpha", dates: fresh_dates)
+    write_uploads_log(["  ✗ beta-2026-10-10 skipped: YouTube not authorized: x"])
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
   # --- dormant shows and configured cadence (P3-4) ---
 
   def test_run_single_day_show_long_ago_reports_ok_with_dormant_note
@@ -629,6 +722,23 @@ class TestStatusCommand < Minitest::Test
     FileUtils.mkdir_p(dir)
     posts = basenames.to_h { |b| [b, "id-#{b}"] }
     File.write(File.join(dir, "uploads.yml"), {"twitter" => {"posts" => posts}}.to_yaml)
+  end
+
+  YOUTUBE = "\n## YouTube\n- playlist: PL1\n"
+  LINGQ = "\n## LingQ\n- collection: 123\n"
+
+  def write_uploads(pod, data)
+    dir = File.join(@tmpdir, "output", pod)
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, "uploads.yml"), data.to_yaml)
+  end
+
+  # Shared stderr of the scheduled upload batch (scripts/run_upl*.sh).
+  def write_uploads_log(lines, mtime: Time.new(2026, 10, 10, 17))
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    path = File.join(@tmpdir, "logs", "uploads_stderr.log")
+    File.write(path, lines.join("\n") + "\n")
+    File.utime(mtime, mtime, path)
   end
 
   def write_log(pod, file, lines, mtime:)
