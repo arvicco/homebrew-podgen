@@ -221,6 +221,10 @@ class TestEngineManager < Minitest::Test
     @engine_stubs ||= {}
     @engine_stubs[code] = mock_engine
     stubs = @engine_stubs
+    # One singleton build_engine serves every stubbed code (they share the
+    # hash); redefining it per code only triggered a redefinition warning.
+    return if manager.singleton_methods.include?(:build_engine)
+
     manager.define_singleton_method(:build_engine) do |c|
       stubs[c] || raise("Unknown engine: #{c}")
     end

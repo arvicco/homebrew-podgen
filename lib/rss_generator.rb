@@ -147,7 +147,7 @@ class RssGenerator
       add_text(item, "itunes:duration", format_duration(ep))
 
       ep_url = @base_url ? "#{@base_url}/episodes/#{ep[:filename]}" : ep[:filename]
-      enclosure = item.add_element("enclosure", {
+      item.add_element("enclosure", {
         "url" => ep_url,
         "length" => ep[:size].to_s,
         "type" => "audio/mpeg"
