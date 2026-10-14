@@ -115,9 +115,13 @@ class YouTubePublisher
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
                         errors: [not_authorized_error(e)])
     rescue => e # fatal for this run: every episode would fail the same way; the token is kept (Q-79)
-      $stderr.puts "YouTube authorization failed: #{e.class}: #{e.message}"
+      # Class names only: googleauth's message inspects the cause, which for a
+      # Google 5xx carries the response body — never into a log line.
+      summary = e.cause ? "#{e.class} (cause #{e.cause.class})" : e.class.name
+      $stderr.puts "YouTube authorization failed: #{summary}"
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
-                        errors: [{ type: :authorization, error_class: e.class.name, message: e.message }])
+                        errors: [{ type: :authorization, error_class: e.class.name,
+                                   cause_class: e.cause&.class&.name, message: summary }.compact])
     end
 
     if yt_config[:playlist]

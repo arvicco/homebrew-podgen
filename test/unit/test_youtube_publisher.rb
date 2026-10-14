@@ -255,6 +255,34 @@ class TestYouTubePublisher < Minitest::Test
     assert_match(/YouTube authorization failed: SocketError/, err)
   end
 
+  # CRPR W1: googleauth's message for an exhausted retry is
+  # "Unexpected error: #{cause.inspect}", which for a Google 5xx embeds the
+  # response body. Only class names reach the log and the result.
+  def test_run_authorize_remote_server_error_keeps_response_body_out_of_log_and_result
+    seed_ep("ep-2026-01-15")
+    error = begin
+      raise Signet::RemoteServerError, "Remote server error.  Server message:\nSECRET-BODY-LINE"
+    rescue => cause
+      begin
+        raise Google::Auth::AuthorizationError, "Unexpected error: #{cause.inspect}"
+      rescue => wrapped
+        wrapped
+      end
+    end
+    uploader = stub_uploader { |b| b.authorize_raises error }
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_includes err, "YouTube authorization failed: Google::Auth::AuthorizationError (cause Signet::RemoteServerError)"
+    refute_includes err, "SECRET-BODY-LINE"
+    refute_includes result.errors.inspect, "SECRET-BODY-LINE"
+    assert_equal({type: :authorization, error_class: "Google::Auth::AuthorizationError",
+                  cause_class: "Signet::RemoteServerError",
+                  message: "Google::Auth::AuthorizationError (cause Signet::RemoteServerError)"}, result.errors.first)
+  end
+
   def test_calls_regen_cache_so_block_runs_once_per_pod
     seed_ep("ep-2026-01-15")
 
