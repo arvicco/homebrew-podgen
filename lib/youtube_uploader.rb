@@ -129,7 +129,7 @@ class YouTubeUploader
     if credentials && credentials.expired?
       begin
         credentials.refresh!
-      rescue Signet::AuthorizationError => e
+      rescue Signet::AuthorizationError => e # fatal: a rejected grant clears the token; retryable: a transient failure re-raises with the token kept
         raise if transient_refresh_failure?(e)
 
         log(interactive_consent? ? "Stored YouTube token rejected — re-authorizing" :
