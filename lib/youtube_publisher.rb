@@ -124,8 +124,9 @@ class YouTubePublisher
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
                         errors: [not_authorized_error(e)])
     rescue => e # fatal for this run: every episode would fail the same way; the token is kept (Q-79)
-      # Class names only: googleauth's message inspects the cause, which for a
-      # Google 5xx carries the response body — never into a log line.
+      # Class names only for a token-endpoint (Signet) failure: googleauth's
+      # message inspects the cause, which for a Google 5xx carries the response
+      # body — never into a log line. Any other error keeps its message.
       summary = self.class.auth_failure_summary(e) || "#{e.class}: #{e.message}"
       $stderr.puts "YouTube authorization failed: #{summary}"
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
