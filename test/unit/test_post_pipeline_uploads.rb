@@ -171,6 +171,43 @@ class TestPostPipelineUploads < Minitest::Test
       "Warning: YouTube upload failed: RuntimeError: captions boom (non-fatal, continuing)"
   end
 
+  # CRPR r2: a lazy refresh failing on a Google 5xx arrives as
+  # Google::Auth::AuthorizationError whose message carries the response
+  # body; the run log and the warnings (RUN-OUTCOME, notifications) get
+  # class names only.
+  def test_upload_to_youtube_authorization_error_keeps_response_body_out_of_log_and_warnings
+    base = "ep-2026-03-10"
+    mp3 = File.join(@episodes_dir, "#{base}.mp3")
+    File.write(mp3, "x" * 100)
+    File.write(File.join(@episodes_dir, "#{base}_cover.jpg"), "jpg")
+    File.write(File.join(@episodes_dir, "#{base}.mp4"), "mp4")
+    uploads = build_uploads_with_youtube
+    error = begin
+      raise Signet::RemoteServerError, "Remote server error.  Server message:\nSECRET-BODY-LINE"
+    rescue => cause
+      begin
+        raise Google::Auth::AuthorizationError, "Unexpected error: #{cause.inspect}"
+      rescue => wrapped
+        wrapped
+      end
+    end
+    uploader = Object.new
+    uploader.define_singleton_method(:upload_video) { |_path, **| raise error }
+    video_gen = Object.new
+    video_gen.define_singleton_method(:generate) { |_a, _i, out| File.write(out, "mp4") && out }
+
+    VideoGenerator.stub(:new, ->(**) { video_gen }) do
+      YouTubeUploader.stub(:new, ->(**) { uploader }) do
+        uploads.upload_to_youtube(episode: {title: "T"}, base_name: base, output_path: mp3)
+      end
+    end
+
+    refute(@logger.messages.any? { |m| m.include?("SECRET-BODY-LINE") }, @logger.messages.inspect)
+    refute(uploads.warnings.any? { |w| w.include?("SECRET-BODY-LINE") }, uploads.warnings.inspect)
+    assert_equal ["YouTube upload failed (Google::Auth::AuthorizationError (cause Signet::RemoteServerError))"],
+      uploads.warnings
+  end
+
   # P4-8: the pipeline delegates to the publisher's one per-episode routine,
   # passing its in-memory metadata and marking its fresh timestamps
   # authoritative (no re-transcription, no second reconcile).
