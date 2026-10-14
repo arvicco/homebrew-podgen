@@ -13,8 +13,10 @@ module HistoryMaps
   #   history_path:  path to history.yml
   #   podcast_name:  podcast name prefix for filenames
   #   episodes_dir:  episodes directory (for finding translated script titles)
-  #   languages:     array of language codes to map (default: none, English-only)
-  def self.build(history_path:, podcast_name:, episodes_dir:, languages: [])
+  #   languages:     array of language codes to map (default: none, primary-only)
+  #   primary:       the podcast's primary code (suffix-less basenames);
+  #                  excluded from `languages` (P7-6)
+  def self.build(history_path:, podcast_name:, episodes_dir:, languages: [], primary: EpisodeNaming::DEFAULT_PRIMARY)
     empty = [{}, {}, {}]
     return empty unless history_path && File.exist?(history_path)
 
@@ -27,8 +29,8 @@ module HistoryMaps
 
     # `languages` here is the codes to map variants for (RssGenerator passes
     # only its own feed language), not a primary-first config list, so the
-    # suffix-less primary is excluded by code.
-    non_english = languages.reject { |c| c == "en" }
+    # suffix-less primary is excluded by its code.
+    non_english = languages.reject { |c| c == primary }
 
     EpisodeNaming.each_history_basename(entries, podcast_name) do |entry, basename|
       filename = "#{basename}.mp3"

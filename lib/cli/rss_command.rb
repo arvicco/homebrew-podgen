@@ -49,11 +49,7 @@ module PodgenCLI
       config.languages.each do |lang|
         lang_code = lang["code"]
 
-        feed_path = if lang_code == "en"
-          config.feed_path
-        else
-          config.feed_path.sub(/\.xml$/, "-#{lang_code}.xml")
-        end
+        feed_path = File.join(File.dirname(config.feed_path), config.feed_file_name(lang_code))
 
         generator = RssGenerator.new(
           episodes_dir: config.episodes_dir,

@@ -11,6 +11,8 @@ require "upload_tracker"
 require "timestamp_persister"
 require "rss_generator"
 require "history_maps"
+require "podcast_config"
+require "cli/rss_command"
 
 # P0-5 — pinning tests for the FROZEN DOMAIN (CLAUDE.md golden rules
 # 4–5): the machine-readable shapes subscribers and downstream tooling
@@ -160,5 +162,49 @@ class TestFrozenContracts < Minitest::Test
     %w[title description link language generator itunes:author itunes:explicit lastBuildDate].each do |el|
       refute_nil channel.elements[el], "channel element #{el} is part of the frozen shape"
     end
+  end
+
+  # --- feed file naming + primary <language> (P7-6, ruling R6-01 (a)) ---
+  # The PRIMARY language's feed is feed.xml (the URL every subscriber
+  # holds) and carries the primary code in <language>; each translated
+  # language is feed-<code>.xml.
+
+  def test_feed_file_naming_and_primary_language_is_frozen
+    {%w[es] => {"feed.xml" => "es"},
+     %w[en es] => {"feed.xml" => "en", "feed-es.xml" => "es"}}.each do |codes, expected|
+      root = File.join(@tmpdir, codes.join("_"))
+      podcast_dir = File.join(root, "podcasts", "pod")
+      episodes_dir = File.join(root, "output", "pod", "episodes")
+      FileUtils.mkdir_p(podcast_dir)
+      File.write(File.join(podcast_dir, "guidelines.md"),
+        "## Podcast\n- name: Pod\n- language:\n#{codes.map { |c| "  - #{c}\n" }.join}")
+      make_episode(episodes_dir, "pod-2026-01-15")
+      make_episode(episodes_dir, "pod-2026-01-15-es") if codes.include?("en")
+
+      with_podgen_root(root) do
+        config = PodcastConfig.new("pod")
+        assert_equal expected.keys, codes.map { |c| config.feed_file_name(c) },
+          "primary = feed.xml, translated = feed-<code>.xml (#{codes.inspect})"
+        capture_io { PodgenCLI::RssCommand.new(["pod"], {verbosity: :quiet}).run }
+      end
+
+      expected.each do |file, lang|
+        doc = REXML::Document.new(File.read(File.join(root, "output", "pod", file)))
+        assert_equal lang, doc.root.elements["channel/language"].text,
+          "#{file} <language> for #{codes.inspect}"
+      end
+      assert_equal expected.keys.sort,
+        Dir.glob(File.join(root, "output", "pod", "feed*.xml")).map { |f| File.basename(f) }.sort
+    end
+  end
+
+  private
+
+  def with_podgen_root(root)
+    old = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = root
+    yield
+  ensure
+    old ? ENV["PODGEN_ROOT"] = old : ENV.delete("PODGEN_ROOT")
   end
 end

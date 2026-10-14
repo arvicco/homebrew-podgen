@@ -51,8 +51,8 @@ module PodgenCLI
       PodcastAgent.logger = logger
       logger.log("Translate started for '#{@podcast_name}'")
 
-      # Resolve target languages (exclude English)
-      languages = config.languages.reject { |l| l["code"] == "en" }
+      # Resolve target languages (exclude the primary)
+      languages = config.languages.reject { |l| l["code"] == config.primary_language }
 
       if @lang_filter
         languages = languages.select { |l| l["code"] == @lang_filter }
@@ -241,7 +241,7 @@ module PodgenCLI
 
       config.languages.each do |lang|
         lang_code = lang["code"]
-        feed_path = lang_code == "en" ? config.feed_path : config.feed_path.sub(/\.xml$/, "-#{lang_code}.xml")
+        feed_path = File.join(File.dirname(config.feed_path), config.feed_file_name(lang_code))
 
         generator = RssGenerator.new(
           episodes_dir: config.episodes_dir,

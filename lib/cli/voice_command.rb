@@ -81,7 +81,7 @@ module PodgenCLI
       basenames.each do |base_name|
         languages.each do |lang|
           lang_code = lang["code"]
-          lang_basename = lang_code == "en" ? base_name : "#{base_name}-#{lang_code}"
+          lang_basename = lang_code == config.primary_language ? base_name : "#{base_name}-#{lang_code}"
           md_path = File.join(config.episodes_dir, "#{lang_basename}_script.md")
           output_path = File.join(config.episodes_dir, "#{lang_basename}.mp3")
 

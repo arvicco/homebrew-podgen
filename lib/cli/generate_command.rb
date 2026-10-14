@@ -383,9 +383,10 @@ module PodgenCLI
     def produce_single_language(script, lang, base_name, intro_path, outro_path)
       lang_code = lang["code"]
       voice_id = lang["voice_id"]
-      lang_basename = lang_code == "en" ? base_name : "#{base_name}-#{lang_code}"
+      primary = lang_code == @config.primary_language
+      lang_basename = primary ? base_name : "#{base_name}-#{lang_code}"
 
-      lang_script = if lang_code == "en"
+      lang_script = if primary
         script
       else
         translated_path = File.join(@config.episodes_dir, "#{lang_basename}_script.md")
@@ -451,9 +452,9 @@ module PodgenCLI
 
     def finalize(output_paths, script, research_data, priority_urls)
       languages_meta = output_paths.each_with_object({}) do |path, h|
-        # Filename: <basename>.mp3 (en) or <basename>-<lang>.mp3
+        # Filename: <basename>.mp3 (primary) or <basename>-<lang>.mp3
         match = File.basename(path, ".mp3").match(/-([a-z]{2})\z/)
-        code = match ? match[1] : "en"
+        code = match ? match[1] : @config.primary_language
         h[code] = {
           "duration" => AudioAssembler.probe_duration(path),
           "voiced_at" => Time.now.iso8601

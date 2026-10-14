@@ -92,6 +92,17 @@ class TestValidators < Minitest::Test
     refute result[:warnings].any? { |w| w.include?("feed-es.xml") }
   end
 
+  def test_feed_multi_language_sl_primary_expects_feed_en_not_feed_sl
+    # P7-6: the primary language's feed is feed.xml; en is translated here.
+    create_mp3("mypod-2026-01-15.mp3", 1000)
+    write_feed(1)
+    result = validate(Validators::FeedValidator,
+      languages: [{ "code" => "sl" }, { "code" => "en" }])
+
+    assert result[:warnings].any? { |w| w.include?("feed-en.xml") }
+    refute result[:warnings].any? { |w| w.include?("feed-sl.xml") }
+  end
+
   # --- GuidelinesValidator ---
 
   def test_guidelines_queue_valid_format
