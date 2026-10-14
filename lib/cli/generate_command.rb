@@ -13,6 +13,7 @@ require_relative File.join(root, "lib", "snip_interval")
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "generate_options")
 require_relative File.join(root, "lib", "logger")
+require_relative File.join(root, "lib", "run_outcome")
 require_relative File.join(root, "lib", "agents", "topic_agent")
 require_relative File.join(root, "lib", "source_manager")
 require_relative File.join(root, "lib", "agents", "script_agent")
@@ -54,7 +55,7 @@ module PodgenCLI
         verify_ffmpeg!(@logger) unless @dry_run
         preflight_network!(@logger) unless @dry_run
 
-        return run_language_pipeline if @config.type == "language"
+        return finish_run(run_language_pipeline) if @config.type == "language"
 
         @logger.log("Pipeline type: news")
 
@@ -82,12 +83,12 @@ module PodgenCLI
           end
         end
 
-        0
+        finish_run(0)
       rescue => e
         @logger.error("#{e.class}: #{e.message}")
         @logger.error(e.backtrace.first(5).join("\n"))
         $stderr.puts "\n\u2717 Pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
-        1
+        finish_run(1)
       ensure
         @lock_file.flock(File::LOCK_UN)
         @lock_file.close
@@ -178,9 +179,19 @@ module PodgenCLI
       nil
     end
 
+    # Ends the run log with its one machine-readable RUN-OUTCOME line (P7-0)
+    # and passes the exit code through. The language pipeline keeps its own
+    # warnings; the logger counts ERROR entries for both pipelines.
+    def finish_run(code)
+      warnings = @language_pipeline ? @language_pipeline.warnings : @warnings
+      @logger.log(RunOutcome.line(code: code, warnings: warnings, errors: @logger.error_count,
+        first_error: @logger.first_error))
+      code
+    end
+
     def run_language_pipeline
       @logger.log("Pipeline type: language")
-      pipeline = LanguagePipeline.new(config: @config, options: @options, logger: @logger, history: @history, today: @today)
+      pipeline = @language_pipeline = LanguagePipeline.new(config: @config, options: @options, logger: @logger, history: @history, today: @today)
       pipeline.run
     end
 

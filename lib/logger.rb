@@ -46,6 +46,9 @@ module PodcastAgent
     # calls would otherwise interleave entries mid-line.
     FILE_MUTEX = Mutex.new
 
+    # ERROR entries written so far (the run's RUN-OUTCOME line reports them).
+    attr_reader :error_count, :first_error
+
     # verbosity: :normal (default), :verbose, or :quiet
     # File logging always writes full detail regardless of verbosity.
     # Terminal output is gated: :quiet suppresses stdout, :verbose is same as :normal (for future use).
@@ -61,6 +64,8 @@ module PodcastAgent
       end
       @verbosity = verbosity
       @start_times = {}
+      @error_count = 0
+      @first_error = nil
     end
 
     def log(message)
@@ -86,7 +91,11 @@ module PodcastAgent
     def error(message)
       entry = "[#{Time.now.strftime('%Y-%m-%d %H:%M:%S')}] ERROR #{message}"
       $stderr.puts entry
-      FILE_MUTEX.synchronize { File.open(@log_file, "a") { |f| f.puts(entry) } }
+      FILE_MUTEX.synchronize do
+        @error_count += 1
+        @first_error ||= message
+        File.open(@log_file, "a") { |f| f.puts(entry) }
+      end
     end
 
     def log_file_path

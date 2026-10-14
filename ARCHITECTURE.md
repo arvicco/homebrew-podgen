@@ -119,3 +119,11 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 **Why.** Until P4-9 the rule had eleven copies that disagreed at the edges (Q-44): stats ignored explicit basenames and language variants, `remove_by_date!` was positional only, `scrap`/`move` treated any `-xx` tail as a variant, and the site hard-coded `"en"` as the suffix-less language.
 
 **Implication.** A naming change is a change to one module plus `test/unit/test_characterization_filename_scheme.rb` (the 8-row oracle). Callers that pass no `languages:` get the legacy any-tail rule; pass the configured codes for language attribution (feeds, site, filtering). Deleting and moving deliberately do not: `EpisodeArtifacts` takes every `<base>-*` file, so a language commented out of the config is never left behind by `scrap`/`move`. Stats keys only primary files, so translated mp3s are measured with ffprobe.
+
+## A run says how it went in one line
+
+Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|warn|error warnings=N errors=M[ first=<text>]` (`lib/run_outcome.rb`, written by `GenerateCommand#finish_run`). `status` is `error` on a non-zero exit, `warn` when the run succeeded with warnings or logged ERROR entries, `ok` otherwise; `first` is the first warning (else the first error), one line, clipped, always the last field. `podgen status` judges the newest log by that line first; an `ok` outcome or an older log without one falls back to the regex scan.
+
+**Why.** The status board guessed at degradation with `/Warning:|WARNING/` and an `ERROR` on the last line, but the pipelines report trouble in their own words (`⚠ N episode(s) produced (with warnings)`, `  - Language es failed: ...`, a mid-log `ERROR`). A daily translation failure ended its log cleanly and stayed green. The producer knows its outcome; the reader should not reverse-engineer it from prose.
+
+**Implication.** A new degradation joins the run's warnings (the pipeline's `@warnings`), not just the log text. Keep the line additive: new fields go before `first=`, and the parser in `RunOutcome` changes in the same commit.

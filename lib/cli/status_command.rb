@@ -10,11 +10,13 @@ require_relative File.join(root, "lib", "validators", "freshness_validator")
 require_relative File.join(root, "lib", "cli", "schedule_command")
 require_relative File.join(root, "lib", "episode_scanner")
 require_relative File.join(root, "lib", "upload_tracker")
+require_relative File.join(root, "lib", "run_outcome")
 
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
   #   OLD  - newest episode older than the cadence threshold (FreshnessValidator)
-  #   WARN - last run log ended in ERROR / has a warning, or the same warning
+  #   WARN - last run log's RUN-OUTCOME line reports warnings/errors (P7-0),
+  #          or it ended in ERROR / has a warning, or the same warning
   #          repeated across the last N run logs (silent-for-weeks failures),
   #          or the same publish warning in the last PUBLISH_REPEAT scheduled
   #          publishes (shared launchd stderr), or Twitter announcements
@@ -177,12 +179,26 @@ module PodgenCLI
       findings
     end
 
+    # A log ending in a RUN-OUTCOME line (P7-0) is judged by it first; an ok
+    # outcome, or an older log without one, falls back to the regex scan.
     def latest_run_finding(lines, file, repeated)
       last = lines.reject { |l| l.strip.empty? }.last
-      return ["#{file} ends with #{clip(last)}"] if last&.match?(ERROR_RE)
+      if (outcome = RunOutcome.parse(last))
+        finding = outcome_finding(outcome, file)
+        return [finding] if finding
+      elsif last&.match?(ERROR_RE)
+        return ["#{file} ends with #{clip(last)}"]
+      end
 
       first = lines.find { |l| warning?(l) && !repeated.key?(normalize(l)) }
       first ? ["#{file}: #{clip(first)}"] : []
+    end
+
+    def outcome_finding(outcome, file)
+      return nil if outcome[:status] == "ok" && outcome[:warnings].zero? && outcome[:errors].zero?
+
+      text = outcome[:first] || "warnings=#{outcome[:warnings]} errors=#{outcome[:errors]}"
+      "#{file}: #{"run failed: " if outcome[:status] == "error"}#{clip(text)}"
     end
 
     # normalized warning => first raw line, for warnings present in every one

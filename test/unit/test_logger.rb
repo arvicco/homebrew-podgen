@@ -49,6 +49,19 @@ class TestPodcastAgentLogger < Minitest::Test
     assert_includes File.read(@log_path), "ERROR bad thing"
   end
 
+  def test_error_count_and_first_error_track_error_entries
+    logger = PodcastAgent::Logger.new(log_path: @log_path)
+    assert_equal 0, logger.error_count
+    assert_nil logger.first_error
+    capture_io do
+      logger.error("first")
+      logger.error("second")
+    end
+
+    assert_equal 2, logger.error_count
+    assert_equal "first", logger.first_error
+  end
+
   # --- phase timing ---
 
   def test_phase_start_and_end_logs_elapsed
