@@ -14,6 +14,18 @@ class LingQAgent
   BASE_URL = "https://www.lingq.com/api"
   MAX_RETRIES = 3
 
+  # HTTP 400 "A lesson with the same URL already exists": the lesson is on
+  # LingQ already (Q-81). Same message as the plain failure; lesson_id is
+  # the existing lesson, parsed from the editor URL in the response body.
+  class LessonExists < RuntimeError
+    attr_reader :lesson_id
+
+    def initialize(message, lesson_id:)
+      super(message)
+      @lesson_id = lesson_id
+    end
+  end
+
   def initialize(logger: nil, api_key: nil)
     @logger = logger
     @api_key = api_key || ENV.fetch("LINGQ_API_KEY") { raise "LINGQ_API_KEY not set (use ## LingQ token: or LINGQ_API_KEY env var)" }
@@ -84,9 +96,26 @@ class LingQAgent
       when *RETRIABLE_CODES
         raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
       else
-        raise "LingQ upload failed: HTTP #{response.code}: #{parse_error(response)}"
+        message = "LingQ upload failed: HTTP #{response.code}: #{parse_error(response)}"
+        existing = response.code == 400 && existing_lesson_id(response.body)
+        raise LessonExists.new(message, lesson_id: existing) if existing
+        raise message
       end
     end
+  end
+
+  # The id of the lesson LingQ already holds for this originalUrl, from a
+  # 400 body like {"originalUrl": ["A lesson with the same URL already
+  # exists", "<title>", ".../web/editor/<id>"]}; nil for any other body.
+  def existing_lesson_id(body)
+    parsed = JSON.parse(body.to_s)
+    errors = parsed["originalUrl"] if parsed.is_a?(Hash)
+    return nil unless errors.is_a?(Array) && errors.any? { |e| e.to_s.include?("already exists") }
+
+    errors.each { |e| return Integer($1) if e.to_s =~ %r{/editor/(\d+)/?\z} }
+    nil
+  rescue JSON::ParserError
+    nil
   end
 
   def patch_tags(language, lesson_id, tags)
