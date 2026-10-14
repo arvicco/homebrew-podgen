@@ -1168,7 +1168,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
   Set `cadence_days` to make such a show go OLD, or `freshness: off` if it has
   concluded.
-- **WARN** - the latest run log in `logs/<podcast>/` ends with an `ERROR` line or
+- **WARN** - the latest run log in `logs/<podcast>/` ends with a
+  `RUN-OUTCOME status=warn|error warnings=N errors=M first=…` line (every
+  generate writes one; it counts the end-of-run warnings, library warnings
+  such as a failed source or skipped AI review, and `ERROR` entries) - shown
+  as `<log>: <first warning>` or `<log>: run failed: <first error>`; or
+  (older logs, or an `ok` outcome) it ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
   the last 3 run logs (`--runs N` to change), or there is no history yet.
   Indented reviewer findings (`  WARNING: [COVERAGE] …`, the script review's
