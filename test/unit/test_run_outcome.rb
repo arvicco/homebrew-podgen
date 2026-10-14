@@ -23,6 +23,17 @@ class TestRunOutcome < Minitest::Test
     assert_equal "RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota", line
   end
 
+  def test_line_nonzero_code_names_fatal_error_over_earlier_warnings
+    line = RunOutcome.line(code: 1, warnings: ["[SourceManager] Warning: Source 'hn' failed"], errors: 2,
+      first_error: "RuntimeError: TTS quota")
+    assert_equal "RUN-OUTCOME status=error warnings=1 errors=2 first=RuntimeError: TTS quota", line
+  end
+
+  def test_line_nonzero_code_without_error_falls_back_to_first_warning
+    assert_equal "RUN-OUTCOME status=error warnings=1 errors=0 first=w",
+      RunOutcome.line(code: 1, warnings: ["w"], errors: 0)
+  end
+
   def test_line_first_is_flattened_and_clipped
     line = RunOutcome.line(code: 0, warnings: ["a\nb#{"x" * 500}"], errors: 0)
     first = line[/first=(.*)\z/, 1]
@@ -47,7 +58,7 @@ class TestRunOutcome < Minitest::Test
   end
 
   def test_parse_round_trips_line
-    line = RunOutcome.line(code: 1, warnings: ["w"], errors: 3)
-    assert_equal({status: "error", warnings: 1, errors: 3, first: "w"}, RunOutcome.parse(line))
+    line = RunOutcome.line(code: 1, warnings: ["w"], errors: 3, first_error: "boom")
+    assert_equal({status: "error", warnings: 1, errors: 3, first: "boom"}, RunOutcome.parse(line))
   end
 end

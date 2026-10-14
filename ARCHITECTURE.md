@@ -122,7 +122,7 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 
 ## A run says how it went in one line
 
-Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|warn|error warnings=N errors=M[ first=<text>]` (`lib/run_outcome.rb`, written by `GenerateCommand#finish_run`). `status` is `error` on a non-zero exit, `warn` when the run succeeded with warnings or logged ERROR entries, `ok` otherwise; `first` is the first warning (else the first error), one line, clipped, always the last field. `podgen status` judges the newest log by that line first; an `ok` outcome or an older log without one falls back to the regex scan.
+Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|warn|error warnings=N errors=M[ first=<text>]` (`lib/run_outcome.rb`, written by `GenerateCommand#finish_run`). `status` is `error` on a non-zero exit, `warn` when the run succeeded with warnings or logged ERROR entries, `ok` otherwise; `first` is the first error on an `error` run (what killed it, not an earlier degradation) and the first warning otherwise, falling back to the other, one line, clipped, always the last field. `podgen status` judges the newest log by that line first; an `ok` outcome or an older log without one falls back to the regex scan.
 
 **Why.** The status board guessed at degradation with `/Warning:|WARNING/` and an `ERROR` on the last line, but the pipelines report trouble in their own words (`⚠ N episode(s) produced (with warnings)`, `  - Language es failed: ...`, a mid-log `ERROR`). A daily translation failure ended its log cleanly and stayed green. The producer knows its outcome; the reader should not reverse-engineer it from prose.
 
