@@ -18,7 +18,7 @@ class TestDescriptionAgent < Minitest::Test
   def test_clean_title_empty_returns_original
     agent = build_agent("anything")
     assert_equal "", agent.clean_title(title: "")
-    assert_equal nil, agent.clean_title(title: nil)
+    assert_nil agent.clean_title(title: nil)
   end
 
   def test_clean_title_on_api_error_returns_original
@@ -155,7 +155,7 @@ class TestDescriptionAgent < Minitest::Test
   def test_clean_empty_description_returns_original
     agent = build_agent("anything")
     assert_equal "", agent.clean(title: "T", description: "")
-    assert_equal nil, agent.clean(title: "T", description: nil)
+    assert_nil agent.clean(title: "T", description: nil)
   end
 
   def test_clean_on_api_error_returns_original
