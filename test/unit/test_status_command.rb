@@ -5,6 +5,7 @@ require "json"
 require "yaml"
 require "cli"
 require "cli/status_command"
+require "served_feed"
 
 class TestStatusCommand < Minitest::Test
   TODAY = Date.new(2026, 10, 11)
@@ -499,6 +500,76 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- served feed read-back (P7-2) ---
+
+  def test_run_served_feed_five_days_behind_local_reports_warn
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    seen = nil
+    @feed_fetcher = ->(url) { (seen = url) && feed_xml("Mon, 05 Oct 2026 06:00:00 +0200") }
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal "https://media.example.com/alpha/feed.xml", seen
+    assert_match(/alpha\s+WARN\s+.*served feed behind local by 5d \(served 2026-10-05, local 2026-10-10\)/, out)
+  end
+
+  def test_run_served_feed_fetch_socket_error_reports_warn_naming_class
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise SocketError, "getaddrinfo: secret-ish detail" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*served feed fetch failed: SocketError/, out)
+    refute_includes out, "getaddrinfo"
+  end
+
+  def test_run_served_feed_http_status_error_reports_code_only
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/served feed fetch failed: HTTP 404/, out)
+  end
+
+  def test_run_served_feed_one_day_behind_is_ok
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-09 alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { feed_xml("Fri, 09 Oct 2026 16:31:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_served_feed_ignores_future_dated_local_episodes
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-13])
+    @feed_fetcher = ->(_url) { feed_xml("Sat, 10 Oct 2026 06:00:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_served_feed_compares_primary_language_only
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL + "- language:\n  - en\n  - es\n")
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10-es])
+    @feed_fetcher = ->(_url) { feed_xml("Mon, 05 Oct 2026 06:00:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_offline_flag_skips_served_feed_check
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    out, code = run_status("--offline")
+    assert_equal 0, code, out
+  end
+
+  def test_run_without_base_url_skips_served_feed_check
+    make_pod("alpha", dates: fresh_dates)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
   # --- dormant shows and configured cadence (P3-4) ---
 
   def test_run_single_day_show_long_ago_reports_ok_with_dormant_note
@@ -660,8 +731,12 @@ class TestStatusCommand < Minitest::Test
 
   def fresh_dates = %w[2026-10-07 2026-10-08 2026-10-09 2026-10-10]
 
+  # The served-feed fetcher is always a fake: no status test touches the network.
   def status_command(args)
-    PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY)
+    fetcher = @feed_fetcher || ->(url) { flunk "unexpected served-feed fetch: #{url}" }
+    served_feed = ServedFeed.new(fetcher: fetcher)
+    served_feed.define_singleton_method(:sleep) { |_| nil } # retry backoff
+    PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY, served_feed: served_feed)
   end
 
   def publish_entries = status_command([]).send(:publish_entries)
@@ -722,6 +797,13 @@ class TestStatusCommand < Minitest::Test
     FileUtils.mkdir_p(dir)
     posts = basenames.to_h { |b| [b, "id-#{b}"] }
     File.write(File.join(dir, "uploads.yml"), {"twitter" => {"posts" => posts}}.to_yaml)
+  end
+
+  BASE_URL = "- base_url: https://media.example.com/alpha\n"
+
+  def feed_xml(pub_date)
+    "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>t</title>" \
+      "<item><title>x</title><pubDate>#{pub_date}</pubDate></item></channel></rss>"
   end
 
   YOUTUBE = "\n## YouTube\n- playlist: PL1\n"

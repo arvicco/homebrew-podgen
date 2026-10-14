@@ -57,6 +57,11 @@ module SourceRegistry
     Entry.new(name: "cloudflare", host: "api.cloudflare.com",
       probe_url: "https://api.cloudflare.com/client/v4/", expect: :alive,
       used_by: "analytics_client.rb, cli/analytics_command.rb"),
+    # The podcasts' base_url host (config, not hard-coded): the R2 public
+    # bucket subscribers read; `podgen status` reads feed.xml back (P7-2).
+    Entry.new(name: "served_feed", host: "media.fulgur.news",
+      probe_url: "https://media.fulgur.news/", expect: :alive,
+      used_by: "served_feed.rb via cli/status_command.rb (base_url/feed.xml read-back)"),
     Entry.new(name: "duckduckgo", host: "duckduckgo.com",
       probe_url: "https://duckduckgo.com/", expect: :alive,
       used_by: "image_searcher.rb (scraped, fragile by nature)")
