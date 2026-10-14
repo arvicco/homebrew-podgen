@@ -291,6 +291,44 @@ class TestPublishCommand < Minitest::Test
     assert_equal [:r2], invocations.map { |i| i[:target] }
   end
 
+  # --- regenerate_site / regenerate_rss: failure buckets (P7-3) ---
+
+  def test_regenerate_site_failure_at_default_verbosity_warns_with_class
+    cmd = build_command
+    failing = Object.new
+    failing.define_singleton_method(:generate) { raise IOError, "disk gone" }
+
+    err = nil
+    SiteGenerator.stub(:new, ->(**) { failing }) do
+      _out, err = capture_io { cmd.send(:regenerate_site) }
+    end
+
+    assert_includes err, "Warning: site/feed regen failed: IOError: disk gone"
+  end
+
+  def test_regenerate_site_failure_when_quiet_still_warns
+    cmd = build_command
+    cmd.instance_variable_set(:@options, { verbosity: :quiet })
+    failing = Object.new
+    failing.define_singleton_method(:generate) { raise IOError, "disk gone" }
+
+    err = nil
+    SiteGenerator.stub(:new, ->(**) { failing }) do
+      _out, err = capture_io { cmd.send(:regenerate_site) }
+    end
+
+    assert_includes err, "Warning: site/feed regen failed: IOError"
+  end
+
+  def test_regenerate_rss_failure_raises_fatal
+    cmd = build_command
+    cmd.instance_variable_set(:@podcast_name, "test")
+
+    PodgenCLI::RssCommand.stub(:new, ->(*) { raise IOError, "feed write failed" }) do
+      assert_raises(IOError) { cmd.send(:regenerate_rss) }
+    end
+  end
+
   private
 
   StubPublishConfig = Struct.new(:episodes_dir, :name, :transcription_language,

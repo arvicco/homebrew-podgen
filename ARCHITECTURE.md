@@ -72,7 +72,7 @@ History (`episode_history.rb`), caches (`research_cache.rb`), and upload trackin
 
 Every `rescue` in the pipelines and publishers belongs to one of three buckets, annotated at the rescue site:
 
-- **fatal** — the canonical outputs (audio, transcript, feed, site) were not produced. The error escapes to the top-level handler, which logs the exception class and fails the run.
+- **fatal** — the canonical outputs (audio, transcript, feed, site) were not produced. The error escapes to the top-level handler, which logs the exception class and fails the run. One stated exception: at publish, `PublishCommand` regenerates the feed first (fatal, unrescued) and the site second; a site-only failure is skippable — `Warning: site/feed regen failed: <Class>: <message>` at every verbosity, the line the status board's publish-warning streak reads — because the feed podcast apps parse is already fresh and the next publish rebuilds the site. `PublisherShared#regenerate!` (the publishers' own regen, reached only when `PublishCommand` did not already regen in-process) still treats feed and site together as skippable-with-warning.
 - **retryable** — transient HTTP/API flakiness. Handled by `Retryable`/`HttpRetryable`; never hand-rolled.
 - **skippable** — a side effect or enrichment (tweet, LingQ/YouTube upload, vocabulary, cover, subtitle reconciliation). Logged as a warning **including the exception class** and the run continues; tracker-based retry picks it up on the next publish where applicable.
 
