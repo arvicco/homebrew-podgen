@@ -571,6 +571,22 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "getaddrinfo"
   end
 
+  def test_run_served_feed_host_down_is_fetched_once_but_warns_every_podcast
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_pod("beta", dates: fresh_dates, extra: "- base_url: https://media.example.com/beta\n")
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    make_episodes("beta", %w[beta-2026-10-10])
+    calls = 0
+    @feed_fetcher = ->(_url) {
+      calls += 1
+      raise SocketError, "down"
+    }
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal 2, calls # one attempt + one retry for the host, not per podcast
+    assert_equal 2, out.scan("served feed fetch failed: SocketError").size, out
+  end
+
   def test_run_served_feed_http_status_error_reports_code_only
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
     make_episodes("alpha", %w[alpha-2026-10-10])

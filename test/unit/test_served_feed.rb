@@ -49,6 +49,36 @@ class TestServedFeed < Minitest::Test
     assert_kind_of SocketError, err.cause
   end
 
+  def test_newest_date_down_host_is_fetched_once_per_run
+    calls = []
+    feed = ServedFeed.new(fetcher: ->(url) {
+      calls << url
+      raise SocketError, "down" if url.include?("down.example")
+      FEED
+    })
+    feed.define_singleton_method(:sleep) { |_| nil }
+
+    first = assert_raises(RuntimeError) { feed.newest_date("https://down.example/a/feed.xml") }
+    second = assert_raises(RuntimeError) { feed.newest_date("https://down.example/b/feed.xml") }
+    assert_equal Date.new(2026, 10, 7), feed.newest_date("https://up.example/c/feed.xml")
+
+    assert_equal 2, calls.count { |u| u.include?("down.example") } # first attempt + one retry, then cached
+    assert_kind_of SocketError, first.cause
+    assert_kind_of SocketError, second.cause
+  end
+
+  def test_newest_date_status_error_does_not_mark_host_down
+    calls = 0
+    feed = ServedFeed.new(fetcher: ->(url) {
+      calls += 1
+      raise ServedFeed::StatusError, "HTTP 404" if url.include?("/a/")
+      FEED
+    })
+    assert_raises(ServedFeed::StatusError) { feed.newest_date("https://h/a/feed.xml") }
+    assert_equal Date.new(2026, 10, 7), feed.newest_date("https://h/b/feed.xml")
+    assert_equal 2, calls
+  end
+
   def test_newest_date_status_error_is_not_retried
     calls = 0
     feed = ServedFeed.new(fetcher: ->(_url) {

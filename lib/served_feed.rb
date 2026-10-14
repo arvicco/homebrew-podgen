@@ -24,13 +24,25 @@ class ServedFeed
 
   def initialize(fetcher: nil)
     @fetcher = fetcher || method(:http_get)
+    @down_hosts = {}
   end
 
   # Date of the newest parseable item pubDate; nil when the feed has none.
   # Network errors are retried once (then raised wrapped, original as
   # #cause); a non-2xx answer raises StatusError ("HTTP 404"), not retried.
+  # A host that failed at the network level is not tried again by this
+  # instance (one status run): its error is re-raised for every later feed
+  # on it, so a dead host costs one timeout cycle, not one per podcast.
   def newest_date(url)
-    body = with_http_retries("served feed", max: RETRIES) { @fetcher.call(url) }
+    host = URI(url).host
+    raise @down_hosts[host] if @down_hosts.key?(host)
+
+    body = begin
+      with_http_retries("served feed", max: RETRIES) { @fetcher.call(url) }
+    rescue RuntimeError => e # fatal for this host: every attempt failed; remembered, then re-raised
+      @down_hosts[host] = e if HTTP_EXCEPTIONS.any? { |klass| e.cause.is_a?(klass) }
+      raise
+    end
     dates = REXML::XPath.match(REXML::Document.new(body), "//item/pubDate").filter_map do |node|
       Time.rfc2822(node.text.to_s.strip).to_date
     rescue ArgumentError
