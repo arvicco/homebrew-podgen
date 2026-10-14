@@ -12,6 +12,7 @@ class TestGenerateCommand < Minitest::Test
   end
 
   def teardown
+    ENV.delete("PODGEN_ROOT")
     FileUtils.rm_rf(@tmpdir)
   end
 
@@ -372,7 +373,72 @@ class TestGenerateCommand < Minitest::Test
 
   # write_sources extracted into ScriptRenderer; see test_script_renderer.rb
 
+  # --- primary language from config (P7-6) ---
+
+  def test_produce_episodes_sl_primary_names_sl_bare_and_en_suffixed
+    cmd, config = build_sl_en_command
+    voiced = []
+    translated_to = []
+    fake_voicer = Object.new
+    fake_voicer.define_singleton_method(:voice) { |output_path:, lang_code:, **| voiced << [File.basename(output_path), lang_code] }
+    translator_new = lambda do |target_language:, **|
+      translated_to << target_language
+      Object.new.tap { |t| t.define_singleton_method(:translate) { |s| s.merge(title: "EN #{s[:title]}") } }
+    end
+
+    paths = nil
+    Voicer.stub(:new, ->(**) { fake_voicer }) do
+      TranslationAgent.stub(:new, translator_new) do
+        capture_io { paths = cmd.send(:produce_episodes, sl_script, []) }
+      end
+    end
+
+    assert_equal [["mypod-2026-01-15.mp3", "sl"], ["mypod-2026-01-15-en.mp3", "en"]], voiced
+    assert_equal ["en"], translated_to, "the primary (sl) script is voiced as-is; only en is translated"
+    assert_equal %w[mypod-2026-01-15.mp3 mypod-2026-01-15-en.mp3], paths.map { |p| File.basename(p) }
+    assert File.exist?(File.join(config.episodes_dir, "mypod-2026-01-15-en_script.md"))
+  end
+
+  def test_finalize_sl_primary_records_sl_and_en_language_keys
+    cmd, config = build_sl_en_command
+    recorded = nil
+    history = Object.new
+    history.define_singleton_method(:record!) { |**kw| recorded = kw }
+    cmd.instance_variable_set(:@history, history)
+    cmd.instance_variable_set(:@base_name, "mypod-2026-01-15")
+    cmd.instance_variable_set(:@pipeline_start, Time.now)
+    cmd.instance_variable_set(:@warnings, [])
+    paths = %w[mypod-2026-01-15 mypod-2026-01-15-en].map { |b| File.join(config.episodes_dir, "#{b}.mp3") }
+
+    AudioAssembler.stub(:probe_duration, 61.0) do
+      capture_io { cmd.send(:finalize, paths, sl_script, [], []) }
+    end
+
+    assert_equal %w[sl en], recorded[:languages].keys
+  end
+
   private
+
+  def sl_script
+    { title: "Naslov", segments: [{ name: "Uvod", text: "Dober dan." }], sources: [] }
+  end
+
+  def build_sl_en_command
+    require "podcast_config"
+    FileUtils.mkdir_p(File.join(@tmpdir, "podcasts", "mypod"))
+    File.write(File.join(@tmpdir, "podcasts", "mypod", "guidelines.md"),
+      "## Podcast\n- name: mypod\n- language:\n  - sl\n  - en\n")
+    ENV["PODGEN_ROOT"] = @tmpdir
+    config = PodcastConfig.new("mypod")
+    FileUtils.mkdir_p(config.episodes_dir)
+    cmd = build_command
+    cmd.instance_variable_set(:@config, config)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    cmd.instance_variable_set(:@options, {verbosity: :quiet})
+    cmd.instance_variable_set(:@today, Date.new(2026, 1, 15))
+    cmd.instance_variable_set(:@warnings, [])
+    [cmd, config]
+  end
 
   class StubGenLogger
     attr_reader :messages

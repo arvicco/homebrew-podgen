@@ -17,6 +17,7 @@ require_relative "cover_resolver"
 require_relative "transcript_parser"
 require_relative "transcript_renderer"
 require_relative "history_maps"
+require_relative "podcast_config"
 
 class SiteGenerator
   include Loggable
@@ -41,7 +42,8 @@ class SiteGenerator
       history_path: config.history_path,
       podcast_name: @podcast_name,
       episodes_dir: @episodes_dir,
-      languages: @languages.map { |l| l["code"] }
+      languages: @languages.map { |l| l["code"] },
+      primary: primary_language
     )
   end
 
@@ -323,11 +325,7 @@ class SiteGenerator
   def feed_url(lang_code)
     return nil unless @base_url
 
-    if lang_code == primary_language
-      "#{@base_url}/feed.xml"
-    else
-      "#{@base_url}/feed-#{lang_code}.xml"
-    end
+    "#{@base_url}/#{PodcastConfig.feed_file_name(lang_code, primary_language)}"
   end
 
   # --- Language navigation ---

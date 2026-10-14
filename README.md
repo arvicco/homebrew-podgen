@@ -516,6 +516,7 @@ Add a `language` list to the `## Podcast` section in `podcasts/<name>/guidelines
 - If `language` is omitted, only English (`en`) is produced
 - English is never re-translated — the original script is used directly
 - Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
+- The first `language` entry is the primary: its episodes carry no suffix and its feed is always `output/<podcast>/feed.xml`, with that code in the feed's `<language>`
 - Each extra language gets its own feed and site: `output/<podcast>/feed-<code>.xml` and `output/<podcast>/site/<code>/`, published alongside the primary ones
 - Translated episodes report their own duration in the language feeds and on the site (recorded in history.yml when voiced); the English duration is used only when none was recorded
 - Removing a code from `language` does not remove its files: move or scrap the leftover `-<code>` episodes first (`translate`, `voice` and `render` still treat a leftover file as a variant while its English episode exists, but the feed and site would list it as an English episode)

@@ -170,6 +170,25 @@ class TestHistoryMaps < Minitest::Test
     refute title.key?("test_pod-2026-03-01-en.mp3")
   end
 
+  def test_build_sl_primary_maps_en_variant_not_sl
+    # P7-6: the primary is excluded by its code, not by "en" — with a
+    # primary-first list [sl, en] the -en variant is the translation.
+    history = [{ "date" => "2026-03-01", "title" => "Epizoda" }]
+    path = write_history(history)
+
+    title, _, _ = HistoryMaps.build(
+      history_path: path,
+      podcast_name: "test_pod",
+      episodes_dir: @episodes_dir,
+      languages: ["sl", "en"],
+      primary: "sl"
+    )
+
+    assert_equal "Epizoda", title["test_pod-2026-03-01.mp3"]
+    assert_equal "Epizoda", title["test_pod-2026-03-01-en.mp3"]
+    refute title.key?("test_pod-2026-03-01-sl.mp3")
+  end
+
   # --- Per-language duration (P5-0) ---
 
   def test_build_language_duration_prefers_per_language_value

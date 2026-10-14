@@ -53,11 +53,13 @@ class RssGenerator
     @languages = languages # configured codes; nil keeps the legacy any-suffix rule
     @base_url = base_url&.chomp("/")
     @image = image
+    primary = EpisodeNaming.primary_language(@languages)
     @title_map, @timestamp_map, @duration_map = HistoryMaps.build(
       history_path: history_path,
       podcast_name: File.basename(File.dirname(@episodes_dir)),
       episodes_dir: @episodes_dir,
-      languages: @language != "en" ? [@language] : []
+      languages: @language != primary ? [@language] : [],
+      primary: primary
     )
   end
 

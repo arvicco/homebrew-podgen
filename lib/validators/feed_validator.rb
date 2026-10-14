@@ -2,6 +2,7 @@
 
 require_relative "base_validator"
 require_relative "../episode_filtering"
+require_relative "../podcast_config"
 
 module Validators
   class FeedValidator < BaseValidator
@@ -32,12 +33,14 @@ module Validators
       end
 
       if @config.languages.length > 1
+        primary = EpisodeNaming.primary_language(@config.language_codes)
         @config.languages.each do |lang|
           code = lang["code"]
-          next if code == "en"
-          lang_feed = @config.feed_path.sub(/\.xml$/, "-#{code}.xml")
+          next if code == primary
+          lang_feed_name = PodcastConfig.feed_file_name(code, primary)
+          lang_feed = File.join(File.dirname(@config.feed_path), lang_feed_name)
           unless File.exist?(lang_feed)
-            @warnings << "Feed: missing feed-#{code}.xml for language '#{code}'"
+            @warnings << "Feed: missing #{lang_feed_name} for language '#{code}'"
           end
         end
       end
