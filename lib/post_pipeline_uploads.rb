@@ -103,9 +103,10 @@ class PostPipelineUploads
 
     @logger.phase_end("YouTube Upload")
   rescue => e # skippable: side effect after commit; tracker-based retry on next publish
-    @logger.log("Warning: YouTube upload failed: #{e.class}: #{e.message} (non-fatal, continuing)")
+    text = YouTubePublisher.auth_failure_summary(e) || "#{e.class}: #{e.message}" # no token-endpoint body in the log
+    @logger.log("Warning: YouTube upload failed: #{text} (non-fatal, continuing)")
     @logger.log(e.backtrace.first(3).join("\n"))
-    @warnings << "YouTube upload failed (#{e.class}: #{e.message})"
+    @warnings << "YouTube upload failed (#{text})"
   end
 
   private
