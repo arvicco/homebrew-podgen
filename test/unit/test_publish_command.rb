@@ -164,6 +164,27 @@ class TestPublishCommand < Minitest::Test
     assert_includes err, "YouTube not authorized: no terminal"
   end
 
+  def test_publish_to_youtube_returns_1_when_authorization_fails_before_any_upload
+    create_mp3("ep-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "ep-2026-01-15_transcript.md"), "# Title\n\n## Transcript\n\nHello.")
+
+    yt_config = { playlist: nil, privacy: "unlisted", category: "27", tags: [] }
+    cmd = build_command(youtube_config: yt_config)
+
+    uploaded = []
+    stub_uploader = Object.new
+    stub_uploader.define_singleton_method(:authorize!) { raise SocketError, "getaddrinfo: nodename nor servname provided" }
+    stub_uploader.define_singleton_method(:upload_video) { |*args, **kw| uploaded << args; "vid_123" }
+    cmd.define_singleton_method(:build_youtube_uploader) { stub_uploader }
+
+    code = nil
+    _, err = capture_io { code = cmd.send(:publish_to_youtube) }
+
+    assert_equal 1, code # P7-4 (Q-80): nothing reached YouTube; the board must see it
+    assert_empty uploaded
+    assert_includes err, "YouTube authorization failed: SocketError"
+  end
+
   def test_publish_to_youtube_returns_2_when_youtube_not_configured
     cmd = build_command(youtube_config: nil)
     code = nil
