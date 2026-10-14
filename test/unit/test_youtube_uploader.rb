@@ -109,7 +109,8 @@ class TestYouTubeUploader < Minitest::Test
 
   def test_authorize_refresh_rejected_grant_interactive_logs_reauthorizing
     _store, logs = refresh_failing_with(Signet::AuthorizationError.new("expired"), interactive: true) do |run|
-      assert_raises(RuntimeError, /No authorization code/) { run.call }
+      err = assert_raises(RuntimeError) { run.call }
+      assert_match(/No authorization code/, err.message)
     end
 
     assert(logs.any? { |l| l.include?("re-authorizing") })

@@ -115,7 +115,7 @@ class LingQPublisher
         puts "  ✓ #{ep[:base_name]} → lesson #{lesson_id}" unless quiet?
       rescue LingQAgent::LessonExists => e # tracking success: the lesson is on LingQ, record it so it is not retried (Q-81)
         tracker.record(:lingq, collection, ep[:base_name], e.lesson_id)
-        puts "  LingQ: lesson already exists (#{e.lesson_id}) — recorded"
+        puts "  LingQ: lesson already exists (#{e.lesson_id}) — recorded" unless quiet?
       rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
         $stderr.puts "  ✗ #{ep[:base_name]} failed: #{e.class}: #{e.message}"
         errors << { type: :upload, base: ep[:base_name], message: e.message }
