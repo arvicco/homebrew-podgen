@@ -30,7 +30,7 @@ module HistoryMaps
     # `languages` here is the codes to map variants for (RssGenerator passes
     # only its own feed language), not a primary-first config list, so the
     # suffix-less primary is excluded by its code.
-    non_english = languages.reject { |c| c == primary }
+    non_primary = languages.reject { |c| c == primary }
 
     EpisodeNaming.each_history_basename(entries, podcast_name) do |entry, basename|
       filename = "#{basename}.mp3"
@@ -38,7 +38,7 @@ module HistoryMaps
       timestamp_map[filename] = entry["timestamp"] if entry["timestamp"]
       duration_map[filename] = entry["duration"] if entry["duration"]
 
-      non_english.each do |code|
+      non_primary.each do |code|
         lang_basename = EpisodeNaming.with_language(basename, code)
         lang_filename = "#{lang_basename}.mp3"
         lang_script = File.join(episodes_dir, "#{lang_basename}_script.md")
