@@ -54,7 +54,7 @@ module Transcription
           log("Engine '#{c}' completed in #{elapsed}s")
         rescue => e
           lock.synchronize { errors[c] = e.message }
-          log("Engine '#{c}' failed: #{e.message}")
+          log_warning("Engine '#{c}' failed: #{e.message}")
         end
       end
 
@@ -87,7 +87,7 @@ module Transcription
         begin
           comparison[:reconciled] = build_reconciler.reconcile(texts)
         rescue => e
-          log("Reconciliation failed (non-fatal): #{e.message}")
+          log_warning("Reconciliation failed (non-fatal): #{e.message}")
         end
       end
 

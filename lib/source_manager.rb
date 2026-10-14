@@ -70,7 +70,7 @@ class SourceManager
 
           lock.synchronize { results_by_source[src_name] = results }
         rescue => e
-          log("Source '#{src_name}' failed: #{e.message}")
+          log_warning("Source '#{src_name}' failed: #{e.message}")
         end
       end
     end

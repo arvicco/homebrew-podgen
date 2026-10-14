@@ -62,6 +62,17 @@ class TestPodcastAgentLogger < Minitest::Test
     assert_equal "first", logger.first_error
   end
 
+  # --- warning ---
+
+  def test_warning_logs_line_and_records_it
+    logger = PodcastAgent::Logger.new(log_path: @log_path, verbosity: :quiet)
+    assert_empty logger.logged_warnings
+    logger.warning("[X] Warning: degraded")
+
+    assert_equal ["[X] Warning: degraded"], logger.logged_warnings
+    assert_includes File.read(@log_path), "] [X] Warning: degraded"
+  end
+
   # --- phase timing ---
 
   def test_phase_start_and_end_logs_elapsed
