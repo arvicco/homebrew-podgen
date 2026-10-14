@@ -381,7 +381,7 @@ module PodgenCLI
 
       behind = (local - served).to_i
       (behind > SERVED_FEED_SLACK) ? ["served feed behind local by #{behind}d (served #{served}, local #{local})"] : []
-    rescue => e
+    rescue => e # skippable: a failed read-back is itself the finding (WARN); the other checks still run
       root = e.cause || e
       ["served feed fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
     end

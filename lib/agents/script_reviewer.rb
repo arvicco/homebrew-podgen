@@ -460,4 +460,10 @@ class ScriptReviewer
       $stderr.puts "[ScriptReviewer] #{msg}"
     end
   end
+
+  # Same stderr fallback as #log when standalone; with a logger the warning
+  # is counted in the run's RUN-OUTCOME (Loggable#log_warning).
+  def log_warning(msg)
+    @logger ? super : $stderr.puts("[ScriptReviewer] Warning: #{msg}")
+  end
 end
