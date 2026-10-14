@@ -1149,7 +1149,9 @@ podgen schedule ruby_world --remove
 ### podgen status (content-progress check)
 
 `podgen status` prints one line per podcast (podcasts with an installed launchd
-scheduler first). It is read-only and makes no network calls.
+scheduler first). It is read-only; its one network call reads back each
+podcast's served `base_url/feed.xml` (skipped with `--offline` or without a
+`base_url`).
 
 ```
 ruby_world  OK    newest 2026-10-10 (1d old)
@@ -1225,6 +1227,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   stderr, only when written in the last 7 days) add one line per condition
   found, naming it only: `uploads_stderr.log: YouTube not authorized` /
   `uploads_stderr.log: YouTube upload quota exceeded`.
+- **WARN (served feed)** - the newest `<item>` pubDate in the served
+  `base_url/feed.xml` is more than 1 day older than the newest local
+  primary-language episode dated today or earlier:
+  `served feed behind local by 5d (served 2026-10-05, local 2026-10-10)`. A
+  failed fetch (5s connect / 10s read timeout, one retry) names only the
+  error class or HTTP code: `served feed fetch failed: SocketError`.
 - **OK** - otherwise.
 
 Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown

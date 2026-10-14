@@ -46,6 +46,7 @@ class TestSourceRegistry < Minitest::Test
       texttospeech.googleapis.com www.lingq.com hn.algolia.com
       bsky.social api.socialdata.tools api.telegram.org
       api.cloudflare.com duckduckgo.com api.exa.ai www.googleapis.com
+      media.fulgur.news
     ].each do |host|
       assert_includes hosts, host, "expected #{host} registered"
     end

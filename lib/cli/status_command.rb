@@ -11,6 +11,7 @@ require_relative File.join(root, "lib", "cli", "schedule_command")
 require_relative File.join(root, "lib", "episode_scanner")
 require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "run_outcome")
+require_relative File.join(root, "lib", "served_feed")
 
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
@@ -22,7 +23,9 @@ module PodgenCLI
   #          publishes (shared launchd stderr), or Twitter announcements
   #          stalled behind the newest episode (P3-2), or YouTube/LingQ
   #          uploads stalled the same way, or the upload batch's stderr
-  #          names a not-authorized / quota condition (P7-1)
+  #          names a not-authorized / quota condition (P7-1), or the served
+  #          base_url/feed.xml lags the newest local episode or cannot be
+  #          fetched (P7-2; the one network read, skipped with --offline)
   #   OK   - otherwise; a show with no cadence whose newest episode is old is
   #          noted "dormant — no cadence" (P3-4)
   # Exit 0 when every podcast is OK, 1 otherwise, so a scheduled run can alert.
@@ -54,6 +57,7 @@ module PodgenCLI
     GENERATE_LINE_RE = /\A(?:\[\d{4}-\d{2}-\d{2}[^\]]*\]|Generate failed)/
     TWITTER_RE = /Twitter/
     DEFAULT_TWEET_SINCE = 7
+    SERVED_FEED_SLACK = 1 # days the served feed may trail the newest local episode
     # Upload progress (P7-1): per configured platform, the newest tracked
     # upload vs the newest episode, stalled past UPLOAD_SINCE days. The upload
     # batch's shared stderr (launchd, logs/uploads_stderr.log) is scanned only
@@ -67,18 +71,21 @@ module PodgenCLI
     }.freeze
 
     def initialize(args, options, plist_dir: ScheduleCommand::LAUNCH_AGENTS_DIR, today: Date.today, publish_log: nil,
-      uploads_log: nil)
+      uploads_log: nil, served_feed: nil)
       @options = options
       @plist_dir = plist_dir
       @today = today
       @publish_log = publish_log || File.join(PodcastConfig.root, PUBLISH_LOG)
       @uploads_log = uploads_log || File.join(PodcastConfig.root, UPLOAD_LOG)
+      @served_feed = served_feed || ServedFeed.new
+      @offline = false
       @json = false
       @hint = false
       @runs = DEFAULT_RUNS
       OptionParser.new do |opts|
         opts.on("--json", "Machine-readable output") { @json = true }
         opts.on("--runs N", Integer, "Run logs scanned for repeated warnings (default: #{DEFAULT_RUNS})") { |n| @runs = n }
+        opts.on("--offline", "Skip the served-feed read-back (the only network call)") { @offline = true }
         opts.on("--install-hint", "Print the owner command that schedules the daily check") { @hint = true }
       end.parse!(args)
       @podcast_name = args.shift
@@ -155,6 +162,7 @@ module PodgenCLI
       publish_findings(config).each { |reason| escalate.call("WARN", reason) }
       announcements = announcement_progress(config, escalate)
       uploads = upload_progress(config, escalate)
+      served_feed_findings(config).each { |reason| escalate.call("WARN", reason) }
       if verdict == "OK" && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
       end
@@ -353,6 +361,28 @@ module PodgenCLI
       else
         (@today - dates.min).to_i > since
       end
+    end
+
+    # --- served feed read-back (P7-2) ---
+
+    # base_url/feed.xml vs the newest local primary-language episode dated
+    # today or earlier (feed.xml carries the primary language; pre-generated
+    # future episodes are not expected to be served yet). Fetch errors name
+    # the exception class or the HTTP code only, never a body.
+    def served_feed_findings(config)
+      return [] if @offline || config.base_url.to_s.strip.empty?
+
+      local = announced_episode_dates(config, []).select { |d| d <= @today }.max
+      return [] unless local
+
+      served = @served_feed.newest_date("#{config.base_url.to_s.chomp("/")}/feed.xml")
+      return ["served feed has no dated items (local #{local})"] unless served
+
+      behind = (local - served).to_i
+      (behind > SERVED_FEED_SLACK) ? ["served feed behind local by #{behind}d (served #{served}, local #{local})"] : []
+    rescue => e
+      root = e.cause || e
+      ["served feed fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
     end
 
     # --- upload progress (YouTube, LingQ; P7-1) ---
