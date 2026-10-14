@@ -1222,10 +1222,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   with a `collection` → `lingq: <collection>` in `uploads.yml`), over every
   episode on disk, with a fixed 7-day window:
   `youtube uploads stalled since 2026-06-02 (newest episode 2026-10-11)` or
-  `lingq uploads never made (...)`. For podcasts with `## YouTube`, the last
-  200 lines of `logs/uploads_stderr.log` (the scheduled upload batch's
-  stderr, only when written in the last 7 days) add one line per condition
-  found, naming it only: `uploads_stderr.log: YouTube not authorized` /
+  `lingq uploads never made (...)`. For podcasts with `## YouTube`, the
+  latest batch in `logs/uploads_stderr.log` (the scheduled upload batch's
+  stderr; the lines after the last `… podgen uploads <pods> begin` marker
+  that `scripts/run_uploads.sh` writes, only when the file was written in
+  the last 7 days; a log with no marker yet reports nothing) adds one line
+  per condition found, naming it only: `uploads_stderr.log: YouTube not authorized` /
   `uploads_stderr.log: YouTube upload quota exceeded`.
 - **WARN (served feed)** - the newest `<item>` pubDate in the served
   `base_url/feed.xml` is more than 1 day older than the newest local

@@ -508,6 +508,39 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  def test_run_uploads_stderr_condition_before_a_newer_clean_batch_is_ignored
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    lines = upload_batch("2026/10/08", ["  ✗ alpha-2026-10-08 failed: uploadLimitExceeded: x"]) +
+      upload_batch("2026/10/09", ["  ✗ alpha-2026-10-09 skipped: YouTube not authorized: x"]) +
+      upload_batch("2026/10/10", [])
+    write_uploads_log(lines, marked: false)
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_uploads_stderr_condition_after_last_marker_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    lines = upload_batch("2026/10/09", []) +
+      ["2026/10/10 17:00:00 podgen uploads alpha,beta begin", "  ✗ alpha-2026-10-10 failed: quotaExceeded: x"]
+    write_uploads_log(lines, marked: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+  end
+
+  def test_run_uploads_stderr_without_any_marker_is_ignored
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-10-10 skipped: YouTube not authorized: x"], marked: false)
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_upload_batch_script_brackets_the_batch_with_dated_markers
+    script = File.read(Dir.glob(File.join(ROOT, "scripts", "run_upl*.sh")).first)
+    assert_includes script, %(echo "$(date '+%Y/%m/%d %H:%M:%S') podgen uploads $PODS begin" >&2)
+    assert_includes script, %(echo "$(date '+%Y/%m/%d %H:%M:%S') podgen uploads $PODS end exit=$UP_EXIT" >&2)
+  end
+
   def test_run_uploads_stderr_ignored_for_podcast_without_youtube
     make_pod("alpha", dates: fresh_dates)
     write_uploads_log(["  ✗ beta-2026-10-10 skipped: YouTube not authorized: x"])
@@ -830,12 +863,19 @@ class TestStatusCommand < Minitest::Test
     File.write(File.join(dir, "uploads.yml"), data.to_yaml)
   end
 
-  # Shared stderr of the scheduled upload batch (scripts/run_upl*.sh).
-  def write_uploads_log(lines, mtime: Time.new(2026, 10, 10, 17))
+  # Shared stderr of the scheduled upload batch (scripts/run_upl*.sh), which
+  # brackets each batch with dated begin/end markers. marked: false writes
+  # the lines raw (a log from before the markers existed).
+  def write_uploads_log(lines, mtime: Time.new(2026, 10, 10, 17), marked: true)
     FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
     path = File.join(@tmpdir, "logs", "uploads_stderr.log")
+    lines = upload_batch(mtime.strftime("%Y/%m/%d"), lines) if marked
     File.write(path, lines.join("\n") + "\n")
     File.utime(mtime, mtime, path)
+  end
+
+  def upload_batch(date, lines)
+    ["#{date} 17:00:00 podgen uploads alpha,beta begin", *lines, "#{date} 17:20:00 podgen uploads alpha,beta end exit=0"]
   end
 
   def write_log(pod, file, lines, mtime:)
