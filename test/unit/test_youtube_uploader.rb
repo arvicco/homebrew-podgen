@@ -53,7 +53,8 @@ class TestYouTubeUploader < Minitest::Test
     uploader = YouTubeUploader.new(consent: ->(_authorizer) { [nil, "http://127.0.0.1:1"] })
     Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
       Google::Auth::Stores::FileTokenStore.stub(:new, mock_token_store) do
-        assert_raises(RuntimeError, /No authorization code/) { uploader.authorize! }
+        err = assert_raises(RuntimeError) { uploader.authorize! }
+        assert_match(/No authorization code/, err.message)
       end
     end
     mock_token_store.verify
