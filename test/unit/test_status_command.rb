@@ -120,6 +120,47 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+.*repeated in last 3 runs: \[TweetAgent\] Warning: credits depleted/, out)
   end
 
+  # --- RUN-OUTCOME line (P7-0) ---
+
+  def test_run_outcome_line_with_warnings_reports_warn_with_first_warning
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR Language es failed: RuntimeError: x",
+      "[2026-10-10 06:00:08] ⚠ 1 episode(s) produced (with warnings)",
+      "[2026-10-10 06:00:08]   - Language es failed: RuntimeError: x",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=warn warnings=1 errors=1 first=Language es failed: RuntimeError: x"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: Language es failed: RuntimeError: x/, out)
+  end
+
+  def test_run_outcome_line_with_error_status_reports_run_failed
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR RuntimeError: TTS quota",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: RuntimeError: TTS quota/, out)
+  end
+
+  def test_run_outcome_line_ok_reports_ok
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ✓ 1 episode(s) produced",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_outcome_line_ok_still_scans_for_uncounted_warning_lines
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] Warning: cover missing",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*Warning: cover missing/, out)
+  end
+
   # --- publish stderr (launchd_stderr.log, P3-2) ---
 
   def test_run_twitter_warning_in_three_publishes_reports_warn_with_count_and_since
