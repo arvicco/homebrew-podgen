@@ -18,5 +18,10 @@ fi
 PODS="$1"
 shift
 
+# Dated markers bracket each batch in the shared stderr (as scripts/run.sh
+# does for publishes): `podgen status` scans only the latest batch.
+echo "$(date '+%Y/%m/%d %H:%M:%S') podgen uploads $PODS begin" >&2
 bundle exec ruby bin/podgen --quiet uploads "$PODS" "$@"
-exit $?
+UP_EXIT=$?
+echo "$(date '+%Y/%m/%d %H:%M:%S') podgen uploads $PODS end exit=$UP_EXIT" >&2
+exit $UP_EXIT

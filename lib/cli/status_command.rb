@@ -61,10 +61,11 @@ module PodgenCLI
     # Upload progress (P7-1): per configured platform, the newest tracked
     # upload vs the newest episode, stalled past UPLOAD_SINCE days. The upload
     # batch's shared stderr (launchd, logs/uploads_stderr.log) is scanned only
-    # while written within that window; it names conditions, never bodies.
+    # while written within that window, and only after the latest batch's
+    # begin marker (scripts/run_upl*.sh); it names conditions, never bodies.
     UPLOAD_SINCE = 7
     UPLOAD_LOG = File.join("logs", "uploads_stderr.log")
-    UPLOAD_LOG_TAIL = 200
+    UPLOAD_MARKER_RE = %r{\A\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} podgen uploads \S+ begin\b}
     UPLOAD_CONDITIONS = {
       /not authorized/i => "YouTube not authorized",
       /uploadLimitExceeded|quotaExceeded/ => "YouTube upload quota exceeded"
@@ -420,14 +421,21 @@ module PodgenCLI
       platforms
     end
 
-    # Condition names found in the tail of the upload batch's stderr, when it
-    # was written within UPLOAD_SINCE days. Never the matched line itself.
+    # Condition names found in the latest batch of the upload stderr (the
+    # lines after its last begin marker), when it was written within
+    # UPLOAD_SINCE days. A log with no marker yet (written before run_upl*.sh
+    # marked batches) reports nothing: its old lines would outlive a fix.
+    # Never the matched line itself.
     def upload_log_conditions
       return [] unless File.exist?(@uploads_log)
       return [] if (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
 
-      tail = File.readlines(@uploads_log).last(UPLOAD_LOG_TAIL).map(&:scrub)
-      UPLOAD_CONDITIONS.filter_map { |re, condition| condition if tail.any? { |l| l.match?(re) } }
+      lines = File.readlines(@uploads_log).map(&:scrub)
+      start = lines.rindex { |l| l.match?(UPLOAD_MARKER_RE) }
+      return [] unless start
+
+      batch = lines.drop(start + 1)
+      UPLOAD_CONDITIONS.filter_map { |re, condition| condition if batch.any? { |l| l.match?(re) } }
     end
 
     # Same language filter as R2Publisher#scan_eligible_episodes.
