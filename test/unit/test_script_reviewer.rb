@@ -530,6 +530,15 @@ class TestScriptReviewer < Minitest::Test
 
   # --- AI review (mocked) ---
 
+  def test_review_ai_review_failure_without_logger_prints_to_stderr
+    reviewer = build_reviewer
+    reviewer.define_singleton_method(:run_ai_review) { |_| raise "401 revoked" }
+
+    _out, err = capture_io { reviewer.review(make_script) }
+
+    assert_includes err, "[ScriptReviewer] Warning: AI review failed: 401 revoked"
+  end
+
   def test_review_ai_review_failure_records_run_warning
     reviewer = build_reviewer
     reviewer.define_singleton_method(:run_ai_review) { |_| raise "401 revoked" }
