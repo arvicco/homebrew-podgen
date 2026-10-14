@@ -153,6 +153,21 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  def test_run_same_library_warning_in_three_runs_reports_one_repeated_reason
+    make_pod("alpha", dates: fresh_dates)
+    warning = "[SourceManager] Warning: Source 'hn' failed: 503"
+    3.times do |i|
+      day = "2026-10-0#{7 + i}"
+      write_log("alpha", "a-#{day}.log", ["[#{day} 06:00:01] #{warning}",
+        "[#{day} 06:00:09] RUN-OUTCOME status=warn warnings=1 errors=0 first=#{warning}"],
+        mtime: Time.new(2026, 10, 7 + i, 6))
+    end
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal 1, out.scan("repeated in last 3 runs").size, out
+    refute_match(/repeated in last 3 runs: RUN-OUTCOME/, out)
+  end
+
   def test_run_outcome_line_ok_still_scans_for_uncounted_warning_lines
     make_pod("alpha", dates: fresh_dates)
     write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] Warning: cover missing",
