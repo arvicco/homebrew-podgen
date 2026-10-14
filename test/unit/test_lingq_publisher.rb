@@ -103,6 +103,46 @@ class TestLingQPublisher < Minitest::Test
     assert_equal "lesson_xyz", data["lingq"]["mycollection"]["ep-2026-01-15"]
   end
 
+  # Q-81: LingQ refuses a second lesson for the same originalUrl and names
+  # the one it already has; that is a tracking success, not a failure.
+  # Drives the real agent with HTTParty stubbed at the boundary.
+
+  def test_upload_loop_lesson_already_exists_records_lesson_id_and_is_not_an_error
+    seed_ep("fiabe-2026-05-14")
+    body = { "originalUrl" => [
+      "A lesson with the same URL already exists", "Il Re dei Gamberetti",
+      "https://www.lingq.com/en/learn/it/web/editor/44553346"
+    ] }.to_json
+    publisher = build_publisher(config: stub_config(lingq_enabled: true), agent: real_agent)
+
+    result = nil
+    out, _err = HTTParty.stub(:post, Struct.new(:code, :body).new(400, body)) do
+      capture_io { result = publisher.run }
+    end
+
+    assert result.success?, "not an error: #{result.errors.inspect}"
+    assert_equal 1, result.attempted
+    assert_equal 0, result.uploaded, "nothing new was uploaded"
+    data = YAML.load_file(@uploads_path)
+    assert_equal({"lingq" => {"mycollection" => {"fiabe-2026-05-14" => 44553346}}}, data)
+    assert_includes out, "LingQ: lesson already exists (44553346) — recorded"
+  end
+
+  def test_upload_loop_other_400_is_still_an_upload_error_and_records_nothing
+    seed_ep("fiabe-2026-05-14")
+    body = { "originalUrl" => ["Enter a valid URL."] }.to_json
+    publisher = build_publisher(config: stub_config(lingq_enabled: true), agent: real_agent)
+
+    result = nil
+    HTTParty.stub(:post, Struct.new(:code, :body).new(400, body)) do
+      capture_io { result = publisher.run }
+    end
+
+    refute result.success?
+    assert_equal [:upload], result.errors.map { |e| e[:type] }
+    refute File.exist?(@uploads_path), "a failed upload records nothing"
+  end
+
   def test_skips_already_uploaded_episodes
     seed_ep("ep-2026-01-15")
     seed_ep("ep-2026-01-16")
@@ -307,6 +347,11 @@ class TestLingQPublisher < Minitest::Test
       episode_id: episode_id,
       image_fetcher: image_fetcher
     )
+  end
+
+  def real_agent
+    require "agents/lingq_agent"
+    LingQAgent.new(api_key: "test-key")
   end
 
   def stub_agent

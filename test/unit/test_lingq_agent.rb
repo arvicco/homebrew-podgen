@@ -282,6 +282,38 @@ class TestLingQAgent < Minitest::Test
     assert(warnings.any? { |m| m.include?("HTTP 400") }, "warning should include the HTTP code")
   end
 
+  # --- Q-81: "same URL already exists" carries the existing lesson id ---
+
+  LESSON_EXISTS_BODY = {
+    "originalUrl" => [
+      "A lesson with the same URL already exists", "Il Re dei Gamberetti",
+      "https://www.lingq.com/en/learn/it/web/editor/44553346"
+    ]
+  }.to_json
+
+  def test_post_with_retry_lesson_exists_400_raises_lesson_exists_with_id
+    response = Struct.new(:code, :body).new(400, LESSON_EXISTS_BODY)
+    error = HTTParty.stub(:post, response) do
+      assert_raises(LingQAgent::LessonExists) { LingQAgent.new.send(:post_with_retry, "https://x/", {}) }
+    end
+
+    assert_equal 44553346, error.lesson_id
+    assert_kind_of RuntimeError, error, "callers rescuing RuntimeError see no change"
+    assert_equal 'LingQ upload failed: HTTP 400: {"originalUrl" => ["A lesson with the same URL already exists", ' \
+                 '"Il Re dei Gamberetti", "https://www.lingq.com/en/learn/it/web/editor/44553346"]}', error.message
+  end
+
+  def test_post_with_retry_other_400_raises_plain_runtime_error
+    body = { "originalUrl" => ["Enter a valid URL."] }.to_json
+    response = Struct.new(:code, :body).new(400, body)
+    error = HTTParty.stub(:post, response) do
+      assert_raises(RuntimeError) { LingQAgent.new.send(:post_with_retry, "https://x/", {}) }
+    end
+
+    refute_kind_of LingQAgent::LessonExists, error
+    assert_includes error.message, "HTTP 400"
+  end
+
   def test_generate_timestamps_sends_empty_array_body
     captured = nil
     fake_response = Struct.new(:code, :body) { def parsed_response; {}; end }.new(200, "{}")
