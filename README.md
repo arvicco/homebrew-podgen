@@ -1215,6 +1215,16 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   With no tweet recorded at all, it warns
   (`announcements never posted (...)`) only once some announced episode is
   older than `since` days, so a brand-new show is not flagged.
+- **WARN (uploads)** - the same rule per upload platform the podcast
+  configures (`## YouTube` → `youtube: <playlist or default>`, `## LingQ`
+  with a `collection` → `lingq: <collection>` in `uploads.yml`), over every
+  episode on disk, with a fixed 7-day window:
+  `youtube uploads stalled since 2026-06-02 (newest episode 2026-10-11)` or
+  `lingq uploads never made (...)`. For podcasts with `## YouTube`, the last
+  200 lines of `logs/uploads_stderr.log` (the scheduled upload batch's
+  stderr, only when written in the last 7 days) add one line per condition
+  found, naming it only: `uploads_stderr.log: YouTube not authorized` /
+  `uploads_stderr.log: YouTube upload quota exceeded`.
 - **OK** - otherwise.
 
 Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
@@ -1223,7 +1233,8 @@ array; keys are only ever added, never renamed or removed:
 
 ```json
 [{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"],
-  "announcements": {"last_tweeted": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}]
+  "announcements": {"last_tweeted": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false},
+  "uploads": {"youtube": {"last_uploaded": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}}]
 ```
 
 `verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
@@ -1231,6 +1242,9 @@ when unknown (`age_days` is negative for a scheduled, future-dated episode);
 `reasons` is an array of short strings. `announcements` is `null` without a
 `## Twitter` section; otherwise `last_tweeted` and `newest_episode` are ISO
 dates (`null` when none) and `stalled` is the announcement check's verdict.
+`uploads` is `null` when no upload platform is configured; otherwise one
+entry per platform (`youtube`, `lingq`) of the same shape, with
+`last_uploaded`.
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes
