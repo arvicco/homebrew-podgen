@@ -528,6 +528,15 @@ class TestStatusCommand < Minitest::Test
     assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
   end
 
+  def test_run_uploads_stderr_marker_with_empty_pod_list_is_still_a_batch
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    lines = ["2026/10/10 17:00:00 podgen uploads  begin", "  ✗ alpha-2026-10-10 failed: quotaExceeded: x"]
+    write_uploads_log(lines, marked: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+  end
+
   def test_run_uploads_stderr_without_any_marker_is_ignored
     make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
     write_uploads_log(["  ✗ alpha-2026-10-10 skipped: YouTube not authorized: x"], marked: false)

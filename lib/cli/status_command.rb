@@ -65,7 +65,7 @@ module PodgenCLI
     # begin marker (scripts/run_upl*.sh); it names conditions, never bodies.
     UPLOAD_SINCE = 7
     UPLOAD_LOG = File.join("logs", "uploads_stderr.log")
-    UPLOAD_MARKER_RE = %r{\A\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} podgen uploads \S+ begin\b}
+    UPLOAD_MARKER_RE = %r{\A\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} podgen uploads \S* begin\b}
     UPLOAD_CONDITIONS = {
       /not authorized/i => "YouTube not authorized",
       /uploadLimitExceeded|quotaExceeded/ => "YouTube upload quota exceeded"
