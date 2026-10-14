@@ -235,6 +235,22 @@ class TestYouTubePublisher < Minitest::Test
     assert_match(/YouTube not authorized: no terminal/, err)
   end
 
+  def test_run_authorize_plain_error_keeps_its_message
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.authorize_raises RuntimeError.new("No authorization code provided") }
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    # Only Signet errors are reduced to class names (their messages carry the
+    # token-endpoint body); an ordinary error keeps its actionable message.
+    assert_match(/YouTube authorization failed: RuntimeError: No authorization code provided/, err)
+    assert_equal "RuntimeError: No authorization code provided", result.errors.first[:message]
+  end
+
   def test_run_authorize_transport_failure_prepares_nothing_and_returns_typed_error
     seed_ep("ep-2026-01-15")
 

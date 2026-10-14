@@ -126,7 +126,7 @@ class YouTubePublisher
     rescue => e # fatal for this run: every episode would fail the same way; the token is kept (Q-79)
       # Class names only: googleauth's message inspects the cause, which for a
       # Google 5xx carries the response body — never into a log line.
-      summary = e.cause ? "#{e.class} (cause #{e.cause.class})" : e.class.name
+      summary = self.class.auth_failure_summary(e) || "#{e.class}: #{e.message}"
       $stderr.puts "YouTube authorization failed: #{summary}"
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
                         errors: [{ type: :authorization, error_class: e.class.name,
