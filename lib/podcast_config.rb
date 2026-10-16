@@ -303,6 +303,17 @@ class PodcastConfig
     languages.map { |l| l["code"] }
   end
 
+  # Feed file for a language (ruling R6-01 (a)): the PRIMARY language's
+  # feed is always "feed.xml"; every other language is "feed-<code>.xml".
+  # The class form serves callers holding only a primary code.
+  def self.feed_file_name(lang_code, primary)
+    lang_code == primary ? "feed.xml" : "feed-#{lang_code}.xml"
+  end
+
+  def feed_file_name(lang_code)
+    self.class.feed_file_name(lang_code, primary_language)
+  end
+
   # Builds the public URL of an episode's HTML page on the published site,
   # inserting `/<lang>/` for non-primary languages so the URL points at the
   # actual rendered file (site_generator places non-primary pages under
@@ -353,29 +364,12 @@ class PodcastConfig
     raise "No free episode slot for #{date_str} — all 27 suffixes are taken"
   end
 
-  def episode_path(date = Date.today)
-    File.join(@episodes_dir, "#{episode_basename(date)}.mp3")
-  end
-
   def script_path(date = Date.today)
     File.join(@episodes_dir, "#{episode_basename(date)}_script.md")
   end
 
   def transcript_path(date = Date.today)
     File.join(@episodes_dir, "#{episode_basename(date)}_transcript.md")
-  end
-
-  def episode_basename_for_language(date, language_code:)
-    base = episode_basename(date)
-    language_code == "en" ? base : "#{base}-#{language_code}"
-  end
-
-  def episode_path_for_language(date, language_code:)
-    File.join(@episodes_dir, "#{episode_basename_for_language(date, language_code: language_code)}.mp3")
-  end
-
-  def script_path_for_language(date, language_code:)
-    File.join(@episodes_dir, "#{episode_basename_for_language(date, language_code: language_code)}_script.md")
   end
 
   def log_path(date = Date.today)

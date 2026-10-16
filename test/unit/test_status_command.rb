@@ -5,10 +5,11 @@ require "json"
 require "yaml"
 require "cli"
 require "cli/status_command"
+require "served_feed"
 
 class TestStatusCommand < Minitest::Test
   TODAY = Date.new(2026, 10, 11)
-  JSON_KEYS = %w[podcast verdict newest age_days reasons announcements].sort.freeze
+  JSON_KEYS = %w[podcast verdict newest age_days reasons announcements uploads].sort.freeze
 
   def setup
     @tmpdir = Dir.mktmpdir("podgen_status")
@@ -118,6 +119,62 @@ class TestStatusCommand < Minitest::Test
     out, code = run_status
     assert_equal 1, code
     assert_match(/alpha\s+WARN\s+.*repeated in last 3 runs: \[TweetAgent\] Warning: credits depleted/, out)
+  end
+
+  # --- RUN-OUTCOME line (P7-0) ---
+
+  def test_run_outcome_line_with_warnings_reports_warn_with_first_warning
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR Language es failed: RuntimeError: x",
+      "[2026-10-10 06:00:08] ⚠ 1 episode(s) produced (with warnings)",
+      "[2026-10-10 06:00:08]   - Language es failed: RuntimeError: x",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=warn warnings=1 errors=1 first=Language es failed: RuntimeError: x"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: Language es failed: RuntimeError: x/, out)
+  end
+
+  def test_run_outcome_line_with_error_status_reports_run_failed
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR RuntimeError: TTS quota",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: RuntimeError: TTS quota/, out)
+  end
+
+  def test_run_outcome_line_ok_reports_ok
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ✓ 1 episode(s) produced",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_same_library_warning_in_three_runs_reports_one_repeated_reason
+    make_pod("alpha", dates: fresh_dates)
+    warning = "[SourceManager] Warning: Source 'hn' failed: 503"
+    3.times do |i|
+      day = "2026-10-0#{7 + i}"
+      write_log("alpha", "a-#{day}.log", ["[#{day} 06:00:01] #{warning}",
+        "[#{day} 06:00:09] RUN-OUTCOME status=warn warnings=1 errors=0 first=#{warning}"],
+        mtime: Time.new(2026, 10, 7 + i, 6))
+    end
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal 1, out.scan("repeated in last 3 runs").size, out
+    refute_match(/repeated in last 3 runs: RUN-OUTCOME/, out)
+  end
+
+  def test_run_outcome_line_ok_still_scans_for_uncounted_warning_lines
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] Warning: cover missing",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*Warning: cover missing/, out)
   end
 
   # --- publish stderr (launchd_stderr.log, P3-2) ---
@@ -365,6 +422,227 @@ class TestStatusCommand < Minitest::Test
     refute File.exist?(File.join(@tmpdir, "output", "alpha", "uploads.yml"))
   end
 
+  # --- upload progress per platform (P7-1) ---
+
+  def test_run_youtube_uploads_ten_days_behind_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-30 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-09-30" => "v1"}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-30 \(newest episode 2026-10-10\)/, out)
+    row = JSON.parse(run_status("--json").first).first
+    assert_equal({"youtube" => {"last_uploaded" => "2026-09-30", "newest_episode" => "2026-10-10", "stalled" => true}},
+      row["uploads"])
+  end
+
+  def test_run_lingq_uploads_ten_days_behind_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: LINGQ)
+    make_episodes("alpha", %w[alpha-2026-09-30 alpha-2026-10-10])
+    write_uploads("alpha", "lingq" => {"123" => {"alpha-2026-09-30" => 11}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*lingq uploads stalled since 2026-09-30/, out)
+  end
+
+  def test_run_uploads_within_since_window_are_ok
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE + LINGQ)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-10-05" => "v1"}},
+      "lingq" => {"123" => {"alpha-2026-10-10" => 11}})
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_uploads_counted_per_configured_group_only
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-30 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"OTHER" => {"alpha-2026-10-10" => "v9"}, "PL1" => {"alpha-2026-09-30" => "v1"}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/youtube uploads stalled since 2026-09-30/, out)
+  end
+
+  def test_run_youtube_never_uploaded_with_old_episode_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-20 alpha-2026-10-10])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads never made \(newest episode 2026-10-10\)/, out)
+  end
+
+  def test_run_no_upload_platform_configured_skips_check
+    make_pod("alpha", dates: fresh_dates)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-08-01" => "v1"}})
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_nil JSON.parse(run_status("--json").first).first["uploads"]
+  end
+
+  def test_run_uploads_stderr_not_authorized_reports_one_warn_line
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-10-10 skipped: YouTube not authorized: token file /x/y.json empty (0 bytes)",
+      "  ✗ alpha-2026-10-09 skipped: YouTube not authorized: token file /x/y.json empty (0 bytes)"])
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal 1, out.scan("YouTube not authorized").size, out
+    assert_match(/alpha\s+WARN\s+.*uploads_stderr\.log: YouTube not authorized/, out)
+    refute_includes out, "/x/y.json"
+  end
+
+  def test_run_uploads_stderr_quota_exceeded_reports_warn_without_body
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-10-10 failed: uploadLimitExceeded: The user has exceeded the number " \
+      "of videos they may upload. https://example.invalid/x"])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+    refute_includes out, "https://"
+  end
+
+  def test_run_uploads_stderr_older_than_since_is_ignored
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-09-01 skipped: YouTube not authorized: x"], mtime: Time.new(2026, 9, 1, 12))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_uploads_stderr_condition_before_a_newer_clean_batch_is_ignored
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    lines = upload_batch("2026/10/08", ["  ✗ alpha-2026-10-08 failed: uploadLimitExceeded: x"]) +
+      upload_batch("2026/10/09", ["  ✗ alpha-2026-10-09 skipped: YouTube not authorized: x"]) +
+      upload_batch("2026/10/10", [])
+    write_uploads_log(lines, marked: false)
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_uploads_stderr_condition_after_last_marker_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    lines = upload_batch("2026/10/09", []) +
+      ["2026/10/10 17:00:00 podgen uploads alpha,beta begin", "  ✗ alpha-2026-10-10 failed: quotaExceeded: x"]
+    write_uploads_log(lines, marked: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+  end
+
+  def test_run_uploads_stderr_marker_with_empty_pod_list_is_still_a_batch
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    lines = ["2026/10/10 17:00:00 podgen uploads  begin", "  ✗ alpha-2026-10-10 failed: quotaExceeded: x"]
+    write_uploads_log(lines, marked: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+  end
+
+  def test_run_uploads_stderr_without_any_marker_is_ignored
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ✗ alpha-2026-10-10 skipped: YouTube not authorized: x"], marked: false)
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_upload_batch_script_brackets_the_batch_with_dated_markers
+    script = File.read(Dir.glob(File.join(ROOT, "scripts", "run_upl*.sh")).first)
+    assert_includes script, %(echo "$(date '+%Y/%m/%d %H:%M:%S') podgen uploads $PODS begin" >&2)
+    assert_includes script, %(echo "$(date '+%Y/%m/%d %H:%M:%S') podgen uploads $PODS end exit=$UP_EXIT" >&2)
+  end
+
+  def test_run_uploads_stderr_ignored_for_podcast_without_youtube
+    make_pod("alpha", dates: fresh_dates)
+    write_uploads_log(["  ✗ beta-2026-10-10 skipped: YouTube not authorized: x"])
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  # --- served feed read-back (P7-2) ---
+
+  def test_run_served_feed_five_days_behind_local_reports_warn
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    seen = nil
+    @feed_fetcher = ->(url) { (seen = url) && feed_xml("Mon, 05 Oct 2026 06:00:00 +0200") }
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal "https://media.example.com/alpha/feed.xml", seen
+    assert_match(/alpha\s+WARN\s+.*served feed behind local by 5d \(served 2026-10-05, local 2026-10-10\)/, out)
+  end
+
+  def test_run_served_feed_fetch_socket_error_reports_warn_naming_class
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise SocketError, "getaddrinfo: secret-ish detail" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*served feed fetch failed: SocketError/, out)
+    refute_includes out, "getaddrinfo"
+  end
+
+  def test_run_served_feed_host_down_is_fetched_once_but_warns_every_podcast
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_pod("beta", dates: fresh_dates, extra: "- base_url: https://media.example.com/beta\n")
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    make_episodes("beta", %w[beta-2026-10-10])
+    calls = 0
+    @feed_fetcher = ->(_url) {
+      calls += 1
+      raise SocketError, "down"
+    }
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal 2, calls # one attempt + one retry for the host, not per podcast
+    assert_equal 2, out.scan("served feed fetch failed: SocketError").size, out
+  end
+
+  def test_run_served_feed_http_status_error_reports_code_only
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/served feed fetch failed: HTTP 404/, out)
+  end
+
+  def test_run_served_feed_one_day_behind_is_ok
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-09 alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { feed_xml("Fri, 09 Oct 2026 16:31:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_served_feed_ignores_future_dated_local_episodes
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-13])
+    @feed_fetcher = ->(_url) { feed_xml("Sat, 10 Oct 2026 06:00:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_served_feed_compares_primary_language_only
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL + "- language:\n  - en\n  - es\n")
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10-es])
+    @feed_fetcher = ->(_url) { feed_xml("Mon, 05 Oct 2026 06:00:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  def test_run_offline_flag_skips_served_feed_check
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    out, code = run_status("--offline")
+    assert_equal 0, code, out
+  end
+
+  def test_run_without_base_url_skips_served_feed_check
+    make_pod("alpha", dates: fresh_dates)
+    make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
   # --- dormant shows and configured cadence (P3-4) ---
 
   def test_run_single_day_show_long_ago_reports_ok_with_dormant_note
@@ -526,8 +804,12 @@ class TestStatusCommand < Minitest::Test
 
   def fresh_dates = %w[2026-10-07 2026-10-08 2026-10-09 2026-10-10]
 
+  # The served-feed fetcher is always a fake: no status test touches the network.
   def status_command(args)
-    PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY)
+    fetcher = @feed_fetcher || ->(url) { flunk "unexpected served-feed fetch: #{url}" }
+    served_feed = ServedFeed.new(fetcher: fetcher)
+    served_feed.define_singleton_method(:sleep) { |_| nil } # retry backoff
+    PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY, served_feed: served_feed)
   end
 
   def publish_entries = status_command([]).send(:publish_entries)
@@ -588,6 +870,37 @@ class TestStatusCommand < Minitest::Test
     FileUtils.mkdir_p(dir)
     posts = basenames.to_h { |b| [b, "id-#{b}"] }
     File.write(File.join(dir, "uploads.yml"), {"twitter" => {"posts" => posts}}.to_yaml)
+  end
+
+  BASE_URL = "- base_url: https://media.example.com/alpha\n"
+
+  def feed_xml(pub_date)
+    "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>t</title>" \
+      "<item><title>x</title><pubDate>#{pub_date}</pubDate></item></channel></rss>"
+  end
+
+  YOUTUBE = "\n## YouTube\n- playlist: PL1\n"
+  LINGQ = "\n## LingQ\n- collection: 123\n"
+
+  def write_uploads(pod, data)
+    dir = File.join(@tmpdir, "output", pod)
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, "uploads.yml"), data.to_yaml)
+  end
+
+  # Shared stderr of the scheduled upload batch (scripts/run_upl*.sh), which
+  # brackets each batch with dated begin/end markers. marked: false writes
+  # the lines raw (a log from before the markers existed).
+  def write_uploads_log(lines, mtime: Time.new(2026, 10, 10, 17), marked: true)
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    path = File.join(@tmpdir, "logs", "uploads_stderr.log")
+    lines = upload_batch(mtime.strftime("%Y/%m/%d"), lines) if marked
+    File.write(path, lines.join("\n") + "\n")
+    File.utime(mtime, mtime, path)
+  end
+
+  def upload_batch(date, lines)
+    ["#{date} 17:00:00 podgen uploads alpha,beta begin", *lines, "#{date} 17:20:00 podgen uploads alpha,beta end exit=0"]
   end
 
   def write_log(pod, file, lines, mtime:)

@@ -404,9 +404,12 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
 
     result = run_publisher(publisher, calls)
 
-    # Reconcile via runner; video built only if missing; no explicit
-    # authorize!; tracker record BEFORE captions and playlist insertion.
+    # Q-80 / Phase 7 flipped: run authorizes once BEFORE playlist
+    # verification and any per-episode work (was: lazy, on the first API
+    # call). Reconcile via runner; video built only if missing; tracker
+    # record BEFORE captions and playlist insertion.
     assert_equal [
+      [:authorize],
       [:verify_playlist, "PLx"],
       [:reconcile, "#{BASE}_timestamps.json", "#{BASE}_transcript.md"],
       [:generate_srt, "#{BASE}_timestamps.json"],
@@ -421,14 +424,20 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_empty result.errors
   end
 
-  def test_upload_loop_never_calls_authorize_explicitly
+  # Q-80 / Phase 7 flipped: was "never calls authorize explicitly" (lazy
+  # auth on the first API call — with no playlist that was upload_video, so
+  # one episode's subtitles and mp4 were prepared before a refused consent
+  # surfaced). run now authorizes exactly once, first; the injected
+  # uploader is still used as-is.
+  def test_upload_loop_authorizes_once_before_any_episode_work
     seed_episode(timestamps: true, cover: true)
     calls = []
     publisher = build_publisher(yt: {}, uploader: FakeUploader.new(calls))
 
     run_publisher(publisher, calls)
 
-    refute_includes calls.map(&:first), :authorize
+    assert_equal [:authorize], calls.first
+    assert_equal 1, calls.count { |c| c.first == :authorize }
     refute_includes calls.map(&:first), :uploader_new
   end
 
@@ -486,10 +495,11 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
 
     result = run_publisher(publisher, calls)
 
+    # Q-80 / Phase 7: authorize runs first, before the paid retranscription.
     kinds = calls.map(&:first)
-    assert_equal %i[engine_manager transcribe reconcile generate_srt video_generate upload_video record upload_captions],
+    assert_equal %i[authorize engine_manager transcribe reconcile generate_srt video_generate upload_video record upload_captions],
       kinds
-    assert_equal [:engine_manager, ["groq"], "sl"], calls.first, "groq wins TIMESTAMP_ENGINE_PRIORITY over open"
+    assert_equal [:engine_manager, ["groq"], "sl"], calls[1], "groq wins TIMESTAMP_ENGINE_PRIORITY over open"
     data = JSON.parse(File.read(ts_path))
     assert_equal 0.0, data["intro_duration"]
     assert_equal "groq", data["engine"]
@@ -568,6 +578,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
 
   # P4-8 flipped: the cover check runs BEFORE subtitle prep, so a skipped
   # episode costs no paid reconcile/re-transcription (was: reconcile + srt ran).
+  # Q-80 / Phase 7: run's up-front authorize is the only seam call.
   def test_upload_loop_missing_cover_skips_before_subtitles_unattempted
     seed_episode(timestamps: true, cover: false)
     calls = []
@@ -575,7 +586,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
 
     result = run_publisher(publisher, calls)
 
-    assert_equal [], calls
+    assert_equal [[:authorize]], calls
     assert_equal 0, result.attempted
     assert_equal 0, result.uploaded
     assert_equal [{type: :missing_cover, base: BASE, message: "no cover image"}], result.errors

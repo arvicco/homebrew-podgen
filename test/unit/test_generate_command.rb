@@ -12,6 +12,7 @@ class TestGenerateCommand < Minitest::Test
   end
 
   def teardown
+    ENV.delete("PODGEN_ROOT")
     FileUtils.rm_rf(@tmpdir)
   end
 
@@ -342,6 +343,83 @@ class TestGenerateCommand < Minitest::Test
     assert_equal keywords, manager_kwargs[:hn_queries]
   end
 
+  # --- P7-0: every run ends its log with one RUN-OUTCOME line ---
+
+  def test_run_news_with_warnings_ends_log_with_warn_outcome
+    cmd = runnable_command("news")
+    cmd.define_singleton_method(:produce_episodes) do |_script, _research|
+      @logger.error("Language es failed: RuntimeError: x")
+      @warnings << "Language es failed: RuntimeError: x"
+      ["/x/pod-2026-10-10.mp3"]
+    end
+    code = nil
+    capture_io { code = cmd.run }
+
+    assert_equal 0, code
+    assert_equal "RUN-OUTCOME status=warn warnings=1 errors=1 first=Language es failed: RuntimeError: x", last_log_line
+  end
+
+  def test_run_news_clean_ends_log_with_ok_outcome
+    cmd = runnable_command("news")
+    capture_io { cmd.run }
+
+    assert_equal "RUN-OUTCOME status=ok warnings=0 errors=0", last_log_line
+  end
+
+  def test_run_news_failure_ends_log_with_error_outcome
+    cmd = runnable_command("news")
+    cmd.define_singleton_method(:generate_script) { |*| raise "TTS quota" }
+    code = nil
+    capture_io { code = cmd.run }
+
+    assert_equal 1, code
+    assert_equal "RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota", last_log_line
+  end
+
+  def test_run_language_pipeline_outcome_counts_pipeline_warnings
+    cmd = runnable_command("language")
+    fake = Struct.new(:warnings) { def run = 0 }.new(["Vocabulary annotation failed (RuntimeError: v)"])
+    code = nil
+    PodgenCLI::LanguagePipeline.stub(:new, fake) { capture_io { code = cmd.run } }
+
+    assert_equal 0, code
+    assert_equal "RUN-OUTCOME status=warn warnings=1 errors=0 first=Vocabulary annotation failed (RuntimeError: v)",
+      last_log_line
+  end
+
+  def test_run_outcome_counts_logged_library_warnings
+    cmd = runnable_command("news")
+    cmd.define_singleton_method(:research_topics) do |_|
+      @logger.warning("[ResearchAgent] Warning: Failed to research 'x' after 3 attempts: 401")
+      []
+    end
+    capture_io { cmd.run }
+
+    assert_equal "RUN-OUTCOME status=warn warnings=1 errors=0 " \
+      "first=[ResearchAgent] Warning: Failed to research 'x' after 3 attempts: 401", last_log_line
+  end
+
+  def test_generate_topics_fallback_to_queue_is_a_run_warning
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    cmd.instance_variable_set(:@warnings, [])
+    cmd.instance_variable_set(:@history, Struct.new(:recent_topics_summary).new(nil))
+    cmd.instance_variable_set(:@config, Struct.new(:queue_topics).new(["q1"]))
+
+    topics = TopicAgent.stub(:new, ->(**) { raise "401 revoked" }) { cmd.send(:generate_topics) }
+
+    assert_equal ["q1"], topics
+    assert_equal ["Topic generation failed (RuntimeError: 401 revoked), fell back to queue.yml"],
+      cmd.instance_variable_get(:@warnings)
+  end
+
+  def test_language_pipeline_warnings_reader_exposes_collected_warnings
+    pipeline = PodgenCLI::LanguagePipeline.allocate
+    pipeline.instance_variable_set(:@warnings, ["w1"])
+    assert_equal ["w1"], pipeline.warnings
+  end
+
   # parse_saved_script + strip_trailing_link_list extracted into LegacyScriptParser;
   # see test_legacy_script_parser.rb
 
@@ -372,7 +450,72 @@ class TestGenerateCommand < Minitest::Test
 
   # write_sources extracted into ScriptRenderer; see test_script_renderer.rb
 
+  # --- primary language from config (P7-6) ---
+
+  def test_produce_episodes_sl_primary_names_sl_bare_and_en_suffixed
+    cmd, config = build_sl_en_command
+    voiced = []
+    translated_to = []
+    fake_voicer = Object.new
+    fake_voicer.define_singleton_method(:voice) { |output_path:, lang_code:, **| voiced << [File.basename(output_path), lang_code] }
+    translator_new = lambda do |target_language:, **|
+      translated_to << target_language
+      Object.new.tap { |t| t.define_singleton_method(:translate) { |s| s.merge(title: "EN #{s[:title]}") } }
+    end
+
+    paths = nil
+    Voicer.stub(:new, ->(**) { fake_voicer }) do
+      TranslationAgent.stub(:new, translator_new) do
+        capture_io { paths = cmd.send(:produce_episodes, sl_script, []) }
+      end
+    end
+
+    assert_equal [["mypod-2026-01-15.mp3", "sl"], ["mypod-2026-01-15-en.mp3", "en"]], voiced
+    assert_equal ["en"], translated_to, "the primary (sl) script is voiced as-is; only en is translated"
+    assert_equal %w[mypod-2026-01-15.mp3 mypod-2026-01-15-en.mp3], paths.map { |p| File.basename(p) }
+    assert File.exist?(File.join(config.episodes_dir, "mypod-2026-01-15-en_script.md"))
+  end
+
+  def test_finalize_sl_primary_records_sl_and_en_language_keys
+    cmd, config = build_sl_en_command
+    recorded = nil
+    history = Object.new
+    history.define_singleton_method(:record!) { |**kw| recorded = kw }
+    cmd.instance_variable_set(:@history, history)
+    cmd.instance_variable_set(:@base_name, "mypod-2026-01-15")
+    cmd.instance_variable_set(:@pipeline_start, Time.now)
+    cmd.instance_variable_set(:@warnings, [])
+    paths = %w[mypod-2026-01-15 mypod-2026-01-15-en].map { |b| File.join(config.episodes_dir, "#{b}.mp3") }
+
+    AudioAssembler.stub(:probe_duration, 61.0) do
+      capture_io { cmd.send(:finalize, paths, sl_script, [], []) }
+    end
+
+    assert_equal %w[sl en], recorded[:languages].keys
+  end
+
   private
+
+  def sl_script
+    { title: "Naslov", segments: [{ name: "Uvod", text: "Dober dan." }], sources: [] }
+  end
+
+  def build_sl_en_command
+    require "podcast_config"
+    FileUtils.mkdir_p(File.join(@tmpdir, "podcasts", "mypod"))
+    File.write(File.join(@tmpdir, "podcasts", "mypod", "guidelines.md"),
+      "## Podcast\n- name: mypod\n- language:\n  - sl\n  - en\n")
+    ENV["PODGEN_ROOT"] = @tmpdir
+    config = PodcastConfig.new("mypod")
+    FileUtils.mkdir_p(config.episodes_dir)
+    cmd = build_command
+    cmd.instance_variable_set(:@config, config)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    cmd.instance_variable_set(:@options, {verbosity: :quiet})
+    cmd.instance_variable_set(:@today, Date.new(2026, 1, 15))
+    cmd.instance_variable_set(:@warnings, [])
+    [cmd, config]
+  end
 
   class StubGenLogger
     attr_reader :messages
@@ -386,5 +529,34 @@ class TestGenerateCommand < Minitest::Test
 
   def build_command
     PodgenCLI::GenerateCommand.allocate
+  end
+
+  # A command past setup_pipeline whose phases are stubbed: run's own control
+  # flow (and its RUN-OUTCOME line) is what's exercised.
+  def runnable_command(type)
+    cmd = build_command
+    @log_path = File.join(@tmpdir, "run.log")
+    cmd.instance_variable_set(:@options, {verbosity: :quiet})
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@podcast_name, "pod")
+    cmd.instance_variable_set(:@config, Struct.new(:type).new(type))
+    cmd.instance_variable_set(:@logger, PodcastAgent::Logger.new(log_path: @log_path, verbosity: :quiet))
+    cmd.instance_variable_set(:@lock_file, File.open(File.join(@tmpdir, "run.lock"), File::RDWR | File::CREAT))
+    cmd.instance_variable_set(:@warnings, [])
+    cmd.define_singleton_method(:setup_pipeline) { nil }
+    cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil }
+    cmd.define_singleton_method(:preflight_network!) { |_| nil }
+    cmd.define_singleton_method(:generate_topics) { ["t"] }
+    cmd.define_singleton_method(:research_topics) { |_| [] }
+    cmd.define_singleton_method(:inject_priority_links) { |r| [r, []] }
+    cmd.define_singleton_method(:generate_script) { |*| {title: "T", segments: []} }
+    cmd.define_singleton_method(:review_script) { |s, *| s }
+    cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod-2026-10-10.mp3"] }
+    cmd.define_singleton_method(:finalize) { |*| nil }
+    cmd
+  end
+
+  def last_log_line
+    File.readlines(@log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, "")
   end
 end

@@ -186,9 +186,10 @@ Gate 0 CLOSED 2026-09-02 (PR #1, merge 4298988). Gate 1 CLOSED 2026-10-11
 494c000). Gate 3 CLOSED 2026-10-12 11:45 (PR #4, merge 35592dd). Gate 4
 CLOSED 2026-10-12 12:55 (PR #5, merge 8e454c6 — the dry-up). Gate 5
 CLOSED 2026-10-12 18:25 (PR #6, merge e3106e2 — correctness and cost
-sweep). Phase 6 (spend measured, observability, docs refresh, refill) AT
-GATE 6 (2026-10-12 19:25; hotfixes P6-7/P6-8 added 2026-10-13 on the
-owner's request): all packets on phase-6, CRPR APPROVED (phase body three
-rounds; hotfixes two rounds + nit check, refs/cr/reviewed = 6aa9a85), PR
-#7 open — the owner merges; runbook in .docs/p06-plan.md. Update this
-line at each gate.
+sweep). Gate 6 CLOSED
+2026-10-14 21:40 (PR #7, merge 2aad556 — spend measured, observability,
+docs refresh, refill, plus the P6-7/P6-8 hotfixes). Phase 7 (publication
+observability and YouTube hardening) AT GATE 7 (2026-10-14 23:30): all
+packets on phase-7, CRPR APPROVED (round 2 + nit confirmation,
+refs/cr/reviewed = 5068068), PR #8 open — the owner merges; runbook in
+.docs/p07-plan.md. Update this line at each gate.

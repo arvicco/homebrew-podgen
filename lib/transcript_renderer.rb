@@ -175,7 +175,7 @@ module TranscriptRenderer
   end
 
   def render_vocabulary_html(vocab_body)
-    languages, body = extract_vocab_languages(vocab_body)
+    languages, _body = extract_vocab_languages(vocab_body)
     entries = parse_vocab_entries(vocab_body)
     return "" unless entries
 

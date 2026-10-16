@@ -91,6 +91,8 @@ module PodgenCLI
       codes.max || 0
     end
 
+    # Unrescued on purpose — fatal: a feed that fails to regenerate aborts
+    # the publish rather than shipping a stale feed.
     def regenerate_rss
       rss_opts = { verbosity: @options[:verbosity] }
       rss = RssCommand.new([@podcast_name], rss_opts)
@@ -100,8 +102,8 @@ module PodgenCLI
     def regenerate_site
       generator = SiteGenerator.new(config: @config, clean: true)
       generator.generate
-    rescue => e
-      $stderr.puts "Warning: site generation failed: #{e.message}" if @options[:verbosity] == :verbose
+    rescue => e # skippable: the feed already regenerated; a stale site is repaired by the next publish
+      $stderr.puts "Warning: site/feed regen failed: #{e.class}: #{e.message}"
     end
 
     def publish_to_r2
@@ -141,7 +143,7 @@ module PodgenCLI
       end
       return 2 if not_configured
       return 1 if result.errors.any? { |e| e[:type] == :playlist_verification }
-      return 1 if result.errors.any? { |e| e[:type] == :not_authorized } # Q-77: no terminal, nothing uploaded
+      return 1 if result.errors.any? { |e| %i[not_authorized authorization].include?(e[:type]) } # Q-77/Q-80: nothing uploaded
       0
     end
 
