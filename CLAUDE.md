@@ -177,8 +177,9 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
   .env, output/, logs/, or podcast content directories.
 - No AI branding on any public surface (owner ruling 2026-10-16,
   doctrine §13): no `Co-Authored-By` assistant trailers on commits, no
-  "generated with" footers on PR bodies, no assistant or vendor names
-  in tracked files.
+  "generated with" footers on PR bodies, no authorship attribution to
+  an assistant anywhere. Technical references to the API vendor or a
+  model id (class names, model registry, docs) are not branding.
 
 ## Workflow notes
 
