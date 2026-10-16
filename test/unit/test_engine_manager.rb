@@ -229,6 +229,41 @@ class TestEngineManager < Minitest::Test
     assert_equal "some captions", cleanup_called_with_captions
   end
 
+  # CRPR W5: an engine's HTTP error body (OpenAI's 401 echoes a masked
+  # key) never reaches the run warning or the comparison errors map.
+  def test_comparison_mode_engine_http_error_body_never_logged
+    ENV["OPENAI_API_KEY"] ||= "test-key"
+    ENV["GROQ_API_KEY"] ||= "test-key"
+    sentinel = "SENTINEL-BODY sk-...abcd"
+    post = lambda do |url, **_kw|
+      if url.include?("openai.com")
+        Struct.new(:code, :body, :success?).new(401, sentinel, false)
+      else
+        Struct.new(:code, :body, :success?).new(200, {"text" => "hi", "segments" => []}.to_json, true)
+      end
+    end
+    manager = build_manager(%w[open groq])
+    stub_engine(manager, "open", Transcription::OpenaiEngine.new(language: "sl"))
+    stub_engine(manager, "groq", Transcription::GroqEngine.new(language: "sl"))
+    stub_reconciler(manager, MockReconciler.new)
+
+    output = nil
+    logger = Dir.mktmpdir do |dir|
+      audio = File.join(dir, "a.mp3")
+      File.write(audio, "fake audio")
+      PodcastAgent::Logger.new(log_path: File.join(dir, "e.log"), verbosity: :quiet).tap do |l|
+        HTTParty.stub(:post, post) do
+          PodcastAgent.with_logger(l) { output = manager.transcribe(audio) }
+        end
+      end
+    end
+
+    assert_includes output[:errors]["open"], "Transcription::ApiError"
+    assert_includes output[:errors]["open"], "401"
+    refute_includes output[:errors]["open"], "SENTINEL"
+    refute logger.logged_warnings.any? { |w| w.include?("SENTINEL") }, logger.logged_warnings.inspect
+  end
+
   private
 
   def build_manager(codes, language: "sl")
