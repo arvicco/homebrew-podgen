@@ -5,11 +5,22 @@
 
 require_relative "../test_helper"
 
-ENV["ANTHROPIC_API_KEY"] ||= "test-key"
 require "agents/script_agent"
 require "agents/translation_agent"
 
 class TestPipelineContracts < Minitest::Test
+  # The agents' clients need a key to construct (no call is made). Scoped
+  # per test and restored, so a placeholder never leaks process-wide and
+  # un-gates a later skip_unless_env (Q-68).
+  def setup
+    @original_anthropic_key = ENV["ANTHROPIC_API_KEY"]
+    ENV["ANTHROPIC_API_KEY"] = "test-key" if @original_anthropic_key.nil? || @original_anthropic_key.empty?
+  end
+
+  def teardown
+    ENV["ANTHROPIC_API_KEY"] = @original_anthropic_key
+  end
+
   # Research data format (ResearchAgent output) must pass ScriptAgent validation
   def test_research_format_accepted_by_script_agent
     research_data = [

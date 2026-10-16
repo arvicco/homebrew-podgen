@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Integration test: verifies multi-engine STT reconciliation.
+# API test: verifies multi-engine STT reconciliation.
 # Uses pre-written transcript strings (no real STT calls).
 # TranscriptMerger uses Claude to merge divergent transcripts.
 
