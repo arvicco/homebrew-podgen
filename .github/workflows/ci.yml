@@ -17,6 +17,11 @@ jobs:
     # Pinned (not ubuntu-latest) so apt package names and the hunspell
     # dictionary path stay deterministic.
     runs-on: ubuntu-24.04
+    # ImageMagick 7 AppImage pin: the single source for the cache key and
+    # the install step.
+    env:
+      IM_VERSION: "7.1.2-34"
+      IM_SHA256: "6e9edfd35d5f30b57c27533afe003d6085faaf8607b207426f398d11751acf93"
     strategy:
       fail-fast: false
       matrix:
@@ -46,12 +51,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/im.AppImage
-          key: im7-appimage-7.1.2-34-6e9edfd35d5f30b57c27533afe003d6085faaf8607b207426f398d11751acf93
+          key: im7-appimage-${{ env.IM_VERSION }}-${{ env.IM_SHA256 }}
 
       - name: Install ImageMagick 7 (magick)
-        env:
-          IM_VERSION: "7.1.2-34"
-          IM_SHA256: "6e9edfd35d5f30b57c27533afe003d6085faaf8607b207426f398d11751acf93"
         run: |
           cd "$RUNNER_TEMP"
           if [ ! -f im.AppImage ]; then
