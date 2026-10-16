@@ -14,7 +14,9 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest) so apt package names and the hunspell
+    # dictionary path stay deterministic.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -38,14 +40,24 @@ jobs:
       # Production calls `magick` (ImageMagick 7); Ubuntu's imagemagick is
       # IM6 (`convert`, no `magick`). Official IM7 AppImage, pinned by
       # version + sha256, extracted (no FUSE needed) and linked onto PATH.
+      # The download is cached per version + sha; the checksum is verified
+      # on every run, cache hit or not.
+      - name: Cache ImageMagick 7 AppImage
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/im.AppImage
+          key: im7-appimage-7.1.2-34-6e9edfd35d5f30b57c27533afe003d6085faaf8607b207426f398d11751acf93
+
       - name: Install ImageMagick 7 (magick)
         env:
           IM_VERSION: "7.1.2-34"
           IM_SHA256: "6e9edfd35d5f30b57c27533afe003d6085faaf8607b207426f398d11751acf93"
         run: |
           cd "$RUNNER_TEMP"
-          curl -fsSL --retry 3 -o im.AppImage \
-            "https://github.com/ImageMagick/ImageMagick/releases/download/${IM_VERSION}/ImageMagick-${IM_VERSION}-gcc-x86_64.AppImage"
+          if [ ! -f im.AppImage ]; then
+            curl -fsSL --retry 3 --retry-all-errors -o im.AppImage \
+              "https://github.com/ImageMagick/ImageMagick/releases/download/${IM_VERSION}/ImageMagick-${IM_VERSION}-gcc-x86_64.AppImage"
+          fi
           echo "${IM_SHA256}  im.AppImage" | sha256sum -c -
           chmod +x im.AppImage
           ./im.AppImage --appimage-extract > /dev/null
