@@ -273,9 +273,6 @@ class TestPriorityLinks < Minitest::Test
     assert_equal ["https://down.example.com/a"], links.all.map { |e| e["url"] }, "link stays queued"
   end
 
-  # CRPR W2(b): a permanent failure (4xx other than 429) is consumed with one
-  # warning: returned titled by its URL (as before P8-4), so generate drops
-  # it from the queue instead of warning on every run.
   # CRPR r2 W1: a permanent failure (4xx other than 429) is NOT a finding
   # (it would reach the script and the reviewer's must-cite check); it is
   # reported in dead_urls for the caller to consume, after one warning.
