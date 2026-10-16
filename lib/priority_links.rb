@@ -20,7 +20,8 @@ class PriorityLinks
   # malformed URL, a redirect loop.
   class PermanentFetchError < FetchError; end
 
-  # Failures consumed with one warning instead of staying queued.
+  # Failures reported in #dead_urls (consumed, never injected) instead of
+  # staying queued.
   PERMANENT_ERRORS = [PermanentFetchError, URI::InvalidURIError].freeze
 
   MAX_FETCHES = 3 # the first request plus up to two redirects
@@ -31,7 +32,12 @@ class PriorityLinks
   def initialize(path, fetcher: nil)
     @path = path
     @fetcher = fetcher || method(:http_get)
+    @dead_urls = []
   end
+
+  # URLs the last #fetch_all found permanently dead: the caller consumes
+  # them with the fetched ones, without passing them to the script.
+  attr_reader :dead_urls
 
   # Returns array of link hashes: [{ "url" => ..., "added" => ..., "note" => ... }]
   def all
@@ -82,11 +88,12 @@ class PriorityLinks
   # Fetch content for all links, returning research-style findings.
   # Returns: [{ title:, url:, summary: }]
   # Includes the user's note in the summary if present.
-  # The caller consumes exactly the returned URLs (P8-4). A transient fetch
-  # failure (timeout, DNS, 5xx, 429) is left out, so the link stays queued
-  # for the next run; a permanent one (PERMANENT_ERRORS) is returned titled
-  # by its URL, so it is consumed after one warning.
+  # Failed links are never returned (P8-4). A transient failure (timeout,
+  # DNS, 5xx, 429) leaves the link queued for the next run; a permanent one
+  # (PERMANENT_ERRORS) is listed in #dead_urls, after one warning, for the
+  # caller to consume — a dead URL must not reach the script or its sources.
   def fetch_all(logger: nil)
+    @dead_urls = []
     entries = all
     return [] if entries.empty?
 
@@ -97,21 +104,18 @@ class PriorityLinks
       target.log("  Fetching: #{url}")
 
       start = Time.now
-      fetched = true
-      title, summary = begin
-        fetch_page_info(url)
-      rescue *PERMANENT_ERRORS => e
-        # skippable: a dead link is consumed (titled by its URL) after one warning.
-        warn_fetch(target, url, e)
-        fetched = false
-        []
-      end
+      title, summary = fetch_page_info(url)
       elapsed = (Time.now - start).round(2)
       title ||= url
-      target.log("  \u2713 #{title} (#{elapsed}s)") if fetched
+      target.log("  \u2713 #{title} (#{elapsed}s)")
       summary = [note, summary].compact.reject(&:empty?).join(" — ") if note
 
       { title: title, url: url, summary: summary || "Priority link added by producer" }
+    rescue *PERMANENT_ERRORS => e
+      # skippable: a dead link is reported for consumption after one warning.
+      warn_fetch(target, url, e)
+      @dead_urls << url
+      nil
     rescue => e
       # skippable: the link stays queued and is retried on the next run.
       warn_fetch(target, url, e)

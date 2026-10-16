@@ -278,6 +278,8 @@ module PodgenCLI
         @logger.log("Fetching #{priority_links.count} priority link(s)...")
         priority_findings = priority_links.fetch_all(logger: @logger)
         priority_urls = priority_findings.map { |f| f[:url] }
+        # Dead links are consumed at finalize but never injected (P8-4).
+        @dead_priority_urls = priority_links.dead_urls
         research_data.unshift({ topic: "Priority links", findings: priority_findings })
         @logger.log("Injected #{priority_findings.length} priority link(s) into research data")
         @logger.phase_end("Priority Links")
@@ -507,10 +509,11 @@ module PodgenCLI
       )
       @logger.log("Episode recorded in history: #{@config.history_path}")
 
-      unless priority_urls.empty?
+      consumed = priority_urls + Array(@dead_priority_urls)
+      unless consumed.empty?
         priority_links = PriorityLinks.new(@config.links_path)
-        priority_links.consume!(priority_urls)
-        @logger.log("#{priority_urls.length} priority link(s) consumed")
+        priority_links.consume!(consumed)
+        @logger.log("#{consumed.length} priority link(s) consumed")
       end
 
       total_time = (Time.now - @pipeline_start).round(2)

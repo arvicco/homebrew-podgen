@@ -300,6 +300,42 @@ class TestGenerateCommand < Minitest::Test
     assert_empty priority_urls
   end
 
+  # CRPR r2 W1: a dead link (404) reaches neither research_data nor
+  # priority_urls, and finalize consumes it; a transient one (502) stays.
+  def test_priority_links_dead_link_consumed_without_injection_transient_stays
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    links_path = File.join(@tmpdir, "links.yml")
+    config = Struct.new(:links_path, :primary_language, :history_path).new(links_path, "en", File.join(@tmpdir, "history.yml"))
+    cmd.instance_variable_set(:@config, config)
+    links = PriorityLinks.new(links_path)
+    %w[https://live.example.com/a https://dead.example.com/b https://flaky.example.com/c].each { |u| links.add(u) }
+    responses = {
+      "live.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("200", "<title>Live</title>"),
+      "dead.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("404", ""),
+      "flaky.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("502", "")
+    }
+
+    research_data, priority_urls = Net::HTTP.stub(:start, ->(host, *_a, **_k) { responses.fetch(host) }) do
+      cmd.send(:inject_priority_links, [])
+    end
+
+    assert_equal ["https://live.example.com/a"], priority_urls
+    assert_equal ["https://live.example.com/a"], research_data.flat_map { |r| r[:findings].map { |f| f[:url] } }
+
+    cmd.instance_variable_set(:@history, Object.new.tap { |h| h.define_singleton_method(:record!) { |**| nil } })
+    cmd.instance_variable_set(:@base_name, "pod-2026-10-16")
+    cmd.instance_variable_set(:@pipeline_start, Time.now)
+    cmd.instance_variable_set(:@warnings, [])
+    script = {title: "T", segments: [], sources: []}
+    AudioAssembler.stub(:probe_duration, 60.0) do
+      capture_io { cmd.send(:finalize, [File.join(@tmpdir, "pod-2026-10-16.mp3")], script, research_data, priority_urls) }
+    end
+
+    assert_equal ["https://flaky.example.com/c"], PriorityLinks.new(links_path).all.map { |e| e["url"] }
+  end
+
   def test_inject_priority_links_skips_on_dry_run
     cmd = build_command
     cmd.instance_variable_set(:@dry_run, true)
