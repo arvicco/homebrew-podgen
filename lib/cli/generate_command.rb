@@ -245,8 +245,29 @@ module PodgenCLI
       end
       total_findings = research_data.sum { |r| r[:findings].length }
       @logger.log("Research complete: #{total_findings} findings across #{research_data.length} topics")
+      research_data = drop_topics_without_findings(topics, research_data)
       @logger.phase_end("Research")
       research_data
+    end
+
+    # A script from model memory is worse than no episode (P8-1, Q-69): a
+    # topic with no findings (all sources failed, or a revoked key) is
+    # dropped as a run warning; with none left the run fails before any
+    # ScriptAgent call. Dropped topics stay out of history, so they remain
+    # eligible on a later day; queue.yml is read-only, nothing to re-queue.
+    def drop_topics_without_findings(topics, research_data)
+      kept = research_data.select { |r| r[:findings].any? }
+      kept_topics = kept.map { |r| r[:topic] }
+      (topics | research_data.map { |r| r[:topic] }).each do |topic|
+        next if kept_topics.include?(topic)
+
+        msg = "Warning: topic '#{topic}' dropped — no research findings"
+        @logger.log(msg)
+        @warnings << msg
+      end
+      raise "no research findings for any topic" if kept.empty?
+
+      kept
     end
 
     def inject_priority_links(research_data)

@@ -331,7 +331,7 @@ class TestGenerateCommand < Minitest::Test
     fake_agent = Struct.new(:generate, :hn_queries).new(["Long research topic October 2026"], keywords)
     manager_kwargs = nil
     fake_manager = Object.new
-    fake_manager.define_singleton_method(:research) { |topics| topics.map { |t| { topic: t, findings: [] } } }
+    fake_manager.define_singleton_method(:research) { |topics| topics.map { |t| { topic: t, findings: [{ url: "https://e.x/1" }] } } }
 
     TopicAgent.stub(:new, fake_agent) do
       SourceManager.stub(:new, ->(**kw) { (manager_kwargs = kw) && fake_manager }) do
@@ -412,6 +412,38 @@ class TestGenerateCommand < Minitest::Test
     assert_equal ["q1"], topics
     assert_equal ["Topic generation failed (RuntimeError: 401 revoked), fell back to queue.yml"],
       cmd.instance_variable_get(:@warnings)
+  end
+
+  # --- P8-1: minimum-research guard (Q-69) ---
+
+  def test_run_news_topic_without_findings_dropped_from_script_input_with_warning
+    cmd = researching_command({ "t1" => [{ title: "A", url: "https://e.x/a", summary: "s" }], "t2" => [] })
+    script_input = nil
+    cmd.define_singleton_method(:generate_script) { |_t, research, _p| (script_input = research) && { title: "T", segments: [] } }
+    code = run_with_fake_sources(cmd)
+
+    assert_equal 0, code
+    assert_equal ["t1"], script_input.map { |r| r[:topic] }
+    assert_includes cmd.instance_variable_get(:@warnings), "Warning: topic 't2' dropped — no research findings"
+    assert_match(/\ARUN-OUTCOME status=warn warnings=1 /, last_log_line)
+  end
+
+  def test_run_news_topic_missing_from_research_counts_as_dropped
+    cmd = researching_command({ "t1" => [{ title: "A", url: "https://e.x/a", summary: "s" }] }, topics: %w[t1 t2])
+    run_with_fake_sources(cmd)
+
+    assert_includes cmd.instance_variable_get(:@warnings), "Warning: topic 't2' dropped — no research findings"
+  end
+
+  def test_run_news_no_findings_for_any_topic_fails_before_script_agent
+    cmd = researching_command({ "t1" => [], "t2" => [] })
+    script_called = false
+    cmd.define_singleton_method(:generate_script) { |*| (script_called = true) && { title: "T", segments: [] } }
+    code = run_with_fake_sources(cmd)
+
+    assert_equal 1, code
+    refute script_called, "ScriptAgent must not run without research findings"
+    assert_match(/\ARUN-OUTCOME status=error .*first=RuntimeError: no research findings for any topic/, last_log_line)
   end
 
   def test_language_pipeline_warnings_reader_exposes_collected_warnings
@@ -553,6 +585,28 @@ class TestGenerateCommand < Minitest::Test
     cmd.define_singleton_method(:review_script) { |s, *| s }
     cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod-2026-10-10.mp3"] }
     cmd.define_singleton_method(:finalize) { |*| nil }
+    cmd
+  end
+
+  # runnable_command with the real research_topics; run it inside
+  # run_with_fake_sources so SourceManager.new yields a fake
+  # returning `findings_by_topic` (a topic absent from the hash is absent
+  # from the research data, as when every source failed).
+  def run_with_fake_sources(cmd)
+    code = nil
+    SourceManager.stub(:new, ->(**) { @fake_sources }) { capture_io { code = cmd.run } }
+    code
+  end
+
+  def researching_command(findings_by_topic, topics: findings_by_topic.keys)
+    cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
+    cmd.define_singleton_method(:generate_topics) { topics }
+    cmd.instance_variable_set(:@config, Struct.new(:type, :episodes_dir, :sources).new("news", @episodes_dir, {}))
+    cmd.instance_variable_set(:@history, Struct.new(:recent_urls).new(Set.new))
+    manager = Object.new
+    manager.define_singleton_method(:research) { |_| findings_by_topic.map { |t, f| { topic: t, findings: f } } }
+    @fake_sources = manager
     cmd
   end
 
