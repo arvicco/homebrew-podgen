@@ -15,14 +15,16 @@ require "transcription/engine_manager"
 require "upload_tracker"
 require "google/apis/errors"
 
-# P3-0 H1 characterization harness: pins the CURRENT behavior of the two
-# YouTube upload paths — PostPipelineUploads#upload_to_youtube (generate
-# --youtube) and YouTubePublisher#upload_loop (publish --youtube / yt-batch)
-# — before a later packet consolidates them. These tests pass by
-# construction today; their value is going RED if the dry-up changes a step,
-# its order, its arguments, or its failure handling. Where the two paths
-# differ, both sides are pinned so the difference is a visible, deliberate
-# decision rather than a silent side effect.
+# P3-0 H1 characterization harness: pins the behavior of the two YouTube
+# upload entry points — PostPipelineUploads#upload_to_youtube (generate
+# --youtube) and YouTubePublisher#upload_loop (publish --youtube / yt-batch).
+# They are consolidated: both now run the shared routine
+# YouTubePublisher#upload_episode (upload_to_youtube passes its metadata
+# hash and authoritative timestamps). These tests go RED if a change alters
+# a step, its order, its arguments, or its failure handling on either entry
+# point. Where the entry points still differ (metadata source, timestamp
+# handling, logging), both sides are pinned so the difference stays a
+# visible, deliberate decision rather than a silent side effect.
 #
 # Every external seam is faked: no network, no ffmpeg, no YouTube API.
 class TestCharacterizationYouTubeUploadPaths < Minitest::Test
