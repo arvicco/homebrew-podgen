@@ -23,6 +23,12 @@ namespace :test do
   # safe for CI. Keyed and live-network cases live in test/api/ (Q-68);
   # a file joins this list only when it has none and sets no
   # process-wide placeholder key (one would un-gate skip_unless_env).
+  # CAUTION: `rake test` loads every tier (unit + integration + api) in ONE
+  # process, and many unit files set ENV["ANTHROPIC_API_KEY"] ||= "test-key"
+  # at load time — so a keyless `rake test` un-gates the test/api cases and
+  # runs them with a fake key against live endpoints. Run test:api only
+  # with real keys; the gate runs unit and integration_offline as separate
+  # processes and is unaffected (fix queued as Q-86).
   Rake::TestTask.new(:integration_offline) do |t|
     t.libs << "test"
     t.test_files = FileList[
