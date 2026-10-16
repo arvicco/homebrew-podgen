@@ -273,14 +273,54 @@ class TestPriorityLinks < Minitest::Test
     assert_equal ["https://down.example.com/a"], links.all.map { |e| e["url"] }, "link stays queued"
   end
 
-  def test_fetch_all_http_error_status_warns_and_is_not_returned
+  # CRPR W2(b): a permanent failure (4xx other than 429) is consumed with one
+  # warning: returned titled by its URL (as before P8-4), so generate drops
+  # it from the queue instead of warning on every run.
+  def test_fetch_all_permanent_http_error_warns_once_and_is_returned_by_url
     links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("404", {}, "") })
     links.add("https://example.com/gone")
     logger = RecordingLogger.new
 
-    assert_equal [], links.fetch_all(logger: logger)
-    assert_includes logger.warnings.first, "PriorityLinks::FetchError"
+    findings = links.fetch_all(logger: logger)
+
+    expected = {title: "https://example.com/gone", url: "https://example.com/gone", summary: "Priority link added by producer"}
+    assert_equal [expected], findings
+    assert_equal 1, logger.warnings.length
+    assert_includes logger.warnings.first, "PriorityLinks::PermanentFetchError"
     assert_includes logger.warnings.first, "HTTP 404"
+    refute logger.lines.any? { |l| l.include?("\u2713") }
+  end
+
+  def test_fetch_all_gone_and_malformed_urls_are_permanent
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("410", {}, "") })
+    File.write(@path, [{"url" => "https://example.com/old"}, {"url" => "ftp://example.com/x"},
+      {"url" => "http://exa mple.com/bad"}].to_yaml)
+    logger = RecordingLogger.new
+
+    findings = links.fetch_all(logger: logger)
+
+    assert_equal ["https://example.com/old", "ftp://example.com/x", "http://exa mple.com/bad"], findings.map { |f| f[:url] }
+    assert_equal 3, logger.warnings.length
+  end
+
+  def test_fetch_all_transient_http_error_stays_queued
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("502", {}, "") })
+    links.add("https://example.com/flaky")
+    logger = RecordingLogger.new
+
+    assert_equal [], links.fetch_all(logger: logger)
+    assert_includes logger.warnings.first, "PriorityLinks::FetchError: HTTP 502"
+  end
+
+  # CRPR W2(a): a Latin-1 page (or one stray byte) still yields its title.
+  def test_fetch_page_info_invalid_utf8_body_returns_title
+    body = "<title>Caf\xE9 \xFF news</title>".b
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("200", {}, body) })
+
+    title, = links.send(:fetch_page_info, "https://example.com/latin1")
+
+    assert_includes title, "news"
+    assert title.valid_encoding?
   end
 
   def test_fetch_all_success_logs_title_with_timing

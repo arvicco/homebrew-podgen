@@ -13,8 +13,15 @@ require_relative "http_retryable"
 class PriorityLinks
   include HttpRetryable
 
-  # A fetch that produced no page: non-2xx, non-HTTP URL, or redirect loop.
+  # A fetch that produced no page and may succeed later (5xx, 429).
   class FetchError < StandardError; end
+
+  # A fetch that cannot succeed on retry: 4xx other than 429, a non-HTTP or
+  # malformed URL, a redirect loop.
+  class PermanentFetchError < FetchError; end
+
+  # Failures consumed with one warning instead of staying queued.
+  PERMANENT_ERRORS = [PermanentFetchError, URI::InvalidURIError].freeze
 
   MAX_FETCHES = 3 # the first request plus up to two redirects
 
@@ -75,8 +82,10 @@ class PriorityLinks
   # Fetch content for all links, returning research-style findings.
   # Returns: [{ title:, url:, summary: }]
   # Includes the user's note in the summary if present.
-  # A link whose fetch fails is left out (P8-4): the caller consumes exactly
-  # the returned URLs, so a failed link stays queued for the next run.
+  # The caller consumes exactly the returned URLs (P8-4). A transient fetch
+  # failure (timeout, DNS, 5xx, 429) is left out, so the link stays queued
+  # for the next run; a permanent one (PERMANENT_ERRORS) is returned titled
+  # by its URL, so it is consumed after one warning.
   def fetch_all(logger: nil)
     entries = all
     return [] if entries.empty?
@@ -88,17 +97,24 @@ class PriorityLinks
       target.log("  Fetching: #{url}")
 
       start = Time.now
-      title, summary = fetch_page_info(url)
+      fetched = true
+      title, summary = begin
+        fetch_page_info(url)
+      rescue *PERMANENT_ERRORS => e
+        # skippable: a dead link is consumed (titled by its URL) after one warning.
+        warn_fetch(target, url, e)
+        fetched = false
+        []
+      end
       elapsed = (Time.now - start).round(2)
       title ||= url
+      target.log("  \u2713 #{title} (#{elapsed}s)") if fetched
       summary = [note, summary].compact.reject(&:empty?).join(" — ") if note
 
-      target.log("  \u2713 #{title} (#{elapsed}s)")
       { title: title, url: url, summary: summary || "Priority link added by producer" }
     rescue => e
       # skippable: the link stays queued and is retried on the next run.
-      warn_line = "  Warning: #{url} (#{e.class}: #{e.message})"
-      target.respond_to?(:warning) ? target.warning(warn_line) : target.log(warn_line)
+      warn_fetch(target, url, e)
       nil
     end
   ensure
@@ -116,6 +132,11 @@ class PriorityLinks
 
   private
 
+  def warn_fetch(target, url, error)
+    line = "  Warning: #{url} (#{error.class}: #{error.message})"
+    target.respond_to?(:warning) ? target.warning(line) : target.log(line)
+  end
+
   def write!(entries)
     if entries.empty?
       AtomicWriter.delete_if_exists(@path)
@@ -130,7 +151,7 @@ class PriorityLinks
   def fetch_page_info(url)
     uri = URI.parse(url)
     MAX_FETCHES.times do
-      raise FetchError, "not an HTTP URL: #{uri}" unless uri.is_a?(URI::HTTP)
+      raise PermanentFetchError, "not an HTTP URL: #{uri}" unless uri.is_a?(URI::HTTP)
 
       response = @fetcher.call(uri)
       code = response.code.to_i
@@ -138,15 +159,19 @@ class PriorityLinks
         uri = URI.join(uri, response["location"])
         next
       end
-      raise FetchError, "HTTP #{code}" unless (200..299).cover?(code)
+      unless (200..299).cover?(code)
+        permanent = (400..499).cover?(code) && code != 429
+        raise (permanent ? PermanentFetchError : FetchError), "HTTP #{code}"
+      end
 
       return parse_page(response.body.to_s)
     end
-    raise FetchError, "too many redirects"
+    raise PermanentFetchError, "too many redirects"
   end
 
   def parse_page(body)
-    html = body.dup.force_encoding("UTF-8")
+    # scrub: a Latin-1 page or one stray byte must not fail the regexes.
+    html = body.dup.force_encoding("UTF-8").scrub
 
     title = html[/<title[^>]*>([^<]+)<\/title>/i, 1]&.strip
     title = title&.gsub(/\s+/, " ")
