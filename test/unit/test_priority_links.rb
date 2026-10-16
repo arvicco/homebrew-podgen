@@ -276,15 +276,18 @@ class TestPriorityLinks < Minitest::Test
   # CRPR W2(b): a permanent failure (4xx other than 429) is consumed with one
   # warning: returned titled by its URL (as before P8-4), so generate drops
   # it from the queue instead of warning on every run.
-  def test_fetch_all_permanent_http_error_warns_once_and_is_returned_by_url
+  # CRPR r2 W1: a permanent failure (4xx other than 429) is NOT a finding
+  # (it would reach the script and the reviewer's must-cite check); it is
+  # reported in dead_urls for the caller to consume, after one warning.
+  def test_fetch_all_permanent_http_error_warns_once_and_lists_dead_url
     links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("404", {}, "") })
     links.add("https://example.com/gone")
     logger = RecordingLogger.new
 
     findings = links.fetch_all(logger: logger)
 
-    expected = {title: "https://example.com/gone", url: "https://example.com/gone", summary: "Priority link added by producer"}
-    assert_equal [expected], findings
+    assert_equal [], findings
+    assert_equal ["https://example.com/gone"], links.dead_urls
     assert_equal 1, logger.warnings.length
     assert_includes logger.warnings.first, "PriorityLinks::PermanentFetchError"
     assert_includes logger.warnings.first, "HTTP 404"
@@ -297,9 +300,8 @@ class TestPriorityLinks < Minitest::Test
       {"url" => "http://exa mple.com/bad"}].to_yaml)
     logger = RecordingLogger.new
 
-    findings = links.fetch_all(logger: logger)
-
-    assert_equal ["https://example.com/old", "ftp://example.com/x", "http://exa mple.com/bad"], findings.map { |f| f[:url] }
+    assert_equal [], links.fetch_all(logger: logger)
+    assert_equal ["https://example.com/old", "ftp://example.com/x", "http://exa mple.com/bad"], links.dead_urls
     assert_equal 3, logger.warnings.length
   end
 
@@ -310,6 +312,7 @@ class TestPriorityLinks < Minitest::Test
 
     assert_equal [], links.fetch_all(logger: logger)
     assert_includes logger.warnings.first, "PriorityLinks::FetchError: HTTP 502"
+    assert_empty links.dead_urls, "a transient failure is not dead"
   end
 
   # CRPR W2(a): a Latin-1 page (or one stray byte) still yields its title.

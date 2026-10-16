@@ -974,7 +974,7 @@ The raw script responses are kept under `output/<podcast>/debug/` for inspection
 
 ### Priority Links
 
-Queue specific URLs for inclusion in the next episode's research. Priority links are fed to the script agent alongside regular source results and consumed once the episode is recorded. A link whose fetch fails transiently (timeout, DNS, 5xx, 429) logs a warning and stays queued for the next run; one that fails permanently (other 4xx, a malformed or non-HTTP URL, a redirect loop) logs one warning, goes to the script titled by its URL, and is consumed.
+Queue specific URLs for inclusion in the next episode's research. Priority links are fed to the script agent alongside regular source results and consumed once the episode is recorded. A link whose fetch fails transiently (timeout, DNS, 5xx, 429) logs a warning and stays queued for the next run; one that fails permanently (other 4xx, a malformed or non-HTTP URL, a redirect loop) logs one warning and is dropped from the queue once the episode is recorded, without ever reaching the script.
 
 Priority links supplement the topic research; they do not replace it. If every topic comes back with no findings, the run fails before priority links are fetched, even when links are queued.
 
