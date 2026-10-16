@@ -107,8 +107,10 @@ backlog-2026-10-11.md / worklog-2026-10-11.md).
 7. **Pre-gate: README.md current** — honest about what does not work
    yet. A phase is not gate-ready with a stale README. Check
    ARCHITECTURE.md freshness the same way.
-8. **Phase gate**: the gate PR is opened at phase START as a living
-   document (body refreshed as packets land; technical content only);
+8. **Phase gate**: the gate PR is opened only when the phase is
+   reviewed and ready to merge — never at phase start, never as a
+   living document (owner ruling 2026-10-16; the plan in .docs/ is the
+   living document); its body is the final summary + runbook;
    CRPR review (worktree `/cr` agent) of the entire phase diff against
    ARCHITECTURE.md; resolve blocked packets; board hygiene sweep
    (register/queue residue, incident rows advanced, calendar); update
