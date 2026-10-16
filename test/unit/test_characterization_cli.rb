@@ -75,7 +75,7 @@ class TestCharacterizationCLI < Minitest::Test
         -h, --help                       Show this help
   HELP
 
-  REFUSAL = "podgen: '%s' is an owner action; refusing inside a Claude Code session (PODGEN_OWNER=1 overrides)\n"
+  REFUSAL = "podgen: '%s' is an owner action; refusing inside an agent session (CLAUDECODE=1; PODGEN_OWNER=1 overrides)\n"
 
   def setup
     @tmpdir = Dir.mktmpdir("podgen_char_cli")

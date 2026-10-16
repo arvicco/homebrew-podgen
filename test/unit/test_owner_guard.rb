@@ -15,7 +15,7 @@ require "cli/tweet_command"
 # parses generate's argv with generate's own option list, so the verdicts for
 # generate hold by construction rather than by token-shape prediction.
 class TestOwnerGuard < Minitest::Test
-  REFUSAL = "podgen: '%s' is an owner action; refusing inside a Claude Code session (PODGEN_OWNER=1 overrides)\n"
+  REFUSAL = "podgen: '%s' is an owner action; refusing inside an agent session (CLAUDECODE=1; PODGEN_OWNER=1 overrides)\n"
 
   # [global options, command, command argv, refused inside Claude Code?]
   PROBES = [

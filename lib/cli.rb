@@ -218,7 +218,7 @@ module PodgenCLI
     end
 
     if refuse_owner_action?(command_name, argv, options)
-      $stderr.puts "podgen: '#{command_name}' is an owner action; refusing inside a Claude Code session (PODGEN_OWNER=1 overrides)"
+      $stderr.puts "podgen: '#{command_name}' is an owner action; refusing inside an agent session (CLAUDECODE=1; PODGEN_OWNER=1 overrides)"
       $stderr.puts DRY_RUN_HINT if options[:dry_run] || argv.include?("--dry-run")
       return 2
     end
