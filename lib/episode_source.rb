@@ -165,7 +165,7 @@ class EpisodeSource
 
     # 2. URL path extension (handles encoded nested URLs like Anchor.fm)
     url = episode[:audio_url].to_s
-    decoded = URI.decode_www_form_component(url) rescue url # skippable: undecodable URL is tried as-is
+    decoded = URI.decode_www_form_component(url) rescue url # skippable: silent fallback — the undecoded URL
     [decoded, url].each do |candidate|
       ext = File.extname(candidate.split("?").first.split("#").first).downcase
       return ext if SUPPORTED_EXTENSIONS.include?(ext)

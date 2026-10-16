@@ -53,7 +53,7 @@ class ImageSearcher
     res = http_get("https://duckduckgo.com/i.js?l=us-en&o=json&q=#{q}&vqd=#{vqd}&f=,,,&p=-1",
                    referer: "https://duckduckgo.com/")
     return [] unless res.is_a?(Net::HTTPSuccess)
-    data = JSON.parse(res.body) rescue {} # skippable: an unparseable body means no results
+    data = JSON.parse(res.body) rescue {} # skippable: silent fallback — {} (no results) for an unparseable body
     (data["results"] || []).first(count).map { |r| r["image"] }.compact
   end
 

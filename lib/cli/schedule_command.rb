@@ -448,7 +448,7 @@ module PodgenCLI
         puts "Test message sent to Telegram."
         0
       else
-        body = JSON.parse(res.body) rescue {} # skippable: a non-JSON body is printed raw
+        body = JSON.parse(res.body) rescue {} # skippable: silent fallback — {}; a non-JSON body is printed raw
         $stderr.puts "Telegram API error: #{res.code} — #{body['description'] || res.body}"
         1
       end

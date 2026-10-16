@@ -230,7 +230,7 @@ module PodgenCLI
         begin
           File.rename(new_path, old_path)
         rescue => e # skippable: report it and keep rolling back the rest; the caller already fails
-          $stderr.puts "  rollback failed for #{File.basename(new_path)} → #{File.basename(old_path)}: #{e.message}"
+          $stderr.puts "  rollback failed for #{File.basename(new_path)} → #{File.basename(old_path)}: #{e.class}: #{e.message}"
         end
       end
     end

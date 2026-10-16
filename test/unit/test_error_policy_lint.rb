@@ -2,7 +2,6 @@
 
 require_relative "../test_helper"
 require "prism"
-require "yaml"
 
 # P8-6 (Q-70): ARCHITECTURE "Error severity" makes the bucket annotation
 # mandatory at every broad rescue site. This lint enforces it over
@@ -11,22 +10,20 @@ require "yaml"
 # Broad = `rescue` with no class, `rescue => e`, `rescue StandardError`,
 # `rescue Exception`, and every modifier `stmt rescue x`. Narrow-class
 # rescues (`rescue Foo::Error`, `rescue *classes`) are out of scope.
-# Annotated = a comment naming skippable|fatal|retryable on the rescue
-# line itself, in the comment block directly above it, or (clause rescues
-# only) in the comment block that opens the rescue body.
+# Annotated = a real comment (per the parser, so a `#` inside a string
+# does not count) that LEADS with skippable|fatal|retryable (after an
+# optional `rubocop:… --` directive), placed on the rescue line itself,
+# in the comment block directly above it, or (clause rescues only) in the
+# comment block that opens the rescue body.
 #
-# Sites are keyed "file#method" (enclosing def, else enclosing
-# class/module, else <main>) with a count, so unrelated edits never churn
-# the allowlist. The allowlist (error_policy_allowlist.yml) only shrinks:
-# a new unannotated site fails, and so does an allowlisted one that is
-# now annotated.
+# There is no allowlist: every site in lib/ is annotated, so a new
+# unannotated site fails the gate, naming file, method and line.
 class TestErrorPolicyLint < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
-  ALLOWLIST_PATH = File.join(__dir__, "error_policy_allowlist.yml")
-  BUCKET = /#.*\b(?:skippable|fatal|retryable)\b/
+  BUCKET = /\A#\s*(?:rubocop:\S+.*--\s*)?(?:skippable|fatal|retryable)\b/
   BROAD_CLASSES = %w[StandardError Exception].freeze
 
-  # Collects [line, enclosing-scope name] for every broad rescue.
+  # Collects [line, enclosing-scope name, clause?] for every broad rescue.
   class BroadRescueVisitor < Prism::Visitor
     attr_reader :sites
 
@@ -79,61 +76,47 @@ class TestErrorPolicyLint < Minitest::Test
   def self.unannotated_sites(source)
     result = Prism.parse(source)
     lines = source.lines
+    comments = result.comments.group_by { it.location.start_line }.transform_values { |cs| cs.map(&:slice) }
+    comment_only = comments.keys.select { |l| lines[l - 1].lstrip.start_with?("#") }.to_set
     visitor = BroadRescueVisitor.new
     result.value.accept(visitor)
-    visitor.sites.reject { |line, _, clause| annotated?(lines, line, clause) }.map { it.first(2) }
+    visitor.sites.reject { |line, _, clause| annotated?(comments, comment_only, line, clause) }.map { it.first(2) }
   end
 
-  def self.annotated?(lines, line, clause)
-    return true if lines[line - 1].to_s.match?(BUCKET)
-    return true if comment_block(lines, line - 2, -1).any? { it.match?(BUCKET) }
-    clause && comment_block(lines, line, 1).any? { it.match?(BUCKET) }
+  def self.annotated?(comments, comment_only, line, clause)
+    candidates = [line] + comment_block(comment_only, line - 1, -1)
+    candidates += comment_block(comment_only, line + 1, 1) if clause
+    candidates.any? { |l| comments.fetch(l, []).any? { it.match?(BUCKET) } }
   end
 
-  # Consecutive comment-only lines from index i walking by step.
-  def self.comment_block(lines, i, step)
+  # Consecutive comment-only line numbers from line l walking by step.
+  def self.comment_block(comment_only, l, step)
     block = []
-    while i >= 0 && i < lines.size && lines[i].lstrip.start_with?("#")
-      block << lines[i]
-      i += step
+    while comment_only.include?(l)
+      block << l
+      l += step
     end
     block
   end
 
-  # => {"lib/x.rb#meth" => count} over every lib/**/*.rb
-  def self.unannotated_counts(root = ROOT)
-    Dir.glob(File.join(root, "lib", "**", "*.rb")).sort.each_with_object(Hash.new(0)) do |path, counts|
+  # => ["lib/x.rb:12 in meth", ...] over every lib/**/*.rb
+  def self.unannotated_in_lib(root = ROOT)
+    Dir.glob(File.join(root, "lib", "**", "*.rb")).sort.flat_map do |path|
       rel = path.delete_prefix(root + "/")
-      unannotated_sites(File.read(path)).each { |_line, scope| counts["#{rel}##{scope}"] += 1 }
+      unannotated_sites(File.read(path)).map { |line, scope| "#{rel}:#{line} in #{scope}" }
     end
   end
-
-  def self.violations(counts, allowlist)
-    (counts.keys | allowlist.keys).sort.filter_map do |key|
-      have = counts.fetch(key, 0)
-      allowed = allowlist.fetch(key, 0)
-      file, meth = key.split("#", 2)
-      if have > allowed
-        "#{file} in #{meth}: #{have - allowed} broad rescue(s) without a bucket comment — " \
-          "add `# skippable: …`, `# fatal: …` or `# retryable: …` on the rescue line (or the comment line above/below it) " \
-          "(ARCHITECTURE: Error severity), and log e.class in any warning it prints"
-      elsif have < allowed
-        fix = have.zero? ? "remove it from the allowlist" : "lower its allowlist count to #{have}"
-        "#{key} is allowlisted for #{allowed} unannotated site(s) but has #{have} — " \
-          "#{fix} (test/unit/error_policy_allowlist.yml)"
-      end
-    end
-  end
-
-  def allowlist = YAML.safe_load_file(ALLOWLIST_PATH) || {}
 
   def sites(src) = self.class.unannotated_sites(src)
 
   # --- the repo itself ---
 
-  def test_lib_broad_rescues_carry_a_bucket_annotation_or_shrinking_allowlist_entry
-    problems = self.class.violations(self.class.unannotated_counts, allowlist)
-    assert_empty problems, "error-policy lint:\n#{problems.join("\n")}"
+  def test_lib_broad_rescues_carry_a_leading_bucket_comment
+    offenders = self.class.unannotated_in_lib
+    assert_empty offenders, "broad rescue(s) without a bucket comment — start a comment on the rescue line " \
+      "(or the comment line above it, or opening a rescue clause's body) with `# skippable: …`, `# fatal: …` " \
+      "or `# retryable: …` (ARCHITECTURE: Error severity), and log e.class in any warning it prints:\n" \
+      "#{offenders.join("\n")}"
   end
 
   # --- the scanner ---
@@ -218,32 +201,41 @@ class TestErrorPolicyLint < Minitest::Test
     assert_equal [[5, "a"]], sites(src)
   end
 
+  def test_unannotated_sites_interpolation_hash_is_not_a_comment_flagged
+    src = "def a\n  log(\"Warning: \#{x} (non-fatal)\") rescue nil\nend\n"
+    assert_equal [[2, "a"]], sites(src)
+  end
+
+  def test_unannotated_sites_bucket_word_not_leading_the_comment_flagged
+    src = <<~RUBY
+      def a
+        x rescue nil # not fatal
+      end
+
+      def b
+        y
+        # TODO: fatal or skippable?
+      rescue => e
+        nil
+      end
+    RUBY
+    assert_equal [[2, "a"], [8, "b"]], sites(src)
+  end
+
+  def test_unannotated_sites_leading_bucket_after_rubocop_directive_accepted
+    src = <<~RUBY
+      def a
+        x
+      rescue # rubocop:disable Lint/SuppressedException -- skippable: leftover temp file
+      end
+
+      def b = (y rescue nil) #   skippable: silent fallback — nil
+    RUBY
+    assert_empty sites(src)
+  end
+
   def test_unannotated_sites_rescue_in_block_outside_def_keyed_by_class
     src = "class Foo\n  HOOK = -> { x rescue nil }\nend\n"
     assert_equal [[2, "<Foo>"]], sites(src)
-  end
-
-  # --- the allowlist ratchet ---
-
-  def test_violations_new_unannotated_site_names_file_method_and_expected_comment
-    problems = self.class.violations({"lib/x.rb#fetch" => 1}, {})
-    assert_equal 1, problems.size
-    assert_match(/lib\/x\.rb in fetch: 1 broad rescue/, problems.first)
-    assert_match(/# skippable: …`, `# fatal: …` or `# retryable: …`/, problems.first)
-  end
-
-  def test_violations_allowlisted_site_now_annotated_demands_removal
-    problems = self.class.violations({}, {"lib/x.rb#fetch" => 1})
-    assert_equal ["lib/x.rb#fetch is allowlisted for 1 unannotated site(s) but has 0 — " \
-      "remove it from the allowlist (test/unit/error_policy_allowlist.yml)"], problems
-  end
-
-  def test_violations_allowlisted_site_partly_annotated_demands_lower_count
-    problems = self.class.violations({"lib/x.rb#fetch" => 1}, {"lib/x.rb#fetch" => 3})
-    assert_match(/lower its allowlist count to 1/, problems.first)
-  end
-
-  def test_violations_matching_counts_clean
-    assert_empty self.class.violations({"lib/x.rb#fetch" => 2}, {"lib/x.rb#fetch" => 2})
   end
 end
