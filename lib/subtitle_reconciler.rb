@@ -3,6 +3,8 @@
 require "anthropic"
 require_relative "anthropic_client"
 require_relative "claude_models"
+require_relative "loggable"
+require_relative "usage_logger"
 require "json"
 
 # Reconciles raw STT segment text with a corrected transcript using Claude.
@@ -13,6 +15,18 @@ module SubtitleReconciler
 
   # Seconds of tolerated drift between original and LLM-returned timestamps.
   TIMESTAMP_EPSILON = 0.01
+
+  # Usage logging (P8-2) through the ambient logger; private singletons, so
+  # the module's public surface is unchanged.
+  class << self
+    include Loggable
+    include UsageLogger
+
+    private
+
+    # Loggable tags with the receiver's class (Module here); name the module.
+    def log(message) = logger_target.log("[SubtitleReconciler] #{message}")
+  end
 
   # Reconcile raw segments with a corrected transcript via Claude API.
   # Returns an array of segments with corrected text (same start/end values).
@@ -27,12 +41,15 @@ module SubtitleReconciler
 
     client = Anthropic::Client.new(api_key: api_key, timeout: AnthropicClient::REQUEST_TIMEOUT)
     tokens = [4096, segments.length * 80].max
-    response = client.messages.create(
-      model: model,
-      max_tokens: tokens,
-      messages: [{ role: "user", content: prompt }],
-      **AnthropicClient.effort_params(:subtitle_reconciler)
-    )
+    response, elapsed = measure_time do
+      client.messages.create(
+        model: model,
+        max_tokens: tokens,
+        messages: [{ role: "user", content: prompt }],
+        **AnthropicClient.effort_params(:subtitle_reconciler)
+      )
+    end
+    log_api_usage("Subtitles reconciled", response, elapsed)
 
     text = AnthropicClient.text_of(response)
     result = parse_response(text)
