@@ -22,7 +22,7 @@ class ResearchCache
     data = YamlLoader.load(path, default: nil)
     if data.nil? && File.exist?(path)
       # Corrupted cache file — clean up
-      File.delete(path) rescue nil # skippable: corrupt entry is a cache miss either way
+      File.delete(path) rescue nil # skippable: silent fallback — a corrupt entry is a cache miss either way
     end
     data
   end
@@ -33,7 +33,7 @@ class ResearchCache
     path = cache_path(source_name, topics)
     AtomicWriter.write_yaml(path, results)
   rescue => _e
-    # Cache write failure is non-fatal
+    # skippable: silent fallback — the cache is best-effort; a failed write is a miss next run
   end
 
   # Deletes cache entries older than TTL.

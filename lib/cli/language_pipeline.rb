@@ -806,7 +806,7 @@ module PodgenCLI
     end
 
     def download_episode_image(url)
-      ext = File.extname(URI.parse(url).path)[0..4] rescue ".jpg" # skippable: unparseable URL falls back to .jpg
+      ext = File.extname(URI.parse(url).path)[0..4] rescue ".jpg" # skippable: silent fallback — .jpg for an unparseable URL
       ext = ".jpg" if ext.empty?
       path = File.join(Dir.tmpdir, "podgen_rss_cover_#{Process.pid}#{ext}")
       HttpDownloader.new(logger: logger).download(url, path)

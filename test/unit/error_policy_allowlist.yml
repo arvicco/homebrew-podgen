@@ -1,4 +1,0 @@
-# Broad rescue sites in lib/ still lacking a bucket comment (P8-6).
-# Keyed "file#method" => count of unannotated sites. This list only
-# shrinks: annotate a site, then lower or delete its entry (the lint
-# fails until you do). Never add an entry; annotate the new site.

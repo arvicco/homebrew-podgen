@@ -239,8 +239,8 @@ class RSSSource
 
       # Podcasting 2.0 transcript tag
       if item.respond_to?(:podcast_transcript) && item.podcast_transcript
-        ep[:transcript_url] = item.podcast_transcript.url.to_s.strip rescue nil # skippable: malformed tag leaves it nil
-        ep[:transcript_type] = item.podcast_transcript.type.to_s.strip rescue nil # skippable: malformed tag leaves it nil
+        ep[:transcript_url] = item.podcast_transcript.url.to_s.strip rescue nil # skippable: silent fallback — nil for a malformed tag
+        ep[:transcript_type] = item.podcast_transcript.type.to_s.strip rescue nil # skippable: silent fallback — nil for a malformed tag
       end
 
       # content:encoded (may contain full transcript text)

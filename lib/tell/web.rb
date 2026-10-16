@@ -198,12 +198,12 @@ module Tell
       threads.each(&:join)
       sse(out, "done", {})
     rescue => e # fatal for the request: it ends with an error event
-      sse(out, "error", { message: e.message }) rescue nil # skippable: the client disconnected (broken pipe)
+      sse(out, "error", { message: e.message }) rescue nil # skippable: silent — the error event itself could not be written (e.g. client gone)
     end
 
     def build_sse_callbacks(out, mutex)
       # Each callback rescues broken-pipe errors — client can disconnect at any time.
-      safe = ->(block) { ->(**kw) { block.call(**kw) rescue nil } } # skippable: the client disconnected (broken pipe)
+      safe = ->(block) { ->(**kw) { block.call(**kw) rescue nil } } # skippable: silent — swallows ANY callback error (meant for a gone client); that event is lost
 
       {
         on_reverse: safe.call(->(text:, lang:) {
