@@ -280,7 +280,8 @@ module PodgenCLI
         priority_urls = priority_findings.map { |f| f[:url] }
         # Dead links are consumed at finalize but never injected (P8-4).
         @dead_priority_urls = priority_links.dead_urls
-        research_data.unshift({ topic: "Priority links", findings: priority_findings })
+        # No empty topic when every link failed (it would reach the prompt and history).
+        research_data.unshift({ topic: "Priority links", findings: priority_findings }) unless priority_findings.empty?
         @logger.log("Injected #{priority_findings.length} priority link(s) into research data")
         @logger.phase_end("Priority Links")
       end

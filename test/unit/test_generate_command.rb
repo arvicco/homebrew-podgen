@@ -336,6 +336,48 @@ class TestGenerateCommand < Minitest::Test
     assert_equal ["https://flaky.example.com/c"], PriorityLinks.new(links_path).all.map { |e| e["url"] }
   end
 
+  # CRPR r3 nit: when every queued link fails, no empty "Priority links"
+  # topic reaches the script prompt or the history's covered topics.
+  def test_inject_priority_links_all_failed_adds_no_topic
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    links_path = File.join(@tmpdir, "links.yml")
+    cmd.instance_variable_set(:@config, Struct.new(:links_path).new(links_path))
+    links = PriorityLinks.new(links_path)
+    %w[https://dead.example.com/b https://flaky.example.com/c].each { |u| links.add(u) }
+    responses = {
+      "dead.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("404", ""),
+      "flaky.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("502", "")
+    }
+    research = [{topic: "AI", findings: []}]
+
+    research_data, priority_urls = Net::HTTP.stub(:start, ->(host, *_a, **_k) { responses.fetch(host) }) do
+      cmd.send(:inject_priority_links, research)
+    end
+
+    assert_equal ["AI"], research_data.map { |r| r[:topic] }
+    assert_empty priority_urls
+  end
+
+  # CRPR r3 nit: dead links are consumed only by finalize; a run that fails
+  # before it leaves them queued.
+  def test_run_failure_before_finalize_leaves_dead_link_queued
+    cmd = runnable_command("news")
+    cmd.singleton_class.remove_method(:inject_priority_links)
+    links_path = File.join(@tmpdir, "links.yml")
+    cmd.instance_variable_set(:@config, Struct.new(:type, :links_path).new("news", links_path))
+    PriorityLinks.new(links_path).add("https://dead.example.com/b")
+    cmd.define_singleton_method(:produce_episodes) { |*| raise "TTS quota" }
+    dead = Struct.new(:code, :body) { def [](_) = nil }.new("404", "")
+
+    code = nil
+    Net::HTTP.stub(:start, ->(*_a, **_k) { dead }) { capture_io { code = cmd.run } }
+
+    assert_equal 1, code
+    assert_equal ["https://dead.example.com/b"], PriorityLinks.new(links_path).all.map { |e| e["url"] }
+  end
+
   def test_inject_priority_links_skips_on_dry_run
     cmd = build_command
     cmd.instance_variable_set(:@dry_run, true)
