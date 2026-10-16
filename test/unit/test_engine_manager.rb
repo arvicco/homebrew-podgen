@@ -232,6 +232,7 @@ class TestEngineManager < Minitest::Test
   # CRPR W5: an engine's HTTP error body (OpenAI's 401 echoes a masked
   # key) never reaches the run warning or the comparison errors map.
   def test_comparison_mode_engine_http_error_body_never_logged
+    saved_keys = ENV.to_h.slice("OPENAI_API_KEY", "GROQ_API_KEY")
     ENV["OPENAI_API_KEY"] ||= "test-key"
     ENV["GROQ_API_KEY"] ||= "test-key"
     sentinel = "SENTINEL-BODY sk-...abcd"
@@ -262,6 +263,8 @@ class TestEngineManager < Minitest::Test
     assert_includes output[:errors]["open"], "401"
     refute_includes output[:errors]["open"], "SENTINEL"
     refute logger.logged_warnings.any? { |w| w.include?("SENTINEL") }, logger.logged_warnings.inspect
+  ensure
+    %w[OPENAI_API_KEY GROQ_API_KEY].each { |k| saved_keys.key?(k) ? ENV[k] = saved_keys[k] : ENV.delete(k) }
   end
 
   private

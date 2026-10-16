@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "net/http"
 require_relative "../loggable"
 require_relative "../http_retryable"
@@ -8,8 +9,9 @@ module Transcription
   # A non-2xx STT response; #status is the HTTP code (P8-3). Built through
   # ApiError.for so 429/503 arrive as RetriableApiError and retry is decided
   # by class, never by digits in the message text. The message carries the
-  # status only, never the response body: it is logged, and OpenAI's 401
-  # body echoes a masked key.
+  # status plus the body's identifier-shaped error type/code fields, never
+  # the error text or raw body: it is logged, and OpenAI's 401 text echoes
+  # a masked key.
   class ApiError < StandardError
     attr_reader :status
 
@@ -59,6 +61,25 @@ module Transcription
     def with_engine_retries(&)
       with_retries(max: MAX_RETRIES, on: RETRYABLE_ERRORS,
         label: self.class.name.split("::").last, reraise: true, &)
+    end
+
+    # ApiError for a non-2xx response: "<prefix> <status>" plus, when the
+    # JSON body has them, its error type/code (OpenAI/Groq error.type and
+    # error.code, ElevenLabs detail.status/code) — never message text.
+    def api_error(prefix, response)
+      fields = error_fields(response.body)
+      suffix = fields.empty? ? "" : " (#{fields.join(", ")})"
+      ApiError.for(response.code, "#{prefix} #{response.code}#{suffix}")
+    end
+
+    def error_fields(body)
+      data = JSON.parse(body.to_s)
+      err = data["error"].is_a?(Hash) ? data["error"] : data["detail"] if data.is_a?(Hash)
+      return [] unless err.is_a?(Hash)
+
+      err.values_at("type", "code", "status").filter_map { |v| v.to_s[/\A[\w.-]{1,64}\z/] }.uniq
+    rescue JSON::ParserError # skippable: a non-JSON body adds no fields
+      []
     end
 
     def parse_segments(raw_segments)
