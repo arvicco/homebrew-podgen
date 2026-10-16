@@ -332,7 +332,7 @@ podgen generate <podcast_name>
 ### News pipeline (default)
 
 1. Topics — Claude turns the guidelines (and `queue.yml` fallbacks) into today's topics, each with a short keyword query for Hacker News
-2. Research — every enabled source runs per topic (Exa, Hacker News, RSS, Claude web search, Bluesky, X); results are merged, deduplicated and cached for 24 h; queued priority links are added
+2. Research — every enabled source runs per topic (Exa, Hacker News, RSS, Claude web search, Bluesky, X); results are merged, deduplicated and cached for 24 h; a topic with no findings is dropped with a warning, and when no topic has any the run fails before a script is written; queued priority links are added
 3. Script — Claude writes the episode from the research, following `## Format`, `## Tone` and `## Links`
 4. Review — deterministic checks plus an AI review against the research (see [Script review](#script-review)); blockers send the script back for a rewrite, warnings are logged and kept
 5. Voice — ElevenLabs TTS per segment, with the pronunciation dictionary applied
