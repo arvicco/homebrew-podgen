@@ -46,58 +46,26 @@ class TestBaseEngine < Minitest::Test
     end
   end
 
-  # retryable? (private, tested via send)
+  # P8-3 (Q-65): retry is decided by error class; 429/503 by the status
+  # code an ApiError carries, never by digits in message text.
 
-  def test_retryable_for_429
-    error = RuntimeError.new("HTTP 429 Too Many Requests")
-    assert @engine.send(:retryable?, error)
+  def test_api_error_for_429_and_503_is_retriable
+    [429, 503].each do |code|
+      err = Transcription::ApiError.for(code, "busy")
+      assert_kind_of Transcription::RetriableApiError, err
+      assert_equal code, err.status
+    end
   end
 
-  def test_retryable_for_503
-    error = RuntimeError.new("HTTP 503 Service Unavailable")
-    assert @engine.send(:retryable?, error)
+  def test_api_error_for_401_is_not_retriable
+    err = Transcription::ApiError.for(401, "Unauthorized")
+    assert_instance_of Transcription::ApiError, err
+    assert_equal 401, err.status
   end
 
-  def test_retryable_for_net_open_timeout
-    error = Net::OpenTimeout.new("execution expired")
-    assert @engine.send(:retryable?, error)
-  end
-
-  def test_retryable_for_net_read_timeout
-    error = Net::ReadTimeout.new("Net::ReadTimeout")
-    assert @engine.send(:retryable?, error)
-  end
-
-  def test_retryable_for_etimedout
-    error = Errno::ETIMEDOUT.new("Connection timed out")
-    assert @engine.send(:retryable?, error)
-  end
-
-  def test_not_retryable_for_generic_error
-    error = RuntimeError.new("Something unexpected")
-    refute @engine.send(:retryable?, error)
-  end
-
-  def test_not_retryable_for_400
-    error = RuntimeError.new("HTTP 400 Bad Request")
-    refute @engine.send(:retryable?, error)
-  end
-
-  def test_not_retryable_for_number_containing_429
-    error = RuntimeError.new("error id 14290")
-    refute @engine.send(:retryable?, error)
-  end
-
-  def test_retryable_prefers_status_code_over_message
-    resp = Struct.new(:code).new(503)
-    error = RuntimeError.new("upstream unavailable")
-    error.define_singleton_method(:response) { resp }
-    assert @engine.send(:retryable?, error)
-
-    resp400 = Struct.new(:code).new(400)
-    error400 = RuntimeError.new("HTTP 429 in body text")
-    error400.define_singleton_method(:response) { resp400 }
-    refute @engine.send(:retryable?, error400)
+  def test_retryable_errors_are_retriable_api_error_and_timeouts
+    assert_equal [Transcription::RetriableApiError, Net::OpenTimeout, Net::ReadTimeout, Errno::ETIMEDOUT],
+      Transcription::BaseEngine::RETRYABLE_ERRORS
   end
 
   # Constants
@@ -180,16 +148,16 @@ class TestBaseEngine < Minitest::Test
     assert_equal 42, result
   end
 
-  def test_with_engine_retries_raises_after_max_retries
+  def test_with_engine_retries_raises_original_error_after_max_retries
     call_count = 0
     @engine.stub(:sleep, nil) do
-      err = assert_raises(RuntimeError) do
+      err = assert_raises(Transcription::RetriableApiError) do
         @engine.send(:with_engine_retries) do
           call_count += 1
-          raise "HTTP 429 Too Many Requests"
+          raise Transcription::ApiError.for(429, "HTTP 429 Too Many Requests")
         end
       end
-      assert_match(/BaseEngine failed after 4 attempts/, err.message)
+      assert_equal 429, err.status
       assert_equal 4, call_count # 1 initial + 3 retries
     end
   end
@@ -199,7 +167,7 @@ class TestBaseEngine < Minitest::Test
     @engine.stub(:sleep, nil) do
       result = @engine.send(:with_engine_retries) do
         call_count += 1
-        raise "HTTP 503 Service Unavailable" if call_count < 4
+        raise Transcription::ApiError.for(503, "HTTP 503 Service Unavailable") if call_count < 4
         :ok
       end
       assert_equal :ok, result
@@ -207,15 +175,39 @@ class TestBaseEngine < Minitest::Test
     assert_equal 4, call_count # MAX_RETRIES = 3 retries after the first attempt
   end
 
+  def test_with_engine_retries_retries_timeouts
+    call_count = 0
+    @engine.stub(:sleep, nil) do
+      @engine.send(:with_engine_retries) do
+        call_count += 1
+        raise Net::ReadTimeout if call_count < 2
+        :ok
+      end
+    end
+    assert_equal 2, call_count
+  end
+
   def test_with_engine_retries_does_not_retry_non_retryable
+    call_count = 0
+    err = assert_raises(Transcription::ApiError) do
+      @engine.send(:with_engine_retries) do
+        call_count += 1
+        raise Transcription::ApiError.for(400, "HTTP 400 Bad Request")
+      end
+    end
+    assert_equal 400, err.status
+    assert_equal 1, call_count
+  end
+
+  def test_with_engine_retries_ignores_status_digits_in_message_text
     call_count = 0
     err = assert_raises(RuntimeError) do
       @engine.send(:with_engine_retries) do
         call_count += 1
-        raise "HTTP 400 Bad Request"
+        raise "HTTP 429 in body text"
       end
     end
-    assert_match(/BaseEngine failed after 1 attempts/, err.message)
+    assert_equal "HTTP 429 in body text", err.message
     assert_equal 1, call_count
   end
 end
@@ -360,9 +352,28 @@ class TestOpenaiEngine < Minitest::Test
     mock_response = MockHTTPResponse.new(code: 500, body: "Internal Server Error", "success?": false)
 
     HTTParty.stub(:post, mock_response) do
-      err = assert_raises(RuntimeError) { @engine.transcribe(@audio.path) }
-      assert_match(/OpenaiEngine failed/, err.message)
+      err = assert_raises(Transcription::ApiError) { @engine.transcribe(@audio.path) }
+      assert_equal 500, err.status
+      assert_match(/Transcription API error 500/, err.message)
     end
+  end
+
+  # P8-3 (Q-65): a revoked key keeps its class and status (today a bare
+  # RuntimeError indistinguishable from a timeout).
+  def test_transcribe_401_raises_api_error_with_status
+    mock_response = MockHTTPResponse.new(code: 401, body: "invalid_api_key", "success?": false)
+    calls = 0
+    post = lambda do |*_a, **_k|
+      calls += 1
+      mock_response
+    end
+
+    HTTParty.stub(:post, post) do
+      err = assert_raises(Transcription::ApiError) { @engine.transcribe(@audio.path) }
+      assert_instance_of Transcription::ApiError, err
+      assert_equal 401, err.status
+    end
+    assert_equal 1, calls, "401 is not retried"
   end
 
   # transcribe raises for missing file
@@ -508,8 +519,9 @@ class TestGroqEngine < Minitest::Test
     mock_response = MockHTTPResponse.new(code: 500, body: "Server Error", "success?": false)
 
     HTTParty.stub(:post, mock_response) do
-      err = assert_raises(RuntimeError) { @engine.transcribe(@audio.path) }
-      assert_match(/GroqEngine failed/, err.message)
+      err = assert_raises(Transcription::ApiError) { @engine.transcribe(@audio.path) }
+      assert_equal 500, err.status
+      assert_match(/Groq API error 500/, err.message)
     end
   end
 
@@ -728,8 +740,10 @@ class TestElevenlabsEngine < Minitest::Test
     mock_response = MockHTTPResponse.new(code: 401, body: "Unauthorized", "success?": false)
 
     HTTParty.stub(:post, mock_response) do
-      err = assert_raises(RuntimeError) { @engine.transcribe(@audio.path) }
-      assert_match(/ElevenlabsEngine failed/, err.message)
+      err = assert_raises(Transcription::ApiError) { @engine.transcribe(@audio.path) }
+      assert_instance_of Transcription::ApiError, err
+      assert_equal 401, err.status
+      assert_match(/ElevenLabs Scribe API error 401/, err.message)
     end
   end
 
