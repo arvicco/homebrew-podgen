@@ -605,6 +605,50 @@ class TestScriptReviewer < Minitest::Test
     assert_empty issues
   end
 
+  # --- AI review truncation: one retry at a doubled cap (P8-0, Q-84) ---
+
+  def test_run_ai_review_truncated_then_parses_retries_once_with_larger_cap
+    reviewer = build_reviewer
+    good = ScriptReview.new(issues: [], overall_assessment: "fine")
+    client = FakeReviewClient.new([truncated_message, parsed_message(good)])
+    reviewer.instance_variable_set(:@client, client)
+
+    _out, err = capture_io { @issues = reviewer.send(:run_ai_review, make_script) }
+
+    assert_equal 2, client.calls.size
+    assert_operator client.calls[1][:max_tokens], :>, client.calls[0][:max_tokens]
+    assert_equal 2 * client.calls[0][:max_tokens], client.calls[1][:max_tokens]
+    assert_empty @issues
+    refute_includes err, "Warning"
+  end
+
+  def test_run_ai_review_parses_first_time_makes_exactly_one_call
+    reviewer = build_reviewer
+    good = ScriptReview.new(issues: [], overall_assessment: "fine")
+    client = FakeReviewClient.new([parsed_message(good)])
+    reviewer.instance_variable_set(:@client, client)
+
+    capture_io { reviewer.send(:run_ai_review, make_script) }
+
+    assert_equal 1, client.calls.size
+    assert_equal ScriptReviewer::MAX_TOKENS, client.calls[0][:max_tokens]
+  end
+
+  def test_review_truncated_twice_warns_once_naming_max_tokens_and_final_cap
+    reviewer = build_reviewer
+    client = FakeReviewClient.new([truncated_message, truncated_message])
+    reviewer.instance_variable_set(:@client, client)
+
+    _out, err = capture_io { @result = reviewer.review(make_script) }
+
+    assert_equal 2, client.calls.size
+    warnings = err.lines.grep(/Warning/)
+    assert_equal 1, warnings.size
+    assert_includes warnings.first, "max_tokens"
+    assert_includes warnings.first, (2 * ScriptReviewer::MAX_TOKENS).to_s
+    assert @result[:passed], "warn-never-cut: a failed AI review does not fail the script"
+  end
+
   def test_ai_review_prompt_includes_research_data
     reviewer = build_reviewer
 
@@ -679,6 +723,34 @@ class TestScriptReviewer < Minitest::Test
   end
 
   UsageStub = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens)
+
+  FakeMessage = Struct.new(:parsed_output, :stop_reason, :usage, :model, :content)
+
+  # Records each messages.create kwargs; returns the queued responses in order.
+  class FakeReviewClient
+    attr_reader :calls
+
+    def initialize(responses)
+      @responses = responses
+      @calls = []
+    end
+
+    def messages = self
+
+    def create(**kwargs)
+      @calls << kwargs
+      @responses.fetch(@calls.size - 1)
+    end
+  end
+
+  # Thinking-only / cut JSON: no parsed output, stopped at the cap.
+  def truncated_message
+    FakeMessage.new(nil, "max_tokens", UsageStub.new(100, 4096, 0, 0), "claude-opus-5-5", [])
+  end
+
+  def parsed_message(review)
+    FakeMessage.new(review, "end_turn", UsageStub.new(100, 50, 0, 0), "claude-opus-5-5", [])
+  end
 
   def stub_api_message(parsed_output)
     msg = Minitest::Mock.new
