@@ -197,5 +197,8 @@ sweep). Gate 6 CLOSED
 2026-10-14 21:40 (PR #7, merge 2aad556 — spend measured, observability,
 docs refresh, refill, plus the P6-7/P6-8 hotfixes). Gate 7 CLOSED 2026-10-16
 20:05 (PR #8, merge dedd365 — publication observability and YouTube
-hardening). Phase 8: slate presented (.docs/p08-slate.md), awaiting the
-owner's name. Update this line at each gate.
+hardening). Phase 8 (quality guards,
+diagnosis, test authority) AT GATE 8 (2026-10-16 23:30): all packets on
+phase-8, CRPR APPROVED (rounds 1–3 + two nit confirmations,
+refs/cr/reviewed = 98f0169), gate PR open — the owner merges; runbook in
+.docs/p08-plan.md. Update this line at each gate.
