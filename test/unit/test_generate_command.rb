@@ -375,6 +375,8 @@ class TestGenerateCommand < Minitest::Test
     Net::HTTP.stub(:start, ->(*_a, **_k) { dead }) { capture_io { code = cmd.run } }
 
     assert_equal 1, code
+    # The link was fetched and classified dead — not merely never fetched.
+    assert_equal ["https://dead.example.com/b"], cmd.instance_variable_get(:@dead_priority_urls)
     assert_equal ["https://dead.example.com/b"], PriorityLinks.new(links_path).all.map { |e| e["url"] }
   end
 
