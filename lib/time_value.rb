@@ -51,8 +51,10 @@ class TimeValue < DelegateClass(Float)
     return nil if value.nil?
     str = value.to_s.strip
     return nil if str.empty?
+    # skippable: unparseable input returns nil
     return (Float(str) rescue nil) unless str.include?(":")
 
+    # skippable: unparseable input returns nil
     parsed = str.split(":").map { |p| Float(p) rescue nil }
     return nil if parsed.any?(&:nil?)
     case parsed.length

@@ -78,7 +78,7 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 
 **Why.** A broad `rescue => e` that prints only `e.message` makes a revoked API key (permanent) indistinguishable from a network blip (transient) — the operator sees the same "non-fatal" warning forever. Naming the class in the warning is the cheapest possible signal split. Even cache reads narrow their rescue to the expected classes (`word_stats.rb#load_cache` rescues `Psych::Exception`/`Errno::ENOENT` — corrupt or vanished means "cache miss"; anything else raises). The only tolerated bare modifier rescues are cosmetic guards like `logger.phase_end(...) rescue nil`.
 
-**Implication.** New rescue sites must name their bucket in a trailing comment and include `e.class` in any warning they log. If you can't say which bucket a rescue is in, it's probably fatal — let it raise.
+**Implication.** New rescue sites must name their bucket in a trailing comment and include `e.class` in any warning they log (a unit test parses `lib/` and fails on any broad rescue without a bucket comment). If you can't say which bucket a rescue is in, it's probably fatal — let it raise.
 
 ## Model IDs live in one registry
 

@@ -170,7 +170,7 @@ module PodgenCLI
 
       {podcast: name, verdict: verdict, newest: newest&.to_s, age_days: age, reasons: reasons,
        announcements: announcements, uploads: uploads}
-    rescue => e
+    rescue => e # skippable: the failed check is itself the finding (WARN); other podcasts still report
       {podcast: name, verdict: "WARN", newest: nil, age_days: nil,
        reasons: ["status check failed: #{e.class}: #{e.message}"[0, LINE_MAX]], announcements: nil,
        uploads: nil}

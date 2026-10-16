@@ -84,7 +84,7 @@ module PodgenCLI
         end
 
         finish_run(0)
-      rescue => e
+      rescue => e # fatal: top-level handler; logs the class and fails the run
         @logger.error("#{e.class}: #{e.message}")
         @logger.error(e.backtrace.first(5).join("\n"))
         $stderr.puts "\n\u2717 Pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
@@ -209,8 +209,8 @@ module PodgenCLI
           @hn_queries = topic_agent.hn_queries
           @logger.log("Generated #{t.length} topics from guidelines")
           t
-        rescue => e
-          @logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+        rescue => e # skippable: queue.yml topics stand in for generated ones
+          @logger.log("Topic generation failed (#{e.class}: #{e.message}), falling back to queue.yml")
           @warnings << "Topic generation failed (#{e.class}: #{e.message}), fell back to queue.yml"
           t = @config.queue_topics
           @logger.log("Loaded #{t.length} fallback topics: #{t.join(', ')}")
@@ -401,7 +401,7 @@ module PodgenCLI
           output_paths << output_path
           @logger.log("\u2713 Episode ready (#{lang_code}): #{output_path}")
           puts "\u2713 Episode ready (#{lang_code}): #{output_path}" unless @options[:verbosity] == :quiet
-        rescue => e
+        rescue => e # skippable per-language: other languages still ship; all failing raises below
           @logger.error("Language #{lang_code} failed: #{e.class}: #{e.message}")
           @logger.error(e.backtrace.first(5).join("\n"))
           msg = "Language #{lang_code} failed: #{e.message}"

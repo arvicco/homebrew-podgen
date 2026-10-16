@@ -36,7 +36,7 @@ class GuidelinesParser
     @primed = true
     SECTION_READERS.each do |reader|
       public_send(reader)
-    rescue => e
+    rescue => e # skippable: recorded as a warning; real section access raises again
       @warnings << "#{reader}: unparseable — #{e.class}: #{e.message}"
     end
     self

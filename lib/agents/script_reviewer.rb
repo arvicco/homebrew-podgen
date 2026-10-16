@@ -102,8 +102,8 @@ class ScriptReviewer
     begin
       ai_issues = run_ai_review(corrected)
       all_issues.concat(ai_issues)
-    rescue => e
-      log_warning("AI review failed: #{e.message} (proceeding with deterministic checks only)")
+    rescue => e # skippable: the deterministic checks above still gate the script
+      log_warning("AI review failed: #{e.class}: #{e.message} (proceeding with deterministic checks only)")
     end
 
     unfixed_blockers = all_issues.select { |i| i[:severity] == BLOCKER && !i[:auto_fixed] }

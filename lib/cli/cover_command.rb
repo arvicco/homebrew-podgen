@@ -124,8 +124,8 @@ module PodgenCLI
 
       puts "Cover generated: #{output}"
       0
-    rescue => e
-      $stderr.puts "Cover generation failed: #{e.message}"
+    rescue => e # fatal: the command exits 1
+      $stderr.puts "Cover generation failed: #{e.class}: #{e.message}"
       1
     end
 
@@ -169,8 +169,8 @@ module PodgenCLI
 
       puts "Generated #{processed} cover(s)" unless @dry_run
       0
-    rescue => e
-      $stderr.puts "Cover generation failed: #{e.message}"
+    rescue => e # fatal: the command exits 1
+      $stderr.puts "Cover generation failed: #{e.class}: #{e.message}"
       1
     end
 
@@ -251,8 +251,8 @@ module PodgenCLI
 
       puts "Processed #{processed} episode(s)" unless @dry_run
       0
-    rescue => e
-      $stderr.puts "Auto cover failed: #{e.message}"
+    rescue => e # fatal: the command exits 1
+      $stderr.puts "Auto cover failed: #{e.class}: #{e.message}"
       1
     end
 

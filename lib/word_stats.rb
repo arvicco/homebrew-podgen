@@ -300,7 +300,7 @@ class WordStats
     matched = candidates.find { |c| answer.to_s.casecmp?(c) }
     save_language_detection(detection_hash, matched) if matched
     matched
-  rescue => e
+  rescue => e # skippable: nil means undetected; the caller proceeds without it
     log("Warning: language detection failed: #{e.class}: #{e.message}")
     nil
   end

@@ -536,7 +536,7 @@ class TestScriptReviewer < Minitest::Test
 
     _out, err = capture_io { reviewer.review(make_script) }
 
-    assert_includes err, "[ScriptReviewer] Warning: AI review failed: 401 revoked"
+    assert_includes err, "[ScriptReviewer] Warning: AI review failed: RuntimeError: 401 revoked"
   end
 
   def test_review_ai_review_failure_records_run_warning
@@ -550,7 +550,7 @@ class TestScriptReviewer < Minitest::Test
     end
 
     assert_equal 1, logger.logged_warnings.size
-    assert_match(/\[ScriptReviewer\] Warning: AI review failed: 401 revoked/, logger.logged_warnings.first)
+    assert_match(/\[ScriptReviewer\] Warning: AI review failed: RuntimeError: 401 revoked/, logger.logged_warnings.first)
   end
 
   def test_ai_review_returns_structured_issues

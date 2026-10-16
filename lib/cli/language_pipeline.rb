@@ -575,7 +575,7 @@ module PodgenCLI
       logger.log("Warning: Vocabulary annotation failed: #{e.class}: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
       @warnings << "Vocabulary annotation failed (#{e.class}: #{e.message})"
-      logger.phase_end("Vocabulary") rescue nil
+      logger.phase_end("Vocabulary") rescue nil # skippable: cosmetic phase-timing guard
     end
 
     def record_history
@@ -806,7 +806,7 @@ module PodgenCLI
     end
 
     def download_episode_image(url)
-      ext = File.extname(URI.parse(url).path)[0..4] rescue ".jpg"
+      ext = File.extname(URI.parse(url).path)[0..4] rescue ".jpg" # skippable: unparseable URL falls back to .jpg
       ext = ".jpg" if ext.empty?
       path = File.join(Dir.tmpdir, "podgen_rss_cover_#{Process.pid}#{ext}")
       HttpDownloader.new(logger: logger).download(url, path)
@@ -829,8 +829,8 @@ module PodgenCLI
     def cleanup_temp_files
       (@temp_files + (@trimmer&.temp_files || [])).each do |path|
         File.delete(path) if File.exist?(path)
-      rescue => e
-        logger.log("Warning: failed to cleanup #{path}: #{e.message}")
+      rescue => e # skippable: a leftover temp file; the episode is already produced
+        logger.log("Warning: failed to cleanup #{path}: #{e.class}: #{e.message}")
       end
     end
   end

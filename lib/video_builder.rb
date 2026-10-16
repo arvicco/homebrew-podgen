@@ -34,7 +34,7 @@ module VideoBuilder
     VideoGenerator.new(logger: logger).generate(mp3_path, cover_path, video_path)
     Result.new(status: :built, video_path: video_path,
       message: stale ? "video regenerated: mp4 older than audio" : "mp4 built")
-  rescue => e
+  rescue => e # skippable: returned as a :failed Result; the caller reports it
     Result.new(status: :failed, message: e.message)
   end
 

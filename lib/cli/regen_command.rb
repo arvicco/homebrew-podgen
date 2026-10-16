@@ -139,8 +139,8 @@ module PodgenCLI
       SubtitleGenerator.generate_srt(ts_path, srt_path)
       puts "  ✓ srt: #{srt_path}" unless quiet?
       true
-    rescue => e
-      $stderr.puts "  ✗ #{base}: srt regen failed: #{e.message}"
+    rescue => e # skippable per-episode: false is reported; the remaining episodes still regen
+      $stderr.puts "  ✗ #{base}: srt regen failed: #{e.class}: #{e.message}"
       false
     end
 

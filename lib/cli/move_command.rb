@@ -200,10 +200,10 @@ module PodgenCLI
             renamed_in_pair << [old_path, new_path]
             moved_files += 1
           end
-        rescue => e
+        rescue => e # fatal: this pair is rolled back and the command exits 1
           moved_files -= renamed_in_pair.length
           rollback_renames!(renamed_in_pair)
-          $stderr.puts "Error renaming '#{from_base}' → '#{to_base}': #{e.message}"
+          $stderr.puts "Error renaming '#{from_base}' → '#{to_base}': #{e.class}: #{e.message}"
           $stderr.puts "Rolled back this episode's #{renamed_in_pair.length} partial rename(s)." if renamed_in_pair.any?
           if completed_pairs.any?
             $stderr.puts "Previously-moved episodes left in place (you may want to move them back manually): #{completed_pairs.map { |f, t| "#{f}→#{t}" }.join(', ')}"
@@ -229,7 +229,7 @@ module PodgenCLI
       renames.reverse_each do |old_path, new_path|
         begin
           File.rename(new_path, old_path)
-        rescue => e
+        rescue => e # skippable: report it and keep rolling back the rest; the caller already fails
           $stderr.puts "  rollback failed for #{File.basename(new_path)} → #{File.basename(old_path)}: #{e.message}"
         end
       end
@@ -237,8 +237,8 @@ module PodgenCLI
 
     def regenerate_rss(config)
       PodgenCLI::RssCommand.new([config.name], { verbosity: @options[:verbosity] }).run
-    rescue => e
-      $stderr.puts "Warning: RSS regen failed: #{e.message}"
+    rescue => e # skippable: the move is done; the next rss/publish regenerates the feed
+      $stderr.puts "Warning: RSS regen failed: #{e.class}: #{e.message}"
     end
 
     # ── helpers ──────────────────────────────────────────────────────

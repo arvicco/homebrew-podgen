@@ -140,8 +140,8 @@ class LingQAgent
         log("Warning: setting tags returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
       end
     end
-  rescue => e
-    log("Warning: setting tags failed: #{e.message} (non-fatal)")
+  rescue => e # skippable: the lesson is already uploaded; tags are enrichment
+    log("Warning: setting tags failed: #{e.class}: #{e.message} (non-fatal)")
   end
 
   def generate_timestamps(language, lesson_id)
@@ -168,8 +168,8 @@ class LingQAgent
         log("Warning: timestamp generation returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
       end
     end
-  rescue => e
-    log("Warning: timestamp generation failed: #{e.message} (non-fatal)")
+  rescue => e # skippable: the lesson is already uploaded; timestamps are enrichment
+    log("Warning: timestamp generation failed: #{e.class}: #{e.message} (non-fatal)")
   end
 
 end

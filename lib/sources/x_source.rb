@@ -45,8 +45,8 @@ class XSource < BaseSource
     end
 
     findings
-  rescue => e
-    log("Failed to search X for '#{topic}': #{e.message}")
+  rescue => e # skippable: one source down; the other sources still feed research
+    log("Failed to search X for '#{topic}': #{e.class}: #{e.message}")
     []
   end
 

@@ -122,9 +122,9 @@ module PodgenCLI
           translated += 1
           logger.phase_end("Translate #{item[:basename]} → #{item[:lang_code]}")
           logger.log("Done (#{idx + 1}/#{pending.length})")
-        rescue => e
+        rescue => e # skippable per-item: remaining translations still run; the failure is counted
           failed += 1
-          logger.error("Translation failed for #{item[:basename]} → #{item[:lang_code]}: #{e.message}")
+          logger.error("Translation failed for #{item[:basename]} → #{item[:lang_code]}: #{e.class}: #{e.message}")
           logger.error(e.backtrace.first) if @options[:verbosity] == :verbose
         end
       end

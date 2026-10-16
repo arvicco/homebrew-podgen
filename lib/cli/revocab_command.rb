@@ -161,8 +161,8 @@ module PodgenCLI
         vocabulary: vocab)
 
       logger.log("Vocabulary re-annotated: #{File.basename(path)}")
-    rescue => e
-      logger.error("Failed to re-annotate #{File.basename(path)}: #{e.message}")
+    rescue => e # skippable per-file: the remaining transcripts are still processed
+      logger.error("Failed to re-annotate #{File.basename(path)}: #{e.class}: #{e.message}")
     end
   end
 end

@@ -123,8 +123,8 @@ module PodgenCLI
       end
 
       0
-    rescue => e
-      $stderr.puts "Analytics query failed: #{e.message}"
+    rescue => e # fatal: the command exits 1
+      $stderr.puts "Analytics query failed: #{e.class}: #{e.message}"
       1
     end
 

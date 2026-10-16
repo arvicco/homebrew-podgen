@@ -230,7 +230,7 @@ class SiteGenerator
     return false if h == 0
 
     w / h > 1.15
-  rescue StandardError
+  rescue StandardError # skippable: layout hint only; unknown means not wide
     false
   end
 

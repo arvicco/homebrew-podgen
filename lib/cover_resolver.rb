@@ -52,8 +52,8 @@ class CoverResolver
     agent = agent_class.new(logger: logger)
     agent.generate(title: title, base_image: base_image, output_path: cover_path, options: options)
     cover_path
-  rescue => e
-    (logger || PodcastAgent.logger).log("Warning: Cover generation failed: #{e.message}")
+  rescue => e # skippable: nil means no generated cover; callers proceed without one
+    (logger || PodcastAgent.logger).log("Warning: Cover generation failed: #{e.class}: #{e.message}")
     nil
   end
 
@@ -63,6 +63,6 @@ class CoverResolver
     return unless path.start_with?(Dir.tmpdir)
 
     File.delete(path) if File.exist?(path)
-  rescue # rubocop:disable Lint/SuppressedException
+  rescue # rubocop:disable Lint/SuppressedException -- skippable: a leftover temp file
   end
 end
