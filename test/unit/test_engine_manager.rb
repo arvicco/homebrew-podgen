@@ -134,8 +134,8 @@ class TestEngineManager < Minitest::Test
       end
     end
 
-    assert_equal ["[EngineManager] Warning: Engine 'groq' failed: API error",
-      "[EngineManager] Warning: Reconciliation failed (non-fatal): boom"], logger.logged_warnings
+    assert_equal ["[EngineManager] Warning: Engine 'groq' failed: RuntimeError: API error",
+      "[EngineManager] Warning: Reconciliation failed (non-fatal): RuntimeError: boom"], logger.logged_warnings
   end
 
   def test_comparison_mode_raises_when_all_fail
@@ -166,7 +166,7 @@ class TestEngineManager < Minitest::Test
     assert_equal results["open"], output[:primary], "Primary is the first configured engine, not the first to finish"
     assert_equal %w[groq open], output[:all].keys.sort
     assert_equal results["groq"], output[:all]["groq"]
-    assert_equal({ "elab" => "elab down" }, output[:errors])
+    assert_equal({ "elab" => "RuntimeError: elab down" }, output[:errors])
   end
 
   def test_comparison_mode_includes_captions_in_reconciliation
