@@ -90,7 +90,7 @@ Every `rescue` in the pipelines and publishers belongs to one of three buckets, 
 
 ## The owner-action guard asks the real parser
 
-`PodgenCLI.owner_action?` (`lib/cli.rb`) decides whether a `generate` invocation would upload (`--youtube`/`--lingq`) by dry-parsing the argv with generate's own option list (`GenerateOptions.dry_parse`); a token scan is only the fallback when that parse fails.
+`PodgenCLI.owner_action?` (`lib/cli.rb`) decides whether a `generate` invocation would upload (`--youtube`/`--lingq`) by dry-parsing the argv with generate's own option list (`GenerateOptions.dry_parse`); a token scan is only the fallback when that parse fails. The dry-run exemption for `publish`/`tweet` asks the same way (`PublishOptions.dry_parse`, `TweetOptions.dry_parse`, both over `OptionDryParse`), so `--newest --dry-run` and `--dry` count exactly as the command reads them.
 
 **Why.** The first guard scanned tokens and missed what OptionParser accepts: unique prefixes (`--you`), single-dash completions (`-y`), and flags swallowed as a value-taking option's argument (`--title -- --you`). Four review rounds of patching the scan each found another hole. A guard over a parser's input is only as right as the parser, so it has to ask the parser.
 

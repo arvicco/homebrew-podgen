@@ -5,6 +5,7 @@ require "optparse"
 root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
+require_relative File.join(root, "lib", "cli", "publish_options")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "regen_cache")
@@ -27,14 +28,7 @@ module PodgenCLI
     def initialize(args, options)
       @options = options
       OptionParser.new do |opts|
-        opts.on("--lingq", "Publish to LingQ instead of R2") { @options[:lingq] = true }
-        opts.on("--youtube", "Publish to YouTube") { @options[:youtube] = true }
-        opts.on("--all", "Publish to every configured target (R2 + LingQ + YouTube); unconfigured ones are skipped") { @options[:all] = true }
-        opts.on("--force", "Re-upload even if already tracked") { @options[:force] = true }
-        opts.on("--newest", "Publish newest episodes first") { @options[:newest] = true }
-        opts.on("--max N", Integer, "Cap number of YouTube uploads per invocation") { |n| @options[:max] = n }
-        opts.on("--dry-run", "Show what would be published") { @options[:dry_run] = true }
-        opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
+        PublishOptions.define(opts, @options) { |v| @episode_id = v }
       end.parse!(args)
       @podcast_name = args.shift
       @episode_id ||= args.shift # optional: e.g. "2026-03-31" or "2026-03-31b"

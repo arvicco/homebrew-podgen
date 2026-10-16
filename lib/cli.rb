@@ -107,20 +107,38 @@ module PodgenCLI
     owner_action?(command_name, argv, options)
   end
 
-  # generate: the global flag, or its own --dry-run as its parser reads it.
-  # publish/unpublish/tweet: the global flag or a literal --dry-run token.
+  # The global flag, or the command's own --dry-run as ITS parser reads it
+  # (generate P3-7, publish/tweet P8-10). unpublish has no local --dry-run:
+  # global flag only. The token rule answers only when the dry parse fails
+  # (the command would then refuse to run anyway).
   def self.dry_run_exempt?(command_name, argv, options)
     return false unless DRY_RUN_HONOURED.include?(command_name)
     return true if options[:dry_run]
     return !!generate_dry_parse(argv)&.dig(:dry_run) if command_name == "generate"
     return false if command_name == "unpublish" # no local --dry-run: global flag only
 
+    parsed = owner_command_dry_parse(command_name, argv)
+    return !!parsed[:dry_run] if parsed
+
     dry_run_token?(argv)
   end
 
-  # A literal `--dry-run` exempts publish/unpublish/tweet only when it cannot
-  # be the value of a preceding option (`publish p --date --dry-run` is a real
-  # sync): it is the first token, or follows a non-option or an
+  # What publish's / tweet's own parser would set for this argv, or nil when
+  # that parse would fail. Loaded lazily, like generate_dry_parse.
+  def self.owner_command_dry_parse(command_name, argv)
+    case command_name
+    when "publish"
+      require_relative "cli/publish_options"
+      PublishOptions.dry_parse(argv)
+    when "tweet"
+      require_relative "cli/tweet_options"
+      TweetOptions.dry_parse(argv)
+    end
+  end
+
+  # Fallback only (unparseable argv): a literal `--dry-run` exempts when it
+  # cannot be the value of a preceding option (`publish p --date --dry-run`
+  # is a real sync): it is the first token, or follows a non-option or an
   # `--opt=value` token (P3-7).
   def self.dry_run_token?(argv)
     # Under POSIXLY_CORRECT OptionParser stops at the first positional, so a

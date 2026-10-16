@@ -365,8 +365,9 @@ class TestCharacterizationCLI < Minitest::Test
       ["generate", ["pod", "--youtube", "--include", "--dry-run"]] => true,
       # generate's own parser reads this --dry-run as its flag: a real dry run.
       ["generate", ["pod", "--youtube", "--dry-run"]] => false,
-      ["publish", ["pod", "--dry"]] => true,
-      ["publish", ["pod", "--DRY-RUN"]] => true,
+      # publish's own parser reads these as --dry-run too (P8-10).
+      ["publish", ["pod", "--dry"]] => false,
+      ["publish", ["pod", "--DRY-RUN"]] => false,
       ["publish", ["pod", "--", "--dry-run"]] => true
     }.each do |(cmd, argv), refused|
       assert_equal refused, PodgenCLI.refuse_owner_action?(cmd, argv, {}), "#{cmd} #{argv.join(" ")}"
