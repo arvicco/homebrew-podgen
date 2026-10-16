@@ -332,7 +332,7 @@ podgen generate <podcast_name>
 ### News pipeline (default)
 
 1. Topics — Claude turns the guidelines (and `queue.yml` fallbacks) into today's topics, each with a short keyword query for Hacker News
-2. Research — every enabled source runs per topic (Exa, Hacker News, RSS, Claude web search, Bluesky, X); results are merged, deduplicated and cached for 24 h; queued priority links are added
+2. Research — every enabled source runs per topic (Exa, Hacker News, RSS, Claude web search, Bluesky, X); results are merged, deduplicated and cached for 24 h; a topic with no findings is dropped with a warning, and when no topic has any the run fails before a script is written; queued priority links are added
 3. Script — Claude writes the episode from the research, following `## Format`, `## Tone` and `## Links`
 4. Review — deterministic checks plus an AI review against the research (see [Script review](#script-review)); blockers send the script back for a rewrite, warnings are logged and kept
 5. Voice — ElevenLabs TTS per segment, with the pronunciation dictionary applied
@@ -974,7 +974,9 @@ The raw script responses are kept under `output/<podcast>/debug/` for inspection
 
 ### Priority Links
 
-Queue specific URLs for inclusion in the next episode's research. Priority links are consumed during generation and fed to the script agent alongside regular source results.
+Queue specific URLs for inclusion in the next episode's research. Priority links are fed to the script agent alongside regular source results and consumed once the episode is recorded. A link whose fetch fails transiently (timeout, DNS, 5xx, 429) logs a warning and stays queued for the next run; one that fails permanently (other 4xx, a malformed or non-HTTP URL, a redirect loop) logs one warning and is dropped from the queue once the episode is recorded, without ever reaching the script.
+
+Priority links supplement the topic research; they do not replace it. If every topic comes back with no findings, the run fails before priority links are fetched, even when links are queued.
 
 ```bash
 # Add a link (URL tracking params stripped automatically)

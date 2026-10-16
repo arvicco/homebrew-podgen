@@ -13,5 +13,7 @@ module UsageLogger
     cache_create = usage.cache_creation_input_tokens || 0
     cache_read = usage.cache_read_input_tokens || 0
     log("  Cache create: #{cache_create} | Cache read: #{cache_read}") if cache_create > 0 || cache_read > 0
+    searches = usage.server_tool_use&.web_search_requests if usage.respond_to?(:server_tool_use)
+    log("  web searches: #{searches}") if searches
   end
 end

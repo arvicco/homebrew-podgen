@@ -142,7 +142,7 @@ module Tell
         @play_pid = spawn("afplay", tmp, [:out, :err] => "/dev/null")
         Thread.new do
           pid, file = @play_pid, tmp
-          Process.wait(pid) rescue nil
+          Process.wait(pid) rescue nil # skippable: the player was already reaped
           File.delete(file) if File.exist?(file)
         end
       else
@@ -156,8 +156,8 @@ module Tell
 
     def stop_playback
       if @play_pid
-        Process.kill("TERM", @play_pid) rescue nil
-        Process.wait(@play_pid) rescue nil
+        Process.kill("TERM", @play_pid) rescue nil # skippable: the player already exited
+        Process.wait(@play_pid) rescue nil # skippable: the player was already reaped
         @play_pid = nil
       end
     end

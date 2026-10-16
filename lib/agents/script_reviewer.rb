@@ -29,6 +29,18 @@ class ScriptReviewer
   TITLE_TARGET_CHARS = 40
   NIT     = "NIT"
 
+  # Output cap for the AI review. Thinking counts toward it: on the
+  # 2026-10-15 input (24k tokens in) the answer needed >4096, 2983 and 4028
+  # output tokens on three runs (P8-0, Q-84), so 4x headroom. A max_tokens
+  # stop is retried once at twice this cap before the review is skipped.
+  MAX_TOKENS = 16_384
+  # The doubled-cap retry runs once, under its own budget: no SDK retries,
+  # no outer retries, and a 420 s request timeout - a full 32768-token answer
+  # at the ~80 tok/s measured on 2026-10-16. Without it the call inherits
+  # the SDK's 600 s per attempt x (1 + 2 SDK retries) x 3 outer attempts on
+  # the generate critical path (CRPR W1, P8-0).
+  RETRY_REQUEST_OPTIONS = { timeout: 420, max_retries: 0 }.freeze
+
   WEEKDAYS = %w[Monday Tuesday Wednesday Thursday Friday Saturday Sunday].freeze
   MONTHS = %w[January February March April May June July August September October November December].freeze
 
@@ -96,8 +108,8 @@ class ScriptReviewer
     begin
       ai_issues = run_ai_review(corrected)
       all_issues.concat(ai_issues)
-    rescue => e
-      log_warning("AI review failed: #{e.message} (proceeding with deterministic checks only)")
+    rescue => e # skippable: the deterministic checks above still gate the script
+      log_warning("AI review failed: #{e.class}: #{e.message} (proceeding with deterministic checks only)")
     end
 
     unfixed_blockers = all_issues.select { |i| i[:severity] == BLOCKER && !i[:auto_fixed] }
@@ -333,14 +345,30 @@ class ScriptReviewer
   def run_ai_review(script)
     log("Running AI review with #{@model}")
 
-    with_retries(max: 2, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
+    begin
+      request_ai_review(script, MAX_TOKENS)
+    rescue TruncatedOutputError
+      cap = MAX_TOKENS * 2
+      log("AI review stopped at max_tokens #{MAX_TOKENS}; retrying once with max_tokens #{cap}")
+      begin
+        request_ai_review(script, cap, retries: 0, request_options: RETRY_REQUEST_OPTIONS)
+      rescue TruncatedOutputError => e
+        raise TruncatedOutputError, "stopped at max_tokens again with the retry cap #{cap}: #{e.message}"
+      end
+    end
+  end
+
+  def request_ai_review(script, max_tokens, retries: 2, request_options: nil)
+    options = request_options ? { request_options: request_options.dup } : {}
+    with_retries(max: retries, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
-          max_tokens: 4096,
+          max_tokens: max_tokens,
           system: build_review_system_prompt,
           messages: [{ role: "user", content: build_review_user_message(script) }],
-          **AnthropicClient.effort_params(:reviewer, format: ScriptReview)
+          **AnthropicClient.effort_params(:reviewer, format: ScriptReview),
+          **options
         )
       end
 

@@ -4,6 +4,7 @@ require "optparse"
 
 root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
+require_relative File.join(root, "lib", "cli", "tweet_options")
 require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "episode_filtering")
 
@@ -13,11 +14,7 @@ module PodgenCLI
 
     def initialize(args, options)
       @options = options
-      OptionParser.new do |opts|
-        opts.on("--force", "Tweet even if already tweeted") { @options[:force] = true }
-        opts.on("--dry-run", "Show tweet text without posting") { @options[:dry_run] = true }
-        opts.on("--template TEXT", "Override tweet template") { |t| @options[:template] = t }
-      end.parse!(args)
+      OptionParser.new { |opts| TweetOptions.define(opts, @options) }.parse!(args)
 
       @podcast_name = args.shift
       @episode_id = args.shift
@@ -78,8 +75,8 @@ module PodgenCLI
       tracker.record(:twitter, "posts", episode[:base_name], tweet_id) if tweet_id
       puts "Tweeted: \"#{title}\" (#{tweet_id})"
       0
-    rescue => e
-      $stderr.puts "Error: #{e.message}"
+    rescue => e # fatal: the command exits 1
+      $stderr.puts "Error: #{e.class}: #{e.message}"
       1
     end
 

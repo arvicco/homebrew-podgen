@@ -939,7 +939,8 @@ class TestClaudeWebSource < Minitest::Test
     fake.define_singleton_method(:messages) { self }
     fake.define_singleton_method(:create) do |**kw|
       captured = kw
-      Struct.new(:content, :stop_reason).new([], "end_turn")
+      Struct.new(:content, :stop_reason, :usage).new([], "end_turn",
+        Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens).new(1, 1, 0, 0))
     end
     @source.instance_variable_set(:@client, fake)
     @source.instance_variable_set(:@model, "m")
@@ -950,5 +951,30 @@ class TestClaudeWebSource < Minitest::Test
 
   def test_max_retries_is_three
     assert_equal 3, ClaudeWebSource::MAX_RETRIES
+  end
+
+  # P8-2 (Q-66): the web_search call is billed per search; its usage line
+  # carries tokens, stop_reason, elapsed time and the search count.
+  def test_call_api_logs_usage_and_web_searches
+    server_tool_use = Struct.new(:web_search_requests).new(2)
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens,
+      :cache_read_input_tokens, :server_tool_use).new(900, 300, 0, 0, server_tool_use)
+    response = Struct.new(:content, :stop_reason, :usage).new([], "end_turn", usage)
+    fake = Object.new
+    fake.define_singleton_method(:messages) { self }
+    fake.define_singleton_method(:create) { |**| response }
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| lines << m }
+    @source.instance_variable_set(:@client, fake)
+    @source.instance_variable_set(:@model, "m")
+    @source.instance_variable_set(:@logger, logger)
+
+    assert_same response, @source.send(:call_api, "topic")
+
+    log = lines.join("\n")
+    assert_includes log, "(end_turn)"
+    assert_includes log, "Input: 900 tokens | Output: 300 tokens"
+    assert_includes log, "web searches: 2"
   end
 end

@@ -523,6 +523,17 @@ ignore:
   - Style/StderrPuts
 - podgen.gemspec:
   - Layout/ExtraSpacing
+- test/api/test_news_pipeline.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/api/test_tell_gloss_pipeline.rb:
+  - Lint/DuplicateRegexpCharacterClassElement
+- test/api/test_tell_speak_pipeline.rb:
+  - Layout/SpaceInsideHashLiteralBraces
+- test/api/test_transcription_reconciliation.rb:
+  - Performance/StringReplacement
+  - Style/RedundantRegexpArgument
+- test/api/test_tts_chain.rb:
+  - Layout/SpaceInsideHashLiteralBraces
 - test/browser/test_vocab_tooltip.rb:
   - Layout/ExtraSpacing
   - Layout/SpaceInsideHashLiteralBraces
@@ -536,7 +547,6 @@ ignore:
   - Style/StringLiteralsInInterpolation
 - test/integration/test_news_pipeline.rb:
   - Layout/SpaceInsideHashLiteralBraces
-  - Layout/EmptyLinesAroundClassBody
 - test/integration/test_pipeline_contracts.rb:
   - Layout/SpaceInsideHashLiteralBraces
 - test/integration/test_stats_validate.rb:
@@ -544,13 +554,7 @@ ignore:
   - Layout/SpaceInsideHashLiteralBraces
 - test/integration/test_tell_gloss_pipeline.rb:
   - Layout/HashAlignment
-  - Lint/DuplicateRegexpCharacterClassElement
 - test/integration/test_tell_speak_pipeline.rb:
-  - Layout/SpaceInsideHashLiteralBraces
-- test/integration/test_transcription_reconciliation.rb:
-  - Performance/StringReplacement
-  - Style/RedundantRegexpArgument
-- test/integration/test_tts_chain.rb:
   - Layout/SpaceInsideHashLiteralBraces
 - test/tell_mocks.rb:
   - Style/TernaryParentheses

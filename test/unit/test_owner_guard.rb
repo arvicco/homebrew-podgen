@@ -4,6 +4,10 @@ require_relative "../test_helper"
 require "stringio"
 require "cli"
 require "cli/generate_options"
+require "cli/publish_options"
+require "cli/tweet_options"
+require "cli/publish_command"
+require "cli/tweet_command"
 
 # Probe table for the owner guard in lib/cli.rb (CLAUDE.md golden rule 3).
 # Every verdict below was written by hand from what the REAL command would
@@ -11,7 +15,7 @@ require "cli/generate_options"
 # parses generate's argv with generate's own option list, so the verdicts for
 # generate hold by construction rather than by token-shape prediction.
 class TestOwnerGuard < Minitest::Test
-  REFUSAL = "podgen: '%s' is an owner action; refusing inside a Claude Code session (PODGEN_OWNER=1 overrides)\n"
+  REFUSAL = "podgen: '%s' is an owner action; refusing inside an agent session (CLAUDECODE=1; PODGEN_OWNER=1 overrides)\n"
 
   # [global options, command, command argv, refused inside Claude Code?]
   PROBES = [
@@ -78,14 +82,33 @@ class TestOwnerGuard < Minitest::Test
     [{}, "publish", %w[--dry-run pod], false],
     [{}, "publish", %w[pod --date=2026-01-01 --dry-run], false],
     [{}, "publish", %w[pod --date --dry-run], true],
-    [{}, "publish", %w[pod --dry], true],
     [{}, "publish", %w[pod -- --dry-run], true],
     [{dry_run: true}, "publish", %w[pod], false],
+    # --- publish / tweet: their own parser reads the dry run (P8-10) ---
+    [{}, "publish", %w[pod --newest --dry-run], false],  # flag before: still a dry run
+    [{}, "publish", %w[pod --force --all --dry-run], false],
+    [{}, "publish", %w[pod --dry], false],               # unique prefix of --dry-run
+    [{}, "publish", %w[pod --newest --dry], false],
+    [{}, "publish", %w[pod --DRY-RUN], false],           # long options match case-insensitively
+    [{}, "publish", %w[pod --max 3 --dry-run], false],
+    [{}, "publish", %w[pod --max --dry-run], true],      # --max swallows it (and fails Integer)
+    [{}, "publish", %w[pod --date --dry], true],         # date is "--dry"
+    [{}, "publish", %w[pod --d], true],                  # ambiguous: --date / --dry-run
+    [{}, "publish", %w[pod --dry-run=1], true],          # needless argument: parse fails
+    [{}, "publish", %w[pod --newest], true],
+    [{}, "publish", %w[pod --youtube --all], true],
+    [{}, "publish", %w[pod --help --dry-run], true],
     [{}, "unpublish", %w[pod], true],
     [{dry_run: true}, "unpublish", %w[pod], false],
     [{}, "tweet", %w[pod ep], true],
     [{}, "tweet", %w[pod ep --dry-run], false],
     [{}, "tweet", %w[pod ep --template --dry-run], true],
+    [{}, "tweet", %w[pod ep --template --dry], true],
+    [{}, "tweet", %w[pod ep --force --dry-run], false],
+    [{}, "tweet", %w[pod ep --dry], false],
+    [{}, "tweet", %w[pod ep --template x --dry], false],
+    [{}, "tweet", %w[pod ep -- --dry-run], true],
+    [{}, "tweet", %w[pod ep --force], true],
     [{dry_run: true}, "tweet", %w[pod ep], false],
     # --- uploads / schedule / analytics ignore dry-run: never exempt ---
     [{dry_run: true}, "uploads", %w[pod], true],
@@ -269,6 +292,36 @@ class TestOwnerGuard < Minitest::Test
       "the global --dry-run flag still exempts"
   ensure
     previous ? ENV["POSIXLY_CORRECT"] = previous : ENV.delete("POSIXLY_CORRECT")
+  end
+
+  # P8-10: the guard's dry parse and the command share one option list.
+  def test_publish_dry_parse_matches_publish_command_options
+    argv = %w[pod --max 3 --newest --dry --date 2026-01-02]
+    parsed = PodgenCLI::PublishOptions.dry_parse(argv)
+    assert_equal({max: 3, newest: true, dry_run: true}, parsed)
+    assert_equal %w[pod --max 3 --newest --dry --date 2026-01-02], argv, "argv untouched"
+
+    options = {}
+    cmd = PodgenCLI::PublishCommand.new(argv.dup, options)
+    assert_equal parsed, options
+    assert_equal "2026-01-02", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_tweet_dry_parse_matches_tweet_command_options
+    argv = %w[pod ep --force --template T --dry]
+    parsed = PodgenCLI::TweetOptions.dry_parse(argv)
+    assert_equal({force: true, template: "T", dry_run: true}, parsed)
+
+    options = {}
+    PodgenCLI::TweetCommand.new(argv.dup, options)
+    assert_equal parsed, options
+  end
+
+  def test_owner_command_dry_parse_returns_nil_when_the_real_parser_would_fail
+    [%w[pod --max x], %w[pod --d], %w[pod --dry-run=1], %w[pod --help], %w[pod --bogus]].each do |argv|
+      assert_nil PodgenCLI::PublishOptions.dry_parse(argv), argv.join(" ")
+    end
+    assert_nil PodgenCLI::TweetOptions.dry_parse(%w[pod ep --template])
   end
 
   # unpublish defines no local --dry-run: only the global flag counts.

@@ -1,12 +1,39 @@
 # frozen_string_literal: true
 
+require "json"
+require "net/http"
 require_relative "../loggable"
+require_relative "../http_retryable"
 
 module Transcription
+  # A non-2xx STT response; #status is the HTTP code (P8-3). Built through
+  # ApiError.for so 429/503 arrive as RetriableApiError and retry is decided
+  # by class, never by digits in the message text. The message carries the
+  # status plus the body's identifier-shaped error type/code fields, never
+  # the error text or raw body: it is logged, and OpenAI's 401 text echoes
+  # a masked key.
+  class ApiError < StandardError
+    attr_reader :status
+
+    def self.for(status, message)
+      klass = HttpRetryable::RETRIABLE_CODES.include?(status.to_i) ? RetriableApiError : ApiError
+      klass.new(message, status: status)
+    end
+
+    def initialize(message = nil, status: nil)
+      super(message)
+      @status = status&.to_i
+    end
+  end
+
+  class RetriableApiError < ApiError; end
+
   class BaseEngine
     include Loggable
+    include Retryable
     MAX_RETRIES = 3
     TIMEOUT = 300 # 5 minutes
+    RETRYABLE_ERRORS = [RetriableApiError, Net::OpenTimeout, Net::ReadTimeout, Errno::ETIMEDOUT].freeze
 
     def initialize(language: "sl", logger: nil)
       @language = language
@@ -27,32 +54,32 @@ module Transcription
       raise "Audio file not found: #{audio_path}" unless File.exist?(audio_path)
     end
 
-    def retryable?(error)
-      status = (error.response.code.to_i if error.respond_to?(:response) && error.response.respond_to?(:code))
-      return [429, 503].include?(status) if status&.positive?
-
-      message = error.message.to_s
-      message.match?(/\b(?:429|503)\b/) ||
-        error.is_a?(Net::OpenTimeout) || error.is_a?(Net::ReadTimeout) ||
-        error.is_a?(Errno::ETIMEDOUT)
+    # Same contract as Retryable#with_retries (it is that loop): MAX_RETRIES
+    # retries after the first attempt (3 => up to 4 attempts). retryable:
+    # RETRYABLE_ERRORS; anything else, and the last retryable error on
+    # give-up, propagates with its class intact.
+    def with_engine_retries(&)
+      with_retries(max: MAX_RETRIES, on: RETRYABLE_ERRORS,
+        label: self.class.name.split("::").last, reraise: true, &)
     end
 
-    # Same contract as Retryable#with_retries: MAX_RETRIES is the number of
-    # retries after the first attempt (3 => up to 4 attempts).
-    def with_engine_retries
-      retries = 0
-      begin
-        retries += 1
-        yield
-      rescue => e
-        if retries <= MAX_RETRIES && retryable?(e)
-          sleep_time = 2**retries
-          log("Error (attempt #{retries}/#{MAX_RETRIES}): #{e.message}. Retrying in #{sleep_time}s...")
-          sleep(sleep_time)
-          retry
-        end
-        raise "#{self.class.name.split('::').last} failed after #{retries} attempts: #{e.message}"
-      end
+    # ApiError for a non-2xx response: "<prefix> <status>" plus, when the
+    # JSON body has them, its error type/code (OpenAI/Groq error.type and
+    # error.code, ElevenLabs detail.status/code) — never message text.
+    def api_error(prefix, response)
+      fields = error_fields(response.body)
+      suffix = fields.empty? ? "" : " (#{fields.join(", ")})"
+      ApiError.for(response.code, "#{prefix} #{response.code}#{suffix}")
+    end
+
+    def error_fields(body)
+      data = JSON.parse(body.to_s)
+      err = data["error"].is_a?(Hash) ? data["error"] : data["detail"] if data.is_a?(Hash)
+      return [] unless err.is_a?(Hash)
+
+      err.values_at("type", "code", "status").filter_map { |v| v.to_s[/\A[\w.-]{1,64}\z/] }.uniq
+    rescue JSON::ParserError # skippable: a non-JSON body adds no fields
+      []
     end
 
     def parse_segments(raw_segments)

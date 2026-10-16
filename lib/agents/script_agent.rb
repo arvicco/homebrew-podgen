@@ -211,8 +211,8 @@ class ScriptAgent
     path = File.join(debug_dir, "#{basename}_script_raw.json")
     File.write(path, JSON.pretty_generate(serialize_raw(script, message)))
     log("Raw debug artifact saved to #{path}")
-  rescue => e
-    log("Warning: failed to save raw debug artifact: #{e.message}")
+  rescue => e # skippable: debug artifact only; the script itself is unaffected
+    log("Warning: failed to save raw debug artifact: #{e.class}: #{e.message}")
   end
 
   def serialize_raw(script, message)

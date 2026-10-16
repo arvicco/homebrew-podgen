@@ -38,8 +38,8 @@ module Validators
       else
         @passes << "History: #{entries.length} entries"
       end
-    rescue => e
-      @errors << "History: parse error: #{e.message}"
+    rescue => e # skippable: reported as a validation error; the other validators still run
+      @errors << "History: parse error: #{e.class}: #{e.message}"
     end
   end
 end
