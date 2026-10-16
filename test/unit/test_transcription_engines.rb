@@ -753,6 +753,33 @@ class TestElevenlabsEngine < Minitest::Test
   end
 end
 
+# ── No response bodies in error messages (CRPR W5) ─────────────────────────
+
+class TestEngineErrorsCarryNoBody < Minitest::Test
+  SENTINEL = "SENTINEL-BODY Incorrect API key provided: sk-...abcd"
+
+  def setup
+    @audio = Tempfile.new(["test", ".mp3"])
+    @audio.write("fake audio data")
+    @audio.flush
+  end
+
+  def teardown
+    @audio.close!
+  end
+
+  [Transcription::OpenaiEngine, Transcription::GroqEngine, Transcription::ElevenlabsEngine].each do |klass|
+    define_method(:"test_transcribe_#{klass.name.split("::").last.downcase}_error_message_has_status_not_body") do
+      response = MockHTTPResponse.new(code: 401, body: SENTINEL, "success?": false)
+      HTTParty.stub(:post, response) do
+        err = assert_raises(Transcription::ApiError) { klass.new(language: "en").transcribe(@audio.path) }
+        assert_includes err.message, "401"
+        refute_includes err.message, "SENTINEL"
+      end
+    end
+  end
+end
+
 # ── Engine fd hygiene (Q-04) ────────────────────────────────────────────────
 
 class TestEngineFileHandleClosing < Minitest::Test

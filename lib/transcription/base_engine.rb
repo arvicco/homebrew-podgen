@@ -7,7 +7,9 @@ require_relative "../http_retryable"
 module Transcription
   # A non-2xx STT response; #status is the HTTP code (P8-3). Built through
   # ApiError.for so 429/503 arrive as RetriableApiError and retry is decided
-  # by class, never by digits in the message text.
+  # by class, never by digits in the message text. The message carries the
+  # status only, never the response body: it is logged, and OpenAI's 401
+  # body echoes a masked key.
   class ApiError < StandardError
     attr_reader :status
 
