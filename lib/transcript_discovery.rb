@@ -122,7 +122,7 @@ module TranscriptDiscovery
         end
       end
       nil
-    rescue => e # skippable: silent fallback — nil (not found); discovery tries the next strategy
+    rescue => e # skippable: transport guard — transcript discovery fetch; nil means not found, the next strategy is tried
       nil
     end
 
