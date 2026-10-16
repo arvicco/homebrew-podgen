@@ -649,6 +649,33 @@ class TestScriptReviewer < Minitest::Test
     assert @result[:passed], "warn-never-cut: a failed AI review does not fail the script"
   end
 
+  def test_run_ai_review_retry_runs_with_its_own_bounded_request_budget
+    reviewer = build_reviewer
+    good = ScriptReview.new(issues: [], overall_assessment: "fine")
+    client = FakeReviewClient.new([truncated_message, parsed_message(good)])
+    reviewer.instance_variable_set(:@client, client)
+
+    capture_io { reviewer.send(:run_ai_review, make_script) }
+
+    refute client.calls[0].key?(:request_options), "the first call keeps the client defaults"
+    assert_equal({ timeout: 420, max_retries: 0 }, client.calls[1][:request_options])
+    assert_equal ScriptReviewer::RETRY_REQUEST_OPTIONS, client.calls[1][:request_options]
+  end
+
+  def test_review_retry_timeout_is_not_retried_and_warns_once
+    reviewer = build_reviewer
+    reviewer.define_singleton_method(:sleep) { |_| nil }
+    timeout = Anthropic::Errors::APITimeoutError.new(url: URI("https://api.anthropic.com/v1/messages"))
+    client = FakeReviewClient.new([truncated_message, timeout, timeout, timeout])
+    reviewer.instance_variable_set(:@client, client)
+
+    _out, err = capture_io { @result = reviewer.review(make_script) }
+
+    assert_equal 2, client.calls.size
+    assert_equal 1, err.lines.grep(/Warning/).size
+    assert @result[:passed]
+  end
+
   def test_ai_review_prompt_includes_research_data
     reviewer = build_reviewer
 
@@ -739,7 +766,10 @@ class TestScriptReviewer < Minitest::Test
 
     def create(**kwargs)
       @calls << kwargs
-      @responses.fetch(@calls.size - 1)
+      response = @responses.fetch(@calls.size - 1)
+      raise response if response.is_a?(Exception)
+
+      response
     end
   end
 

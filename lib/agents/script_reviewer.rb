@@ -34,6 +34,12 @@ class ScriptReviewer
   # output tokens on three runs (P8-0, Q-84), so 4x headroom. A max_tokens
   # stop is retried once at twice this cap before the review is skipped.
   MAX_TOKENS = 16_384
+  # The doubled-cap retry runs once, under its own budget: no SDK retries,
+  # no outer retries, and a 420 s request timeout - a full 32768-token answer
+  # at the ~80 tok/s measured on 2026-10-16. Without it the call inherits
+  # the SDK's 600 s per attempt x (1 + 2 SDK retries) x 3 outer attempts on
+  # the generate critical path (CRPR W1, P8-0).
+  RETRY_REQUEST_OPTIONS = { timeout: 420, max_retries: 0 }.freeze
 
   WEEKDAYS = %w[Monday Tuesday Wednesday Thursday Friday Saturday Sunday].freeze
   MONTHS = %w[January February March April May June July August September October November December].freeze
@@ -345,22 +351,24 @@ class ScriptReviewer
       cap = MAX_TOKENS * 2
       log("AI review stopped at max_tokens #{MAX_TOKENS}; retrying once with max_tokens #{cap}")
       begin
-        request_ai_review(script, cap)
+        request_ai_review(script, cap, retries: 0, request_options: RETRY_REQUEST_OPTIONS)
       rescue TruncatedOutputError => e
         raise TruncatedOutputError, "stopped at max_tokens again with the retry cap #{cap}: #{e.message}"
       end
     end
   end
 
-  def request_ai_review(script, max_tokens)
-    with_retries(max: 2, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
+  def request_ai_review(script, max_tokens, retries: 2, request_options: nil)
+    options = request_options ? { request_options: request_options.dup } : {}
+    with_retries(max: retries, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
           max_tokens: max_tokens,
           system: build_review_system_prompt,
           messages: [{ role: "user", content: build_review_user_message(script) }],
-          **AnthropicClient.effort_params(:reviewer, format: ScriptReview)
+          **AnthropicClient.effort_params(:reviewer, format: ScriptReview),
+          **options
         )
       end
 
