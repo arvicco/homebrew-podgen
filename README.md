@@ -976,6 +976,8 @@ The raw script responses are kept under `output/<podcast>/debug/` for inspection
 
 Queue specific URLs for inclusion in the next episode's research. Priority links are consumed during generation and fed to the script agent alongside regular source results.
 
+Priority links supplement the topic research; they do not replace it. If every topic comes back with no findings, the run fails before priority links are fetched, even when links are queued.
+
 ```bash
 # Add a link (URL tracking params stripped automatically)
 podgen add ruby_world https://example.com/important-article --note "Cover this"
