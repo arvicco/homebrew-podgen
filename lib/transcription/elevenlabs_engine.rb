@@ -49,7 +49,7 @@ module Transcription
         elapsed = (Time.now - start).round(2)
 
         unless response.success?
-          raise ApiError.for(response.code, "ElevenLabs Scribe API error #{response.code}")
+          raise api_error("ElevenLabs Scribe API error", response)
         end
 
         result = JSON.parse(response.body)

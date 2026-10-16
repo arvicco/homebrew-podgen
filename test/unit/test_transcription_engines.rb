@@ -778,6 +778,27 @@ class TestEngineErrorsCarryNoBody < Minitest::Test
       end
     end
   end
+
+  # CRPR r2 N6: the actionable JSON error.type / error.code fields are
+  # appended; the error's message text (and the raw body) never is.
+  def test_transcribe_error_message_appends_json_error_type_and_code
+    body = {"error" => {"type" => "invalid_request_error", "code" => "audio_too_long",
+                        "message" => "SENTINEL message text"}}.to_json
+    response = MockHTTPResponse.new(code: 400, body: body, "success?": false)
+    HTTParty.stub(:post, response) do
+      err = assert_raises(Transcription::ApiError) { Transcription::OpenaiEngine.new(language: "en").transcribe(@audio.path) }
+      assert_equal "Transcription API error 400 (invalid_request_error, audio_too_long)", err.message
+    end
+  end
+
+  def test_transcribe_error_detail_type_from_elevenlabs_shape
+    body = {"detail" => {"status" => "invalid_api_key", "message" => "SENTINEL key sk-...abcd"}}.to_json
+    response = MockHTTPResponse.new(code: 401, body: body, "success?": false)
+    HTTParty.stub(:post, response) do
+      err = assert_raises(Transcription::ApiError) { Transcription::ElevenlabsEngine.new(language: "en").transcribe(@audio.path) }
+      assert_equal "ElevenLabs Scribe API error 401 (invalid_api_key)", err.message
+    end
+  end
 end
 
 # ── Engine fd hygiene (Q-04) ────────────────────────────────────────────────
