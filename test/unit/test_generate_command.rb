@@ -443,6 +443,7 @@ class TestGenerateCommand < Minitest::Test
 
     assert_equal 1, code
     refute script_called, "ScriptAgent must not run without research findings"
+    assert File.read(@log_path).match?(/END Research \(/), "the Research phase is closed before the fatal"
     assert_match(/\ARUN-OUTCOME status=error .*first=RuntimeError: no research findings for any topic/, last_log_line)
   end
 
