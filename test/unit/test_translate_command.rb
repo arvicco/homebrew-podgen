@@ -354,4 +354,48 @@ class TestTranslateCommand < Minitest::Test
     result = cmd.send(:filter_by_date, episodes, Date.new(2026, 1, 15), "a")
     assert_equal [{ basename: "mypod-2026-01-15a" }], result
   end
+
+  # --- primary language from config (P7-6) ---
+
+  def test_run_dry_run_sl_primary_targets_en_not_sl
+    config = setup_podcast("mypod", %w[sl en])
+    File.write(File.join(config.episodes_dir, "mypod-2026-01-15_script.md"), "# Naslov\n\nVsebina.")
+    File.write(File.join(config.episodes_dir, "mypod-2026-01-15.mp3"), "x" * 100)
+
+    out, = capture_io do
+      assert_equal 0, PodgenCLI::TranslateCommand.new(["mypod", "--dry-run"], {verbosity: :normal}).run
+    end
+
+    assert_includes out, "mypod-2026-01-15 → en"
+    refute_includes out, "→ sl"
+  ensure
+    ENV.delete("PODGEN_ROOT")
+  end
+
+  def test_regenerate_rss_sl_primary_writes_feed_xml_and_feed_en_xml
+    config = setup_podcast("mypod", %w[sl en])
+    logger = Object.new
+    def logger.log(_) = nil
+
+    build_command.send(:regenerate_rss, config, logger)
+
+    out_dir = File.dirname(config.feed_path)
+    assert_equal %w[feed-en.xml feed.xml], Dir.glob(File.join(out_dir, "feed*.xml")).map { |f| File.basename(f) }.sort
+    assert_includes File.read(File.join(out_dir, "feed.xml")), "<language>sl</language>"
+  ensure
+    ENV.delete("PODGEN_ROOT")
+  end
+
+  private
+
+  def setup_podcast(name, codes)
+    require "podcast_config"
+    FileUtils.mkdir_p(File.join(@tmpdir, "podcasts", name))
+    File.write(File.join(@tmpdir, "podcasts", name, "guidelines.md"),
+      "## Podcast\n- name: #{name}\n- language:\n#{codes.map { |c| "  - #{c}\n" }.join}")
+    ENV["PODGEN_ROOT"] = @tmpdir
+    config = PodcastConfig.new(name)
+    FileUtils.mkdir_p(config.episodes_dir)
+    config
+  end
 end

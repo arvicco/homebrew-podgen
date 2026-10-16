@@ -69,7 +69,7 @@ class ResearchAgent
 
     all
   rescue Exa::Error => e
-    log("Failed to research '#{topic}' after #{MAX_RETRIES} attempts: #{e.message}")
+    log_warning("Failed to research '#{topic}' after #{MAX_RETRIES} attempts: #{e.message}")
     []
   end
 

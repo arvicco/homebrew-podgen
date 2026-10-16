@@ -23,6 +23,15 @@ module Loggable
     logger_target.log("#{tag} #{message}")
   end
 
+  # Tagged "Warning:" line that the run's RUN-OUTCOME counts (P7-0); a
+  # logger without #warning (test doubles) just gets the line.
+  def log_warning(message)
+    tag = "[#{self.class.name&.split('::')&.last || self.class.name}]"
+    target = logger_target
+    entry = "#{tag} Warning: #{message}"
+    target.respond_to?(:warning) ? target.warning(entry) : target.log(entry)
+  end
+
   def log_error(message)
     tag = "[#{self.class.name&.split('::')&.last || self.class.name}]"
     logger_target.error("#{tag} #{message}")

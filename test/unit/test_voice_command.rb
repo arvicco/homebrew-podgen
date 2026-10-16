@@ -116,6 +116,30 @@ class TestVoiceCommand < Minitest::Test
     assert_equal ["mypod-2026-04-29"], bases
   end
 
+  # --- primary language from config (P7-6) ---
+
+  def test_run_sl_primary_voices_bare_sl_and_suffixed_en
+    config = setup_fake_podcast("mypod", languages: %w[sl en])
+    %w[mypod-2026-04-29 mypod-2026-04-29-en].each do |b|
+      ScriptArtifact.write(File.join(config.episodes_dir, "#{b}_script.json"),
+        { title: "T", segments: [{ name: "S", text: "x" }], sources: [] })
+      File.write(File.join(config.episodes_dir, "#{b}_script.md"), "# T\n\nx.")
+    end
+    voiced = []
+    fake_voicer = Object.new
+    fake_voicer.define_singleton_method(:voice) { |output_path:, lang_code:, **| voiced << [File.basename(output_path), lang_code] }
+
+    code = nil
+    Voicer.stub(:new, ->(**) { fake_voicer }) do
+      AudioAssembler.stub(:probe_duration, 60.0) do
+        capture_io { code = PodgenCLI::VoiceCommand.new(["--date", "2026-04-29", "mypod"], { verbosity: :quiet }).run }
+      end
+    end
+
+    assert_equal [["mypod-2026-04-29.mp3", "sl"], ["mypod-2026-04-29-en.mp3", "en"]], voiced
+    assert_equal 0, code
+  end
+
   private
 
   def setup_fake_podcast(name, languages: nil)

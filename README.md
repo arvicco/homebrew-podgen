@@ -516,6 +516,8 @@ Add a `language` list to the `## Podcast` section in `podcasts/<name>/guidelines
 - If `language` is omitted, only English (`en`) is produced
 - English is never re-translated — the original script is used directly
 - Output files are suffixed by language: `ruby_world-2026-02-19.mp3` (English), `ruby_world-2026-02-19-it.mp3` (Italian), etc.
+- A single-language podcast can write it inline: `- language: es` under `## Podcast` (the `language:` under `## Audio` is only the transcription language)
+- The first `language` entry is the primary: its episodes carry no suffix and its feed is always `output/<podcast>/feed.xml`, with that code in the feed's `<language>`
 - Each extra language gets its own feed and site: `output/<podcast>/feed-<code>.xml` and `output/<podcast>/site/<code>/`, published alongside the primary ones
 - Translated episodes report their own duration in the language feeds and on the site (recorded in history.yml when voiced); the English duration is used only when none was recorded
 - Removing a code from `language` does not remove its files: move or scrap the leftover `-<code>` episodes first (`translate`, `voice` and `render` still treat a leftover file as a variant while its English episode exists, but the feed and site would list it as an English episode)
@@ -1147,7 +1149,9 @@ podgen schedule ruby_world --remove
 ### podgen status (content-progress check)
 
 `podgen status` prints one line per podcast (podcasts with an installed launchd
-scheduler first). It is read-only and makes no network calls.
+scheduler first). It is read-only; its one network call reads back each
+podcast's served `base_url/feed.xml` (skipped with `--offline` or without a
+`base_url`).
 
 ```
 ruby_world  OK    newest 2026-10-10 (1d old)
@@ -1166,7 +1170,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
   Set `cadence_days` to make such a show go OLD, or `freshness: off` if it has
   concluded.
-- **WARN** - the latest run log in `logs/<podcast>/` ends with an `ERROR` line or
+- **WARN** - the latest run log in `logs/<podcast>/` ends with a
+  `RUN-OUTCOME status=warn|error warnings=N errors=M first=…` line (every
+  generate writes one; it counts the end-of-run warnings, library warnings
+  such as a failed source or skipped AI review, and `ERROR` entries) - shown
+  as `<log>: <first warning>` or `<log>: run failed: <first error>`; or
+  (older logs, or an `ok` outcome) it ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
   the last 3 run logs (`--runs N` to change), or there is no history yet.
   Indented reviewer findings (`  WARNING: [COVERAGE] …`, the script review's
@@ -1208,6 +1217,24 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   With no tweet recorded at all, it warns
   (`announcements never posted (...)`) only once some announced episode is
   older than `since` days, so a brand-new show is not flagged.
+- **WARN (uploads)** - the same rule per upload platform the podcast
+  configures (`## YouTube` → `youtube: <playlist or default>`, `## LingQ`
+  with a `collection` → `lingq: <collection>` in `uploads.yml`), over every
+  episode on disk, with a fixed 7-day window:
+  `youtube uploads stalled since 2026-06-02 (newest episode 2026-10-11)` or
+  `lingq uploads never made (...)`. For podcasts with `## YouTube`, the
+  latest batch in `logs/uploads_stderr.log` (the scheduled upload batch's
+  stderr; the lines after the last `… podgen uploads <pods> begin` marker
+  that `scripts/run_uploads.sh` writes, only when the file was written in
+  the last 7 days; a log with no marker yet reports nothing) adds one line
+  per condition found, naming it only: `uploads_stderr.log: YouTube not authorized` /
+  `uploads_stderr.log: YouTube upload quota exceeded`.
+- **WARN (served feed)** - the newest `<item>` pubDate in the served
+  `base_url/feed.xml` is more than 1 day older than the newest local
+  primary-language episode dated today or earlier:
+  `served feed behind local by 5d (served 2026-10-05, local 2026-10-10)`. A
+  failed fetch (5s connect / 10s read timeout, one retry) names only the
+  error class or HTTP code: `served feed fetch failed: SocketError`.
 - **OK** - otherwise.
 
 Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
@@ -1216,7 +1243,8 @@ array; keys are only ever added, never renamed or removed:
 
 ```json
 [{"podcast": "ruby_world", "verdict": "OK", "newest": "2026-10-10", "age_days": 1, "reasons": ["newest 2026-10-10 (1d old)"],
-  "announcements": {"last_tweeted": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}]
+  "announcements": {"last_tweeted": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false},
+  "uploads": {"youtube": {"last_uploaded": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}}]
 ```
 
 `verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
@@ -1224,6 +1252,9 @@ when unknown (`age_days` is negative for a scheduled, future-dated episode);
 `reasons` is an array of short strings. `announcements` is `null` without a
 `## Twitter` section; otherwise `last_tweeted` and `newest_episode` are ISO
 dates (`null` when none) and `stalled` is the announcement check's verdict.
+`uploads` is `null` when no upload platform is configured; otherwise one
+entry per platform (`youtube`, `lingq`) of the same shape, with
+`last_uploaded`.
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes

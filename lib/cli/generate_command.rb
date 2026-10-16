@@ -13,6 +13,7 @@ require_relative File.join(root, "lib", "snip_interval")
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "generate_options")
 require_relative File.join(root, "lib", "logger")
+require_relative File.join(root, "lib", "run_outcome")
 require_relative File.join(root, "lib", "agents", "topic_agent")
 require_relative File.join(root, "lib", "source_manager")
 require_relative File.join(root, "lib", "agents", "script_agent")
@@ -54,7 +55,7 @@ module PodgenCLI
         verify_ffmpeg!(@logger) unless @dry_run
         preflight_network!(@logger) unless @dry_run
 
-        return run_language_pipeline if @config.type == "language"
+        return finish_run(run_language_pipeline) if @config.type == "language"
 
         @logger.log("Pipeline type: news")
 
@@ -82,12 +83,12 @@ module PodgenCLI
           end
         end
 
-        0
+        finish_run(0)
       rescue => e
         @logger.error("#{e.class}: #{e.message}")
         @logger.error(e.backtrace.first(5).join("\n"))
         $stderr.puts "\n\u2717 Pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
-        1
+        finish_run(1)
       ensure
         @lock_file.flock(File::LOCK_UN)
         @lock_file.close
@@ -178,9 +179,20 @@ module PodgenCLI
       nil
     end
 
+    # Ends the run log with its one machine-readable RUN-OUTCOME line (P7-0)
+    # and passes the exit code through. The language pipeline keeps its own
+    # warnings; the logger counts ERROR entries and library warnings
+    # (Loggable#log_warning) for both pipelines.
+    def finish_run(code)
+      warnings = (@language_pipeline ? @language_pipeline.warnings : @warnings) + @logger.logged_warnings
+      @logger.log(RunOutcome.line(code: code, warnings: warnings, errors: @logger.error_count,
+        first_error: @logger.first_error))
+      code
+    end
+
     def run_language_pipeline
       @logger.log("Pipeline type: language")
-      pipeline = LanguagePipeline.new(config: @config, options: @options, logger: @logger, history: @history, today: @today)
+      pipeline = @language_pipeline = LanguagePipeline.new(config: @config, options: @options, logger: @logger, history: @history, today: @today)
       pipeline.run
     end
 
@@ -199,6 +211,7 @@ module PodgenCLI
           t
         rescue => e
           @logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+          @warnings << "Topic generation failed (#{e.class}: #{e.message}), fell back to queue.yml"
           t = @config.queue_topics
           @logger.log("Loaded #{t.length} fallback topics: #{t.join(', ')}")
           t
@@ -383,9 +396,10 @@ module PodgenCLI
     def produce_single_language(script, lang, base_name, intro_path, outro_path)
       lang_code = lang["code"]
       voice_id = lang["voice_id"]
-      lang_basename = lang_code == "en" ? base_name : "#{base_name}-#{lang_code}"
+      primary = lang_code == @config.primary_language
+      lang_basename = primary ? base_name : "#{base_name}-#{lang_code}"
 
-      lang_script = if lang_code == "en"
+      lang_script = if primary
         script
       else
         translated_path = File.join(@config.episodes_dir, "#{lang_basename}_script.md")
@@ -451,9 +465,9 @@ module PodgenCLI
 
     def finalize(output_paths, script, research_data, priority_urls)
       languages_meta = output_paths.each_with_object({}) do |path, h|
-        # Filename: <basename>.mp3 (en) or <basename>-<lang>.mp3
+        # Filename: <basename>.mp3 (primary) or <basename>-<lang>.mp3
         match = File.basename(path, ".mp3").match(/-([a-z]{2})\z/)
-        code = match ? match[1] : "en"
+        code = match ? match[1] : @config.primary_language
         h[code] = {
           "duration" => AudioAssembler.probe_duration(path),
           "voiced_at" => Time.now.iso8601

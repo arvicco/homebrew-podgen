@@ -132,6 +132,19 @@ class TestSourceManager < Minitest::Test
     assert_equal 1, results.first[:findings].length
   end
 
+  def test_research_source_failure_records_run_warning
+    manager = build_manager
+    bad = MockSource.new(nil, error: RuntimeError.new("API down"))
+    manager.define_singleton_method(:enabled_sources) { [["bad", bad]] }
+    logger = Dir.mktmpdir do |dir|
+      PodcastAgent::Logger.new(log_path: File.join(dir, "s.log"), verbosity: :quiet).tap do |l|
+        PodcastAgent.with_logger(l) { manager.research(["AI"]) }
+      end
+    end
+
+    assert_equal ["[SourceManager] Warning: Source 'bad' failed: API down"], logger.logged_warnings
+  end
+
   def test_research_respects_exclude_urls
     manager = build_manager(exclude_urls: Set.new(["excluded-url"]))
     source = MockSource.new([{

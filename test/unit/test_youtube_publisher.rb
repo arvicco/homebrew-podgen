@@ -211,6 +211,137 @@ class TestYouTubePublisher < Minitest::Test
     refute result.rate_limited
   end
 
+  # Q-80: run authorizes before any per-episode work, so a refused consent
+  # never costs a (possibly paid) retranscription or an mp4 build first.
+
+  def test_run_without_playlist_not_interactive_authorize_prepares_nothing_and_returns_not_authorized
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.authorize_raises YouTubeUploader::NotInteractive.new("no terminal") }
+    publisher = build_publisher(config: config, uploader: uploader)
+    prepared = []
+    publisher.define_singleton_method(:prepare_subtitles) { |ep, **_kw| prepared << ep[:base_name] }
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_empty prepared, "no subtitle work before authorization"
+    assert_equal 0, result.attempted
+    assert_equal 0, result.uploaded
+    assert_equal [:not_authorized], result.errors.map { |e| e[:type] }
+    assert_equal "YouTubeUploader::NotInteractive", result.errors.first[:error_class]
+    assert_empty uploader.uploads
+    assert_match(/YouTube not authorized: no terminal/, err)
+  end
+
+  def test_run_authorize_plain_error_keeps_its_message
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.authorize_raises RuntimeError.new("No authorization code provided") }
+    publisher = build_publisher(config: config, uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    # Only Signet errors are reduced to class names (their messages carry the
+    # token-endpoint body); an ordinary error keeps its actionable message.
+    assert_match(/YouTube authorization failed: RuntimeError: No authorization code provided/, err)
+    assert_equal "RuntimeError: No authorization code provided", result.errors.first[:message]
+  end
+
+  def test_run_authorize_transport_failure_prepares_nothing_and_returns_typed_error
+    seed_ep("ep-2026-01-15")
+
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.authorize_raises SocketError.new("getaddrinfo failed") }
+    publisher = build_publisher(config: config, uploader: uploader)
+    prepared = []
+    publisher.define_singleton_method(:prepare_subtitles) { |ep, **_kw| prepared << ep[:base_name] }
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_empty prepared, "no subtitle work before authorization"
+    assert_equal 0, result.attempted
+    assert_equal [:authorization], result.errors.map { |e| e[:type] }
+    assert_equal "SocketError", result.errors.first[:error_class]
+    assert_empty uploader.uploads
+    assert_match(/YouTube authorization failed: SocketError/, err)
+  end
+
+  # CRPR W1: googleauth's message for an exhausted retry is
+  # "Unexpected error: #{cause.inspect}", which for a Google 5xx embeds the
+  # response body. Only class names reach the log and the result.
+  def test_run_authorize_remote_server_error_keeps_response_body_out_of_log_and_result
+    seed_ep("ep-2026-01-15")
+    error = begin
+      raise Signet::RemoteServerError, "Remote server error.  Server message:\nSECRET-BODY-LINE"
+    rescue => cause
+      begin
+        raise Google::Auth::AuthorizationError, "Unexpected error: #{cause.inspect}"
+      rescue => wrapped
+        wrapped
+      end
+    end
+    uploader = stub_uploader { |b| b.authorize_raises error }
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_includes err, "YouTube authorization failed: Google::Auth::AuthorizationError (cause Signet::RemoteServerError)"
+    refute_includes err, "SECRET-BODY-LINE"
+    refute_includes result.errors.inspect, "SECRET-BODY-LINE"
+    assert_equal({type: :authorization, error_class: "Google::Auth::AuthorizationError",
+                  cause_class: "Signet::RemoteServerError",
+                  message: "Google::Auth::AuthorizationError (cause Signet::RemoteServerError)"}, result.errors.first)
+  end
+
+  # CRPR r2: the generate path authorizes lazily inside upload_episode, so
+  # the same body-bearing refresh failure can arrive there.
+  def test_upload_episode_authorization_error_keeps_response_body_out_of_log_and_error
+    seed_ep("ep-2026-01-15")
+    uploader = stub_uploader { |b| b.upload_video_raises body_bearing_auth_error }
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.upload_episode(episode_hash("ep-2026-01-15")) }
+
+    assert_equal :failed, result.status
+    assert_includes err, "✗ ep-2026-01-15 failed: Google::Auth::AuthorizationError (cause Signet::RemoteServerError)"
+    refute_includes err, "SECRET-BODY-LINE"
+    refute_includes result.error.inspect, "SECRET-BODY-LINE"
+    assert_equal "Google::Auth::AuthorizationError (cause Signet::RemoteServerError)", result.error[:message]
+  end
+
+  def test_upload_episode_playlist_authorization_error_keeps_response_body_out_of_log_and_error
+    seed_ep("ep-2026-01-15")
+    uploader = stub_uploader { |b| b.verify_playlist_raises body_bearing_auth_error }
+    publisher = build_publisher(config: stub_config(youtube_enabled: true, playlist: "PLx"), uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.upload_episode(episode_hash("ep-2026-01-15")) }
+
+    assert_equal :skipped, result.status
+    refute_includes err, "SECRET-BODY-LINE"
+    refute_includes result.error.inspect, "SECRET-BODY-LINE"
+    assert_includes err, "playlist verification failed: Google::Auth::AuthorizationError (cause Signet::RemoteServerError)"
+  end
+
+  def test_upload_episode_other_error_message_still_logged_and_stored
+    seed_ep("ep-2026-01-15")
+    uploader = stub_uploader { |b| b.upload_video_raises RuntimeError.new("disk full") }
+    publisher = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader)
+
+    result = nil
+    _out, err = capture_io { result = publisher.upload_episode(episode_hash("ep-2026-01-15")) }
+
+    assert_includes err, "✗ ep-2026-01-15 failed: RuntimeError: disk full"
+    assert_equal "disk full", result.error[:message]
+  end
+
   def test_calls_regen_cache_so_block_runs_once_per_pod
     seed_ep("ep-2026-01-15")
 
@@ -505,6 +636,22 @@ class TestYouTubePublisher < Minitest::Test
       transcription_language: "en",
       _yt: yt
     )
+  end
+
+  def episode_hash(base)
+    { base_name: base, mp3_path: File.join(@episodes_dir, "#{base}.mp3"),
+      transcript_path: File.join(@episodes_dir, "#{base}_transcript.md") }
+  end
+
+  # googleauth's exhausted-retry shape: the 5xx body rides in the message.
+  def body_bearing_auth_error
+    raise Signet::RemoteServerError, "Remote server error.  Server message:\nSECRET-BODY-LINE"
+  rescue => cause
+    begin
+      raise Google::Auth::AuthorizationError, "Unexpected error: #{cause.inspect}"
+    rescue => wrapped
+      wrapped
+    end
   end
 
   def seed_ep(base)

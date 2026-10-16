@@ -1396,6 +1396,34 @@ class TestPodcastConfig < Minitest::Test
     assert_nil config.site_episode_url("myshow-2026-04-26")
   end
 
+  # --- feed_file_name (P7-6, ruling R6-01 (a)) ---
+
+  def test_feed_file_name_primary_es_is_feed_xml
+    write_guidelines("## Podcast\n- name: Test\n- language:\n  - es\n")
+    config = PodcastConfig.new("myshow")
+    assert_equal "feed.xml", config.feed_file_name("es")
+  end
+
+  def test_feed_file_name_en_es_primary_feed_xml_translated_suffixed
+    write_guidelines("## Podcast\n- name: Test\n- language:\n  - en\n  - es\n")
+    config = PodcastConfig.new("myshow")
+    assert_equal "feed.xml", config.feed_file_name("en")
+    assert_equal "feed-es.xml", config.feed_file_name("es")
+  end
+
+  def test_feed_file_name_sl_en_en_is_translated
+    write_guidelines("## Podcast\n- name: Test\n- language:\n  - sl\n  - en\n")
+    config = PodcastConfig.new("myshow")
+    assert_equal "feed.xml", config.feed_file_name("sl")
+    assert_equal "feed-en.xml", config.feed_file_name("en")
+  end
+
+  def test_feed_file_name_unconfigured_language_defaults_primary_en
+    write_guidelines("## Podcast\n- name: Test\n")
+    config = PodcastConfig.new("myshow")
+    assert_equal "feed.xml", config.feed_file_name("en")
+  end
+
   private
 
   def write_guidelines(content)

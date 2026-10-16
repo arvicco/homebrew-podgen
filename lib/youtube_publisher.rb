@@ -44,6 +44,15 @@ class YouTubePublisher
     def reset_playlist_cache!
       @verify_mutex.synchronize { @verified_playlists.clear }
     end
+
+    # Class names only for a token-endpoint failure: googleauth's message
+    # inspects the cause, which for a Google 5xx (or a rejected grant)
+    # carries the response body — never into a log line. nil otherwise.
+    def auth_failure_summary(e)
+      return nil unless defined?(Signet::AuthorizationError) && e.is_a?(Signet::AuthorizationError)
+
+      e.cause ? "#{e.class} (cause #{e.cause.class})" : e.class.name
+    end
   end
 
   # Outcome of #upload_episode. status: :uploaded, :skipped (never reached
@@ -106,6 +115,25 @@ class YouTubePublisher
 
     uploader = active_uploader
 
+    # Q-80: authorize before any per-episode work (subtitles, mp4), so a
+    # refused consent or an auth failure costs nothing.
+    begin
+      uploader.authorize!
+    rescue YouTubeUploader::NotInteractive => e # fatal for the whole batch: nobody can authorize (Q-77)
+      $stderr.puts "YouTube not authorized: #{e.message}"
+      return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                        errors: [not_authorized_error(e)])
+    rescue => e # fatal for this run: every episode would fail the same way; the token is kept (Q-79)
+      # Class names only for a token-endpoint (Signet) failure: googleauth's
+      # message inspects the cause, which for a Google 5xx carries the response
+      # body — never into a log line. Any other error keeps its message.
+      summary = self.class.auth_failure_summary(e) || "#{e.class}: #{e.message}"
+      $stderr.puts "YouTube authorization failed: #{summary}"
+      return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                        errors: [{ type: :authorization, error_class: e.class.name,
+                                   cause_class: e.cause&.class&.name, message: summary }.compact])
+    end
+
     if yt_config[:playlist]
       begin
         verify_playlist_cached!(uploader, yt_config[:playlist])
@@ -153,9 +181,10 @@ class YouTubePublisher
       rescue YouTubeUploader::NotInteractive
         raise # typed below: the batch stops, it does not retry per episode
       rescue => e # skippable per-episode: nothing uploaded; the caller decides whether to continue
-        say_err "  ✗ #{base} skipped: YouTube playlist verification failed: #{e.class}: #{e.message}"
+        summary = self.class.auth_failure_summary(e)
+        say_err "  ✗ #{base} skipped: YouTube playlist verification failed: #{summary || "#{e.class}: #{e.message}"}"
         return EpisodeResult.new(status: :skipped, base: base, attempted: false, exception: e,
-          error: { type: :playlist_verification, base: base, message: e.message })
+          error: { type: :playlist_verification, base: base, message: summary || e.message })
       end
     end
 
@@ -210,9 +239,10 @@ class YouTubePublisher
     EpisodeResult.new(status: :not_authorized, base: base, attempted: false, # nothing reached YouTube
       exception: e, error: not_authorized_error(e, base: base))
   rescue => e # skippable per-episode: remaining episodes still upload; tracker retries this one
-    say_err "  ✗ #{base} failed: #{e.class}: #{e.message}"
+    summary = self.class.auth_failure_summary(e)
+    say_err "  ✗ #{base} failed: #{summary || "#{e.class}: #{e.message}"}"
     EpisodeResult.new(status: :failed, base: base, video_id: video_id, attempted: attempted,
-      exception: e, error: { type: :upload, base: base, message: e.message })
+      exception: e, error: { type: :upload, base: base, message: summary || e.message })
   end
 
   private

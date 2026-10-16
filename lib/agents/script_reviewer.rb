@@ -97,7 +97,7 @@ class ScriptReviewer
       ai_issues = run_ai_review(corrected)
       all_issues.concat(ai_issues)
     rescue => e
-      log("AI review failed: #{e.message} (proceeding with deterministic checks only)")
+      log_warning("AI review failed: #{e.message} (proceeding with deterministic checks only)")
     end
 
     unfixed_blockers = all_issues.select { |i| i[:severity] == BLOCKER && !i[:auto_fixed] }
@@ -459,5 +459,11 @@ class ScriptReviewer
     else
       $stderr.puts "[ScriptReviewer] #{msg}"
     end
+  end
+
+  # Same stderr fallback as #log when standalone; with a logger the warning
+  # is counted in the run's RUN-OUTCOME (Loggable#log_warning).
+  def log_warning(msg)
+    @logger ? super : $stderr.puts("[ScriptReviewer] Warning: #{msg}")
   end
 end

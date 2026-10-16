@@ -30,6 +30,9 @@ require_relative File.join(root, "lib", "post_pipeline_uploads")
 
 module PodgenCLI
   class LanguagePipeline
+    # Collected degradations; GenerateCommand reports them in RUN-OUTCOME.
+    attr_reader :warnings
+
     def initialize(config:, options:, logger:, history:, today:)
       @config = config
       @options = options

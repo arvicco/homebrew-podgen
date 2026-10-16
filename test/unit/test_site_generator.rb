@@ -865,6 +865,21 @@ class TestSiteGenerator < Minitest::Test
     assert_equal "https://example.com/pod/feed-es.xml", gen.send(:feed_url, "es")
   end
 
+  def test_feed_url_sl_primary_en_is_translated_feed
+    gen = build_generator(languages: [{ "code" => "sl" }, { "code" => "en" }], base_url: "https://example.com/pod")
+    assert_equal "https://example.com/pod/feed.xml", gen.send(:feed_url, "sl")
+    assert_equal "https://example.com/pod/feed-en.xml", gen.send(:feed_url, "en")
+  end
+
+  def test_initialize_sl_primary_maps_en_variant_duration
+    write_history([{ "date" => "2026-01-15", "title" => "Epizoda", "duration" => 60.0,
+                     "languages" => { "en" => { "duration" => 125.0 } } }])
+    gen = build_generator(languages: [{ "code" => "sl" }, { "code" => "en" }])
+    durations = gen.instance_variable_get(:@duration_map)
+    assert_equal 125.0, durations["mypod-2026-01-15-en.mp3"]
+    refute durations.key?("mypod-2026-01-15-sl.mp3")
+  end
+
   def test_feed_url_nil_without_base_url
     gen = build_generator
     assert_nil gen.send(:feed_url, "en")
