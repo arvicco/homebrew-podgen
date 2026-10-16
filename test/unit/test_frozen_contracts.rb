@@ -13,6 +13,7 @@ require "rss_generator"
 require "history_maps"
 require "podcast_config"
 require "cli/rss_command"
+require "script_artifact"
 
 # P0-5 — pinning tests for the FROZEN DOMAIN (CLAUDE.md golden rules
 # 4–5): the machine-readable shapes subscribers and downstream tooling
@@ -196,6 +197,61 @@ class TestFrozenContracts < Minitest::Test
       assert_equal expected.keys.sort,
         Dir.glob(File.join(root, "output", "pod", "feed*.xml")).map { |f| File.basename(f) }.sort
     end
+  end
+
+  # --- _script.json raw key set (P8-9 (b)) ---
+  # test_script_artifact is a write→read round-trip, so a key renamed in
+  # both serialize and read passes there; pin the bytes on disk instead.
+
+  def test_script_json_raw_key_set_is_frozen
+    path = File.join(@tmpdir, "pod-2026-01-15_script.json")
+    ScriptArtifact.write(path, {
+      title: "T",
+      segments: [
+        {name: "Opening", text: "Hi.", sources: [{title: "A", url: "https://x/a"}]},
+        {name: "Wrap-Up", text: "Bye."}
+      ],
+      sources: [{title: "A", url: "https://x/a"}]
+    })
+
+    raw = JSON.parse(File.read(path))
+    assert_equal %w[title segments sources], raw.keys, "_script.json top-level key set/order is frozen"
+    assert_equal %w[name text sources], raw["segments"][0].keys, "segment keys (sources only when present)"
+    assert_equal %w[name text], raw["segments"][1].keys, "a segment without sources omits the key"
+    assert_equal %w[title url], raw["segments"][0]["sources"][0].keys
+    assert_equal %w[title url], raw["sources"][0].keys
+  end
+
+  # --- podcast:transcript + guid attributes (P8-9 (c), (d)) ---
+
+  def test_rss_transcript_link_and_bare_guid_are_frozen
+    episodes_dir = File.join(@tmpdir, "episodes")
+    make_episode(episodes_dir, "pod-2026-01-15")
+    File.write(File.join(episodes_dir, "pod-2026-01-15_transcript.html"), "<html></html>")
+    history_path = File.join(@tmpdir, "history.yml")
+    File.write(history_path, YAML.dump([
+      {"date" => "2026-01-15", "title" => "Ep", "topics" => [], "basename" => "pod-2026-01-15"}
+    ]))
+
+    feed_path = File.join(@tmpdir, "feed.xml")
+    RssGenerator.new(
+      episodes_dir: episodes_dir, feed_path: feed_path,
+      title: "Pod", description: "D", author: "A", language: "en",
+      base_url: "https://cdn.example/pod", history_path: history_path
+    ).generate
+
+    item = REXML::Document.new(File.read(feed_path)).root.elements["channel/item"]
+    transcript = item.elements["podcast:transcript"]
+    refute_nil transcript, "podcast:transcript is emitted when the HTML transcript exists"
+    assert_equal({"url" => "https://cdn.example/pod/episodes/pod-2026-01-15_transcript.html",
+                  "type" => "text/html"},
+      transcript.attributes.each_attribute.to_h { |a| [a.expanded_name, a.value] },
+      "podcast:transcript carries exactly url + type=text/html")
+
+    guid = item.elements["guid"]
+    assert_empty guid.attributes.each_attribute.to_a,
+      "guid has NO isPermaLink attribute (RSS default true) — adding one changes the guid " \
+      "contract for every subscriber's app; do not \"fix\" it"
   end
 
   private
