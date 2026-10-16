@@ -318,8 +318,8 @@ class YouTubePublisher
       say_err "  ✗ #{ep[:base_name]} skipped: no cover image found"
       { type: :missing_cover, base: ep[:base_name], message: "no cover image" }
     when :no_audio, :failed
-      say_err "  ✗ #{ep[:base_name]} video step failed: #{result.message}"
-      { type: :video, base: ep[:base_name], message: result.message }
+      say_err "  ✗ #{ep[:base_name]} video step failed: #{[result.error_class, result.message].compact.join(": ")}"
+      { type: :video, base: ep[:base_name], error_class: result.error_class, message: result.message }.compact
     end
   end
 

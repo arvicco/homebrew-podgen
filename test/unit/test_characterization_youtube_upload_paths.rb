@@ -604,7 +604,7 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
 
     refute_includes calls.map(&:first), :upload_video
     assert_equal 0, result.attempted
-    assert_equal [{type: :video, base: BASE, message: "ffmpeg exploded"}], result.errors
+    assert_equal [{type: :video, base: BASE, error_class: "RuntimeError", message: "ffmpeg exploded"}], result.errors
   end
 
   # Twin of the Path A captions test (both paths agree since P4-0): the publisher records the

@@ -143,4 +143,17 @@ class TestVideoBuilder < Minitest::Test
     assert_equal :failed, result.status
     assert_match(/ffmpeg explode/, result.message)
   end
+
+  # CRPR nit: the :failed Result carries the exception class, like
+  # SubtitleReconciliationRunner's.
+  def test_build_failed_result_carries_error_class
+    fake_gen = Object.new
+    fake_gen.define_singleton_method(:generate) { |*| raise Errno::ENOSPC, "disk" }
+
+    result = VideoGenerator.stub(:new, fake_gen) do
+      VideoBuilder.build(mp3_path: @mp3, cover_path: @cover, video_path: @mp4)
+    end
+
+    assert_equal "Errno::ENOSPC", result.error_class
+  end
 end
