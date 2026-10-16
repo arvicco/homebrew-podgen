@@ -178,7 +178,7 @@ module Tell
         sys = do_gloss_phonetic ? "hiragana" : nil
         gloss_infos << {
           event: :on_gloss,
-          thread: Thread.new { run_gloss(mode, text, from: from, to: to, system: sys) rescue nil }
+          thread: gloss_thread(mode, text, from: from, to: to, system: sys)
         }
       end
       if do_gloss_translate
@@ -186,7 +186,7 @@ module Tell
         sys = do_gloss_phonetic ? "hiragana" : nil
         gloss_infos << {
           event: :on_gloss_translate,
-          thread: Thread.new { run_gloss(mode, text, from: from, to: to, system: sys) rescue nil }
+          thread: gloss_thread(mode, text, from: from, to: to, system: sys)
         }
       end
 
@@ -235,6 +235,18 @@ module Tell
     end
 
     private
+
+    # Gloss thread whose value is nil on failure; the failure reaches the
+    # user through on_gloss_error (P8-5, was a silent modifier rescue).
+    def gloss_thread(mode, text, from:, to:, system:)
+      Thread.new do
+        run_gloss(mode, text, from: from, to: to, system: system)
+      rescue => e
+        # skippable: the other addons still render; the user sees the gloss error.
+        emit(:on_gloss_error, error: e)
+        nil
+      end
+    end
 
     # --- Japanese phonetic pipeline ---
 
