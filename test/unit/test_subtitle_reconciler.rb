@@ -5,6 +5,12 @@ require "claude_models"
 require "subtitle_reconciler"
 
 class TestSubtitleReconciler < Minitest::Test
+  FakeUsage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens)
+  # An API message as the reconciler reads it: content, stop_reason, usage.
+  FakeMsg = Struct.new(:content, :stop_reason, :usage) do
+    def initialize(content, stop_reason = "end_turn", usage = FakeUsage.new(10, 5, 0, 0)) = super
+  end
+
   # --- prompt construction ---
 
   def test_build_prompt_includes_segments_and_transcript
@@ -145,7 +151,7 @@ class TestSubtitleReconciler < Minitest::Test
     captured = nil
     fake_messages = Object.new
     fake_messages.define_singleton_method(:create) do |**_|
-      Struct.new(:content).new([Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))])
+      FakeMsg.new([Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))])
     end
     fake_client = Struct.new(:messages).new(fake_messages)
     Anthropic::Client.stub(:new, ->(**kw) {
@@ -164,7 +170,7 @@ class TestSubtitleReconciler < Minitest::Test
     fake_messages.define_singleton_method(:create) do |**kwargs|
       captured_model = kwargs[:model]
       content_block = Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))
-      Struct.new(:content).new([content_block])
+      FakeMsg.new([content_block])
     end
     fake_client = Struct.new(:messages).new(fake_messages)
 
@@ -183,7 +189,7 @@ class TestSubtitleReconciler < Minitest::Test
     fake_messages.define_singleton_method(:create) do |**kwargs|
       captured_model = kwargs[:model]
       content_block = Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))
-      Struct.new(:content).new([content_block])
+      FakeMsg.new([content_block])
     end
     fake_client = Struct.new(:messages).new(fake_messages)
 
@@ -202,7 +208,7 @@ class TestSubtitleReconciler < Minitest::Test
     fake_messages.define_singleton_method(:create) do |**kwargs|
       captured_model = kwargs[:model]
       content_block = Struct.new(:text).new(JSON.generate([{ "start" => 0.0, "end" => 1.0, "text" => "x" }]))
-      Struct.new(:content).new([content_block])
+      FakeMsg.new([content_block])
     end
     fake_client = Struct.new(:messages).new(fake_messages)
 
@@ -227,7 +233,7 @@ class TestSubtitleReconciler < Minitest::Test
     ]
 
     content_block = Struct.new(:text).new(JSON.generate(fake_response))
-    api_response = Struct.new(:content).new([content_block])
+    api_response = FakeMsg.new([content_block])
 
     mock_messages = Minitest::Mock.new
     mock_messages.expect(:create, api_response,
@@ -267,12 +273,36 @@ class TestSubtitleReconciler < Minitest::Test
     assert_equal %w[start end text], result.first.keys
   end
 
+  # P8-2 (Q-66): reconciliation logs a usage line (ambient logger) like
+  # every other Claude call site.
+  def test_reconcile_logs_api_usage_line
+    segments = [{ "start" => 0.0, "end" => 5.0, "text" => "Garbled." }]
+    reply = [{ "start" => 0.0, "end" => 5.0, "text" => "Clean." }]
+    msg = FakeMsg.new([Struct.new(:text).new(JSON.generate(reply))], "end_turn", FakeUsage.new(900, 300, 0, 0))
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_| msg }
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| lines << m }
+
+    PodcastAgent.with_logger(logger) do
+      Anthropic::Client.stub(:new, Struct.new(:messages).new(fake_messages)) do
+        SubtitleReconciler.reconcile(segments, "Clean.", api_key: "k", model: "m")
+      end
+    end
+
+    log = lines.join("\n")
+    assert_includes log, "[SubtitleReconciler] Subtitles reconciled in"
+    assert_includes log, "(end_turn)"
+    assert_includes log, "Input: 900 tokens | Output: 300 tokens"
+  end
+
   private
 
   def stub_reconcile_reply(reply, &)
     fake_messages = Object.new
     fake_messages.define_singleton_method(:create) do |**_|
-      Struct.new(:content).new([Struct.new(:text).new(JSON.generate(reply))])
+      FakeMsg.new([Struct.new(:text).new(JSON.generate(reply))])
     end
     Anthropic::Client.stub(:new, Struct.new(:messages).new(fake_messages), &)
   end
