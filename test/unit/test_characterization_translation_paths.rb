@@ -8,15 +8,15 @@ require "agents/translation_agent"
 
 # P3-0 H3 characterization harness — duplicated path 6.
 #
-# TranslationAgent#translate_with_claude and #translate_with_openai are near
-# copies. Each behavior is pinned per path with injected fake clients that
-# record every call (no network). Where the paths differ, the test name says
-# "divergent" and both behaviors are asserted, so a consolidation has to
-# choose visibly. These pin CURRENT behavior; they are not a spec.
-#
-# P4-4 consolidated both paths into one core with backend adapters; the
-# former "divergent" rows for output cap, truncation, logging and the
-# glossary block now pin the chosen shared behavior ("aligned").
+# TranslationAgent#translate runs one core over two backend adapters,
+# claude and openai (P4-4 consolidated the former translate_with_claude /
+# translate_with_openai copies). Each behavior is pinned per backend with
+# injected fake clients that record every call (no network); tests named
+# test_translate_claude_backend_* / test_translate_openai_backend_* pin one
+# backend. Where the backends still differ, the test name says "divergent"
+# and both behaviors are asserted; rows that P4-4 aligned (output cap,
+# truncation, logging, the glossary block) say "aligned". These pin CURRENT
+# behavior; they are not a spec.
 class TestCharacterizationTranslationPaths < Minitest::Test
   Segment = Struct.new(:name, :text)
   Translation = Struct.new(:title, :segments)
@@ -124,7 +124,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
 
   # --- prompt composition ---
 
-  def test_translate_with_claude_request_shape_pinned
+  def test_translate_claude_backend_request_shape_pinned
     agent, client, = build("claude", steps: [claude_ok])
 
     agent.translate(script)
@@ -139,7 +139,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal({format: TranslatedScript}, call[:output_config])
   end
 
-  def test_translate_with_openai_request_shape_pinned
+  def test_translate_openai_backend_request_shape_pinned
     agent, client, = build("openai", steps: [openai_ok])
 
     agent.translate(script)
@@ -241,7 +241,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
 
   # --- response parsing ---
 
-  def test_translate_with_claude_maps_parsed_output_to_plain_hashes
+  def test_translate_claude_backend_maps_parsed_output_to_plain_hashes
     agent, = build("claude", steps: [claude_ok(translation("Naslov", [["A", "a"], ["B", "b"]]))])
 
     result = agent.translate(script)
@@ -249,7 +249,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal({title: "Naslov", segments: [{name: "A", text: "a"}, {name: "B", text: "b"}]}, result)
   end
 
-  def test_translate_with_openai_maps_parsed_output_to_plain_hashes
+  def test_translate_openai_backend_maps_parsed_output_to_plain_hashes
     agent, = build("openai", steps: [openai_ok(translation("Naslov", [["A", "a"], ["B", "b"]]))])
 
     result = agent.translate(script)
@@ -257,7 +257,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal({title: "Naslov", segments: [{name: "A", text: "a"}, {name: "B", text: "b"}]}, result)
   end
 
-  def test_translate_with_openai_skips_refusal_and_nil_parsed_contents
+  def test_translate_openai_backend_skips_refusal_and_nil_parsed_contents
     refusal = OpenAI::Models::Responses::ResponseOutputRefusal.new(refusal: "no", type: :refusal)
     response = OpenAIResponse.new([openai_message(refusal, OpenAIContent.new(nil), OpenAIContent.new(translation("Kept")))])
     agent, = build("openai", steps: [response])
@@ -265,7 +265,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal "Kept", agent.translate(script)[:title]
   end
 
-  def test_translate_with_openai_uses_first_parsed_across_messages
+  def test_translate_openai_backend_uses_first_parsed_across_messages
     response = OpenAIResponse.new([
       openai_message(OpenAIContent.new(translation("First"))),
       openai_message(OpenAIContent.new(translation("Second")))
@@ -275,7 +275,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal "First", agent.translate(script)[:title]
   end
 
-  def test_translate_with_openai_ignores_non_message_output_items
+  def test_translate_openai_backend_ignores_non_message_output_items
     stray = Struct.new(:content).new([OpenAIContent.new(translation("Stray"))])
     response = OpenAIResponse.new([stray, openai_message(OpenAIContent.new(translation("Real")))])
     agent, = build("openai", steps: [response])
@@ -283,7 +283,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal "Real", agent.translate(script)[:title]
   end
 
-  def test_translate_with_openai_carries_over_sources
+  def test_translate_openai_backend_carries_over_sources
     agent, = build("openai", steps: [openai_ok(translation("T", [["A", "a"], ["B", "b"]]))])
     src = script.merge(sources: [{url: "u"}])
     src[:segments] = [src[:segments][0].merge(sources: [{url: "s1"}]), src[:segments][1]]
@@ -297,7 +297,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
 
   # --- errors and retries ---
 
-  def test_translate_with_claude_api_error_retried_then_succeeds
+  def test_translate_claude_backend_api_error_retried_then_succeeds
     agent, client, sleeps = build("claude", steps: [anthropic_api_error, claude_ok])
 
     assert_equal "T", agent.translate(script)[:title]
@@ -305,7 +305,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal [2], sleeps
   end
 
-  def test_translate_with_openai_api_error_retried_then_succeeds
+  def test_translate_openai_backend_api_error_retried_then_succeeds
     agent, client, sleeps = build("openai", steps: [openai_api_error, openai_ok])
 
     assert_equal "T", agent.translate(script)[:title]
@@ -313,7 +313,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal [2], sleeps
   end
 
-  def test_translate_with_claude_nil_output_exhausts_retries_with_wrapped_message
+  def test_translate_claude_backend_nil_output_exhausts_retries_with_wrapped_message
     agent, client, sleeps = build("claude", steps: [ClaudeMessage.new(nil, "end_turn")])
 
     err = assert_raises(RuntimeError) { agent.translate(script) }
@@ -323,7 +323,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal [2, 4, 8], sleeps
   end
 
-  def test_translate_with_claude_sdk_error_hash_retried_and_wrapped
+  def test_translate_claude_backend_sdk_error_hash_retried_and_wrapped
     agent, client, = build("claude", steps: [ClaudeMessage.new({error: "boom"}, "end_turn")])
 
     err = assert_raises(RuntimeError) { agent.translate(script) }
@@ -332,7 +332,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal 4, client.calls.length
   end
 
-  def test_translate_with_openai_empty_output_exhausts_retries_with_wrapped_message
+  def test_translate_openai_backend_empty_output_exhausts_retries_with_wrapped_message
     agent, client, sleeps = build("openai", steps: [OpenAIResponse.new([])])
 
     err = assert_raises(RuntimeError) { agent.translate(script) }
@@ -343,7 +343,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal [2, 4, 8], sleeps
   end
 
-  def test_translate_with_openai_refusal_only_retried_as_empty_output
+  def test_translate_openai_backend_refusal_only_retried_as_empty_output
     refusal = OpenAI::Models::Responses::ResponseOutputRefusal.new(refusal: "no", type: :refusal)
     agent, client, = build("openai", steps: [OpenAIResponse.new([openai_message(refusal)])])
 
@@ -351,7 +351,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     assert_equal 4, client.calls.length
   end
 
-  def test_translate_with_claude_api_error_exhausts_retries_with_wrapped_message
+  def test_translate_claude_backend_api_error_exhausts_retries_with_wrapped_message
     agent, client, = build("claude", steps: [anthropic_api_error("overloaded")])
 
     err = assert_raises(RuntimeError) { agent.translate(script) }
