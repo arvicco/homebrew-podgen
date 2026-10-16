@@ -67,7 +67,9 @@ repo; git history + plan docs are the record.
    that bite here: a Bash call containing `git push`, `git commit` or
    `gh pr create` contains NOTHING else; suites run to a log
    (`> log 2>&1; echo exit=$?`) and "green" is read from the log, never
-   from a pipe; the gate PR opens EARLY as a living document; a turn
+   from a pipe; the gate PR opens ONLY when the phase is reviewed and
+   ready for the owner to merge (owner ruling 2026-10-16: never as a
+   living document, never as a scratchpad); a turn
    waiting on background work states "independent items remaining: N"
    and N is 0; subagent lanes run on Opus-class models (`model:
    "opus"`), frontier tokens buy judgment.
@@ -173,6 +175,10 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
   body explains WHY.
 - One logical change per commit; tests with the code. Never commit
   .env, output/, logs/, or podcast content directories.
+- No AI branding on any public surface (owner ruling 2026-10-16,
+  doctrine §13): no `Co-Authored-By` assistant trailers on commits, no
+  "generated with" footers on PR bodies, no assistant or vendor names
+  in tracked files.
 
 ## Workflow notes
 
