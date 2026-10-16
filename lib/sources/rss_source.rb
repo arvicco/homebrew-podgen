@@ -126,8 +126,8 @@ class RSSSource
       body = http_get_with_redirects(feed_url)
       parse_feed(body)
     end
-  rescue => e
-    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.message}")
+  rescue => e # skippable: one feed down; the other feeds still feed research
+    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
     []
   end
 
@@ -191,8 +191,8 @@ class RSSSource
       body = http_get_with_redirects(feed_url)
       parse_feed_episodes(body)
     end
-  rescue => e
-    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.message}")
+  rescue => e # skippable: an unreachable feed yields no episodes
+    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
     []
   end
 
@@ -239,8 +239,8 @@ class RSSSource
 
       # Podcasting 2.0 transcript tag
       if item.respond_to?(:podcast_transcript) && item.podcast_transcript
-        ep[:transcript_url] = item.podcast_transcript.url.to_s.strip rescue nil
-        ep[:transcript_type] = item.podcast_transcript.type.to_s.strip rescue nil
+        ep[:transcript_url] = item.podcast_transcript.url.to_s.strip rescue nil # skippable: malformed tag leaves it nil
+        ep[:transcript_type] = item.podcast_transcript.type.to_s.strip rescue nil # skippable: malformed tag leaves it nil
       end
 
       # content:encoded (may contain full transcript text)

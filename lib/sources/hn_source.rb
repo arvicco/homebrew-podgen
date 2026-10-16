@@ -58,8 +58,8 @@ class HNSource < BaseSource
         summary: "#{points} points, #{comments} comments on Hacker News"
       }
     end
-  rescue => e
-    log("Failed to search HN for '#{topic}': #{e.message}")
+  rescue => e # skippable: one source down; the other sources still feed research
+    log("Failed to search HN for '#{topic}': #{e.class}: #{e.message}")
     []
   end
 

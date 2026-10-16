@@ -19,7 +19,7 @@ module AtomicWriter
     begin
       File.open(tmp, "w:UTF-8", perm: perm) { |f| f.write(content) }
       File.rename(tmp, path)
-    rescue => e
+    rescue => e # fatal: re-raised after removing the temp file
       File.delete(tmp) if File.exist?(tmp)
       raise e
     end

@@ -119,13 +119,13 @@ module PodgenCLI
                 duration: AudioAssembler.probe_duration(output_path),
                 voiced_at: Time.now.iso8601
               )
-            rescue => e
-              logger.log("Note: history not updated (#{e.message})")
+            rescue => e # skippable: the audio is voiced; only the history entry is missing
+              logger.log("Note: history not updated (#{e.class}: #{e.message})")
             end
             logger.log("✓ Voiced (#{base_name}/#{lang_code}): #{output_path}")
             puts "✓ Voiced (#{base_name}/#{lang_code}): #{output_path}" unless @options[:verbosity] == :quiet
             voiced += 1
-          rescue => e
+          rescue => e # skippable per-item: remaining languages still voice; the failure is counted
             logger.error("Voicing failed (#{base_name}/#{lang_code}): #{e.class}: #{e.message}")
             $stderr.puts "✗ Voicing failed (#{base_name}/#{lang_code}): #{e.message}" unless @options[:verbosity] == :quiet
             failed += 1

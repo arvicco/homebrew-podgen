@@ -141,7 +141,7 @@ module Tell
       rescue Timeout::Error => e
         $stderr.puts Colors.warning("#{name}: timed out (#{@timeout}s), trying next...")
         last_error = e
-      rescue => e
+      rescue => e # skippable per-engine: the next engine is tried; all failing raises below
         $stderr.puts Colors.warning("#{name}: #{friendly_error(e)}, trying next...")
         last_error = e
       end

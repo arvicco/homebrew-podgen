@@ -22,7 +22,7 @@ class ResearchCache
     data = YamlLoader.load(path, default: nil)
     if data.nil? && File.exist?(path)
       # Corrupted cache file — clean up
-      File.delete(path) rescue nil
+      File.delete(path) rescue nil # skippable: corrupt entry is a cache miss either way
     end
     data
   end

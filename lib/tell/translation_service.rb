@@ -34,7 +34,7 @@ module Tell
       else
         { type: :translation, text: translation, lang: to }
       end
-    rescue => e
+    rescue => e # skippable: returned as an :error result the caller shows the user
       { type: :error, error: e, lang: to }
     end
 
@@ -46,7 +46,7 @@ module Tell
       else
         { type: :translation, text: translation, lang: to }
       end
-    rescue => e
+    rescue => e # skippable: returned as an :error result the caller shows the user
       { type: :error, error: e, lang: to }
     end
 

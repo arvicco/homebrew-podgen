@@ -26,8 +26,8 @@ class ClaudeWebSource < BaseSource
     findings = extract_findings(message)
     findings.reject! { |f| exclude_urls.include?(f[:url]) }
     findings
-  rescue => e
-    log("Failed Claude web search for '#{topic}': #{e.message}")
+  rescue => e # skippable: one source down; the other sources still feed research
+    log("Failed Claude web search for '#{topic}': #{e.class}: #{e.message}")
     []
   end
 

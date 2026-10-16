@@ -75,8 +75,8 @@ module PodgenCLI
       tracker.record(:twitter, "posts", episode[:base_name], tweet_id) if tweet_id
       puts "Tweeted: \"#{title}\" (#{tweet_id})"
       0
-    rescue => e
-      $stderr.puts "Error: #{e.message}"
+    rescue => e # fatal: the command exits 1
+      $stderr.puts "Error: #{e.class}: #{e.message}"
       1
     end
 
