@@ -69,6 +69,11 @@ class TestVocabCache < Minitest::Test
     assert_equal({}, cache.fetch("asino")["definitions"])
   end
 
+  def test_for_config_sits_next_to_the_episodes_dir
+    config = Struct.new(:episodes_dir).new(File.join(@dir, "episodes"))
+    assert_equal File.join(@dir, "vocab_cache.yml"), VocabCache.for_config(config).path
+  end
+
   def test_save_without_changes_writes_nothing
     VocabCache.new(@path).save
     refute File.exist?(@path)

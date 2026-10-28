@@ -47,9 +47,16 @@ class VocabularyAnnotator
     target_languages ||= [target_language]
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff, definitions in #{target_languages.join(', ')})")
 
-    # Stage 0: story-critical candidates, named to the classifier (loop call 4)
-    key_terms = KeyTerms.candidates(text, ledger: ledger)
-    log("Key-term candidates: #{key_terms.join(", ")}") unless key_terms.empty?
+    # Stage 0: story-critical candidates, named to the classifier (loop call 4).
+    # They need a ledger with ≥ 1 earlier episode: without document
+    # frequencies the top tokens are function words.
+    if ledger&.episodes.to_i > 0
+      key_terms = KeyTerms.candidates(text, ledger: ledger)
+      log("Key-term candidates: #{key_terms.join(", ")}") unless key_terms.empty?
+    else
+      key_terms = []
+      log("Key terms skipped: no earlier episodes")
+    end
 
     # Stage 1: Lightweight classification — word/lemma/level/pos only
     entries = classify_words(text, language, cutoff, filters, key_terms)

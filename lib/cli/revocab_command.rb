@@ -4,6 +4,8 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "vocabulary_annotator")
+require_relative File.join(root, "lib", "vocab_ledger")
+require_relative File.join(root, "lib", "vocab_cache")
 require_relative File.join(root, "lib", "known_vocabulary")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "transcript_parser")
@@ -28,6 +30,8 @@ module PodgenCLI
         opts.on("--from DATE", "First episode date to include (YYYY-MM-DD)") { |v| @from = parse_date_option!(v) }
         opts.on("--to DATE", "Last episode date to include (YYYY-MM-DD)") { |v| @to = parse_date_option!(v) }
         opts.on("--limit N", Integer, "Only the earliest N transcripts of the selection") { |v| @limit = v }
+        opts.on("--no-ledger", "Ignore earlier episodes' vocabulary (no spaced re-exposure, no key terms)") { @no_ledger = true }
+        opts.on("--no-cache", "Enrich every lemma afresh (neither read nor write vocab_cache.yml)") { @no_cache = true }
       end.parse!(args)
 
       @podcast_name = args.shift
@@ -89,13 +93,17 @@ module PodgenCLI
 
       processed = 0
       failed = []
+      cache = @no_cache ? nil : VocabCache.for_config(@config)
       selected.each do |path|
         basename = File.basename(path, "_transcript.md")
         puts "  #{basename}..."
+        # The ledger as of this episode: only the transcripts before it.
+        ledger = @no_ledger ? nil : VocabLedger.for_config(@config, before: basename)
         status = process_transcript(path, annotator: annotator, language: language, cutoff: cutoff,
                           known_lemmas: known_lemmas, max: vocab_max, filters: vocab_filters,
                           logger: logger, include_words: @include_words,
-                          target_languages: target_languages)
+                          target_languages: target_languages,
+                          ledger: ledger, cache: cache, episode: basename)
         case status
         when :annotated then processed += 1
         when :failed then failed << basename
@@ -169,7 +177,8 @@ module PodgenCLI
       raise OptionParser::InvalidArgument, "#{value} (expected YYYY-MM-DD)"
     end
 
-    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:, include_words: Set.new, target_languages: ["English"])
+    def process_transcript(path, annotator:, language:, cutoff:, known_lemmas:, max:, filters:, logger:, include_words: Set.new, target_languages: ["English"],
+      ledger: nil, cache: nil, episode: nil)
       parsed = TranscriptParser.parse_file(path)
       unless parsed.transcript_section
         logger.log("Skipping #{File.basename(path)}: no ## Transcript section")
@@ -188,7 +197,10 @@ module PodgenCLI
         max: max,
         filters: filters,
         include_words: include_words,
-        target_languages: target_languages
+        target_languages: target_languages,
+        ledger: ledger,
+        cache: cache,
+        episode: episode
       )
 
       # Rewrite transcript file
