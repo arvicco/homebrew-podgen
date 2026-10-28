@@ -213,9 +213,9 @@ docs refresh, refill, plus the P6-7/P6-8 hotfixes). Gate 7 CLOSED 2026-10-16
 20:05 (PR #8, merge dedd365 — publication observability and YouTube
 hardening). Gate 8 CLOSED 2026-10-28
 15:40 (PR #10, merge 1d3da37 — quality guards, diagnosis, test
-authority; phase clock 56m). Phase 9 (vocabulary didactics: ledger,
-key words, level bands, gloss cache, grouped section, vocab-health
-measurement, revocab ranges) AT GATE 9 — adopted 2026-10-28 15:36, all
-packets landed, CRPR APPROVED (refs/cr/reviewed = dbc27ef); gate PR
-open, the owner merges. R9-01 and R9-02 on the register.
+authority; phase clock 56m). Gate 9 CLOSED 2026-10-28 18:04 (PR #11,
+merge a177a33 — vocabulary didactics: ledger, key words, level bands,
+gloss cache, grouped section, vocab-health measurement, revocab ranges;
+phase clock 1h 42m). Phase 10: slate presented (.docs/p10-slate.md),
+awaiting the owner's name; R9-01 and R9-02 on the register.
 Update this line at each gate.
