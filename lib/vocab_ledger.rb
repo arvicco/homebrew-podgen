@@ -24,6 +24,10 @@ class VocabLedger
 
   attr_reader :episodes
 
+  def self.for_config(config, before: nil)
+    build(config.episodes_dir, before: before)
+  end
+
   # before: exclusive basename cutoff — only transcripts whose basename sorts
   # before it are read (revocab of an old episode sees only its past).
   def self.build(episodes_dir, before: nil)

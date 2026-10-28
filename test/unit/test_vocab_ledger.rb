@@ -58,6 +58,15 @@ class TestVocabLedger < Minitest::Test
     assert_equal ["fiabe-2026-10-01"], ledger.explained("avvicinarsi")
   end
 
+  def test_for_config_reads_the_episodes_dir_with_cutoff
+    write_series(3, {0 => %w[x], 2 => %w[x]})
+    config = Struct.new(:episodes_dir).new(@dir)
+    assert_equal 3, VocabLedger.for_config(config).episodes
+    ledger = VocabLedger.for_config(config, before: "ep-002")
+    assert_equal 2, ledger.episodes
+    assert_equal ["ep-000"], ledger.explained("x")
+  end
+
   def test_build_missing_dir_is_empty
     ledger = VocabLedger.build(File.join(@dir, "nope"))
     assert_equal 0, ledger.episodes

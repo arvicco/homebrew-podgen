@@ -171,6 +171,45 @@ class TestLanguagePipeline < Minitest::Test
       "warning must name the exception class so permanent failures are distinguishable from transient ones"
   end
 
+  # P9-8a: the pipeline passes the show's ledger (all published episodes; the
+  # staged transcript is not in episodes_dir yet), the cache and the basename.
+  def test_annotate_vocabulary_passes_ledger_cache_and_episode
+    require "known_vocabulary"
+    File.write(File.join(@episodes_dir, "test-2026-03-09_transcript.md"),
+      "# T\n\n## Transcript\n\nTesto.\n\n## Vocabulary\n\n- **asino** (A1 noun) — donkey. An animal.\n")
+    File.write(File.join(@tmpdir, "test-2026-03-10_transcript.md"), "# T\n\n## Transcript\n\nIl gatto.\n")
+    cfg = @config.dup
+    {vocabulary_level: "B1", vocabulary_max: 40, vocabulary_filters: {},
+     vocabulary_target_languages: ["English"], transcription_language: "it"}.each do |k, v|
+      cfg.define_singleton_method(k) { v }
+    end
+    pipeline = build_pipeline(config: cfg)
+    pipeline.instance_variable_set(:@staging_dir, @tmpdir)
+    pipeline.instance_variable_set(:@base_name, "test-2026-03-10")
+
+    captured = nil
+    annotator = Object.new
+    annotator.define_singleton_method(:annotate) do |text, **kw|
+      captured = kw
+      [text, ""]
+    end
+    known = Object.new
+    known.define_singleton_method(:lemma_set) { |_| Set.new }
+    original_key = ENV["ANTHROPIC_API_KEY"]
+    ENV["ANTHROPIC_API_KEY"] = "test-key"
+    VocabularyAnnotator.stub(:new, annotator) do
+      KnownVocabulary.stub(:for_config, known) { pipeline.send(:annotate_vocabulary) }
+    end
+
+    refute_nil captured, "annotate was not called: #{@logger.messages.inspect}"
+    assert_equal 1, captured[:ledger].episodes
+    assert_equal ["test-2026-03-09"], captured[:ledger].explained("asino")
+    assert_equal File.join(File.dirname(@episodes_dir), "vocab_cache.yml"), captured[:cache].path
+    assert_equal "test-2026-03-10", captured[:episode]
+  ensure
+    ENV["ANTHROPIC_API_KEY"] = original_key
+  end
+
   # --- reconcile_subtitles (runs through SubtitleReconciliationRunner, P4-2) ---
 
   def test_reconcile_subtitles_already_reconciled_skips_reconciler_and_logs

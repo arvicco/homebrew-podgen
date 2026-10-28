@@ -1023,7 +1023,7 @@ On the generated **site**, bold vocabulary words become hoverable links with too
 
 #### Key words
 
-Before classification, the annotator picks up to 8 story-critical words: words of 4+ letters that occur at least 3 times in the episode, are not proper nouns (not capitalised mid-sentence in more than half of their occurrences), and appear in at most 15% of the show's earlier episodes, ranked by in-episode frequency × inverse document frequency across the show. The classifier is asked to include them whatever their level; matching entries are kept regardless of the CEFR cutoff, the `frequency` preset, the ledger and the `max` cap, and are listed first under `### Key words`. Only known words (below) remove them.
+Before classification, the annotator picks up to 8 story-critical words: words of 4+ letters that occur at least 3 times in the episode, are not proper nouns (not capitalised mid-sentence in more than half of their occurrences), and appear in at most 15% of the show's earlier episodes, ranked by in-episode frequency × inverse document frequency across the show. The classifier is asked to include them whatever their level; matching entries are kept regardless of the CEFR cutoff, the `frequency` preset, the ledger and the `max` cap, and are listed first under `### Key words`. Only known words (below) remove them. Key words need at least one earlier episode to compare against: a show's first episode and `revocab --no-ledger` skip them (logged as `Key terms skipped: no earlier episodes`).
 
 #### Selection policy
 
@@ -1055,6 +1055,8 @@ podgen revocab <podcast> [episode-id]     # specific episode or all
 podgen revocab <podcast> --missing-only   # only episodes without vocabulary
 podgen revocab <podcast> --dry-run        # preview without changes
 podgen revocab <podcast> --from 2026-09-01 --to 2026-09-30 --limit 10  # date range (inclusive), earliest N
+podgen revocab <podcast> --no-ledger      # ignore earlier episodes (no re-exposure rule, no key words)
+podgen revocab <podcast> --no-cache       # enrich every lemma afresh; vocab_cache.yml neither read nor written
 # ends with "re-annotated N, skipped N, failed N (<basenames>)"; exit 1 when any file failed
 ```
 

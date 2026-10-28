@@ -330,7 +330,57 @@ class TestRevocabCommand < Minitest::Test
     assert_includes out, "re-annotated 1, skipped 1, failed 0"
   end
 
+  # --- P9-8a: ledger per file (only earlier episodes), one shared cache ---
+
+  def test_run_ledger_per_file_sees_only_earlier_episodes
+    calls = run_capturing_annotate("testpod")
+    assert_equal %w[testpod-2026-09-01 testpod-2026-09-02 testpod-2026-09-03], calls.map { |c| c[:episode] }
+    assert_equal [0, 1, 2], calls.map { |c| c[:ledger].episodes }
+    # "zadnji" is explained only in the last file: no ledger passed so far may see it
+    assert(calls.all? { |c| c[:ledger].exposures("zadnji").zero? })
+    assert_equal ["testpod-2026-09-01"], calls[2][:ledger].explained("prvi")
+    caches = calls.map { |c| c[:cache] }
+    assert_equal 1, caches.uniq(&:object_id).length, "one cache shared across the run"
+    assert_equal File.join(@podcast_dir, "vocab_cache.yml"), caches.first.path
+  end
+
+  def test_run_no_ledger_passes_nil
+    calls = run_capturing_annotate("--no-ledger", "testpod")
+    assert(calls.all? { |c| c[:ledger].nil? })
+    refute_nil calls.first[:cache]
+  end
+
+  def test_run_no_cache_passes_nil
+    calls = run_capturing_annotate("--no-cache", "testpod")
+    assert(calls.all? { |c| c[:cache].nil? })
+    refute_nil calls.first[:ledger]
+  end
+
   private
+
+  def run_capturing_annotate(*args)
+    write_transcript("testpod-2026-09-01", vocab: "- **prvi** (B2 n.) — first")
+    write_transcript("testpod-2026-09-02")
+    write_transcript("testpod-2026-09-03", vocab: "- **zadnji** (B2 n.) — last")
+    calls = []
+    annotator = Object.new
+    annotator.define_singleton_method(:annotate) do |text, **kw|
+      calls << kw
+      # Files are rewritten in order: 09-01 keeps explaining "prvi".
+      [text, kw[:episode].end_with?("09-01") ? "## Vocabulary\n\n- **prvi** (B2 n.) — first" : ""]
+    end
+    site = Object.new
+    site.define_singleton_method(:generate) { nil }
+    cmd = build_command_with(*args)
+    capture_io do
+      stub_run_setup(cmd) do
+        VocabularyAnnotator.stub(:new, annotator) do
+          SiteGenerator.stub(:new, site) { cmd.run }
+        end
+      end
+    end
+    calls
+  end
 
   def build_command_with(*args, dry_run: false)
     cmd = PodgenCLI::RevocabCommand.new(args, { dry_run: dry_run, verbosity: :normal })

@@ -15,6 +15,11 @@ require_relative "yaml_loader"
 class VocabCache
   attr_reader :path
 
+  # output/<pod>/vocab_cache.yml, next to the show's episodes dir.
+  def self.for_config(config)
+    new(File.join(File.dirname(config.episodes_dir), "vocab_cache.yml"))
+  end
+
   def initialize(path)
     @path = path
     @data = YamlLoader.load(path, default: {})
