@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "fileutils"
+require "minitest/mock"
 require "cli/revocab_command"
 
 class TestRevocabCommand < Minitest::Test
@@ -204,7 +205,234 @@ class TestRevocabCommand < Minitest::Test
     end
   end
 
+  # --- --from / --to / --limit (P9-7) ---
+
+  def test_resolve_transcripts_from_to_selects_inclusive_range
+    three_months_of_fixtures
+
+    cmd = build_command_with("--from", "2026-09-01", "--to", "2026-09-30", "testpod")
+    names = cmd.send(:resolve_transcripts).map { |p| File.basename(p, "_transcript.md") }
+
+    assert_equal %w[testpod-2026-09-01 testpod-2026-09-15 testpod-2026-09-30], names
+  end
+
+  def test_resolve_transcripts_from_only_is_open_ended
+    three_months_of_fixtures
+
+    cmd = build_command_with("--from", "2026-09-30", "testpod")
+    names = cmd.send(:resolve_transcripts).map { |p| File.basename(p, "_transcript.md") }
+
+    assert_equal %w[testpod-2026-09-30 testpod-2026-10-01 testpod-2026-10-20], names
+  end
+
+  def test_resolve_transcripts_to_only_is_open_ended
+    three_months_of_fixtures
+
+    cmd = build_command_with("--to", "2026-08-31", "testpod")
+    names = cmd.send(:resolve_transcripts).map { |p| File.basename(p, "_transcript.md") }
+
+    assert_equal %w[testpod-2026-08-10 testpod-2026-08-31], names
+  end
+
+  def test_from_rejects_malformed_date
+    assert_raises(OptionParser::InvalidArgument) do
+      PodgenCLI::RevocabCommand.new(["--from", "2026-09", "testpod"], {})
+    end
+  end
+
+  def test_run_limit_with_from_takes_earliest_two
+    three_months_of_fixtures
+
+    cmd = build_command_with("--from", "2026-09-01", "--limit", "2", "testpod", dry_run: true)
+    out = capture_io { stub_run_setup(cmd) { assert_equal 0, cmd.run } }.first
+
+    assert_includes out, "testpod-2026-09-01"
+    assert_includes out, "testpod-2026-09-15"
+    refute_includes out, "testpod-2026-09-30"
+    refute_includes out, "testpod-2026-08-31"
+  end
+
+  def test_run_limit_counts_after_missing_only
+    write_transcript("testpod-2026-09-01", vocab: "**B2**\n- **word** (n.) — thing")
+    write_transcript("testpod-2026-09-02")
+    write_transcript("testpod-2026-09-03")
+
+    cmd = build_command_with("--missing-only", "--limit", "1", "testpod", dry_run: true)
+    out = capture_io { stub_run_setup(cmd) { cmd.run } }.first
+
+    assert_includes out, "testpod-2026-09-02"
+    refute_includes out, "testpod-2026-09-03"
+  end
+
+  def test_run_dry_run_lists_selection_with_count_and_writes_nothing
+    three_months_of_fixtures
+    before = snapshot
+
+    cmd = build_command_with("--from", "2026-09-01", "--to", "2026-09-30", "testpod", dry_run: true)
+    out = capture_io { stub_run_setup(cmd) { assert_equal 0, cmd.run } }.first
+
+    %w[2026-09-01 2026-09-15 2026-09-30].each { |d| assert_includes out, "testpod-#{d}" }
+    refute_includes out, "testpod-2026-10-01"
+    assert_match(/3 transcript\(s\) selected/, out)
+    assert_equal before, snapshot
+  end
+
+  def test_run_failed_file_exits_one_and_tally_names_it
+    write_transcript("testpod-2026-09-01")
+    write_transcript("testpod-2026-09-02")
+    write_transcript("testpod-2026-09-03")
+
+    annotator = Object.new
+    annotator.define_singleton_method(:annotate) do |text, **_|
+      raise "API down" if text.include?("BOOM")
+      ["marked", ""]
+    end
+    File.write(File.join(@episodes_dir, "testpod-2026-09-02_transcript.md"),
+               "# T\n\n## Transcript\n\nBOOM text")
+    site = Object.new
+    site.define_singleton_method(:generate) { nil }
+
+    cmd = build_command_with("testpod")
+    code = nil
+    out, err = capture_io do
+      stub_run_setup(cmd) do
+        VocabularyAnnotator.stub(:new, annotator) do
+          SiteGenerator.stub(:new, site) { code = cmd.run }
+        end
+      end
+    end
+
+    assert_equal 1, code
+    assert_includes out, "re-annotated 2, skipped 0, failed 1 (testpod-2026-09-02)"
+    assert_includes err, "testpod-2026-09-02"
+  end
+
+  def test_limit_rejects_non_positive
+    [%w[--limit 0], %w[--limit -1]].each do |flag|
+      assert_raises(OptionParser::InvalidArgument) do
+        PodgenCLI::RevocabCommand.new(flag + ["testpod"], {})
+      end
+    end
+  end
+
+  def test_run_all_failed_does_not_claim_nothing_needed_annotation
+    write_transcript("testpod-2026-09-01")
+
+    annotator = Object.new
+    annotator.define_singleton_method(:annotate) { |_text, **_| raise "API down" }
+
+    cmd = build_command_with("testpod")
+    code = nil
+    out = capture_io do
+      stub_run_setup(cmd) do
+        VocabularyAnnotator.stub(:new, annotator) { code = cmd.run }
+      end
+    end.first
+
+    assert_equal 1, code
+    refute_includes out, "No transcripts needed annotation"
+    assert_includes out, "re-annotated 0, skipped 0, failed 1 (testpod-2026-09-01)"
+  end
+
+  def test_run_all_skipped_says_nothing_needed_annotation
+    write_transcript("testpod-2026-09-01", vocab: "**B2**\n- **word** (n.) — thing")
+
+    cmd = build_command_with("--missing-only", "testpod")
+    out = capture_io { stub_run_setup(cmd) { assert_equal 0, cmd.run } }.first
+
+    assert_includes out, "No transcripts needed annotation"
+  end
+
+  def test_run_all_succeed_exits_zero_with_tally
+    write_transcript("testpod-2026-09-01", vocab: "**B2**\n- **word** (n.) — thing")
+    write_transcript("testpod-2026-09-02")
+
+    annotator = Object.new
+    annotator.define_singleton_method(:annotate) { |_text, **_| ["marked", ""] }
+    site = Object.new
+    site.define_singleton_method(:generate) { nil }
+
+    cmd = build_command_with("--missing-only", "testpod")
+    code = nil
+    out = capture_io do
+      stub_run_setup(cmd) do
+        VocabularyAnnotator.stub(:new, annotator) do
+          SiteGenerator.stub(:new, site) { code = cmd.run }
+        end
+      end
+    end.first
+
+    assert_equal 0, code
+    assert_includes out, "re-annotated 1, skipped 1, failed 0"
+  end
+
+  # --- P9-8a: ledger per file (only earlier episodes), one shared cache ---
+
+  def test_run_ledger_per_file_sees_only_earlier_episodes
+    calls = run_capturing_annotate("testpod")
+    assert_equal %w[testpod-2026-09-01 testpod-2026-09-02 testpod-2026-09-03], calls.map { |c| c[:episode] }
+    assert_equal [0, 1, 2], calls.map { |c| c[:ledger].episodes }
+    # "zadnji" is explained only in the last file: no ledger passed so far may see it
+    assert(calls.all? { |c| c[:ledger].exposures("zadnji").zero? })
+    assert_equal ["testpod-2026-09-01"], calls[2][:ledger].explained("prvi")
+    caches = calls.map { |c| c[:cache] }
+    assert_equal 1, caches.uniq(&:object_id).length, "one cache shared across the run"
+    assert_equal File.join(@podcast_dir, "vocab_cache.yml"), caches.first.path
+  end
+
+  def test_run_no_ledger_passes_nil
+    calls = run_capturing_annotate("--no-ledger", "testpod")
+    assert(calls.all? { |c| c[:ledger].nil? })
+    refute_nil calls.first[:cache]
+  end
+
+  def test_run_no_cache_passes_nil
+    calls = run_capturing_annotate("--no-cache", "testpod")
+    assert(calls.all? { |c| c[:cache].nil? })
+    refute_nil calls.first[:ledger]
+  end
+
   private
+
+  def run_capturing_annotate(*args)
+    write_transcript("testpod-2026-09-01", vocab: "- **prvi** (B2 n.) — first")
+    write_transcript("testpod-2026-09-02")
+    write_transcript("testpod-2026-09-03", vocab: "- **zadnji** (B2 n.) — last")
+    calls = []
+    annotator = Object.new
+    annotator.define_singleton_method(:annotate) do |text, **kw|
+      calls << kw
+      # Files are rewritten in order: 09-01 keeps explaining "prvi".
+      [text, kw[:episode].end_with?("09-01") ? "## Vocabulary\n\n- **prvi** (B2 n.) — first" : ""]
+    end
+    site = Object.new
+    site.define_singleton_method(:generate) { nil }
+    cmd = build_command_with(*args)
+    capture_io do
+      stub_run_setup(cmd) do
+        VocabularyAnnotator.stub(:new, annotator) do
+          SiteGenerator.stub(:new, site) { cmd.run }
+        end
+      end
+    end
+    calls
+  end
+
+  def build_command_with(*args, dry_run: false)
+    cmd = PodgenCLI::RevocabCommand.new(args, { dry_run: dry_run, verbosity: :normal })
+    cmd.instance_variable_set(:@config, build_stub_config)
+    cmd
+  end
+
+  def three_months_of_fixtures
+    %w[2026-08-10 2026-08-31 2026-09-01 2026-09-15 2026-09-30 2026-10-01 2026-10-20].each do |d|
+      write_transcript("testpod-#{d}")
+    end
+  end
+
+  def snapshot
+    Dir[File.join(@episodes_dir, "*")].sort.to_h { |f| [f, File.read(f)] }
+  end
 
   def write_transcript(basename, title: "Test Episode", description: "", body: "Some text.", vocab: nil)
     path = File.join(@episodes_dir, "#{basename}_transcript.md")

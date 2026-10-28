@@ -121,7 +121,7 @@ ruby bin/podgen <command> [options]
 | `podgen list`                         | List available podcasts                                  |
 | `podgen add <podcast> <url>`          | Queue a priority link for the next episode               |
 | `podgen links <podcast>`              | List or manage queued priority links                     |
-| `podgen vocab <sub> <podcast>`        | Manage known vocabulary words (`add`/`remove`/`list`)    |
+| `podgen vocab <sub> <podcast>`        | Known vocabulary (`add`/`remove`/`list`/`review`) and cached glosses (`edit`) |
 | `podgen revocab <podcast> [episode]`  | Re-annotate vocabulary on transcripts                    |
 | `podgen reformat <podcast> [episode]` | Reformat transcripts (paragraph breaks, cleanup)         |
 | `podgen cover <podcast> [date]`       | Generate episode cover images (use --title, --image flags) |
@@ -1008,7 +1008,8 @@ Language pipeline transcripts can be automatically annotated with vocabulary ent
 ```
 
 - `level`: CEFR cutoff — words **at or above** this level are annotated. Valid values: A1, A2, B1, B2, C1, C2.
-- `max`: Maximum number of vocabulary entries per episode. Keeps the hardest words (highest CEFR level first).
+- `max`: Upper bound on vocabulary entries per episode — not a quota. Episodes with fewer eligible words (after the ledger drops recently explained lemmas) carry fewer entries. Which words fill the slots is decided by `priority` (see *Selection policy* below).
+- `priority`: Selection preset — `balanced` (default), `hardest`, or `frequent`.
 - `frequency`: Frequency preset — `common`, `uncommon`, `rare`, `literary`, or `archaic`. Controls whether everyday vs. rare words are included.
 - `similar`: Comma-separated list of languages the learner already knows. Words that are cognates in any of these languages are **filtered out deterministically** using transliteration + Levenshtein distance (e.g. Slovenian "profesor" ≈ English "professor" ≈ Russian "профессор" → excluded). Works across writing systems (Latin/Cyrillic).
 - `filter`: Free-form custom instruction passed to the LLM (e.g. "Skip words related to food").
@@ -1016,9 +1017,30 @@ Language pipeline transcripts can be automatically annotated with vocabulary ent
 When enabled, after the transcript is saved the pipeline sends the transcript text to Claude, which classifies words by CEFR level, identifies dictionary forms (lemmas), and generates translations and definitions. The result is:
 
 1. **Marked words** in the transcript — all occurrences of each vocabulary word are wrapped in `**bold**`
-2. **Vocabulary section** appended to the transcript file — flat alphabetical list with lemma, IPA pronunciation, CEFR level, part of speech, translation, and definition
+2. **Vocabulary section** appended to the transcript file — entries with lemma, IPA pronunciation, CEFR level, part of speech, translation, and definition, **in the order the words first occur in the story**, so the list can be followed while listening. When the episode has key words (below), the section carries two sub-headings: `### Key words` first, then `### Also new`; without key words it is a single flat list. The entry line format is the same either way.
 
-On the generated **site**, bold vocabulary words become hoverable links with tooltip bubbles showing the vocabulary entry (IPA, part of speech, definition). The vocabulary section renders as a definition list with anchored entries. Episode pages show a 📖 Vocabulary link in the header when vocabulary is present.
+On the generated **site**, bold vocabulary words become hoverable links with tooltip bubbles showing the vocabulary entry (IPA, part of speech, definition). The vocabulary section renders as a definition list with anchored entries (one `<h3>` and list per group when the sub-headings are present). Episode pages show a 📖 Vocabulary link in the header when vocabulary is present.
+
+#### Key words
+
+Before classification, the annotator picks up to 8 story-critical words: words of 4+ letters that occur at least 3 times in the episode, are not proper nouns (a word capitalised in more than half of its mid-sentence occurrences, or never seen mid-sentence at all, is treated as a name), and appear in at most 15% of the show's earlier episodes, ranked by in-episode frequency × inverse document frequency across the show. The classifier is asked to include them whatever their level; matching entries are kept regardless of the CEFR cutoff, the `frequency` preset, the ledger and the `max` cap, and are listed first under `### Key words`. Only known words (below) remove them. Key words need at least one earlier episode to compare against: a show's first episode and `revocab --no-ledger` skip them (logged as `Key terms skipped: no earlier episodes`).
+
+#### Selection policy
+
+When more words qualify than `max` allows, entries are chosen by level band — distance above the cutoff: at the cutoff, one level above, two or more above. Each band gets a share of `max`:
+
+| `priority` | at cutoff | +1 | +2 and above | order within a band |
+|---|---|---|---|---|
+| `balanced` (default) | 50% | 35% | 15% | in-episode frequency × inverse show frequency |
+| `hardest` | 25% | 40% | 35% | in-episode frequency × inverse show frequency |
+| `frequent` | 50% | 35% | 15% | raw in-episode frequency |
+
+A band that has fewer words than its share passes the unused slots to the next band down, then up. Key words and `--include` words are always kept and count toward `max`.
+
+#### Cross-episode memory: ledger and cache
+
+- **Ledger** — derived on every run from the show's own transcripts (nothing stored): a lemma already explained in an earlier episode is not explained again until enough episodes have passed — the 2nd explanation at least 8 episodes after the 1st, the 3rd at least 20 after the 2nd, the 4th at least 50 after the 3rd; after 4 explanations it is not explained again (a candidate for known vocabulary). Re-exposed lemmas may fill at most a quarter of `max` (rounded up); when more qualify, the ones explained longest ago are kept. Re-exposed lemmas are named in the run log. `--include` words and key words bypass the ledger; known words always win. `revocab` sees only the episodes before the one it re-annotates.
+- **Cache** — `output/<podcast>/vocab_cache.yml` stores each lemma's translations and definitions per target language (plus IPA and similar-language translations) after it is first enriched, so a repeated lemma costs no API call and keeps the same gloss in every episode. A lemma missing one target language is enriched for that language only. The file is derived and can be deleted to start fresh.
 
 In **RSS transcript HTML** (for podcast apps), the vocabulary section is stripped and bold markers are removed, producing clean readable text. This is because podcast apps (Pocket Casts, Apple Podcasts, etc.) do not render HTML formatting or links in transcripts.
 
@@ -1032,6 +1054,10 @@ To re-annotate vocabulary on previously published episodes:
 podgen revocab <podcast> [episode-id]     # specific episode or all
 podgen revocab <podcast> --missing-only   # only episodes without vocabulary
 podgen revocab <podcast> --dry-run        # preview without changes
+podgen revocab <podcast> --from 2026-09-01 --to 2026-09-30 --limit 10  # date range (inclusive), earliest N
+podgen revocab <podcast> --no-ledger      # ignore earlier episodes (no re-exposure rule, no key words)
+podgen revocab <podcast> --no-cache       # enrich every lemma afresh; vocab_cache.yml neither read nor written
+# ends with "re-annotated N, skipped N, failed N (<basenames>)"; exit 1 when any file failed
 ```
 
 #### Known Vocabulary
@@ -1043,6 +1069,9 @@ podgen vocab add lahko_noc beseda          # add a word (language from config)
 podgen vocab add lahko_noc sprechen --lang de  # explicit language
 podgen vocab remove lahko_noc beseda       # remove a word
 podgen vocab list lahko_noc                # show all known words
+podgen vocab review fiabe [--min 3]        # lemmas explained 3+ times (count, last episode), known ones excluded
+podgen vocab review fiabe --promote        # add every listed lemma to known vocabulary
+podgen vocab edit fiabe accorgersi --lang English --translation "to notice" [--definition "..."]  # fix a cached gloss for future episodes
 ```
 
 Known words are stored as lemmas (dictionary forms) in `podcasts/<name>/known_vocabulary.yml`. All derivatives (conjugations, cases) of a known lemma are automatically excluded — matching is on the lemma returned by Claude, not the surface form in the text.
@@ -1403,6 +1432,7 @@ podgen stats fiabe --words                       # top 50 by body occurrences (d
 podgen stats fiabe --words --top 100             # top 100
 podgen stats fiabe --words --top 0               # all
 podgen stats fiabe --words --sort vocab          # sort by per-episode vocab frequency instead
+podgen stats fiabe --vocab-health [--last 10]    # census: repeat share, levels vs cutoff, key-term misses, drift (--all: every show)
 ```
 
 Two columns: `BODY` is the number of times the lemma (or any inflected form) appears across all transcript bodies; `VOCAB` is the number of episodes that listed the lemma in their `## Vocabulary` section.
@@ -1539,8 +1569,12 @@ podgen/
 │   ├── transcript_parser.rb  # Transcript markdown structure (segments, vocabulary)
 │   ├── transcript_discovery.rb # Existing transcripts (feed tags, episode pages, YouTube captions) before STT
 │   ├── vocabulary_annotator.rb # CEFR vocabulary annotation (Claude + cognate filtering)
+│   ├── vocab_ledger.rb       # Explained-lemma ledger + show token df (derived from transcripts)
+│   ├── vocab_cache.rb        # Enrichment cache (output/<pod>/vocab_cache.yml)
+│   ├── key_terms.rb          # Story-critical key-word candidates (tf × idf)
 │   ├── known_vocabulary.rb   # Per-language known word lists
 │   ├── word_stats.rb         # Vocabulary frequency (hunspell forms, language detection)
+│   ├── vocab_health.rb       # Vocabulary census for stats --vocab-health
 │   ├── language_names.rb     # ISO 639-1 → language name
 │   ├── cover_resolver.rb     # Shared cover lookup/generation (publish, pipeline, site, cover command)
 │   ├── episode_cover_resolver.rb # Cover priority chain for a language-pipeline episode

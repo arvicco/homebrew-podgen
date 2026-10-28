@@ -12,6 +12,7 @@ require "did_you_mean"
 require_relative "tell/espeak"
 require_relative "tell/hunspell"
 require_relative "tell/icu_phonetic"
+require_relative "key_terms"
 
 class VocabularyAnnotator
   include Loggable
@@ -20,6 +21,8 @@ class VocabularyAnnotator
 
   CEFR_LEVELS = %w[A1 A2 B1 B2 C1 C2].freeze
   MAX_PARTICLE_LENGTH = 3
+  # Re-exposed lemmas may fill at most this share of max (ceil).
+  REEXPOSURE_SHARE = 0.25
   PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
   def initialize(api_key, model: nil, logger: nil)
@@ -31,7 +34,13 @@ class VocabularyAnnotator
   # Returns [marked_body, vocabulary_md]
   # marked_body: transcript with all occurrences of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
-  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English", target_languages: nil)
+  # cache: a VocabCache — cached lemmas skip the enrichment call (per target
+  # language); new enrichments are stored and the cache saved once.
+  # episode: the basename recorded as a new cache entry's first_seen.
+  # ledger: a VocabLedger — lemmas it does not allow (spaced re-exposure) are
+  # dropped, except include_words.
+  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English", target_languages: nil,
+    cache: nil, episode: nil, ledger: nil)
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
@@ -40,10 +49,25 @@ class VocabularyAnnotator
     target_languages ||= [target_language]
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff, definitions in #{target_languages.join(', ')})")
 
+    # Stage 0: story-critical candidates, named to the classifier (loop call 4).
+    # They need a ledger with ≥ 1 earlier episode: without document
+    # frequencies the top tokens are function words.
+    if ledger&.episodes.to_i > 0
+      key_terms = KeyTerms.candidates(text, ledger: ledger)
+      log("Key-term candidates: #{key_terms.join(", ")}") unless key_terms.empty?
+    else
+      key_terms = []
+      log("Key terms skipped: no earlier episodes")
+    end
+
     # Stage 1: Lightweight classification — word/lemma/level/pos only
-    entries = classify_words(text, language, cutoff, filters)
+    entries = classify_words(text, language, cutoff, filters, key_terms)
     entries = sanitize_script(entries, language)
     entries = dedup_by_lemma(entries)
+    mark_key_entries!(entries, key_terms)
+    # Key entries and include_words bypass the ledger, the cap and the
+    # cognate filter; only known words beat key entries.
+    pinned = ->(e) { e[:key] || include_words.include?(e[:lemma].to_s.downcase) }
 
     # Stage 2: Filter and cap before enrichment to minimize API work
     unless known_lemmas.empty?
@@ -52,6 +76,7 @@ class VocabularyAnnotator
       filtered = before - entries.length
       log("Filtered #{filtered} known words") if filtered > 0
     end
+    apply_ledger!(entries, ledger, pinned) if ledger
 
     if entries.empty?
       log("No vocabulary words found at #{cutoff}+ level")
@@ -60,30 +85,34 @@ class VocabularyAnnotator
 
     count_occurrences(text, entries, language)
     priority = filters[:priority] || "balanced"
+    cap_reexposures!(entries, ledger, pinned, max, priority) if ledger
 
     # Over-select to leave room for cognate filtering after enrichment
     has_cognate_filter = filters[:similar] && !filters[:similar].empty?
     enrich_cap = max ? (has_cognate_filter ? max * 2 : max) : nil
     if enrich_cap && entries.length > enrich_cap
-      included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
-      sort_entries!(rest, priority, cutoff)
-      entries = included + rest.first([enrich_cap - included.length, 0].max)
+      included, rest = entries.partition(&pinned)
+      entries = included + select_by_bands(rest, [enrich_cap - included.length, 0].max, priority, cutoff, ledger)
       log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length})")
     end
 
     # Stage 3: Enrich selected entries with translations/definitions
+    # (cache hits are filled in place; only the misses reach the API)
+    misses = cache ? apply_cache!(entries, target_languages, filters, cache) : nil
     if target_languages.length == 1
-      entries = enrich_entries(entries, language: language, target_language: target_languages.first, filters: filters)
+      pending = misses ? misses[target_languages.first] : entries
+      enrich_entries(pending, language: language, target_language: target_languages.first, filters: filters)
     else
-      enrich_multi_language!(entries, language: language, target_languages: target_languages, filters: filters)
+      enrich_multi_language!(entries, language: language, target_languages: target_languages, filters: filters, pending: misses)
     end
+    store_in_cache!(misses, target_languages, cache, episode) if cache
 
     # Stage 4: Post-enrichment filtering
     if has_cognate_filter
       similar_langs = filters[:similar].split(/,\s*/)
       before = entries.length
       entries = filter_cognates(entries, similar_langs, target_languages.first).concat(
-        include_words.empty? ? [] : entries.select { |e| include_words.include?(e[:lemma].to_s.downcase) }
+        entries.select(&pinned)
       ).uniq { |e| e[:lemma].to_s.downcase }
       filtered_cognates = before - entries.length
       log("Filtered #{filtered_cognates} cognates") if filtered_cognates > 0
@@ -96,16 +125,15 @@ class VocabularyAnnotator
 
     # Final cap to max
     if max && entries.length > max
-      included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
-      sort_entries!(rest, priority, cutoff)
-      entries = included + rest.first([max - included.length, 0].max)
+      included, rest = entries.partition(&pinned)
+      entries = included + select_by_bands(rest, [max - included.length, 0].max, priority, cutoff, ledger)
       log("Capped to #{max} entries (priority: #{priority})")
     end
 
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
     add_ipa(entries, language)
     marked_body = mark_words(text, entries, language)
-    vocabulary_md = build_vocabulary_section(entries, target_languages)
+    vocabulary_md = build_vocabulary_section(entries, target_languages, text)
 
     [marked_body, vocabulary_md]
   end
@@ -116,21 +144,21 @@ class VocabularyAnnotator
   # hitting max_tokens on the response. ~4000 chars ≈ ~1000 tokens input.
   CHUNK_THRESHOLD = 4000
 
-  def classify_words(text, language, cutoff, filters = {})
+  def classify_words(text, language, cutoff, filters = {}, key_terms = [])
     if text.length > CHUNK_THRESHOLD
-      return classify_chunked(text, language, cutoff, filters)
+      return classify_chunked(text, language, cutoff, filters, key_terms)
     end
 
-    classify_single(text, language, cutoff, filters)
+    classify_single(text, language, cutoff, filters, key_terms)
   end
 
-  def classify_chunked(text, language, cutoff, filters)
+  def classify_chunked(text, language, cutoff, filters, key_terms = [])
     chunks = split_into_chunks(text)
-    return classify_single(text, language, cutoff, filters) if chunks.length < 2
+    return classify_single(text, language, cutoff, filters, key_terms) if chunks.length < 2
 
     log("Splitting into #{chunks.length} chunks for classification")
     threads = chunks.map do |chunk|
-      Thread.new { classify_single(chunk, language, cutoff, filters) }
+      Thread.new { classify_single(chunk, language, cutoff, filters, key_terms) }
     end
     threads.flat_map(&:value)
   end
@@ -146,13 +174,13 @@ class VocabularyAnnotator
     ]
   end
 
-  def classify_single(text, language, cutoff, filters = {})
+  def classify_single(text, language, cutoff, filters = {}, key_terms = [])
     with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
           max_tokens: 16384,
-          system: classify_prompt(language, cutoff, filters),
+          system: classify_prompt(language, cutoff, filters, key_terms),
           messages: [
             { role: "user", content: text }
           ],
@@ -184,7 +212,7 @@ class VocabularyAnnotator
       return [] unless entries.is_a?(Array)
 
       # Validate and normalize entries
-      entries.select { |e| valid_entry?(e, cutoff) }
+      entries.select { |e| valid_entry?(e, cutoff, key_terms) }
     end
   end
 
@@ -274,8 +302,12 @@ class VocabularyAnnotator
   end
 
   # Stage 1 prompt: lightweight classification only (word/lemma/level/pos).
-  def classify_prompt(language, cutoff, filters = {})
+  def classify_prompt(language, cutoff, filters = {}, key_terms = [])
     filter_lines = build_filter_lines(filters)
+    unless key_terms.empty?
+      filter_lines += "\n      Also include these words wherever they occur in the text, regardless of their CEFR level " \
+        "or frequency, with their true level, unless they are proper nouns: #{key_terms.join(", ")}."
+    end
 
     <<~PROMPT
       Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
@@ -326,24 +358,61 @@ class VocabularyAnnotator
 
   PRIORITY_MODES = %w[hardest frequent balanced].freeze
 
-  # Sort entries in place according to the priority mode.
-  # - hardest: highest CEFR level first, then frequency, then alpha
-  # - frequent: most text occurrences first, then level, then alpha
-  # - balanced: prefer words near the cutoff level, then frequency, then alpha
-  def sort_entries!(entries, priority, cutoff)
+  # Level-band selection (loop call 5): band = levels above the cutoff
+  # (0, 1, 2+); each priority preset weights the bands.
+  BAND_WEIGHTS = {
+    "balanced" => [0.50, 0.35, 0.15],
+    "hardest" => [0.25, 0.40, 0.35],
+    "frequent" => [0.50, 0.35, 0.15]
+  }.freeze
+
+  # Picks up to max entries: quota = max × weight per band (largest
+  # remainder rounding), filled by in-episode frequency × idf (ledger df;
+  # tf alone without a ledger; raw tf for "frequent"); a band's unfilled
+  # quota spills to the next band down, then up.
+  def select_by_bands(entries, max, priority, cutoff, ledger)
+    return entries.dup if entries.length <= max
+
+    weights = BAND_WEIGHTS.fetch(priority, BAND_WEIGHTS["balanced"])
     cutoff_idx = CEFR_LEVELS.index(cutoff)
-    case priority
-    when "hardest"
-      entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
-    when "frequent"
-      entries.sort_by! { |e| [-(e[:frequency] || 0), -CEFR_LEVELS.index(e[:level]), e[:lemma].to_s.downcase] }
-    else # balanced
-      entries.sort_by! do |e|
-        level_idx = CEFR_LEVELS.index(e[:level])
-        distance = (level_idx - cutoff_idx).abs
-        [distance, -(e[:frequency] || 0), e[:lemma].to_s.downcase]
+    bands = Array.new(weights.length) { [] }
+    entries.each do |e|
+      band = (CEFR_LEVELS.index(e[:level]) - cutoff_idx).clamp(0, weights.length - 1)
+      bands[band] << e
+    end
+    bands.each do |band|
+      band.sort_by! { |e| [-band_score(e, priority, ledger), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
+    end
+
+    quotas = band_quotas(weights, max)
+    taken = quotas.each_with_index.map { |q, i| [q, bands[i].length].min }
+    (weights.length - 1).downto(0) do |b|
+      leftover = quotas[b] - taken[b]
+      ((b - 1).downto(0).to_a + ((b + 1)...weights.length).to_a).each do |t|
+        break if leftover <= 0
+        add = [leftover, bands[t].length - taken[t]].min
+        taken[t] += add
+        leftover -= add
       end
     end
+
+    bands.each_with_index.flat_map { |band, i| band.first(taken[i]) }
+  end
+
+  def band_quotas(weights, max)
+    raw = weights.map { |w| max * w }
+    quotas = raw.map(&:floor)
+    order = raw.each_index.sort_by { |i| [-(raw[i] - quotas[i]), i] }
+    (max - quotas.sum).times { |k| quotas[order[k]] += 1 }
+    quotas
+  end
+
+  def band_score(entry, priority, ledger)
+    tf = entry[:frequency] || 0
+    return tf if priority == "frequent" || ledger.nil?
+
+    df = all_forms_for(entry).flat_map { |f| VocabLedger.tokens(f) }.map { |t| ledger.df(t) }.max || 0
+    tf * Math.log((ledger.episodes + 1.0) / (df + 1))
   end
 
   # Stage 3: enrich pre-selected entries with translations/definitions via API.
@@ -356,11 +425,15 @@ class VocabularyAnnotator
 
   # Stage 3 (multi-language): enrich entries for each target language separately.
   # Stores results in entry[:translations] and entry[:definitions] hashes.
-  def enrich_multi_language!(entries, language:, target_languages:, filters:)
+  # pending: { lang => entries } — only those entries are enriched for lang.
+  def enrich_multi_language!(entries, language:, target_languages:, filters:, pending: nil)
     return entries if entries.empty?
 
     target_languages.each do |tl|
-      enrichments = call_enrich_api(entries, language: language, target_language: tl, filters: filters)
+      subset = pending ? pending[tl] : entries
+      next if subset.empty?
+
+      enrichments = call_enrich_api(subset, language: language, target_language: tl, filters: filters)
       by_lemma = {}
       enrichments.each { |e| by_lemma[e[:lemma].to_s.downcase] = e if e[:lemma] }
 
@@ -377,6 +450,106 @@ class VocabularyAnnotator
       end
     end
     entries
+  end
+
+  # Drops entries the ledger does not allow yet (or ever); exempt entries
+  # (include_words, key terms) bypass it. Re-exposed lemmas are named in the
+  # log (the entry line format is a parsed contract, so no marker goes into
+  # the markdown).
+  def apply_ledger!(entries, ledger, exempt)
+    before = entries.length
+    entries.reject! { |e| !exempt.call(e) && !ledger.allowed?(e[:lemma]) }
+    dropped = before - entries.length
+    log("Ledger: dropped #{dropped} already-explained lemma(s)") if dropped > 0
+  end
+
+  # Re-exposures (lemmas the ledger has seen explained) may take at most
+  # REEXPOSURE_SHARE of max (ceil; uncapped without max); the ones explained
+  # longest ago win, then band score, then lemma. Exempt (pinned) entries
+  # neither count nor are cut. Logs the surviving re-exposed lemmas.
+  def cap_reexposures!(entries, ledger, exempt, max, priority)
+    reexposed = entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }
+    allowed = max && (max * REEXPOSURE_SHARE).ceil
+    if allowed && reexposed.length > allowed
+      keep = reexposed.sort_by do |e|
+        [-(ledger.episodes_since(e[:lemma]) || Float::INFINITY), -band_score(e, priority, ledger), e[:lemma].to_s.downcase]
+      end.first(allowed)
+      cut = reexposed.reject { |e| keep.any? { |k| k.equal?(e) } }
+      entries.reject! { |e| cut.any? { |c| c.equal?(e) } }
+      log("Ledger: re-exposure cap #{allowed} of #{reexposed.length} (max × #{REEXPOSURE_SHARE})")
+      reexposed = keep
+    end
+    log("Ledger: re-exposing #{reexposed.map { |e| e[:lemma] }.join(", ")}") unless reexposed.empty?
+  end
+
+  # key: true on entries whose lemma or any word form is a key-term candidate.
+  def mark_key_entries!(entries, key_terms)
+    return if key_terms.empty?
+
+    keys = Set.new(key_terms)
+    entries.each do |e|
+      forms = [e[:lemma], *(e[:words] || [e[:word]])].compact.map { |f| f.to_s.downcase }
+      e[:key] = true if forms.any? { |f| keys.include?(f) }
+    end
+  end
+
+  # Fills entries from the cache in place and returns { lang => entries still
+  # missing that language }. A lemma is a hit when every target language has
+  # a cached translation (and similar-language translations when the cognate
+  # filter needs them).
+  def apply_cache!(entries, target_languages, filters, cache)
+    multi = target_languages.length > 1
+    needs_similar = filters[:similar]&.split(/,\s*/)&.any? { |l| target_languages.none? { |tl| tl.casecmp?(l) } }
+    misses = target_languages.to_h { |tl| [tl, []] }
+    hits = 0
+
+    entries.each do |entry|
+      cached = cache.fetch(entry[:lemma])
+      missing = target_languages.reject { |tl| cached&.dig("translations", tl) }
+      missing = [target_languages.first] if missing.empty? && needs_similar && cached["similar_translations"].nil?
+      missing.empty? ? hits += 1 : missing.each { |tl| misses[tl] << entry }
+      next unless cached
+
+      (target_languages - missing).each do |tl|
+        translation = cached["translations"][tl]
+        definition = cached.dig("definitions", tl)
+        if multi
+          (entry[:translations] ||= {})[tl] = translation
+          (entry[:definitions] ||= {})[tl] = definition
+        else
+          entry[:translation] ||= translation
+          entry[:definition] ||= definition
+        end
+      end
+      entry[:pronunciation] ||= cached["pronunciation"]
+      entry[:similar_translations] ||= cached["similar_translations"]
+    end
+
+    log("Enrichment cache: #{hits} hits, #{entries.length - hits} misses")
+    misses
+  end
+
+  # Stores every freshly enriched entry (per language that came back) and
+  # writes the cache once.
+  def store_in_cache!(misses, target_languages, cache, episode)
+    misses.values.flatten.uniq(&:object_id).each do |entry|
+      translations = if target_languages.length > 1
+        (entry[:translations] || {}).compact
+      else
+        entry[:translation] ? { target_languages.first => entry[:translation] } : {}
+      end
+      next if translations.empty?
+
+      definitions = if target_languages.length > 1
+        (entry[:definitions] || {}).compact.slice(*translations.keys)
+      else
+        entry[:definition] ? { target_languages.first => entry[:definition] } : {}
+      end
+      cache.store(entry[:lemma], translations: translations, definitions: definitions,
+        pronunciation: entry[:pronunciation],
+        similar_translations: entry[:similar_translations], first_seen: episode)
+    end
+    cache.save
   end
 
   def call_enrich_api(entries, language:, target_language:, filters:)
@@ -466,10 +639,12 @@ class VocabularyAnnotator
     lines.empty? ? "" : "\n      " + lines.join("\n      ")
   end
 
-  def valid_entry?(entry, cutoff)
+  # key_terms: candidates (loop call 4) bypass the cutoff.
+  def valid_entry?(entry, cutoff, key_terms = [])
     return false unless entry.is_a?(Hash)
     return false unless entry[:word] && entry[:lemma] && entry[:level]
     return false unless CEFR_LEVELS.include?(entry[:level])
+    return true if key_terms.include?(entry[:word].to_s.downcase) || key_terms.include?(entry[:lemma].to_s.downcase)
 
     cutoff_idx = CEFR_LEVELS.index(cutoff)
     entry_idx = CEFR_LEVELS.index(entry[:level])
@@ -660,43 +835,71 @@ class VocabularyAnnotator
     marked
   end
 
-  def build_vocabulary_section(entries, target_languages = nil)
-    sorted = entries.sort_by { |e| e[:lemma].to_s.downcase }
+  KEY_GROUP_HEADING = "### Key words"
+  REST_GROUP_HEADING = "### Also new"
+
+  # Entries in order of first occurrence in text (any form; alphabetical
+  # for ties and without text). With any key entry, two sub-headings —
+  # Key words, then Also new — group them; otherwise a flat list. The entry
+  # line format is unchanged (a parsed contract).
+  def build_vocabulary_section(entries, target_languages = nil, text = nil)
+    sorted = entries.sort_by { |e| [first_occurrence(e, text), e[:lemma].to_s.downcase] }
     multi = target_languages && target_languages.length > 1
 
     heading = multi ? "## Vocabulary (#{target_languages.join(', ')})" : "## Vocabulary"
     lines = [heading, ""]
 
-    sorted.each do |entry|
-      line = "- **#{entry[:lemma]}**"
-      line += " #{entry[:ipa]}" if entry[:ipa]
-      line += " (#{entry[:level]} #{entry[:pos]})"
-      # Show word forms that differ from lemma, excluding particles
-      _head, particle_forms = partition_forms(entry)
-      particle_set = Set.new(particle_forms.map(&:downcase))
-      diff_forms = (entry[:words] || [entry[:word]])
-        .reject { |w| w.downcase == entry[:lemma].downcase }
-        .reject { |w| particle_set.include?(w.downcase) }
-      line += " *#{diff_forms.join(', ')}*" unless diff_forms.empty?
-
-      if multi
-        lines << line
-        target_languages.each do |tl|
-          translation = entry.dig(:translations, tl)
-          definition = entry.dig(:definitions, tl)
-          next unless translation || definition
-          def_line = "  - #{translation}"
-          def_line += ". #{definition}" if definition
-          lines << def_line
-        end
-      else
-        line += " — #{entry[:translation]}" if entry[:translation]
-        line += ". #{entry[:definition]}" if entry[:definition]
-        lines << line
+    keys, rest = sorted.partition { |e| e[:key] }
+    if keys.empty?
+      rest.each { |e| lines.concat(vocab_entry_lines(e, multi, target_languages)) }
+    else
+      lines << KEY_GROUP_HEADING << ""
+      keys.each { |e| lines.concat(vocab_entry_lines(e, multi, target_languages)) }
+      unless rest.empty?
+        lines << "" << REST_GROUP_HEADING << ""
+        rest.each { |e| lines.concat(vocab_entry_lines(e, multi, target_languages)) }
       end
     end
 
     lines.join("\n").strip
+  end
+
+  def first_occurrence(entry, text)
+    return Float::INFINITY unless text
+
+    head_forms, _particles = partition_forms(entry)
+    head_forms.filter_map { |f| text =~ /\b#{Regexp.escape(f)}\b/i }.min || Float::INFINITY
+  end
+
+  def vocab_entry_lines(entry, multi, target_languages)
+    lines = []
+    line = "- **#{entry[:lemma]}**"
+    line += " #{entry[:ipa]}" if entry[:ipa]
+    line += " (#{entry[:level]} #{entry[:pos]})"
+    # Show word forms that differ from lemma, excluding particles
+    _head, particle_forms = partition_forms(entry)
+    particle_set = Set.new(particle_forms.map(&:downcase))
+    diff_forms = (entry[:words] || [entry[:word]])
+      .reject { |w| w.downcase == entry[:lemma].downcase }
+      .reject { |w| particle_set.include?(w.downcase) }
+    line += " *#{diff_forms.join(', ')}*" unless diff_forms.empty?
+
+    if multi
+      lines << line
+      target_languages.each do |tl|
+        translation = entry.dig(:translations, tl)
+        definition = entry.dig(:definitions, tl)
+        next unless translation || definition
+        def_line = "  - #{translation}"
+        def_line += ". #{definition}" if definition
+        lines << def_line
+      end
+    else
+      line += " — #{entry[:translation]}" if entry[:translation]
+      line += ". #{entry[:definition]}" if entry[:definition]
+      lines << line
+    end
+    lines
   end
 
 end
