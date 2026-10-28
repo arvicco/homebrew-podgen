@@ -82,8 +82,7 @@ class VocabularyAnnotator
     enrich_cap = max ? (has_cognate_filter ? max * 2 : max) : nil
     if enrich_cap && entries.length > enrich_cap
       included, rest = entries.partition(&pinned)
-      sort_entries!(rest, priority, cutoff)
-      entries = included + rest.first([enrich_cap - included.length, 0].max)
+      entries = included + select_by_bands(rest, [enrich_cap - included.length, 0].max, priority, cutoff, ledger)
       log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length})")
     end
 
@@ -117,8 +116,7 @@ class VocabularyAnnotator
     # Final cap to max
     if max && entries.length > max
       included, rest = entries.partition(&pinned)
-      sort_entries!(rest, priority, cutoff)
-      entries = included + rest.first([max - included.length, 0].max)
+      entries = included + select_by_bands(rest, [max - included.length, 0].max, priority, cutoff, ledger)
       log("Capped to #{max} entries (priority: #{priority})")
     end
 
@@ -350,24 +348,61 @@ class VocabularyAnnotator
 
   PRIORITY_MODES = %w[hardest frequent balanced].freeze
 
-  # Sort entries in place according to the priority mode.
-  # - hardest: highest CEFR level first, then frequency, then alpha
-  # - frequent: most text occurrences first, then level, then alpha
-  # - balanced: prefer words near the cutoff level, then frequency, then alpha
-  def sort_entries!(entries, priority, cutoff)
+  # Level-band selection (loop call 5): band = levels above the cutoff
+  # (0, 1, 2+); each priority preset weights the bands.
+  BAND_WEIGHTS = {
+    "balanced" => [0.50, 0.35, 0.15],
+    "hardest" => [0.25, 0.40, 0.35],
+    "frequent" => [0.50, 0.35, 0.15]
+  }.freeze
+
+  # Picks up to max entries: quota = max × weight per band (largest
+  # remainder rounding), filled by in-episode frequency × idf (ledger df;
+  # tf alone without a ledger; raw tf for "frequent"); a band's unfilled
+  # quota spills to the next band down, then up.
+  def select_by_bands(entries, max, priority, cutoff, ledger)
+    return entries.dup if entries.length <= max
+
+    weights = BAND_WEIGHTS.fetch(priority, BAND_WEIGHTS["balanced"])
     cutoff_idx = CEFR_LEVELS.index(cutoff)
-    case priority
-    when "hardest"
-      entries.sort_by! { |e| [-CEFR_LEVELS.index(e[:level]), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
-    when "frequent"
-      entries.sort_by! { |e| [-(e[:frequency] || 0), -CEFR_LEVELS.index(e[:level]), e[:lemma].to_s.downcase] }
-    else # balanced
-      entries.sort_by! do |e|
-        level_idx = CEFR_LEVELS.index(e[:level])
-        distance = (level_idx - cutoff_idx).abs
-        [distance, -(e[:frequency] || 0), e[:lemma].to_s.downcase]
+    bands = Array.new(weights.length) { [] }
+    entries.each do |e|
+      band = (CEFR_LEVELS.index(e[:level]) - cutoff_idx).clamp(0, weights.length - 1)
+      bands[band] << e
+    end
+    bands.each do |band|
+      band.sort_by! { |e| [-band_score(e, priority, ledger), -(e[:frequency] || 0), e[:lemma].to_s.downcase] }
+    end
+
+    quotas = band_quotas(weights, max)
+    taken = quotas.each_with_index.map { |q, i| [q, bands[i].length].min }
+    (weights.length - 1).downto(0) do |b|
+      leftover = quotas[b] - taken[b]
+      ((b - 1).downto(0).to_a + ((b + 1)...weights.length).to_a).each do |t|
+        break if leftover <= 0
+        add = [leftover, bands[t].length - taken[t]].min
+        taken[t] += add
+        leftover -= add
       end
     end
+
+    bands.each_with_index.flat_map { |band, i| band.first(taken[i]) }
+  end
+
+  def band_quotas(weights, max)
+    raw = weights.map { |w| max * w }
+    quotas = raw.map(&:floor)
+    order = raw.each_index.sort_by { |i| [-(raw[i] - quotas[i]), i] }
+    (max - quotas.sum).times { |k| quotas[order[k]] += 1 }
+    quotas
+  end
+
+  def band_score(entry, priority, ledger)
+    tf = entry[:frequency] || 0
+    return tf if priority == "frequent" || ledger.nil?
+
+    df = all_forms_for(entry).flat_map { |f| VocabLedger.tokens(f) }.map { |t| ledger.df(t) }.max || 0
+    tf * Math.log((ledger.episodes + 1.0) / (df + 1))
   end
 
   # Stage 3: enrich pre-selected entries with translations/definitions via API.
