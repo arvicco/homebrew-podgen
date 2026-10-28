@@ -142,7 +142,7 @@ module PodgenCLI
       return code if code
 
       load_config!
-      cache = VocabCache.new(File.join(File.dirname(@config.episodes_dir), "vocab_cache.yml"))
+      cache = VocabCache.for_config(@config)
       cache.set(@word, @lang, translation: @translation, definition: @definition)
       cache.save
       puts "Cached #{@word.downcase} (#{@lang})"
