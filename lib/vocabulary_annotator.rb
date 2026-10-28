@@ -31,7 +31,11 @@ class VocabularyAnnotator
   # Returns [marked_body, vocabulary_md]
   # marked_body: transcript with all occurrences of vocab words bolded
   # vocabulary_md: markdown vocabulary section (empty string if no words found)
-  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English", target_languages: nil)
+  # cache: a VocabCache — cached lemmas skip the enrichment call (per target
+  # language); new enrichments are stored and the cache saved once.
+  # episode: the basename recorded as a new cache entry's first_seen.
+  def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English", target_languages: nil,
+    cache: nil, episode: nil)
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
@@ -72,11 +76,15 @@ class VocabularyAnnotator
     end
 
     # Stage 3: Enrich selected entries with translations/definitions
+    # (cache hits are filled in place; only the misses reach the API)
+    misses = cache ? apply_cache!(entries, target_languages, filters, cache) : nil
     if target_languages.length == 1
-      entries = enrich_entries(entries, language: language, target_language: target_languages.first, filters: filters)
+      pending = misses ? misses[target_languages.first] : entries
+      enrich_entries(pending, language: language, target_language: target_languages.first, filters: filters)
     else
-      enrich_multi_language!(entries, language: language, target_languages: target_languages, filters: filters)
+      enrich_multi_language!(entries, language: language, target_languages: target_languages, filters: filters, pending: misses)
     end
+    store_in_cache!(misses, target_languages, cache, episode) if cache
 
     # Stage 4: Post-enrichment filtering
     if has_cognate_filter
@@ -356,11 +364,15 @@ class VocabularyAnnotator
 
   # Stage 3 (multi-language): enrich entries for each target language separately.
   # Stores results in entry[:translations] and entry[:definitions] hashes.
-  def enrich_multi_language!(entries, language:, target_languages:, filters:)
+  # pending: { lang => entries } — only those entries are enriched for lang.
+  def enrich_multi_language!(entries, language:, target_languages:, filters:, pending: nil)
     return entries if entries.empty?
 
     target_languages.each do |tl|
-      enrichments = call_enrich_api(entries, language: language, target_language: tl, filters: filters)
+      subset = pending ? pending[tl] : entries
+      next if subset.empty?
+
+      enrichments = call_enrich_api(subset, language: language, target_language: tl, filters: filters)
       by_lemma = {}
       enrichments.each { |e| by_lemma[e[:lemma].to_s.downcase] = e if e[:lemma] }
 
@@ -377,6 +389,65 @@ class VocabularyAnnotator
       end
     end
     entries
+  end
+
+  # Fills entries from the cache in place and returns { lang => entries still
+  # missing that language }. A lemma is a hit when every target language has
+  # a cached translation (and similar-language translations when the cognate
+  # filter needs them).
+  def apply_cache!(entries, target_languages, filters, cache)
+    multi = target_languages.length > 1
+    needs_similar = filters[:similar]&.split(/,\s*/)&.any? { |l| target_languages.none? { |tl| tl.casecmp?(l) } }
+    misses = target_languages.to_h { |tl| [tl, []] }
+    hits = 0
+
+    entries.each do |entry|
+      cached = cache.fetch(entry[:lemma])
+      missing = target_languages.reject { |tl| cached&.dig("translations", tl) }
+      missing = [target_languages.first] if missing.empty? && needs_similar && cached["similar_translations"].nil?
+      missing.empty? ? hits += 1 : missing.each { |tl| misses[tl] << entry }
+      next unless cached
+
+      (target_languages - missing).each do |tl|
+        translation = cached["translations"][tl]
+        definition = cached.dig("definitions", tl)
+        if multi
+          (entry[:translations] ||= {})[tl] = translation
+          (entry[:definitions] ||= {})[tl] = definition
+        else
+          entry[:translation] ||= translation
+          entry[:definition] ||= definition
+        end
+      end
+      entry[:pronunciation] ||= cached["pronunciation"]
+      entry[:similar_translations] ||= cached["similar_translations"]
+    end
+
+    log("Enrichment cache: #{hits} hits, #{entries.length - hits} misses")
+    misses
+  end
+
+  # Stores every freshly enriched entry (per language that came back) and
+  # writes the cache once.
+  def store_in_cache!(misses, target_languages, cache, episode)
+    misses.values.flatten.uniq(&:object_id).each do |entry|
+      translations = if target_languages.length > 1
+        (entry[:translations] || {}).compact
+      else
+        entry[:translation] ? { target_languages.first => entry[:translation] } : {}
+      end
+      next if translations.empty?
+
+      definitions = if target_languages.length > 1
+        (entry[:definitions] || {}).compact.slice(*translations.keys)
+      else
+        entry[:definition] ? { target_languages.first => entry[:definition] } : {}
+      end
+      cache.store(entry[:lemma], translations: translations, definitions: definitions,
+        pronunciation: entry[:pronunciation],
+        similar_translations: entry[:similar_translations], first_seen: episode)
+    end
+    cache.save
   end
 
   def call_enrich_api(entries, language:, target_language:, filters:)
