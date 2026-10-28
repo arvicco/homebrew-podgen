@@ -177,29 +177,41 @@ class TestVocabLedger < Minitest::Test
 
   # --- re-exposure share cap (measurement follow-up to loop call 2) ---
 
-  RE_LEMMAS = %w[rea reb rec red ree ref reg reh rei rej].freeze # explained at episodes 0..9
+  RE_LEMMAS = %w[rea reb rec red ree ref reg reh rei rej].freeze
+  # Explained in REVERSE alphabetical order (rej at episode 0 … rea at 9), so
+  # oldest-first and the lemma tie-break pick different pairs.
+  RE_BY_AGE = RE_LEMMAS.reverse.freeze
   NEW_LEMMAS = %w[nea neb nec ned nee nef neg neh nei nej].freeze
 
   def test_episodes_since_counts_from_the_last_explanation
     ledger = share_ledger
-    assert_equal 30, ledger.episodes_since("rea")
-    assert_equal 21, ledger.episodes_since("rej")
+    assert_equal 30, ledger.episodes_since("rej")
+    assert_equal 21, ledger.episodes_since("rea")
     assert_nil ledger.episodes_since("nea")
   end
 
   def test_annotate_caps_reexposures_at_a_quarter_of_max_keeping_the_oldest
     logs = []
-    vocab = annotate_share(max: 8, logs: logs)
-    assert_equal %w[rea reb], lemmas_in(vocab) & RE_LEMMAS
+    enriched = []
+    vocab = annotate_share(max: 8, logs: logs, enriched: enriched)
+    assert_equal %w[rei rej], lemmas_in(vocab) & RE_LEMMAS, "the two explained longest ago"
     assert_equal 6, (lemmas_in(vocab) & NEW_LEMMAS).length
     assert logs.any? { |m| m.end_with?("Ledger: re-exposure cap 2 of 10 (max × 0.25)") }, logs.inspect
-    assert logs.any? { |m| m.end_with?("Ledger: re-exposing rea, reb") }, logs.inspect
+    assert logs.any? { |m| m.end_with?("Ledger: re-exposing rej, rei") }, logs.inspect
+    assert_equal %w[rei rej], enriched.uniq.sort & RE_LEMMAS, "capped-out re-exposures are never enriched"
+  end
+
+  def test_annotate_reexposure_cap_ties_on_age_go_to_the_more_frequent
+    ledger = VocabLedger.new
+    20.times { |i| ledger.add(format("ep-%03d", i), lemmas: (i == 0) ? %w[taa tab tac] : [], body: "Testo.") }
+    vocab = annotate_entries("taa tab tab tab tac tac", %w[taa tab tac], ledger, max: 4)
+    assert_equal %w[tab], lemmas_in(vocab)
   end
 
   def test_annotate_key_reexposure_does_not_consume_the_share
     vocab = annotate_share(max: 8, key: true)
     assert_includes lemmas_in(vocab), "asino"
-    assert_equal %w[rea reb], lemmas_in(vocab) & RE_LEMMAS
+    assert_equal %w[rei rej], lemmas_in(vocab) & RE_LEMMAS
   end
 
   def test_annotate_without_max_does_not_cap_reexposures
@@ -210,12 +222,12 @@ class TestVocabLedger < Minitest::Test
 
   private
 
-  # 30 episodes; RE_LEMMAS[i] explained once at episode i (all past the
+  # 30 episodes; RE_BY_AGE[i] explained once at episode i (all past the
   # 8-episode gap); "asino" explained once at episode 10.
   def share_ledger
     ledger = VocabLedger.new
     30.times do |i|
-      lemmas = (i < 10) ? [RE_LEMMAS[i]] : []
+      lemmas = (i < 10) ? [RE_BY_AGE[i]] : []
       lemmas << "asino" if i == 10
       ledger.add(format("ep-%03d", i), lemmas: lemmas, body: "Testo.")
     end
@@ -225,19 +237,27 @@ class TestVocabLedger < Minitest::Test
   # Re-exposable lemmas occur 3× (they would win the band cap), new ones
   # once; 3-letter names stay out of the key-term pass. key: adds "asino"
   # ×3 — a key term that is also a re-exposure.
-  def annotate_share(max:, key: false, logs: [])
+  def annotate_share(max:, key: false, logs: [], enriched: [])
     lemmas = RE_LEMMAS + NEW_LEMMAS + (key ? ["asino"] : [])
-    entries = lemmas.map { |l| {word: l, lemma: l, level: "B1", pos: "noun"} }
     text = (RE_LEMMAS.map { |l| "#{l} #{l} #{l}" } + NEW_LEMMAS + (key ? ["asino asino asino"] : [])).join(" ")
+    annotate_entries(text, lemmas, share_ledger, max: max, logs: logs, enriched: enriched)
+  end
+
+  # enriched collects every lemma handed to the enrichment call.
+  def annotate_entries(text, lemmas, ledger, max:, logs: [], enriched: [])
+    entries = lemmas.map { |l| {word: l, lemma: l, level: "B1", pos: "noun"} }
     logger = Object.new
     logger.define_singleton_method(:log) { |m| logs << m }
     annotator = VocabularyAnnotator.new("k", model: "m", logger: logger)
-    enrich = ->(list, **) { list.map { |e| {lemma: e[:lemma], translation: "t", definition: "d"} } }
+    enrich = lambda do |list, **|
+      enriched.concat(list.map { |e| e[:lemma] })
+      list.map { |e| {lemma: e[:lemma], translation: "t", definition: "d"} }
+    end
     annotator.stub(:classify_words, ->(*) { entries.map(&:dup) }) do
       annotator.stub(:call_enrich_api, enrich) do
         Tell::Espeak.stub(:supports?, false) do
           Tell::Hunspell.stub(:supports?, false) do
-            annotator.annotate(text, language: "Italian", cutoff: "B1", max: max, ledger: share_ledger).last
+            annotator.annotate(text, language: "Italian", cutoff: "B1", max: max, ledger: ledger).last
           end
         end
       end
