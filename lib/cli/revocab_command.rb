@@ -29,7 +29,10 @@ module PodgenCLI
         opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| @episode_id = v }
         opts.on("--from DATE", "First episode date to include (YYYY-MM-DD)") { |v| @from = parse_date_option!(v) }
         opts.on("--to DATE", "Last episode date to include (YYYY-MM-DD)") { |v| @to = parse_date_option!(v) }
-        opts.on("--limit N", Integer, "Only the earliest N transcripts of the selection") { |v| @limit = v }
+        opts.on("--limit N", Integer, "Only the earliest N transcripts of the selection") do |v|
+          raise OptionParser::InvalidArgument, "--limit #{v} (must be positive)" unless v.positive?
+          @limit = v
+        end
         opts.on("--no-ledger", "Ignore earlier episodes' vocabulary (no spaced re-exposure, no key terms)") { @no_ledger = true }
         opts.on("--no-cache", "Enrich every lemma afresh (neither read nor write vocab_cache.yml)") { @no_cache = true }
       end.parse!(args)
@@ -114,7 +117,7 @@ module PodgenCLI
       if processed > 0
         puts "Regenerating site..."
         SiteGenerator.new(config: @config, clean: true).generate
-      else
+      elsif failed.empty?
         puts "No transcripts needed annotation"
       end
 

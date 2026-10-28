@@ -142,6 +142,12 @@ module PodgenCLI
       return code if code
 
       load_config!
+      targets = @config.vocabulary_target_languages
+      unless targets.include?(@lang)
+        $stderr.puts "Unknown target language '#{@lang}'. Configured: #{targets.join(", ")}"
+        return 2
+      end
+
       cache = VocabCache.for_config(@config)
       cache.set(@word, @lang, translation: @translation, definition: @definition)
       cache.save
