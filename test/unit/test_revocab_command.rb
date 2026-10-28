@@ -307,6 +307,42 @@ class TestRevocabCommand < Minitest::Test
     assert_includes err, "testpod-2026-09-02"
   end
 
+  def test_limit_rejects_non_positive
+    [%w[--limit 0], %w[--limit -1]].each do |flag|
+      assert_raises(OptionParser::InvalidArgument) do
+        PodgenCLI::RevocabCommand.new(flag + ["testpod"], {})
+      end
+    end
+  end
+
+  def test_run_all_failed_does_not_claim_nothing_needed_annotation
+    write_transcript("testpod-2026-09-01")
+
+    annotator = Object.new
+    annotator.define_singleton_method(:annotate) { |_text, **_| raise "API down" }
+
+    cmd = build_command_with("testpod")
+    code = nil
+    out = capture_io do
+      stub_run_setup(cmd) do
+        VocabularyAnnotator.stub(:new, annotator) { code = cmd.run }
+      end
+    end.first
+
+    assert_equal 1, code
+    refute_includes out, "No transcripts needed annotation"
+    assert_includes out, "re-annotated 0, skipped 0, failed 1 (testpod-2026-09-01)"
+  end
+
+  def test_run_all_skipped_says_nothing_needed_annotation
+    write_transcript("testpod-2026-09-01", vocab: "**B2**\n- **word** (n.) — thing")
+
+    cmd = build_command_with("--missing-only", "testpod")
+    out = capture_io { stub_run_setup(cmd) { assert_equal 0, cmd.run } }.first
+
+    assert_includes out, "No transcripts needed annotation"
+  end
+
   def test_run_all_succeed_exits_zero_with_tally
     write_transcript("testpod-2026-09-01", vocab: "**B2**\n- **word** (n.) — thing")
     write_transcript("testpod-2026-09-02")
