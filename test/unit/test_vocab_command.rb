@@ -119,7 +119,104 @@ class TestVocabCommand < Minitest::Test
     assert_equal 2, code
   end
 
+  # --- review (P9-6) ---
+
+  def test_review_lists_lemmas_explained_min_times_with_count_and_last
+    review_fixture
+
+    code = nil
+    out, = capture_io { code = build_command("review", "testpod").run }
+
+    assert_equal 0, code
+    assert_match(/lupo\s+3\s+testpod-2026-01-03/, out)
+    refute_includes out, "mela"
+  end
+
+  def test_review_min_two_lists_both
+    review_fixture
+
+    out, = capture_io { build_command("review", "testpod", "--min", "2").run }
+
+    assert_includes out, "lupo"
+    assert_match(/mela\s+2\s+testpod-2026-01-02/, out)
+  end
+
+  def test_review_excludes_known_lemmas
+    review_fixture
+    capture_io { build_command("add", "testpod", "lupo").run }
+
+    out, = capture_io { build_command("review", "testpod", "--min", "2").run }
+
+    refute_includes out, "lupo"
+    assert_includes out, "mela"
+  end
+
+  def test_review_promote_adds_listed_lemmas_to_known_vocabulary
+    review_fixture
+
+    code = nil
+    out, = capture_io { code = build_command("review", "testpod", "--promote").run }
+
+    assert_equal 0, code
+    assert_includes out, "Promoted 1"
+    kv = KnownVocabulary.new(File.join(@podcast_dir, "known_vocabulary.yml"))
+    assert_equal ["lupo"], kv.lemmas("sl")
+  end
+
+  def test_review_missing_podcast_is_usage_error
+    code = nil
+    capture_io { code = build_command("review").run }
+    assert_equal 2, code
+  end
+
+  # --- edit (P9-6) ---
+
+  def test_edit_on_empty_cache_creates_lemma_with_one_language
+    code = nil
+    out, = capture_io do
+      code = build_command("edit", "testpod", "lupo", "--lang", "English",
+        "--translation", "wolf", "--definition", "A wild canine").run
+    end
+
+    assert_equal 0, code
+    assert_includes out, "Cached lupo (English)"
+    entry = VocabCache.new(cache_path).fetch("lupo")
+    assert_equal({"English" => "wolf"}, entry["translations"])
+    assert_equal({"English" => "A wild canine"}, entry["definitions"])
+  end
+
+  def test_edit_without_lang_is_usage_error
+    code = nil
+    _out, err = capture_io { code = build_command("edit", "testpod", "lupo", "--translation", "wolf").run }
+
+    assert_equal 2, code
+    assert_includes err, "Usage"
+    refute File.exist?(cache_path)
+  end
+
+  def test_edit_without_translation_is_usage_error
+    code = nil
+    capture_io { code = build_command("edit", "testpod", "lupo", "--lang", "English").run }
+
+    assert_equal 2, code
+  end
+
   private
+
+  def cache_path
+    File.join(@tmpdir, "output", "testpod", "vocab_cache.yml")
+  end
+
+  # lupo explained 3x (last 01-03), mela 2x (last 01-02).
+  def review_fixture
+    eps = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(eps)
+    {"2026-01-01" => %w[lupo mela], "2026-01-02" => %w[lupo mela], "2026-01-03" => %w[lupo]}.each do |date, lemmas|
+      vocab = lemmas.map { |l| "- **#{l}** (B1 noun) — gloss" }.join("\n")
+      File.write(File.join(eps, "testpod-#{date}_transcript.md"),
+        "# T\n\n## Transcript\n\nText.\n\n## Vocabulary\n\n#{vocab}\n")
+    end
+  end
 
   def build_command(*args)
     PodgenCLI::VocabCommand.new(args, {})
