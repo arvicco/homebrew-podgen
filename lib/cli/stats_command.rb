@@ -13,6 +13,7 @@ require_relative File.join(root, "lib", "episode_filtering")
 require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "history_maps")
 require_relative File.join(root, "lib", "word_stats")
+require_relative File.join(root, "lib", "vocab_health")
 
 module PodgenCLI
   class StatsCommand
@@ -34,6 +35,11 @@ module PodgenCLI
         opts.on("--words", "Vocabulary frequency across all episodes") { @words = true }
         opts.on("--top N", Integer, "Limit --words to top N rows (default 50, 0 = all)") { |n| @top = n }
         opts.on("--sort COL", %w[body vocab], "Sort --words by 'body' (default) or 'vocab' frequency") { |s| @sort = s }
+        opts.on("--vocab-health", "Vocabulary census: repeats, levels, key-term misses, drift") { @vocab_health = true }
+        opts.on("--last N", Integer, "Limit --vocab-health to the latest N transcripts") do |n|
+          raise OptionParser::InvalidArgument, "--last #{n} (must be positive)" unless n.positive?
+          @last = n
+        end
       end.parse!(args)
       @podcast_name = args.shift
       unless args.empty?
@@ -42,7 +48,9 @@ module PodgenCLI
     end
 
     def run
-      if @words
+      if @vocab_health
+        return run_vocab_health
+      elsif @words
         return run_words
       elsif @downloads
         run_downloads
@@ -96,6 +104,27 @@ module PodgenCLI
                truncate(s.lemma, 22),
                truncate(s.pos.to_s, 10),
                truncate(s.definition.to_s, 50)
+      end
+      0
+    end
+
+    def run_vocab_health
+      names = if @all
+        PodcastConfig.available.select { |name| PodcastConfig.new(name).vocabulary_level }
+      elsif @podcast_name
+        [@podcast_name]
+      else
+        $stderr.puts "Usage: podgen stats --vocab-health <podcast> | --all [--last N]"
+        return 2
+      end
+
+      names.each_with_index do |name, i|
+        puts if i.positive?
+        config = PodcastConfig.new(name)
+        durations = build_duration_map(config).transform_keys { |f| File.basename(f, ".mp3") }
+        health = VocabHealth.new(episodes_dir: config.episodes_dir, cutoff: config.vocabulary_level,
+          durations: durations)
+        health.lines(name, last: @last).each { |line| puts line }
       end
       0
     end

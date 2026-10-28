@@ -201,7 +201,77 @@ class TestStatsCommand < Minitest::Test
     assert_equal 8, result.length
   end
 
+  # --- --vocab-health (P9-0) ---
+
+  def test_vocab_health_single_pod_prints_census_with_per_minute
+    root = vocab_root
+    write_history(root, "lang", [{ "date" => "2026-01-01", "duration" => 120 }])
+
+    out, code = run_stats(root, ["--vocab-health", "lang"])
+
+    assert_equal 0, code
+    assert_includes out, "lang (2 episodes): 3 entries (2 unique lemmas)"
+    assert_includes out, "repeat share 33%"
+    assert_includes out, "1.0/min" # 2 entries over 2 minutes; the second episode has no duration
+  end
+
+  def test_vocab_health_last_n_restricts_window
+    root = vocab_root
+
+    out, = run_stats(root, ["--vocab-health", "lang", "--last", "1"])
+
+    assert_includes out, "lang (last 1 of 2 episodes): 1 entries (1 unique lemmas)"
+    assert_includes out, "repeat share 100%"
+    refute_includes out, "/min"
+  end
+
+  def test_vocab_health_all_skips_shows_without_vocabulary_level
+    root = vocab_root
+    FileUtils.mkdir_p(File.join(root, "podcasts", "news"))
+    File.write(File.join(root, "podcasts", "news", "guidelines.md"), "# News\n\n## Format\n- short\n")
+
+    out, code = run_stats(root, ["--vocab-health", "--all"])
+
+    assert_equal 0, code
+    assert_includes out, "lang (2 episodes)"
+    refute_includes out, "news"
+  end
+
+  def test_vocab_health_without_pod_or_all_is_usage_error
+    _, code = run_stats(vocab_root, ["--vocab-health"])
+
+    assert_equal 2, code
+  end
+
   private
+
+  def vocab_root
+    root = File.join(@tmpdir, "root")
+    FileUtils.mkdir_p(File.join(root, "podcasts", "lang"))
+    File.write(File.join(root, "podcasts", "lang", "guidelines.md"),
+      "# Lang\n\n## Vocabulary\n- level: B1\n")
+    eps = File.join(root, "output", "lang", "episodes")
+    FileUtils.mkdir_p(eps)
+    File.write(File.join(eps, "lang-2026-01-01_transcript.md"),
+      "# T\n\n## Transcript\n\nIl lupo.\n\n## Vocabulary\n\n- **lupo** (B1 noun) — wolf\n- **mela** (B2 noun) — apple\n")
+    File.write(File.join(eps, "lang-2026-01-02_transcript.md"),
+      "# T\n\n## Transcript\n\nIl lupo.\n\n## Vocabulary\n\n- **lupo** (B1 noun) — wolf\n")
+    root
+  end
+
+  def write_history(root, pod, entries)
+    File.write(File.join(root, "output", pod, "history.yml"), entries.to_yaml)
+  end
+
+  def run_stats(root, args)
+    old = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = root
+    code = nil
+    out, = capture_io { code = PodgenCLI::StatsCommand.new(args, {}).run }
+    [out, code]
+  ensure
+    old ? ENV["PODGEN_ROOT"] = old : ENV.delete("PODGEN_ROOT")
+  end
 
   def create_mp3(name, size)
     File.write(File.join(@episodes_dir, name), "x" * size)
