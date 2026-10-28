@@ -169,7 +169,7 @@ module Tell
           tts = Tell.build_tts(config.tts_engine, config)
           audio = tts.synthesize(speak_text, voice: voice)
           mutex.synchronize { sse(out, "audio", { base64: Base64.strict_encode64(audio) }) }
-        rescue => e
+        rescue => e # skippable: the TTS error reaches the client; the other events still stream
           mutex.synchronize { sse(out, "error", { message: "TTS: #{e.message}" }) }
         end
       end
@@ -197,13 +197,13 @@ module Tell
 
       threads.each(&:join)
       sse(out, "done", {})
-    rescue => e
-      sse(out, "error", { message: e.message }) rescue nil
+    rescue => e # fatal for the request: it ends with an error event
+      sse(out, "error", { message: e.message }) rescue nil # skippable: transport guard — SSE client write; the error event itself could not be sent
     end
 
     def build_sse_callbacks(out, mutex)
       # Each callback rescues broken-pipe errors — client can disconnect at any time.
-      safe = ->(block) { ->(**kw) { block.call(**kw) rescue nil } }
+      safe = ->(block) { ->(**kw) { block.call(**kw) rescue nil } } # skippable: transport guard — SSE client write; swallows ANY callback error, that event is lost
 
       {
         on_reverse: safe.call(->(text:, lang:) {

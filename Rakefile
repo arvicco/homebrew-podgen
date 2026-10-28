@@ -20,16 +20,26 @@ namespace :test do
   end
 
   # Integration files verified to pass with no API keys and no .env —
-  # safe for CI. The full tier leaks fake ENV keys between tests when run
-  # keyless in one process, un-gating API tests; run it locally instead.
+  # safe for CI. Keyed and live-network cases live in test/api/ (Q-68);
+  # a file joins this list only when it has none and sets no
+  # process-wide placeholder key (one would un-gate skip_unless_env).
+  # CAUTION: `rake test` loads every tier (unit + integration + api) in ONE
+  # process, and many unit files set ENV["ANTHROPIC_API_KEY"] ||= "test-key"
+  # at load time — so a keyless `rake test` un-gates the test/api cases and
+  # runs them with a fake key against live endpoints. Run test:api only
+  # with real keys; the gate runs unit and integration_offline as separate
+  # processes and is unaffected (fix queued as Q-86).
   Rake::TestTask.new(:integration_offline) do |t|
     t.libs << "test"
     t.test_files = FileList[
       "test/integration/test_assembly.rb",
       "test/integration/test_language_pipeline_chain.rb",
+      "test/integration/test_news_pipeline.rb",
       "test/integration/test_pipeline_contracts.rb",
       "test/integration/test_source_registry_drift.rb",
-      "test/integration/test_stats_validate.rb"
+      "test/integration/test_stats_validate.rb",
+      "test/integration/test_tell_gloss_pipeline.rb",
+      "test/integration/test_tell_speak_pipeline.rb"
     ]
   end
 

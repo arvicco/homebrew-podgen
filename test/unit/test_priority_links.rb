@@ -224,6 +224,132 @@ class TestPriorityLinks < Minitest::Test
     assert_includes findings.first[:summary], "Must cover this"
   end
 
+  # --- fetch seam (P8-4, Q-63) ---
+
+  FakeResponse = Struct.new(:code, :headers, :body) do
+    def [](key) = headers[key]
+  end
+
+  class RecordingLogger
+    attr_reader :lines, :warnings
+
+    def initialize
+      @lines = []
+      @warnings = []
+    end
+
+    def log(msg) = @lines << msg
+    def warning(msg) = @warnings << msg
+  end
+
+  def test_fetch_page_info_relative_redirect_resolves_and_returns_title
+    requested = []
+    replies = [
+      FakeResponse.new("301", {"location" => "/article"}, ""),
+      FakeResponse.new("200", {}, "<html><title>Real Title</title></html>")
+    ]
+    links = PriorityLinks.new(@path, fetcher: ->(uri) {
+      requested << uri.to_s
+      replies.shift
+    })
+
+    title, = links.send(:fetch_page_info, "https://example.com/short")
+
+    assert_equal "Real Title", title
+    assert_equal ["https://example.com/short", "https://example.com/article"], requested
+  end
+
+  def test_fetch_all_failed_fetch_warns_with_class_and_is_not_returned
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { raise SocketError, "getaddrinfo" })
+    links.add("https://down.example.com/a")
+    logger = RecordingLogger.new
+
+    findings = links.fetch_all(logger: logger)
+
+    assert_equal [], findings, "a failed link is not returned, so it is not consumed"
+    assert_equal 1, logger.warnings.length
+    assert_includes logger.warnings.first, "Warning: https://down.example.com/a (SocketError"
+    refute logger.lines.any? { |l| l.include?("✓") }, "no check mark on failure"
+    assert_equal ["https://down.example.com/a"], links.all.map { |e| e["url"] }, "link stays queued"
+  end
+
+  # CRPR r2 W1: a permanent failure (4xx other than 429) is NOT a finding
+  # (it would reach the script and the reviewer's must-cite check); it is
+  # reported in dead_urls for the caller to consume, after one warning.
+  def test_fetch_all_permanent_http_error_warns_once_and_lists_dead_url
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("404", {}, "") })
+    links.add("https://example.com/gone")
+    logger = RecordingLogger.new
+
+    findings = links.fetch_all(logger: logger)
+
+    assert_equal [], findings
+    assert_equal ["https://example.com/gone"], links.dead_urls
+    assert_equal 1, logger.warnings.length
+    assert_includes logger.warnings.first, "PriorityLinks::PermanentFetchError"
+    assert_includes logger.warnings.first, "HTTP 404"
+    refute logger.lines.any? { |l| l.include?("\u2713") }
+  end
+
+  def test_fetch_all_gone_and_malformed_urls_are_permanent
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("410", {}, "") })
+    File.write(@path, [{"url" => "https://example.com/old"}, {"url" => "ftp://example.com/x"},
+      {"url" => "http://exa mple.com/bad"}].to_yaml)
+    logger = RecordingLogger.new
+
+    assert_equal [], links.fetch_all(logger: logger)
+    assert_equal ["https://example.com/old", "ftp://example.com/x", "http://exa mple.com/bad"], links.dead_urls
+    assert_equal 3, logger.warnings.length
+  end
+
+  def test_fetch_all_transient_http_error_stays_queued
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("502", {}, "") })
+    links.add("https://example.com/flaky")
+    logger = RecordingLogger.new
+
+    assert_equal [], links.fetch_all(logger: logger)
+    assert_includes logger.warnings.first, "PriorityLinks::FetchError: HTTP 502"
+    assert_empty links.dead_urls, "a transient failure is not dead"
+  end
+
+  # CRPR W2(a): a Latin-1 page (or one stray byte) still yields its title.
+  def test_fetch_page_info_invalid_utf8_body_returns_title
+    body = "<title>Caf\xE9 \xFF news</title>".b
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) { FakeResponse.new("200", {}, body) })
+
+    title, = links.send(:fetch_page_info, "https://example.com/latin1")
+
+    assert_includes title, "news"
+    assert title.valid_encoding?
+  end
+
+  def test_fetch_all_success_logs_title_with_timing
+    links = PriorityLinks.new(@path, fetcher: ->(_uri) {
+      FakeResponse.new("200", {}, "<title>Hello</title>")
+    })
+    links.add("https://example.com/a")
+    logger = RecordingLogger.new
+
+    findings = links.fetch_all(logger: logger)
+
+    assert_equal "Hello", findings.first[:title]
+    assert logger.lines.any? { |l| l.match?(/✓ Hello \(\d+(\.\d+)?s\)/) }, logger.lines.inspect
+  end
+
+  def test_http_get_retries_timeouts_then_raises_original_class
+    attempts = 0
+    raiser = ->(*_a, **_k) {
+      attempts += 1
+      raise Net::OpenTimeout, "execution expired"
+    }
+    @links.define_singleton_method(:sleep) { |_s| nil }
+
+    Net::HTTP.stub(:start, raiser) do
+      assert_raises(Net::OpenTimeout) { @links.send(:http_get, URI("https://example.com/a")) }
+    end
+    assert_equal 3, attempts # 1 + 2 retries (with_http_retries default)
+  end
+
   # --- atomic writes ---
 
   def test_concurrent_add_does_not_corrupt

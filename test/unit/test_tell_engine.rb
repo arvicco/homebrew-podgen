@@ -312,6 +312,21 @@ class TestTellEngine < Minitest::Test
     assert_event_type :phonetic_sisters
   end
 
+  # P8-5 (Q-74): a failing gloss on the Japanese path reaches the gloss
+  # error callback (it was swallowed by a modifier rescue).
+  def test_fire_addons_japanese_gloss_failure_emits_gloss_error
+    @config.target_language = "ja"
+    @glosser = MockGlosser.new(error: RuntimeError.new("gloss API down"))
+    engine = build_engine
+    threads = engine.fire_addons("テスト",
+      phonetic: true, gloss: true, gloss_translate: true, target_lang: "ja", reverse_lang: "en")
+    threads.each(&:join)
+
+    errors = @events.select { |e| e[0] == :gloss_error }.map { |e| e[1] }
+    assert_equal 2, errors.length, "one per failed gloss mode, got: #{@events.map(&:first)}"
+    assert errors.all? { |e| e.is_a?(RuntimeError) && e.message == "gloss API down" }
+  end
+
   def test_fire_addons_japanese_gloss_aligns_brackets_from_phonetic
     @config.target_language = "ja"
     @glosser = MockGlosser.new(

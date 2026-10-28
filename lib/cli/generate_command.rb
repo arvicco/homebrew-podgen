@@ -84,7 +84,7 @@ module PodgenCLI
         end
 
         finish_run(0)
-      rescue => e
+      rescue => e # fatal: top-level handler; logs the class and fails the run
         @logger.error("#{e.class}: #{e.message}")
         @logger.error(e.backtrace.first(5).join("\n"))
         $stderr.puts "\n\u2717 Pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
@@ -209,8 +209,8 @@ module PodgenCLI
           @hn_queries = topic_agent.hn_queries
           @logger.log("Generated #{t.length} topics from guidelines")
           t
-        rescue => e
-          @logger.log("Topic generation failed (#{e.message}), falling back to queue.yml")
+        rescue => e # skippable: queue.yml topics stand in for generated ones
+          @logger.log("Topic generation failed (#{e.class}: #{e.message}), falling back to queue.yml")
           @warnings << "Topic generation failed (#{e.class}: #{e.message}), fell back to queue.yml"
           t = @config.queue_topics
           @logger.log("Loaded #{t.length} fallback topics: #{t.join(', ')}")
@@ -245,8 +245,29 @@ module PodgenCLI
       end
       total_findings = research_data.sum { |r| r[:findings].length }
       @logger.log("Research complete: #{total_findings} findings across #{research_data.length} topics")
+      research_data = drop_topics_without_findings(topics, research_data)
       @logger.phase_end("Research")
+      raise "no research findings for any topic" if research_data.empty?
+
       research_data
+    end
+
+    # A script from model memory is worse than no episode (P8-1, Q-69): a
+    # topic with no findings (all sources failed, or a revoked key) is
+    # dropped as a run warning; with none left research_topics fails, after
+    # closing the phase, before any ScriptAgent call. Dropped topics stay out of history, so they remain
+    # eligible on a later day; queue.yml is read-only, nothing to re-queue.
+    def drop_topics_without_findings(topics, research_data)
+      kept = research_data.select { |r| r[:findings].any? }
+      kept_topics = kept.map { |r| r[:topic] }
+      (topics | research_data.map { |r| r[:topic] }).each do |topic|
+        next if kept_topics.include?(topic)
+
+        msg = "Warning: topic '#{topic}' dropped — no research findings"
+        @logger.log(msg)
+        @warnings << msg
+      end
+      kept
     end
 
     def inject_priority_links(research_data)
@@ -257,7 +278,10 @@ module PodgenCLI
         @logger.log("Fetching #{priority_links.count} priority link(s)...")
         priority_findings = priority_links.fetch_all(logger: @logger)
         priority_urls = priority_findings.map { |f| f[:url] }
-        research_data.unshift({ topic: "Priority links", findings: priority_findings })
+        # Dead links are consumed at finalize but never injected (P8-4).
+        @dead_priority_urls = priority_links.dead_urls
+        # No empty topic when every link failed (it would reach the prompt and history).
+        research_data.unshift({ topic: "Priority links", findings: priority_findings }) unless priority_findings.empty?
         @logger.log("Injected #{priority_findings.length} priority link(s) into research data")
         @logger.phase_end("Priority Links")
       end
@@ -380,7 +404,7 @@ module PodgenCLI
           output_paths << output_path
           @logger.log("\u2713 Episode ready (#{lang_code}): #{output_path}")
           puts "\u2713 Episode ready (#{lang_code}): #{output_path}" unless @options[:verbosity] == :quiet
-        rescue => e
+        rescue => e # skippable per-language: other languages still ship; all failing raises below
           @logger.error("Language #{lang_code} failed: #{e.class}: #{e.message}")
           @logger.error(e.backtrace.first(5).join("\n"))
           msg = "Language #{lang_code} failed: #{e.message}"
@@ -486,10 +510,11 @@ module PodgenCLI
       )
       @logger.log("Episode recorded in history: #{@config.history_path}")
 
-      unless priority_urls.empty?
+      consumed = priority_urls + Array(@dead_priority_urls)
+      unless consumed.empty?
         priority_links = PriorityLinks.new(@config.links_path)
-        priority_links.consume!(priority_urls)
-        @logger.log("#{priority_urls.length} priority link(s) consumed")
+        priority_links.consume!(consumed)
+        @logger.log("#{consumed.length} priority link(s) consumed")
       end
 
       total_time = (Time.now - @pipeline_start).round(2)

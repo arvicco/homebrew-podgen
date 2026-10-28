@@ -218,8 +218,8 @@ class TTSAgent
     log("Pronunciation dictionary ready: #{dict[:dictionary_id]} (v#{dict[:version_id]})")
 
     [{ pronunciation_dictionary_id: dict[:dictionary_id], version_id: dict[:version_id] }]
-  rescue => e
-    log("WARNING: Pronunciation dictionary failed, continuing without: #{e.message}")
+  rescue => e # skippable: TTS proceeds without the pronunciation dictionary
+    log("WARNING: Pronunciation dictionary failed, continuing without: #{e.class}: #{e.message}")
     []
   end
 

@@ -76,6 +76,21 @@ class TestRetryable < Minitest::Test
     assert_includes err.message, "Test failed after 4 attempts"
   end
 
+  # P8-3: reraise: true gives up with the original error, class intact.
+  def test_with_retries_reraise_gives_up_with_original_error
+    attempts = 0
+    err = assert_raises(ArgumentError) do
+      @host.call_with_retries(max: 2, on: [ArgumentError], label: "Test", reraise: true) do
+        attempts += 1
+        raise ArgumentError, "bad"
+      end
+    end
+
+    assert_equal "bad", err.message
+    assert_equal 3, attempts
+    assert_equal "Test failed after 3 attempts (ArgumentError)", @host.log_messages.last
+  end
+
   def test_does_not_retry_unmatched_exception
     assert_raises(ArgumentError) do
       @host.call_with_retries(max: 3, on: [RuntimeError]) do

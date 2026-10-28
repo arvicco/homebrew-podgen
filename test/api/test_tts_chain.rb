@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Integration test: verifies TTS → AudioAssembler chain.
+# API test: verifies TTS → AudioAssembler chain.
 # Synthesizes real audio via ElevenLabs, then assembles into a final MP3.
 
 require_relative "../test_helper"

@@ -229,7 +229,8 @@ class TestCharacterizationReconcilers < Minitest::Test
     def create(**kw)
       @calls << kw
       raise Anthropic::Errors::APIConnectionError.new(url: nil, request: nil) if @raise_error
-      Struct.new(:content).new([Struct.new(:type, :text).new(:text, @text)])
+      usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens).new(1, 1, 0, 0)
+      Struct.new(:content, :stop_reason, :usage).new([Struct.new(:type, :text).new(:text, @text)], "end_turn", usage)
     end
   end
 

@@ -65,7 +65,7 @@ module Tell
           Thread.new(mid) do |m|
             r = yield(m)
             mu.synchronize { results[m] = r }
-          rescue => e
+          rescue => e # skippable per-model: other models still answer; all failing raises below
             mu.synchronize { errors[m] = e }
           end
         end

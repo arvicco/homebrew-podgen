@@ -33,7 +33,7 @@ module Validators
         @warnings << "Episodes: #{bad_names.length} file#{'s' unless bad_names.length == 1} with unexpected naming"
       end
 
-      total_size = mp3s.sum { |f| File.size(f) rescue 0 }
+      total_size = mp3s.sum { |f| File.size(f) rescue 0 } # skippable: silent fallback — 0 bytes for a vanished file
       avg_size = total_size / mp3s.length
       @passes << "Episodes: #{mp3s.length} MP3 files (#{format_size(avg_size)} avg)"
     end

@@ -152,6 +152,7 @@ module Tell
             emit(:on_phonetic, text: result[:primary]) if result
             emit(:on_phonetic_sisters, sisters: result[:sisters]) if result&.dig(:sisters)
           rescue => e
+            # skippable: the other addons still render; the user sees the phonetic error.
             emit(:on_phonetic_error, error: e)
           end
         end
@@ -168,6 +169,7 @@ module Tell
       ph_thread = Thread.new do
         compute_phonetic(text, lang: "ja", system: phonetic_system)
       rescue => e
+        # skippable: the other addons still render; the user sees the phonetic error.
         emit(:on_phonetic_error, error: e)
         nil
       end
@@ -178,7 +180,7 @@ module Tell
         sys = do_gloss_phonetic ? "hiragana" : nil
         gloss_infos << {
           event: :on_gloss,
-          thread: Thread.new { run_gloss(mode, text, from: from, to: to, system: sys) rescue nil }
+          thread: gloss_thread(mode, text, from: from, to: to, system: sys)
         }
       end
       if do_gloss_translate
@@ -186,7 +188,7 @@ module Tell
         sys = do_gloss_phonetic ? "hiragana" : nil
         gloss_infos << {
           event: :on_gloss_translate,
-          thread: Thread.new { run_gloss(mode, text, from: from, to: to, system: sys) rescue nil }
+          thread: gloss_thread(mode, text, from: from, to: to, system: sys)
         }
       end
 
@@ -217,6 +219,7 @@ module Tell
           emit(info[:event], text: strip_redundant_brackets(gloss_result))
         end
       rescue => e
+        # skippable: the other addons still render; the user sees the gloss error.
         emit(:on_gloss_error, error: e)
       end
 
@@ -235,6 +238,18 @@ module Tell
     end
 
     private
+
+    # Gloss thread whose value is nil on failure; the failure reaches the
+    # user through on_gloss_error (P8-5, was a silent modifier rescue).
+    def gloss_thread(mode, text, from:, to:, system:)
+      Thread.new do
+        run_gloss(mode, text, from: from, to: to, system: system)
+      rescue => e
+        # skippable: the other addons still render; the user sees the gloss error.
+        emit(:on_gloss_error, error: e)
+        nil
+      end
+    end
 
     # --- Japanese phonetic pipeline ---
 
@@ -293,6 +308,7 @@ module Tell
       ph_thread = Thread.new do
         compute_phonetic(text, lang: target, system: ph_system)
       rescue => e
+        # skippable: the other addons still render; the user sees the phonetic error.
         emit(:on_phonetic_error, error: e)
         nil
       end
@@ -300,6 +316,7 @@ module Tell
       gloss_thread = Thread.new do
         run_gloss(base_mode, text, from: target, to: rev_lang, system: ph_system)
       rescue => e
+        # skippable: the other addons still render; the user sees the gloss error.
         emit(:on_gloss_error, error: e)
         nil
       end
@@ -325,6 +342,7 @@ module Tell
           emit(gloss_event, text: base_result)
         end
       rescue => e
+        # skippable: the other addons still render; the user sees the gloss error.
         emit(:on_gloss_error, error: e)
       end
 
@@ -343,6 +361,7 @@ module Tell
           result = run_gloss(gl_mode, text, from: target, to: rev_lang, system: ph_system)
           emit(:on_gloss, text: strip_redundant_brackets(result))
         rescue => e
+          # skippable: the other addons still render; the user sees the gloss error.
           emit(:on_gloss_error, error: e)
         end
       end
@@ -353,6 +372,7 @@ module Tell
           result = run_gloss(gt_mode, text, from: target, to: rev_lang, system: ph_system)
           emit(:on_gloss_translate, text: strip_redundant_brackets(result))
         rescue => e
+          # skippable: the other addons still render; the user sees the gloss error.
           emit(:on_gloss_error, error: e)
         end
       end

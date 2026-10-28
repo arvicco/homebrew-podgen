@@ -41,8 +41,8 @@ module Validators
           unless data.is_a?(Hash) && data["topics"].is_a?(Array)
             @warnings << "Guidelines: queue.yml has unexpected format"
           end
-        rescue => e
-          @warnings << "Guidelines: queue.yml parse error: #{e.message}"
+        rescue => e # skippable: reported as a validation warning
+          @warnings << "Guidelines: queue.yml parse error: #{e.class}: #{e.message}"
         end
       end
     end

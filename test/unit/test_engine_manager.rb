@@ -134,8 +134,8 @@ class TestEngineManager < Minitest::Test
       end
     end
 
-    assert_equal ["[EngineManager] Warning: Engine 'groq' failed: API error",
-      "[EngineManager] Warning: Reconciliation failed (non-fatal): boom"], logger.logged_warnings
+    assert_equal ["[EngineManager] Warning: Engine 'groq' failed: RuntimeError: API error",
+      "[EngineManager] Warning: Reconciliation failed (non-fatal): RuntimeError: boom"], logger.logged_warnings
   end
 
   def test_comparison_mode_raises_when_all_fail
@@ -166,7 +166,7 @@ class TestEngineManager < Minitest::Test
     assert_equal results["open"], output[:primary], "Primary is the first configured engine, not the first to finish"
     assert_equal %w[groq open], output[:all].keys.sort
     assert_equal results["groq"], output[:all]["groq"]
-    assert_equal({ "elab" => "elab down" }, output[:errors])
+    assert_equal({ "elab" => "RuntimeError: elab down" }, output[:errors])
   end
 
   def test_comparison_mode_includes_captions_in_reconciliation
@@ -227,6 +227,44 @@ class TestEngineManager < Minitest::Test
 
     manager.transcribe("/fake.mp3", captions: "some captions")
     assert_equal "some captions", cleanup_called_with_captions
+  end
+
+  # CRPR W5: an engine's HTTP error body (OpenAI's 401 echoes a masked
+  # key) never reaches the run warning or the comparison errors map.
+  def test_comparison_mode_engine_http_error_body_never_logged
+    saved_keys = ENV.to_h.slice("OPENAI_API_KEY", "GROQ_API_KEY")
+    ENV["OPENAI_API_KEY"] ||= "test-key"
+    ENV["GROQ_API_KEY"] ||= "test-key"
+    sentinel = "SENTINEL-BODY sk-...abcd"
+    post = lambda do |url, **_kw|
+      if url.include?("openai.com")
+        Struct.new(:code, :body, :success?).new(401, sentinel, false)
+      else
+        Struct.new(:code, :body, :success?).new(200, {"text" => "hi", "segments" => []}.to_json, true)
+      end
+    end
+    manager = build_manager(%w[open groq])
+    stub_engine(manager, "open", Transcription::OpenaiEngine.new(language: "sl"))
+    stub_engine(manager, "groq", Transcription::GroqEngine.new(language: "sl"))
+    stub_reconciler(manager, MockReconciler.new)
+
+    output = nil
+    logger = Dir.mktmpdir do |dir|
+      audio = File.join(dir, "a.mp3")
+      File.write(audio, "fake audio")
+      PodcastAgent::Logger.new(log_path: File.join(dir, "e.log"), verbosity: :quiet).tap do |l|
+        HTTParty.stub(:post, post) do
+          PodcastAgent.with_logger(l) { output = manager.transcribe(audio) }
+        end
+      end
+    end
+
+    assert_includes output[:errors]["open"], "Transcription::ApiError"
+    assert_includes output[:errors]["open"], "401"
+    refute_includes output[:errors]["open"], "SENTINEL"
+    refute logger.logged_warnings.any? { |w| w.include?("SENTINEL") }, logger.logged_warnings.inspect
+  ensure
+    %w[OPENAI_API_KEY GROQ_API_KEY].each { |k| saved_keys.key?(k) ? ENV[k] = saved_keys[k] : ENV.delete(k) }
   end
 
   private
