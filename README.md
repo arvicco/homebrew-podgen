@@ -1032,6 +1032,8 @@ To re-annotate vocabulary on previously published episodes:
 podgen revocab <podcast> [episode-id]     # specific episode or all
 podgen revocab <podcast> --missing-only   # only episodes without vocabulary
 podgen revocab <podcast> --dry-run        # preview without changes
+podgen revocab <podcast> --from 2026-09-01 --to 2026-09-30 --limit 10  # date range (inclusive), earliest N
+# ends with "re-annotated N, skipped N, failed N (<basenames>)"; exit 1 when any file failed
 ```
 
 #### Known Vocabulary
@@ -1403,6 +1405,7 @@ podgen stats fiabe --words                       # top 50 by body occurrences (d
 podgen stats fiabe --words --top 100             # top 100
 podgen stats fiabe --words --top 0               # all
 podgen stats fiabe --words --sort vocab          # sort by per-episode vocab frequency instead
+podgen stats fiabe --vocab-health [--last 10]    # census: repeat share, levels vs cutoff, key-term misses, drift (--all: every show)
 ```
 
 Two columns: `BODY` is the number of times the lemma (or any inflected form) appears across all transcript bodies; `VOCAB` is the number of episodes that listed the lemma in their `## Vocabulary` section.
@@ -1541,6 +1544,7 @@ podgen/
 │   ├── vocabulary_annotator.rb # CEFR vocabulary annotation (Claude + cognate filtering)
 │   ├── known_vocabulary.rb   # Per-language known word lists
 │   ├── word_stats.rb         # Vocabulary frequency (hunspell forms, language detection)
+│   ├── vocab_health.rb       # Vocabulary census for stats --vocab-health
 │   ├── language_names.rb     # ISO 639-1 → language name
 │   ├── cover_resolver.rb     # Shared cover lookup/generation (publish, pipeline, site, cover command)
 │   ├── episode_cover_resolver.rb # Cover priority chain for a language-pipeline episode
