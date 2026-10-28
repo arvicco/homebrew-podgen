@@ -801,7 +801,9 @@ class TestVocabularyAnnotator < Minitest::Test
 
   # --- priority sorting ---
 
-  def test_priority_hardest_keeps_highest_level
+  # P9-4 re-pin: "hardest" is a band preset [0.25, 0.40, 0.35], not "C2
+  # first" — a single slot goes to the heaviest band, one level above.
+  def test_priority_hardest_prefers_the_band_above_the_cutoff
     entries = [
       { word: "easy", lemma: "easy", level: "A2", pos: "adj", translation: "easy", definition: "Not hard." },
       { word: "hard", lemma: "hard", level: "C2", pos: "adj", translation: "hard", definition: "Difficult." },
@@ -811,9 +813,9 @@ class TestVocabularyAnnotator < Minitest::Test
       Tell::Espeak.stub(:supports?, false) do
         _marked, vocab = @annotator.annotate("easy hard medium", language: "sl", cutoff: "A2", max: 1,
                                              filters: { priority: "hardest" })
-        assert_includes vocab, "hard"
+        assert_includes vocab, "**medium**"
         refute_includes vocab, "**easy**"
-        refute_includes vocab, "**medium**"
+        refute_includes vocab, "**hard**"
       end
     end
   end
