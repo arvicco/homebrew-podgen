@@ -121,7 +121,7 @@ ruby bin/podgen <command> [options]
 | `podgen list`                         | List available podcasts                                  |
 | `podgen add <podcast> <url>`          | Queue a priority link for the next episode               |
 | `podgen links <podcast>`              | List or manage queued priority links                     |
-| `podgen vocab <sub> <podcast>`        | Manage known vocabulary words (`add`/`remove`/`list`)    |
+| `podgen vocab <sub> <podcast>`        | Known vocabulary (`add`/`remove`/`list`/`review`) and cached glosses (`edit`) |
 | `podgen revocab <podcast> [episode]`  | Re-annotate vocabulary on transcripts                    |
 | `podgen reformat <podcast> [episode]` | Reformat transcripts (paragraph breaks, cleanup)         |
 | `podgen cover <podcast> [date]`       | Generate episode cover images (use --title, --image flags) |
@@ -1067,6 +1067,9 @@ podgen vocab add lahko_noc beseda          # add a word (language from config)
 podgen vocab add lahko_noc sprechen --lang de  # explicit language
 podgen vocab remove lahko_noc beseda       # remove a word
 podgen vocab list lahko_noc                # show all known words
+podgen vocab review fiabe [--min 3]        # lemmas explained 3+ times (count, last episode), known ones excluded
+podgen vocab review fiabe --promote        # add every listed lemma to known vocabulary
+podgen vocab edit fiabe accorgersi --lang English --translation "to notice" [--definition "..."]  # fix a cached gloss for future episodes
 ```
 
 Known words are stored as lemmas (dictionary forms) in `podcasts/<name>/known_vocabulary.yml`. All derivatives (conjugations, cases) of a known lemma are automatically excluded — matching is on the lemma returned by Claude, not the surface form in the text.
