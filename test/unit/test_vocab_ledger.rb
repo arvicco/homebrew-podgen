@@ -175,7 +175,78 @@ class TestVocabLedger < Minitest::Test
     assert logs.any? { |m| m.include?("re-exposing") && m.include?("avvicinarsi") }, logs.inspect
   end
 
+  # --- re-exposure share cap (measurement follow-up to loop call 2) ---
+
+  RE_LEMMAS = %w[rea reb rec red ree ref reg reh rei rej].freeze # explained at episodes 0..9
+  NEW_LEMMAS = %w[nea neb nec ned nee nef neg neh nei nej].freeze
+
+  def test_episodes_since_counts_from_the_last_explanation
+    ledger = share_ledger
+    assert_equal 30, ledger.episodes_since("rea")
+    assert_equal 21, ledger.episodes_since("rej")
+    assert_nil ledger.episodes_since("nea")
+  end
+
+  def test_annotate_caps_reexposures_at_a_quarter_of_max_keeping_the_oldest
+    logs = []
+    vocab = annotate_share(max: 8, logs: logs)
+    assert_equal %w[rea reb], lemmas_in(vocab) & RE_LEMMAS
+    assert_equal 6, (lemmas_in(vocab) & NEW_LEMMAS).length
+    assert logs.any? { |m| m.end_with?("Ledger: re-exposure cap 2 of 10 (max × 0.25)") }, logs.inspect
+    assert logs.any? { |m| m.end_with?("Ledger: re-exposing rea, reb") }, logs.inspect
+  end
+
+  def test_annotate_key_reexposure_does_not_consume_the_share
+    vocab = annotate_share(max: 8, key: true)
+    assert_includes lemmas_in(vocab), "asino"
+    assert_equal %w[rea reb], lemmas_in(vocab) & RE_LEMMAS
+  end
+
+  def test_annotate_without_max_does_not_cap_reexposures
+    vocab = annotate_share(max: nil)
+    assert_equal RE_LEMMAS, lemmas_in(vocab) & RE_LEMMAS
+    assert_equal NEW_LEMMAS, lemmas_in(vocab) & NEW_LEMMAS
+  end
+
   private
+
+  # 30 episodes; RE_LEMMAS[i] explained once at episode i (all past the
+  # 8-episode gap); "asino" explained once at episode 10.
+  def share_ledger
+    ledger = VocabLedger.new
+    30.times do |i|
+      lemmas = (i < 10) ? [RE_LEMMAS[i]] : []
+      lemmas << "asino" if i == 10
+      ledger.add(format("ep-%03d", i), lemmas: lemmas, body: "Testo.")
+    end
+    ledger
+  end
+
+  # Re-exposable lemmas occur 3× (they would win the band cap), new ones
+  # once; 3-letter names stay out of the key-term pass. key: adds "asino"
+  # ×3 — a key term that is also a re-exposure.
+  def annotate_share(max:, key: false, logs: [])
+    lemmas = RE_LEMMAS + NEW_LEMMAS + (key ? ["asino"] : [])
+    entries = lemmas.map { |l| {word: l, lemma: l, level: "B1", pos: "noun"} }
+    text = (RE_LEMMAS.map { |l| "#{l} #{l} #{l}" } + NEW_LEMMAS + (key ? ["asino asino asino"] : [])).join(" ")
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| logs << m }
+    annotator = VocabularyAnnotator.new("k", model: "m", logger: logger)
+    enrich = ->(list, **) { list.map { |e| {lemma: e[:lemma], translation: "t", definition: "d"} } }
+    annotator.stub(:classify_words, ->(*) { entries.map(&:dup) }) do
+      annotator.stub(:call_enrich_api, enrich) do
+        Tell::Espeak.stub(:supports?, false) do
+          Tell::Hunspell.stub(:supports?, false) do
+            annotator.annotate(text, language: "Italian", cutoff: "B1", max: max, ledger: share_ledger).last
+          end
+        end
+      end
+    end
+  end
+
+  def lemmas_in(vocab)
+    vocab.scan(/^- \*\*(\w+)\*\*/).flatten.sort
+  end
 
   # Writes `count` chronological episodes ep-000 … with the given vocab per index.
   def write_series(count, vocab_by_index)
