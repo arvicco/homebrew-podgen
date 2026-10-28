@@ -12,6 +12,7 @@ require "did_you_mean"
 require_relative "tell/espeak"
 require_relative "tell/hunspell"
 require_relative "tell/icu_phonetic"
+require_relative "key_terms"
 
 class VocabularyAnnotator
   include Loggable
@@ -46,10 +47,18 @@ class VocabularyAnnotator
     target_languages ||= [target_language]
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff, definitions in #{target_languages.join(', ')})")
 
+    # Stage 0: story-critical candidates, named to the classifier (loop call 4)
+    key_terms = KeyTerms.candidates(text, ledger: ledger)
+    log("Key-term candidates: #{key_terms.join(", ")}") unless key_terms.empty?
+
     # Stage 1: Lightweight classification — word/lemma/level/pos only
-    entries = classify_words(text, language, cutoff, filters)
+    entries = classify_words(text, language, cutoff, filters, key_terms)
     entries = sanitize_script(entries, language)
     entries = dedup_by_lemma(entries)
+    mark_key_entries!(entries, key_terms)
+    # Key entries and include_words bypass the ledger, the cap and the
+    # cognate filter; only known words beat key entries.
+    pinned = ->(e) { e[:key] || include_words.include?(e[:lemma].to_s.downcase) }
 
     # Stage 2: Filter and cap before enrichment to minimize API work
     unless known_lemmas.empty?
@@ -58,7 +67,7 @@ class VocabularyAnnotator
       filtered = before - entries.length
       log("Filtered #{filtered} known words") if filtered > 0
     end
-    apply_ledger!(entries, ledger, include_words) if ledger
+    apply_ledger!(entries, ledger, pinned) if ledger
 
     if entries.empty?
       log("No vocabulary words found at #{cutoff}+ level")
@@ -72,7 +81,7 @@ class VocabularyAnnotator
     has_cognate_filter = filters[:similar] && !filters[:similar].empty?
     enrich_cap = max ? (has_cognate_filter ? max * 2 : max) : nil
     if enrich_cap && entries.length > enrich_cap
-      included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
+      included, rest = entries.partition(&pinned)
       sort_entries!(rest, priority, cutoff)
       entries = included + rest.first([enrich_cap - included.length, 0].max)
       log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length})")
@@ -94,7 +103,7 @@ class VocabularyAnnotator
       similar_langs = filters[:similar].split(/,\s*/)
       before = entries.length
       entries = filter_cognates(entries, similar_langs, target_languages.first).concat(
-        include_words.empty? ? [] : entries.select { |e| include_words.include?(e[:lemma].to_s.downcase) }
+        entries.select(&pinned)
       ).uniq { |e| e[:lemma].to_s.downcase }
       filtered_cognates = before - entries.length
       log("Filtered #{filtered_cognates} cognates") if filtered_cognates > 0
@@ -107,7 +116,7 @@ class VocabularyAnnotator
 
     # Final cap to max
     if max && entries.length > max
-      included, rest = entries.partition { |e| include_words.include?(e[:lemma].to_s.downcase) }
+      included, rest = entries.partition(&pinned)
       sort_entries!(rest, priority, cutoff)
       entries = included + rest.first([max - included.length, 0].max)
       log("Capped to #{max} entries (priority: #{priority})")
@@ -127,21 +136,21 @@ class VocabularyAnnotator
   # hitting max_tokens on the response. ~4000 chars ≈ ~1000 tokens input.
   CHUNK_THRESHOLD = 4000
 
-  def classify_words(text, language, cutoff, filters = {})
+  def classify_words(text, language, cutoff, filters = {}, key_terms = [])
     if text.length > CHUNK_THRESHOLD
-      return classify_chunked(text, language, cutoff, filters)
+      return classify_chunked(text, language, cutoff, filters, key_terms)
     end
 
-    classify_single(text, language, cutoff, filters)
+    classify_single(text, language, cutoff, filters, key_terms)
   end
 
-  def classify_chunked(text, language, cutoff, filters)
+  def classify_chunked(text, language, cutoff, filters, key_terms = [])
     chunks = split_into_chunks(text)
-    return classify_single(text, language, cutoff, filters) if chunks.length < 2
+    return classify_single(text, language, cutoff, filters, key_terms) if chunks.length < 2
 
     log("Splitting into #{chunks.length} chunks for classification")
     threads = chunks.map do |chunk|
-      Thread.new { classify_single(chunk, language, cutoff, filters) }
+      Thread.new { classify_single(chunk, language, cutoff, filters, key_terms) }
     end
     threads.flat_map(&:value)
   end
@@ -157,13 +166,13 @@ class VocabularyAnnotator
     ]
   end
 
-  def classify_single(text, language, cutoff, filters = {})
+  def classify_single(text, language, cutoff, filters = {}, key_terms = [])
     with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
           max_tokens: 16384,
-          system: classify_prompt(language, cutoff, filters),
+          system: classify_prompt(language, cutoff, filters, key_terms),
           messages: [
             { role: "user", content: text }
           ],
@@ -195,7 +204,7 @@ class VocabularyAnnotator
       return [] unless entries.is_a?(Array)
 
       # Validate and normalize entries
-      entries.select { |e| valid_entry?(e, cutoff) }
+      entries.select { |e| valid_entry?(e, cutoff, key_terms) }
     end
   end
 
@@ -285,8 +294,12 @@ class VocabularyAnnotator
   end
 
   # Stage 1 prompt: lightweight classification only (word/lemma/level/pos).
-  def classify_prompt(language, cutoff, filters = {})
+  def classify_prompt(language, cutoff, filters = {}, key_terms = [])
     filter_lines = build_filter_lines(filters)
+    unless key_terms.empty?
+      filter_lines += "\n      Also include these words wherever they occur in the text, regardless of their CEFR level " \
+        "or frequency, with their true level, unless they are proper nouns: #{key_terms.join(", ")}."
+    end
 
     <<~PROMPT
       Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
@@ -394,11 +407,11 @@ class VocabularyAnnotator
     entries
   end
 
-  # Drops entries the ledger does not allow yet (or ever); include_words
-  # bypass it. Re-exposed lemmas are named in the log (the entry line format
-  # is a parsed contract, so no marker goes into the markdown).
-  def apply_ledger!(entries, ledger, include_words)
-    exempt = ->(e) { include_words.include?(e[:lemma].to_s.downcase) }
+  # Drops entries the ledger does not allow yet (or ever); exempt entries
+  # (include_words, key terms) bypass it. Re-exposed lemmas are named in the
+  # log (the entry line format is a parsed contract, so no marker goes into
+  # the markdown).
+  def apply_ledger!(entries, ledger, exempt)
     before = entries.length
     entries.reject! { |e| !exempt.call(e) && !ledger.allowed?(e[:lemma]) }
     dropped = before - entries.length
@@ -406,6 +419,17 @@ class VocabularyAnnotator
 
     reexposed = entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }.map { |e| e[:lemma] }
     log("Ledger: re-exposing #{reexposed.join(", ")}") unless reexposed.empty?
+  end
+
+  # key: true on entries whose lemma or any word form is a key-term candidate.
+  def mark_key_entries!(entries, key_terms)
+    return if key_terms.empty?
+
+    keys = Set.new(key_terms)
+    entries.each do |e|
+      forms = [e[:lemma], *(e[:words] || [e[:word]])].compact.map { |f| f.to_s.downcase }
+      e[:key] = true if forms.any? { |f| keys.include?(f) }
+    end
   end
 
   # Fills entries from the cache in place and returns { lang => entries still
@@ -554,10 +578,12 @@ class VocabularyAnnotator
     lines.empty? ? "" : "\n      " + lines.join("\n      ")
   end
 
-  def valid_entry?(entry, cutoff)
+  # key_terms: candidates (loop call 4) bypass the cutoff.
+  def valid_entry?(entry, cutoff, key_terms = [])
     return false unless entry.is_a?(Hash)
     return false unless entry[:word] && entry[:lemma] && entry[:level]
     return false unless CEFR_LEVELS.include?(entry[:level])
+    return true if key_terms.include?(entry[:word].to_s.downcase) || key_terms.include?(entry[:lemma].to_s.downcase)
 
     cutoff_idx = CEFR_LEVELS.index(cutoff)
     entry_idx = CEFR_LEVELS.index(entry[:level])
