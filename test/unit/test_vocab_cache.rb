@@ -140,6 +140,83 @@ class TestVocabCache < Minitest::Test
     assert logs.any? { |m| m.end_with?("Enrichment cache: 1 hits, 1 misses") }, logs.inspect
   end
 
+  # --- CRPR round 1 W2: cache hits together with the similar: cognate filter ---
+  # Croatian is the similar (non-target) language, so the cognate decision
+  # rests on similar_translations alone (the English glosses are not cognates).
+
+  SIMILAR_ENTRIES = [{word: "profesor", lemma: "profesor", level: "B1", pos: "noun"},
+    {word: "zavod", lemma: "zavod", level: "B1", pos: "noun"}].freeze
+  SIMILAR_TEXT = "Il profesor e il zavod."
+  CROATIAN = {"profesor" => "profesor", "zavod" => "ustanova"}.freeze
+  ENGLISH = {"profesor" => "teacher", "zavod" => "institute"}.freeze
+
+  def test_annotate_similar_filter_reenriches_cached_lemma_lacking_similar_translations
+    cache = VocabCache.new(@path)
+    ENGLISH.each { |l, t| cache.store(l, translations: {"English" => t}, definitions: {"English" => "d"}) }
+    calls = []
+    enrich = lambda do |entries, target_language:, **|
+      calls << [target_language, entries.map { |e| e[:lemma] }.sort]
+      entries.map do |e|
+        {lemma: e[:lemma], translation: ENGLISH[e[:lemma]], definition: "d",
+         similar_translations: {Croatian: CROATIAN[e[:lemma]]}}
+      end
+    end
+
+    annotate_with(enrich, cache: cache, entries: SIMILAR_ENTRIES, text: SIMILAR_TEXT,
+      filters: {similar: "Croatian, English"}) do |_marked, vocab|
+      refute_includes vocab, "**profesor**", "cognate via Croatian is filtered"
+      assert_includes vocab, "**zavod**"
+    end
+
+    assert_equal [["English", %w[profesor zavod]]], calls, "exactly one enrichment round"
+    stored = VocabCache.new(@path).fetch("profesor")
+    assert_equal({"Croatian" => "profesor"}, stored["similar_translations"])
+  end
+
+  def test_annotate_similar_filter_pure_hit_uses_cached_similar_translations
+    cache = VocabCache.new(@path)
+    ENGLISH.each do |l, t|
+      cache.store(l, translations: {"English" => t}, definitions: {"English" => "d"},
+        similar_translations: {"Croatian" => CROATIAN[l]})
+    end
+    cache.save
+    calls = 0
+    enrich = ->(entries, **) { calls += 1 and [] }
+
+    annotate_with(enrich, cache: VocabCache.new(@path), entries: SIMILAR_ENTRIES, text: SIMILAR_TEXT,
+      filters: {similar: "Croatian, English"}) do |_marked, vocab|
+      refute_includes vocab, "**profesor**", "cached similar_translations reach filter_cognates"
+      assert_includes vocab, "**zavod** (B1 noun) — institute. d"
+    end
+    assert_equal 0, calls
+  end
+
+  def test_annotate_without_similar_filter_hit_lacking_similar_translations_is_pure
+    cache = VocabCache.new(@path)
+    ENGLISH.each { |l, t| cache.store(l, translations: {"English" => t}, definitions: {"English" => "d"}) }
+    calls = 0
+    enrich = ->(entries, **) { calls += 1 and [] }
+
+    annotate_with(enrich, cache: cache, entries: SIMILAR_ENTRIES, text: SIMILAR_TEXT) do |_marked, vocab|
+      assert_includes vocab, "**profesor** (B1 noun) — teacher. d"
+    end
+    assert_equal 0, calls
+  end
+
+  def test_annotate_similar_languages_all_targets_is_pure_hit
+    cache = VocabCache.new(@path)
+    cache.store("zavod", translations: {"English" => "institute", "Croatian" => "ustanova"},
+      definitions: {"English" => "d", "Croatian" => "d"})
+    calls = 0
+    enrich = ->(entries, **) { calls += 1 and [] }
+
+    annotate_with(enrich, cache: cache, entries: [SIMILAR_ENTRIES.last], text: SIMILAR_TEXT,
+      target_languages: %w[English Croatian], filters: {similar: "Croatian, English"}) do |_marked, vocab|
+      assert_includes vocab, "  - ustanova. d"
+    end
+    assert_equal 0, calls, "targets cover every similar language: translations suffice"
+  end
+
   def test_annotate_without_cache_is_unchanged
     calls = 0
     enrich = lambda do |entries, **|
