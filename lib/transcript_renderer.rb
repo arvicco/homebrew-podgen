@@ -175,9 +175,8 @@ module TranscriptRenderer
   end
 
   def render_vocabulary_html(vocab_body)
-    languages, _body = extract_vocab_languages(vocab_body)
-    entries = parse_vocab_entries(vocab_body)
-    return "" unless entries
+    languages, body = extract_vocab_languages(vocab_body)
+    return "" unless parse_vocab_entries(vocab_body)
 
     heading = if languages
       switcher = languages.map.with_index do |lang, i|
@@ -189,9 +188,40 @@ module TranscriptRenderer
       "<h2>Vocabulary</h2>"
     end
 
-    lines = ["<div class=\"vocabulary\" id=\"vocabulary\">", heading, "<dl>"]
+    lines = ["<div class=\"vocabulary\" id=\"vocabulary\">", heading]
 
+    # `### ` sub-headings (Key words / Also new) split the list into groups,
+    # each an <h3> and its own <dl>; without them, one untitled group.
+    prefix = languages ? " (#{languages.join(", ")})\n" : ""
     seen = Set.new
+    vocab_groups(body).each do |title, group_body|
+      group = parse_vocab_entries(prefix + group_body)
+      next unless group
+
+      lines << "<h3>#{escape_html(title)}</h3>" if title
+      lines << "<dl>"
+      render_vocab_group(group, languages, seen, lines)
+      lines << "</dl>"
+    end
+
+    lines << "</div>"
+    lines.join("\n")
+  end
+
+  # [[title_or_nil, text], ...] split at `### ` lines.
+  def vocab_groups(body)
+    groups = [[nil, +""]]
+    body.each_line do |line|
+      if line.start_with?("### ")
+        groups << [line.delete_prefix("### ").strip, +""]
+      else
+        groups.last[1] << line
+      end
+    end
+    groups
+  end
+
+  def render_vocab_group(entries, languages, seen, lines)
     entries.each_value do |entry|
       key = entry[:lemma].downcase
       next if seen.include?(key)
@@ -215,10 +245,6 @@ module TranscriptRenderer
         lines << "<dd>#{escape_html(entry[:definition])}</dd>"
       end
     end
-
-    lines << "</dl>"
-    lines << "</div>"
-    lines.join("\n")
   end
 
   private

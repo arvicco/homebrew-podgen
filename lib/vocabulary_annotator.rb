@@ -123,7 +123,7 @@ class VocabularyAnnotator
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
     add_ipa(entries, language)
     marked_body = mark_words(text, entries, language)
-    vocabulary_md = build_vocabulary_section(entries, target_languages)
+    vocabulary_md = build_vocabulary_section(entries, target_languages, text)
 
     [marked_body, vocabulary_md]
   end
@@ -809,43 +809,71 @@ class VocabularyAnnotator
     marked
   end
 
-  def build_vocabulary_section(entries, target_languages = nil)
-    sorted = entries.sort_by { |e| e[:lemma].to_s.downcase }
+  KEY_GROUP_HEADING = "### Key words"
+  REST_GROUP_HEADING = "### Also new"
+
+  # Entries in order of first occurrence in text (any form; alphabetical
+  # for ties and without text). With any key entry, two sub-headings —
+  # Key words, then Also new — group them; otherwise a flat list. The entry
+  # line format is unchanged (a parsed contract).
+  def build_vocabulary_section(entries, target_languages = nil, text = nil)
+    sorted = entries.sort_by { |e| [first_occurrence(e, text), e[:lemma].to_s.downcase] }
     multi = target_languages && target_languages.length > 1
 
     heading = multi ? "## Vocabulary (#{target_languages.join(', ')})" : "## Vocabulary"
     lines = [heading, ""]
 
-    sorted.each do |entry|
-      line = "- **#{entry[:lemma]}**"
-      line += " #{entry[:ipa]}" if entry[:ipa]
-      line += " (#{entry[:level]} #{entry[:pos]})"
-      # Show word forms that differ from lemma, excluding particles
-      _head, particle_forms = partition_forms(entry)
-      particle_set = Set.new(particle_forms.map(&:downcase))
-      diff_forms = (entry[:words] || [entry[:word]])
-        .reject { |w| w.downcase == entry[:lemma].downcase }
-        .reject { |w| particle_set.include?(w.downcase) }
-      line += " *#{diff_forms.join(', ')}*" unless diff_forms.empty?
-
-      if multi
-        lines << line
-        target_languages.each do |tl|
-          translation = entry.dig(:translations, tl)
-          definition = entry.dig(:definitions, tl)
-          next unless translation || definition
-          def_line = "  - #{translation}"
-          def_line += ". #{definition}" if definition
-          lines << def_line
-        end
-      else
-        line += " — #{entry[:translation]}" if entry[:translation]
-        line += ". #{entry[:definition]}" if entry[:definition]
-        lines << line
+    keys, rest = sorted.partition { |e| e[:key] }
+    if keys.empty?
+      rest.each { |e| lines.concat(vocab_entry_lines(e, multi, target_languages)) }
+    else
+      lines << KEY_GROUP_HEADING << ""
+      keys.each { |e| lines.concat(vocab_entry_lines(e, multi, target_languages)) }
+      unless rest.empty?
+        lines << "" << REST_GROUP_HEADING << ""
+        rest.each { |e| lines.concat(vocab_entry_lines(e, multi, target_languages)) }
       end
     end
 
     lines.join("\n").strip
+  end
+
+  def first_occurrence(entry, text)
+    return Float::INFINITY unless text
+
+    head_forms, _particles = partition_forms(entry)
+    head_forms.filter_map { |f| text =~ /\b#{Regexp.escape(f)}\b/i }.min || Float::INFINITY
+  end
+
+  def vocab_entry_lines(entry, multi, target_languages)
+    lines = []
+    line = "- **#{entry[:lemma]}**"
+    line += " #{entry[:ipa]}" if entry[:ipa]
+    line += " (#{entry[:level]} #{entry[:pos]})"
+    # Show word forms that differ from lemma, excluding particles
+    _head, particle_forms = partition_forms(entry)
+    particle_set = Set.new(particle_forms.map(&:downcase))
+    diff_forms = (entry[:words] || [entry[:word]])
+      .reject { |w| w.downcase == entry[:lemma].downcase }
+      .reject { |w| particle_set.include?(w.downcase) }
+    line += " *#{diff_forms.join(', ')}*" unless diff_forms.empty?
+
+    if multi
+      lines << line
+      target_languages.each do |tl|
+        translation = entry.dig(:translations, tl)
+        definition = entry.dig(:definitions, tl)
+        next unless translation || definition
+        def_line = "  - #{translation}"
+        def_line += ". #{definition}" if definition
+        lines << def_line
+      end
+    else
+      line += " — #{entry[:translation]}" if entry[:translation]
+      line += ". #{entry[:definition]}" if entry[:definition]
+      lines << line
+    end
+    lines
   end
 
 end
