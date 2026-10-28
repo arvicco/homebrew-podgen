@@ -9,9 +9,11 @@ lives in gitignored .docs/ — the phase plan (.docs/pXX-plan.md: owner-
 signed BEFORE a phase executes; packet status + the phase worklog live
 in it), the work queue (.docs/WORK-QUEUE.md, Q-nn), the open rulings
 register (.docs/DECISIONS.md, R<phase>-<nn>, removed when ruled), the
-incident register (.docs/incident-register.md, I-n), closed plans in
-.docs/old-phases/. Internal workflow state never lands in the public
-repo; git history + plan docs are the record.
+incident register (.docs/incident-register.md, I-n), the phase register
+(.docs/phase-register.md: the owner-faced cost-and-yield ledger,
+appended at every gate closure), the phase clock (.docs/phase-clock),
+closed plans in .docs/old-phases/. Internal workflow state never lands
+in the public repo; git history + plan docs are the record.
 
 ## Golden rules (non-negotiable)
 
@@ -62,17 +64,29 @@ repo; git history + plan docs are the record.
 9. **Pre-existing failing tests are bug signals.** Flag them; never
    skip, dismiss, or treat as background noise.
 10. **The dev-loop doctrine binds this project.** Read the dev-loop
-   plugin's `doctrine.md` (17 owner-ruled working agreements) and
-   `boards.md` at session start for any substantive work. Mechanics
-   that bite here: a Bash call containing `git push`, `git commit` or
-   `gh pr create` contains NOTHING else; suites run to a log
-   (`> log 2>&1; echo exit=$?`) and "green" is read from the log, never
-   from a pipe; the gate PR opens ONLY when the phase is reviewed and
-   ready for the owner to merge (owner ruling 2026-10-16: never as a
-   living document, never as a scratchpad); a turn
-   waiting on background work states "independent items remaining: N"
-   and N is 0; subagent lanes run on Opus-class models (`model:
-   "opus"`), frontier tokens buy judgment.
+   repo's `doctrine.md` (owner-ruled working agreements §1–§27 plus
+   §17a/§17b, at origin/main — the local clone lags) and `boards.md`
+   at session start for any substantive work; docs/DEV-LOOP.md §9
+   carries the podgen reading of the sections that need one.
+   Mechanics that bite here: a Bash call containing `git push`,
+   `git commit` or `gh pr create` contains NOTHING else; suites run to
+   a log (`> log 2>&1; echo exit=$?`) and "green" is read from the
+   log, never from a pipe; the gate PR opens ONLY when the phase is
+   reviewed and ready for the owner to merge (owner ruling 2026-10-16:
+   never as a living document, never as a scratchpad); EVERY
+   owner-facing message opens with the phase clock line ("Nh Nm since
+   adoption" / "Nh Nm adoption→gate handover", from .docs/phase-clock;
+   it is the phase's cost figure, §21); a decision exists for the
+   owner only as a minted .docs/DECISIONS.md row — never "awaiting
+   approval" in prose (§26); owner-state lines (PR states, drafts) are
+   written only from a live query run in the same turn, never copied
+   from boards or the loop's own prior messages (§27); the phase
+   register is appended at every gate closure; lane briefs state how
+   each census was taken (§17a) and batch runners carry timeout /
+   budget-stop / first-failure-stop / tail-verification lines (§17b);
+   a turn waiting on background work states "independent items
+   remaining: N" and N is 0; subagent lanes run on Opus-class models
+   (`model: "opus"`), frontier tokens buy judgment.
 
 ## Commands
 
@@ -197,8 +211,8 @@ sweep). Gate 6 CLOSED
 2026-10-14 21:40 (PR #7, merge 2aad556 — spend measured, observability,
 docs refresh, refill, plus the P6-7/P6-8 hotfixes). Gate 7 CLOSED 2026-10-16
 20:05 (PR #8, merge dedd365 — publication observability and YouTube
-hardening). Phase 8 (quality guards,
-diagnosis, test authority) AT GATE 8 (2026-10-16 23:30): all packets on
-phase-8, CRPR APPROVED (rounds 1–3 + two nit confirmations,
-refs/cr/reviewed = 98f0169), gate PR open — the owner merges; runbook in
-.docs/p08-plan.md. Update this line at each gate.
+hardening). Gate 8 CLOSED 2026-10-28
+15:40 (PR #10, merge 1d3da37 — quality guards, diagnosis, test
+authority; phase clock 56m). Phase 9: slate presented
+(.docs/p09-slate.md), awaiting the owner's name; R9-01 on the register.
+Update this line at each gate.
