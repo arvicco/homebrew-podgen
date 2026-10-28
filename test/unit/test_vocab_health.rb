@@ -86,23 +86,30 @@ class TestVocabHealth < Minitest::Test
 
   # --- key-term candidates (loop call 4) ---
 
-  def test_candidates_apply_the_token_rule
-    body = "Un asino vide un asino. Poi asino rise. Dove va Teresa con Teresa e Teresa? " \
-           "Gatto nero. Il gatto e il gatto. La rete, la rete, la rete. Re re re. Ponte ponte ponte."
-    df = Hash.new(0).merge("ponte" => 5)
+  def test_report_key_term_df_counts_only_earlier_episodes
+    2.times { |i| write_ep("p-2026-02-0#{i + 1}", "asino asino asino gatto gatto gatto rete rete rete", []) }
+    5.times { |i| write_ep("p-2026-02-1#{i}", "Filler text here.", []) }
 
-    cands = VocabHealth.candidates(body, df: df, episodes: 10)
+    r = health.report
 
-    assert_equal %w[asino gatto rete], cands.keys.sort # Teresa: proper noun; re: short; ponte: df 50 %
-    assert_equal 3, cands["gatto"]
+    # ep1: no earlier episodes, df 0 for all -> 3 candidates (miss); ep2: df 1 of 1 earlier > 15 % -> none.
+    assert_equal 1, r.key_term_misses
+  end
+
+  def test_report_key_term_proper_noun_is_not_a_candidate
+    6.times { |i| write_ep("p-2026-02-0#{i + 1}", "Filler text here.", []) }
+    write_ep("p-2026-02-07", "Un asino vide un asino e un asino. Il gatto e il gatto e il gatto. " \
+                             "Poi venne Teresa con Teresa e Teresa.", [])
+
+    assert_equal 0, health.report.key_term_misses # asino, gatto only: Teresa is capitalised mid-sentence
   end
 
   def test_uncovered_drops_tokens_sharing_five_chars_with_a_lemma_or_form
-    cands = {"asino" => 3, "briganti" => 4, "gattone" => 3}
+    cands = %w[asino briganti gattone]
 
     left = VocabHealth.uncovered(cands, covers: %w[brigante gattoni])
 
-    assert_equal ["asino"], left.keys # lemma brigante covers briganti; form gattoni covers gattone
+    assert_equal ["asino"], left # lemma brigante covers briganti; form gattoni covers gattone
   end
 
   def test_report_key_term_miss_needs_three_uncovered_candidates
