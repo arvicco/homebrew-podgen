@@ -76,6 +76,20 @@ class TestKeyTerms < Minitest::Test
     refute_match(/teresa/i, classify_prompt)
   end
 
+  def test_annotate_skips_key_terms_without_earlier_episodes
+    [nil, VocabLedger.new].each do |ledger|
+      prompts = []
+      logs = []
+      logger = Object.new
+      logger.define_singleton_method(:log) { |m| logs << m }
+      captured = annotate_story(prompts: prompts, logger: logger, ledger: ledger,
+        classified: [{word: "asino", lemma: "asino", level: "A1", pos: "noun"}])
+      assert_equal "", captured[:vocab], "no key terms → A1 stays below the B1 cutoff"
+      refute_match(/regardless of their CEFR level/, prompts.first)
+      assert logs.any? { |m| m.end_with?("Key terms skipped: no earlier episodes") }, logs.inspect
+    end
+  end
+
   def test_annotate_non_key_entry_below_cutoff_is_still_rejected
     captured = annotate_story(classified: [{word: "dorme", lemma: "dormire", level: "A1", pos: "verb"}])
     assert_equal "", captured[:vocab]
@@ -108,8 +122,15 @@ class TestKeyTerms < Minitest::Test
 
   private
 
-  def annotate_story(classified:, prompts: [], **kwargs)
-    annotator = VocabularyAnnotator.new("k", model: "m")
+  # Key terms need a ledger with ≥ 1 earlier episode (P9-8a ruling); the
+  # default here is one unrelated episode, so df = 0 for the story's tokens.
+  def one_episode_ledger
+    VocabLedger.new.add("ep-0", lemmas: [], body: "Testo.")
+  end
+
+  def annotate_story(classified:, prompts: [], logger: nil, **kwargs)
+    kwargs = {ledger: one_episode_ledger}.merge(kwargs)
+    annotator = VocabularyAnnotator.new("k", model: "m", logger: logger)
     fake_messages = Object.new
     fake_messages.define_singleton_method(:create) do |**kw|
       prompts << kw[:system]

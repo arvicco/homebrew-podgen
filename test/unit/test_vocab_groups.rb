@@ -94,7 +94,8 @@ class TestVocabGroups < Minitest::Test
       @annotator.stub(:call_enrich_api, enrich) do
         Tell::Espeak.stub(:supports?, false) do
           Tell::Hunspell.stub(:supports?, false) do
-            @annotator.annotate(text, language: "Italian", cutoff: "B1").last
+            @annotator.annotate(text, language: "Italian", cutoff: "B1",
+              ledger: VocabLedger.new.add("ep-0", lemmas: [], body: "Testo.")).last
           end
         end
       end
