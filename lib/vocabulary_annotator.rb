@@ -34,8 +34,10 @@ class VocabularyAnnotator
   # cache: a VocabCache — cached lemmas skip the enrichment call (per target
   # language); new enrichments are stored and the cache saved once.
   # episode: the basename recorded as a new cache entry's first_seen.
+  # ledger: a VocabLedger — lemmas it does not allow (spaced re-exposure) are
+  # dropped, except include_words.
   def annotate(text, language:, cutoff:, known_lemmas: Set.new, max: nil, filters: {}, include_words: Set.new, target_language: "English", target_languages: nil,
-    cache: nil, episode: nil)
+    cache: nil, episode: nil, ledger: nil)
     cutoff = cutoff.upcase
     unless CEFR_LEVELS.include?(cutoff)
       raise ArgumentError, "Invalid CEFR level: #{cutoff}. Must be one of: #{CEFR_LEVELS.join(', ')}"
@@ -56,6 +58,7 @@ class VocabularyAnnotator
       filtered = before - entries.length
       log("Filtered #{filtered} known words") if filtered > 0
     end
+    apply_ledger!(entries, ledger, include_words) if ledger
 
     if entries.empty?
       log("No vocabulary words found at #{cutoff}+ level")
@@ -389,6 +392,20 @@ class VocabularyAnnotator
       end
     end
     entries
+  end
+
+  # Drops entries the ledger does not allow yet (or ever); include_words
+  # bypass it. Re-exposed lemmas are named in the log (the entry line format
+  # is a parsed contract, so no marker goes into the markdown).
+  def apply_ledger!(entries, ledger, include_words)
+    exempt = ->(e) { include_words.include?(e[:lemma].to_s.downcase) }
+    before = entries.length
+    entries.reject! { |e| !exempt.call(e) && !ledger.allowed?(e[:lemma]) }
+    dropped = before - entries.length
+    log("Ledger: dropped #{dropped} already-explained lemma(s)") if dropped > 0
+
+    reexposed = entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }.map { |e| e[:lemma] }
+    log("Ledger: re-exposing #{reexposed.join(", ")}") unless reexposed.empty?
   end
 
   # Fills entries from the cache in place and returns { lang => entries still
