@@ -227,8 +227,8 @@ module PodgenCLI
     def run_r2_for(pod)
       config = PodcastConfig.new(pod)
       R2Publisher.new(config: config, options: { verbosity: @options[:verbosity] }).run
-    rescue => e
-      $stderr.puts "uploads: R2 publisher crash for #{pod} (#{e.message})"
+    rescue => e # skippable per-podcast: recorded as a publisher_crash error; other podcasts continue
+      $stderr.puts "uploads: R2 publisher crash for #{pod} (#{e.class}: #{e.message})"
       R2Publisher::Result.new(synced: false, tweets_posted: 0,
                               errors: [{ type: :publisher_crash, message: e.message }])
     end
@@ -236,8 +236,8 @@ module PodgenCLI
     def run_lingq_for(pod)
       config = PodcastConfig.new(pod)
       LingQPublisher.new(config: config, options: { verbosity: @options[:verbosity] }).run
-    rescue => e
-      $stderr.puts "uploads: LingQ publisher crash for #{pod} (#{e.message})"
+    rescue => e # skippable per-podcast: recorded as a publisher_crash error; other podcasts continue
+      $stderr.puts "uploads: LingQ publisher crash for #{pod} (#{e.class}: #{e.message})"
       LingQPublisher::Result.new(uploaded: 0, attempted: 0,
                                  errors: [{ type: :publisher_crash, message: e.message }])
     end
@@ -248,8 +248,8 @@ module PodgenCLI
         config: config,
         options: { max: max, verbosity: @options[:verbosity] }
       ).run
-    rescue => e
-      $stderr.puts "uploads: YT publisher crash for #{pod} (#{e.message})"
+    rescue => e # skippable per-podcast: recorded as a publisher_crash error; other podcasts continue
+      $stderr.puts "uploads: YT publisher crash for #{pod} (#{e.class}: #{e.message})"
       YouTubePublisher::Result.new(uploaded: 0, attempted: 0, rate_limited: false,
                                    errors: [{ type: :publisher_crash, error_class: e.class.name, message: e.message }])
     end
@@ -264,8 +264,8 @@ module PodgenCLI
 
       episodes = mp3_basenames_with_transcripts(config.episodes_dir)
       episodes.count { |b| !uploaded.key?(b) }
-    rescue => e
-      $stderr.puts "uploads: skipping YT count for #{pod} (#{e.message})"
+    rescue => e # skippable: the pending count is informational
+      $stderr.puts "uploads: skipping YT count for #{pod} (#{e.class}: #{e.message})"
       0
     end
 

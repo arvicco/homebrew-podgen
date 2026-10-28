@@ -56,7 +56,7 @@ module SubtitleReconciliationRunner
     segments = SubtitleReconciler.reconcile(data["segments"], transcript_text, api_key: api_key)
     TimestampPersister.update_segments(ts_path, segments)
     Result.new(status: :reconciled, message: "reconciled #{segments.length} segments")
-  rescue => e
+  rescue => e # skippable: subtitle reconciliation; returned as a :failed Result with the class
     Result.new(status: :failed, message: e.message, error_class: e.class.name)
   end
 end

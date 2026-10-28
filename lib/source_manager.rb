@@ -69,8 +69,8 @@ class SourceManager
           @cache&.set(src_name, topics, results)
 
           lock.synchronize { results_by_source[src_name] = results }
-        rescue => e
-          log_warning("Source '#{src_name}' failed: #{e.message}")
+        rescue => e # skippable: one source down; the other sources still feed research
+          log_warning("Source '#{src_name}' failed: #{e.class}: #{e.message}")
         end
       end
     end

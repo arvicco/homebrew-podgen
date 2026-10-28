@@ -51,7 +51,7 @@ module Transcription
         elapsed = (Time.now - start).round(2)
 
         unless response.success?
-          raise "Transcription API error #{response.code}: #{response.body}"
+          raise api_error("Transcription API error", response)
         end
 
         result = JSON.parse(response.body)

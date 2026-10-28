@@ -6,6 +6,7 @@ require_relative "claude_models"
 require "base64"
 require "json"
 require_relative "loggable"
+require_relative "usage_logger"
 
 # Ranks candidate cover images using a single batched Claude vision call.
 # Each candidate gets a combined score (visual_quality + subject_match, each
@@ -22,6 +23,7 @@ require_relative "loggable"
 # ties kept in input order.
 class ImageRanker
   include Loggable
+  include UsageLogger
 
   MEDIA_TYPES = {
     ".jpg"  => "image/jpeg",
@@ -40,12 +42,18 @@ class ImageRanker
   def rank(candidates, title:, description:)
     return [] if candidates.nil? || candidates.empty?
 
-    response = @client.messages.create(
-      model: @model,
-      max_tokens: 2000,
-      messages: [{ role: "user", content: build_content(candidates, title, description) }],
-      **AnthropicClient.effort_params(:image_rank)
-    )
+    response, elapsed = measure_time do
+      @client.messages.create(
+        model: @model,
+        # 4096, not 2000: the sonnet line thinks by default and thinking
+        # shares this budget; the rankings JSON itself is ~70 tokens per
+        # candidate (5 by default). A cap is billed only as used (P8-2).
+        max_tokens: 4096,
+        messages: [{ role: "user", content: build_content(candidates, title, description) }],
+        **AnthropicClient.effort_params(:image_rank)
+      )
+    end
+    log_api_usage("Images ranked", response, elapsed)
 
     parsed = parse_response(response)
     return [] if parsed.nil?
@@ -140,13 +148,17 @@ class ImageRanker
   end
 
   def parse_response(response)
-    text = AnthropicClient.text_of(response) rescue nil
-    return nil unless text
+    text = AnthropicClient.text_of(response)
     json = text.strip.sub(/\A```(?:json)?\s*/, "").sub(/\s*```\z/, "")
     data = JSON.parse(json)
     data["rankings"]
+  rescue NoTextBlockError => e
+    # skippable: no ranking means no auto cover; the episode keeps its fallback cover.
+    log_warning("image ranking unusable (#{e.class}: #{e.message})")
+    nil
   rescue JSON::ParserError => e
-    log("malformed JSON: #{e.message}")
+    # skippable: same as above — an unparseable ranking yields no auto cover.
+    log("malformed JSON (#{e.class}): #{e.message}")
     nil
   end
 

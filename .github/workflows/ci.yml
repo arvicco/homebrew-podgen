@@ -14,7 +14,14 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest) so apt package names and the hunspell
+    # dictionary path stay deterministic.
+    runs-on: ubuntu-24.04
+    # ImageMagick 7 AppImage pin: the single source for the cache key and
+    # the install step.
+    env:
+      IM_VERSION: "7.1.2-34"
+      IM_SHA256: "6e9edfd35d5f30b57c27533afe003d6085faaf8607b207426f398d11751acf93"
     strategy:
       fail-fast: false
       matrix:
@@ -27,12 +34,61 @@ jobs:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
 
+      # librsvg2-bin: rsvg-convert (cover text). hunspell + hunspell-tools
+      # (unmunch) + hunspell-sl: Tell::Hunspell expansion (test_hunspell).
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libicu-dev ffmpeg imagemagick espeak-ng
+          sudo apt-get install -y --no-install-recommends libicu-dev ffmpeg imagemagick espeak-ng \
+            librsvg2-bin hunspell hunspell-tools hunspell-sl
+
+      # Production calls `magick` (ImageMagick 7); Ubuntu's imagemagick is
+      # IM6 (`convert`, no `magick`). Official IM7 AppImage, pinned by
+      # version + sha256, extracted (no FUSE needed) and linked onto PATH.
+      # The download is cached per version + sha; the checksum is verified
+      # on every run, cache hit or not.
+      - name: Cache ImageMagick 7 AppImage
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/im.AppImage
+          key: im7-appimage-${{ env.IM_VERSION }}-${{ env.IM_SHA256 }}
+
+      - name: Install ImageMagick 7 (magick)
+        run: |
+          cd "$RUNNER_TEMP"
+          if [ ! -f im.AppImage ]; then
+            curl -fsSL --retry 3 --retry-all-errors -o im.AppImage \
+              "https://github.com/ImageMagick/ImageMagick/releases/download/${IM_VERSION}/ImageMagick-${IM_VERSION}-gcc-x86_64.AppImage"
+          fi
+          echo "${IM_SHA256}  im.AppImage" | sha256sum -c -
+          chmod +x im.AppImage
+          ./im.AppImage --appimage-extract > /dev/null
+          sudo mv squashfs-root /opt/imagemagick7
+          sudo ln -sf /opt/imagemagick7/AppRun /usr/local/bin/magick
+          magick -version
+          rsvg-convert --version
+          command -v unmunch
+          test -f /usr/share/hunspell/sl_SI.dic
 
       - name: Gate (syntax + lint + unit + offline integration)
-        run: bundle exec rake gate
+        run: |
+          set +e
+          bundle exec rake gate > gate.log 2>&1
+          status=$?
+          cat gate.log
+          exit $status
         env:
           COVERAGE: "1"
+
+      # Every skip is a bug signal (golden rule 9). The budget is the 4
+      # recorded-fixture skips in test/unit/test_source_fixtures.rb (bluesky
+      # and x fixtures not yet recorded, plus the two every-fixture checks).
+      - name: Skip budget (at most 4 skips)
+        run: |
+          summary='^[0-9]+ runs, [0-9]+ assertions, '
+          grep -E "$summary" gate.log
+          lines=$(grep -cE "$summary" gate.log)
+          skips=$(grep -E "$summary" gate.log | grep -oE '[0-9]+ skips' | awk '{s += $1} END {print s + 0}')
+          echo "test summaries: $lines, skips: $skips (budget 4)"
+          [ "$lines" -eq 2 ] || { echo "expected 2 Minitest summaries (unit + integration_offline)"; exit 1; }
+          [ "$skips" -le 4 ] || { echo "skips $skips exceed the budget of 4"; exit 1; }

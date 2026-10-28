@@ -142,7 +142,7 @@ class TestSourceManager < Minitest::Test
       end
     end
 
-    assert_equal ["[SourceManager] Warning: Source 'bad' failed: API down"], logger.logged_warnings
+    assert_equal ["[SourceManager] Warning: Source 'bad' failed: RuntimeError: API down"], logger.logged_warnings
   end
 
   def test_research_respects_exclude_urls

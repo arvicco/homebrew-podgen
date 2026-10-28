@@ -66,8 +66,8 @@ class DescriptionAgent
       log("Warning: cleaned title still ends in a bare number — an episode counter? \"#{result}\"")
     end
     result
-  rescue => e
-    log("Warning: Title cleanup failed: #{e.message} (non-fatal, keeping original)")
+  rescue => e # skippable: cosmetic LLM cleanup; the original title stands
+    log("Warning: Title cleanup failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
     title
   end
 
@@ -104,8 +104,8 @@ class DescriptionAgent
 
     log("Description cleaned: #{description.length} → #{result.length} chars")
     result
-  rescue => e
-    log("Warning: Description cleanup failed: #{e.message} (non-fatal, keeping original)")
+  rescue => e # skippable: cosmetic LLM cleanup; the original description stands
+    log("Warning: Description cleanup failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
     description
   end
 
@@ -139,8 +139,8 @@ class DescriptionAgent
 
     log("Title generated: \"#{result}\"")
     result
-  rescue => e
-    log("Warning: Title generation failed: #{e.message} (non-fatal)")
+  rescue => e # skippable: nil tells the caller to keep its fallback title
+    log("Warning: Title generation failed: #{e.class}: #{e.message} (non-fatal)")
     nil
   end
 
@@ -172,8 +172,8 @@ class DescriptionAgent
 
     log("Description generated: #{result.length} chars")
     result
-  rescue => e
-    log("Warning: Description generation failed: #{e.message} (non-fatal)")
+  rescue => e # skippable: the episode ships with an empty description
+    log("Warning: Description generation failed: #{e.class}: #{e.message} (non-fatal)")
     ""
   end
 

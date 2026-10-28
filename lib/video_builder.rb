@@ -14,8 +14,9 @@ module VideoBuilder
   #   :exists      — mp4 present, not older than the audio, force is false
   #   :no_cover    — cover_path was nil or did not point to an existing file
   #   :no_audio    — mp3_path did not exist
-  #   :failed      — VideoGenerator raised; message holds the cause
-  Result = Struct.new(:status, :video_path, :message, keyword_init: true)
+  #   :failed      — VideoGenerator raised; message holds the cause,
+  #                  error_class the exception class name
+  Result = Struct.new(:status, :video_path, :message, :error_class, keyword_init: true)
 
   module_function
 
@@ -34,8 +35,8 @@ module VideoBuilder
     VideoGenerator.new(logger: logger).generate(mp3_path, cover_path, video_path)
     Result.new(status: :built, video_path: video_path,
       message: stale ? "video regenerated: mp4 older than audio" : "mp4 built")
-  rescue => e
-    Result.new(status: :failed, message: e.message)
+  rescue => e # skippable: returned as a :failed Result; the caller reports it
+    Result.new(status: :failed, message: e.message, error_class: e.class.name)
   end
 
   # An existing mp4 is reused only when it is not older than its audio

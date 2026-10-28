@@ -300,6 +300,86 @@ class TestGenerateCommand < Minitest::Test
     assert_empty priority_urls
   end
 
+  # CRPR r2 W1: a dead link (404) reaches neither research_data nor
+  # priority_urls, and finalize consumes it; a transient one (502) stays.
+  def test_priority_links_dead_link_consumed_without_injection_transient_stays
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    links_path = File.join(@tmpdir, "links.yml")
+    config = Struct.new(:links_path, :primary_language, :history_path).new(links_path, "en", File.join(@tmpdir, "history.yml"))
+    cmd.instance_variable_set(:@config, config)
+    links = PriorityLinks.new(links_path)
+    %w[https://live.example.com/a https://dead.example.com/b https://flaky.example.com/c].each { |u| links.add(u) }
+    responses = {
+      "live.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("200", "<title>Live</title>"),
+      "dead.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("404", ""),
+      "flaky.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("502", "")
+    }
+
+    research_data, priority_urls = Net::HTTP.stub(:start, ->(host, *_a, **_k) { responses.fetch(host) }) do
+      cmd.send(:inject_priority_links, [])
+    end
+
+    assert_equal ["https://live.example.com/a"], priority_urls
+    assert_equal ["https://live.example.com/a"], research_data.flat_map { |r| r[:findings].map { |f| f[:url] } }
+
+    cmd.instance_variable_set(:@history, Object.new.tap { |h| h.define_singleton_method(:record!) { |**| nil } })
+    cmd.instance_variable_set(:@base_name, "pod-2026-10-16")
+    cmd.instance_variable_set(:@pipeline_start, Time.now)
+    cmd.instance_variable_set(:@warnings, [])
+    script = {title: "T", segments: [], sources: []}
+    AudioAssembler.stub(:probe_duration, 60.0) do
+      capture_io { cmd.send(:finalize, [File.join(@tmpdir, "pod-2026-10-16.mp3")], script, research_data, priority_urls) }
+    end
+
+    assert_equal ["https://flaky.example.com/c"], PriorityLinks.new(links_path).all.map { |e| e["url"] }
+  end
+
+  # CRPR r3 nit: when every queued link fails, no empty "Priority links"
+  # topic reaches the script prompt or the history's covered topics.
+  def test_inject_priority_links_all_failed_adds_no_topic
+    cmd = build_command
+    cmd.instance_variable_set(:@dry_run, false)
+    cmd.instance_variable_set(:@logger, StubGenLogger.new)
+    links_path = File.join(@tmpdir, "links.yml")
+    cmd.instance_variable_set(:@config, Struct.new(:links_path).new(links_path))
+    links = PriorityLinks.new(links_path)
+    %w[https://dead.example.com/b https://flaky.example.com/c].each { |u| links.add(u) }
+    responses = {
+      "dead.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("404", ""),
+      "flaky.example.com" => Struct.new(:code, :body) { def [](_) = nil }.new("502", "")
+    }
+    research = [{topic: "AI", findings: []}]
+
+    research_data, priority_urls = Net::HTTP.stub(:start, ->(host, *_a, **_k) { responses.fetch(host) }) do
+      cmd.send(:inject_priority_links, research)
+    end
+
+    assert_equal ["AI"], research_data.map { |r| r[:topic] }
+    assert_empty priority_urls
+  end
+
+  # CRPR r3 nit: dead links are consumed only by finalize; a run that fails
+  # before it leaves them queued.
+  def test_run_failure_before_finalize_leaves_dead_link_queued
+    cmd = runnable_command("news")
+    cmd.singleton_class.remove_method(:inject_priority_links)
+    links_path = File.join(@tmpdir, "links.yml")
+    cmd.instance_variable_set(:@config, Struct.new(:type, :links_path).new("news", links_path))
+    PriorityLinks.new(links_path).add("https://dead.example.com/b")
+    cmd.define_singleton_method(:produce_episodes) { |*| raise "TTS quota" }
+    dead = Struct.new(:code, :body) { def [](_) = nil }.new("404", "")
+
+    code = nil
+    Net::HTTP.stub(:start, ->(*_a, **_k) { dead }) { capture_io { code = cmd.run } }
+
+    assert_equal 1, code
+    # The link was fetched and classified dead — not merely never fetched.
+    assert_equal ["https://dead.example.com/b"], cmd.instance_variable_get(:@dead_priority_urls)
+    assert_equal ["https://dead.example.com/b"], PriorityLinks.new(links_path).all.map { |e| e["url"] }
+  end
+
   def test_inject_priority_links_skips_on_dry_run
     cmd = build_command
     cmd.instance_variable_set(:@dry_run, true)
@@ -331,7 +411,7 @@ class TestGenerateCommand < Minitest::Test
     fake_agent = Struct.new(:generate, :hn_queries).new(["Long research topic October 2026"], keywords)
     manager_kwargs = nil
     fake_manager = Object.new
-    fake_manager.define_singleton_method(:research) { |topics| topics.map { |t| { topic: t, findings: [] } } }
+    fake_manager.define_singleton_method(:research) { |topics| topics.map { |t| { topic: t, findings: [{ url: "https://e.x/1" }] } } }
 
     TopicAgent.stub(:new, fake_agent) do
       SourceManager.stub(:new, ->(**kw) { (manager_kwargs = kw) && fake_manager }) do
@@ -412,6 +492,39 @@ class TestGenerateCommand < Minitest::Test
     assert_equal ["q1"], topics
     assert_equal ["Topic generation failed (RuntimeError: 401 revoked), fell back to queue.yml"],
       cmd.instance_variable_get(:@warnings)
+  end
+
+  # --- P8-1: minimum-research guard (Q-69) ---
+
+  def test_run_news_topic_without_findings_dropped_from_script_input_with_warning
+    cmd = researching_command({ "t1" => [{ title: "A", url: "https://e.x/a", summary: "s" }], "t2" => [] })
+    script_input = nil
+    cmd.define_singleton_method(:generate_script) { |_t, research, _p| (script_input = research) && { title: "T", segments: [] } }
+    code = run_with_fake_sources(cmd)
+
+    assert_equal 0, code
+    assert_equal ["t1"], script_input.map { |r| r[:topic] }
+    assert_includes cmd.instance_variable_get(:@warnings), "Warning: topic 't2' dropped — no research findings"
+    assert_match(/\ARUN-OUTCOME status=warn warnings=1 /, last_log_line)
+  end
+
+  def test_run_news_topic_missing_from_research_counts_as_dropped
+    cmd = researching_command({ "t1" => [{ title: "A", url: "https://e.x/a", summary: "s" }] }, topics: %w[t1 t2])
+    run_with_fake_sources(cmd)
+
+    assert_includes cmd.instance_variable_get(:@warnings), "Warning: topic 't2' dropped — no research findings"
+  end
+
+  def test_run_news_no_findings_for_any_topic_fails_before_script_agent
+    cmd = researching_command({ "t1" => [], "t2" => [] })
+    script_called = false
+    cmd.define_singleton_method(:generate_script) { |*| (script_called = true) && { title: "T", segments: [] } }
+    code = run_with_fake_sources(cmd)
+
+    assert_equal 1, code
+    refute script_called, "ScriptAgent must not run without research findings"
+    assert File.read(@log_path).match?(/END Research \(/), "the Research phase is closed before the fatal"
+    assert_match(/\ARUN-OUTCOME status=error .*first=RuntimeError: no research findings for any topic/, last_log_line)
   end
 
   def test_language_pipeline_warnings_reader_exposes_collected_warnings
@@ -553,6 +666,28 @@ class TestGenerateCommand < Minitest::Test
     cmd.define_singleton_method(:review_script) { |s, *| s }
     cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod-2026-10-10.mp3"] }
     cmd.define_singleton_method(:finalize) { |*| nil }
+    cmd
+  end
+
+  # runnable_command with the real research_topics; run it inside
+  # run_with_fake_sources so SourceManager.new yields a fake
+  # returning `findings_by_topic` (a topic absent from the hash is absent
+  # from the research data, as when every source failed).
+  def run_with_fake_sources(cmd)
+    code = nil
+    SourceManager.stub(:new, ->(**) { @fake_sources }) { capture_io { code = cmd.run } }
+    code
+  end
+
+  def researching_command(findings_by_topic, topics: findings_by_topic.keys)
+    cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
+    cmd.define_singleton_method(:generate_topics) { topics }
+    cmd.instance_variable_set(:@config, Struct.new(:type, :episodes_dir, :sources).new("news", @episodes_dir, {}))
+    cmd.instance_variable_set(:@history, Struct.new(:recent_urls).new(Set.new))
+    manager = Object.new
+    manager.define_singleton_method(:research) { |_| findings_by_topic.map { |t, f| { topic: t, findings: f } } }
+    @fake_sources = manager
     cmd
   end
 

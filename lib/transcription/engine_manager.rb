@@ -53,8 +53,9 @@ module Transcription
           elapsed = (Time.now - start).round(2)
           log("Engine '#{c}' completed in #{elapsed}s")
         rescue => e
-          lock.synchronize { errors[c] = e.message }
-          log_warning("Engine '#{c}' failed: #{e.message}")
+          # skippable: one engine down in comparison mode; the others carry the run.
+          lock.synchronize { errors[c] = "#{e.class}: #{e.message}" }
+          log_warning("Engine '#{c}' failed: #{e.class}: #{e.message}")
         end
       end
 
@@ -87,7 +88,8 @@ module Transcription
         begin
           comparison[:reconciled] = build_reconciler.reconcile(texts)
         rescue => e
-          log_warning("Reconciliation failed (non-fatal): #{e.message}")
+          # skippable: the caller raises when no reconciled text results.
+          log_warning("Reconciliation failed (non-fatal): #{e.class}: #{e.message}")
         end
       end
 
@@ -97,7 +99,8 @@ module Transcription
     def run_cleanup(text, captions: nil)
       build_reconciler.cleanup(text, captions: captions)
     rescue => e
-      log("Cleanup failed (non-fatal): #{e.message}")
+      # skippable: the raw engine transcript stands in for the cleaned one.
+      log("Cleanup failed (non-fatal): #{e.class}: #{e.message}")
       nil
     end
 

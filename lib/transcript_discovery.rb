@@ -65,8 +65,8 @@ module TranscriptDiscovery
 
     log("Found transcript via podcast:transcript (#{word_count(text)} words)", logger)
     { text: text, source: "podcast:transcript", quality: :high }
-  rescue => e
-    log("Failed to fetch podcast:transcript: #{e.message}", logger)
+  rescue => e # skippable: discovery falls through to the next strategy
+    log("Failed to fetch podcast:transcript: #{e.class}: #{e.message}", logger)
     nil
   end
 
@@ -90,8 +90,8 @@ module TranscriptDiscovery
 
     log("Found transcript on episode page (#{word_count(text)} words)", logger)
     { text: text, source: "episode_page", quality: :high }
-  rescue => e
-    log("Failed to scrape episode page: #{e.message}", logger)
+  rescue => e # skippable: discovery falls through to the next strategy
+    log("Failed to scrape episode page: #{e.class}: #{e.message}", logger)
     nil
   end
 
@@ -122,7 +122,7 @@ module TranscriptDiscovery
         end
       end
       nil
-    rescue => e
+    rescue => e # skippable: transport guard — transcript discovery fetch; nil means not found, the next strategy is tried
       nil
     end
 

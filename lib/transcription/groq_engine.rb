@@ -63,7 +63,7 @@ module Transcription
         elapsed = (Time.now - start).round(2)
 
         unless response.success?
-          raise "Groq API error #{response.code}: #{response.body}"
+          raise api_error("Groq API error", response)
         end
 
         result = JSON.parse(response.body)
@@ -133,8 +133,8 @@ module Transcription
       return unless @downsampled_path
 
       File.delete(@downsampled_path) if File.exist?(@downsampled_path)
-    rescue => e
-      log("Warning: failed to cleanup downsample: #{e.message}")
+    rescue => e # skippable: a leftover temp file; the transcript is already produced
+      log("Warning: failed to cleanup downsample: #{e.class}: #{e.message}")
     end
   end
 end

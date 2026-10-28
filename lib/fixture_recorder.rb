@@ -116,7 +116,7 @@ class FixtureRecorder
       write(path, trimmed)
       @out.puts format("%-11s recorded %s", name, path)
       nil
-    rescue => e
+    rescue => e # skippable per-target: failed names are returned and the rake task aborts on any
       @out.puts format("%-11s FAILED (%s)", name, e.is_a?(UnusableBody) ? e.message : e.class)
       name
     end

@@ -85,8 +85,8 @@ class BlueskySource < BaseSource
         summary: summary
       }
     end.first(RESULTS_PER_TOPIC)
-  rescue => e
-    log("Failed to search Bluesky for '#{topic}': #{e.message}")
+  rescue => e # skippable: one source down; the other sources still feed research
+    log("Failed to search Bluesky for '#{topic}': #{e.class}: #{e.message}")
     []
   end
 

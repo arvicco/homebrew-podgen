@@ -44,9 +44,13 @@ module AnthropicClient
 
   private
 
-  # REQUEST_TIMEOUT bounds one HTTP request (the SDK default is 10 min, and
-  # with its internal retries a dead network cost hours — P1-13). Longest
-  # observed calls: script ~90 s, enrichment ~80 s, reconciliation ~55 s.
+  # REQUEST_TIMEOUT is the intended bound for one HTTP request (the SDK
+  # default is 10 min, and with its internal retries a dead network cost
+  # hours — P1-13). Caveat found 2026-10-16 (Q-87): anthropic 1.21.0's
+  # messages.create merges its own 600 s default unless the call passes
+  # request_options, so today only calls that pass them (the reviewer's
+  # retry) are actually bound by this value. Longest observed calls: script
+  # ~90 s, enrichment ~80 s, reconciliation ~55 s.
   REQUEST_TIMEOUT = 300
 
   def init_anthropic_client(role:)

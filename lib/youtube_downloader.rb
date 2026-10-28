@@ -68,8 +68,8 @@ class YouTubeDownloader
 
     log("Downloaded thumbnail: #{(File.size(thumb) / 1024.0).round(1)} KB")
     thumb
-  rescue => e
-    log("Thumbnail download error (non-fatal): #{e.message}")
+  rescue => e # skippable: the episode proceeds without a thumbnail
+    log("Thumbnail download error (non-fatal): #{e.class}: #{e.message}")
     nil
   end
 
@@ -134,8 +134,8 @@ class YouTubeDownloader
       log("Fetched captions: #{text.length} chars (#{language})")
       text
     end
-  rescue => e
-    log("Caption fetch error (non-fatal): #{e.message}")
+  rescue => e # skippable: transcription proceeds without captions
+    log("Caption fetch error (non-fatal): #{e.class}: #{e.message}")
     nil
   end
 

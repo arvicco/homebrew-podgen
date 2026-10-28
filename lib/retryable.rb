@@ -22,7 +22,9 @@ module Retryable
   #   #with_engine_retries follows the same contract.
   # @param on [Array<Class>] Exception classes to retry on
   # @param label [String] Name for error messages (e.g. "TTSAgent")
-  def with_retries(max: 3, on: [StandardError], label: self.class.name&.split("::")&.last)
+  # @param reraise [Boolean] On give-up, re-raise the original error (its
+  #   class intact) instead of the RuntimeError summary (P8-3).
+  def with_retries(max: 3, on: [StandardError], label: self.class.name&.split("::")&.last, reraise: false)
     retries = 0
     begin
       retries += 1
@@ -33,6 +35,10 @@ module Retryable
         retry_log("#{label} error (attempt #{retries}/#{max}): #{e.message}. Retrying in #{sleep_time}s...")
         sleep(sleep_time)
         retry
+      end
+      if reraise
+        retry_log("#{label} failed after #{retries} attempts (#{e.class})")
+        raise
       end
       raise "#{label} failed after #{retries} attempts: #{e.message}"
     end

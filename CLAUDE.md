@@ -67,7 +67,9 @@ repo; git history + plan docs are the record.
    that bite here: a Bash call containing `git push`, `git commit` or
    `gh pr create` contains NOTHING else; suites run to a log
    (`> log 2>&1; echo exit=$?`) and "green" is read from the log, never
-   from a pipe; the gate PR opens EARLY as a living document; a turn
+   from a pipe; the gate PR opens ONLY when the phase is reviewed and
+   ready for the owner to merge (owner ruling 2026-10-16: never as a
+   living document, never as a scratchpad); a turn
    waiting on background work states "independent items remaining: N"
    and N is 0; subagent lanes run on Opus-class models (`model:
    "opus"`), frontier tokens buy judgment.
@@ -173,6 +175,11 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
   body explains WHY.
 - One logical change per commit; tests with the code. Never commit
   .env, output/, logs/, or podcast content directories.
+- No AI branding on any public surface (owner ruling 2026-10-16,
+  doctrine §13): no `Co-Authored-By` assistant trailers on commits, no
+  "generated with" footers on PR bodies, no authorship attribution to
+  an assistant anywhere. Technical references to the API vendor or a
+  model id (class names, model registry, docs) are not branding.
 
 ## Workflow notes
 
@@ -188,8 +195,10 @@ CLOSED 2026-10-12 12:55 (PR #5, merge 8e454c6 — the dry-up). Gate 5
 CLOSED 2026-10-12 18:25 (PR #6, merge e3106e2 — correctness and cost
 sweep). Gate 6 CLOSED
 2026-10-14 21:40 (PR #7, merge 2aad556 — spend measured, observability,
-docs refresh, refill, plus the P6-7/P6-8 hotfixes). Phase 7 (publication
-observability and YouTube hardening) AT GATE 7 (2026-10-14 23:30): all
-packets on phase-7, CRPR APPROVED (round 2 + nit confirmation,
-refs/cr/reviewed = 5068068), PR #8 open — the owner merges; runbook in
-.docs/p07-plan.md. Update this line at each gate.
+docs refresh, refill, plus the P6-7/P6-8 hotfixes). Gate 7 CLOSED 2026-10-16
+20:05 (PR #8, merge dedd365 — publication observability and YouTube
+hardening). Phase 8 (quality guards,
+diagnosis, test authority) AT GATE 8 (2026-10-16 23:30): all packets on
+phase-8, CRPR APPROVED (rounds 1–3 + two nit confirmations,
+refs/cr/reviewed = 98f0169), gate PR open — the owner merges; runbook in
+.docs/p08-plan.md. Update this line at each gate.
