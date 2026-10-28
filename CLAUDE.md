@@ -216,6 +216,6 @@ hardening). Gate 8 CLOSED 2026-10-28
 authority; phase clock 56m). Phase 9 (vocabulary didactics: ledger,
 key words, level bands, gloss cache, grouped section, vocab-health
 measurement, revocab ranges) AT GATE 9 — adopted 2026-10-28 15:36, all
-packets landed, CRPR APPROVED (refs/cr/reviewed = 8c38eea); gate PR
+packets landed, CRPR APPROVED (refs/cr/reviewed = dbc27ef); gate PR
 open, the owner merges. R9-01 and R9-02 on the register.
 Update this line at each gate.
