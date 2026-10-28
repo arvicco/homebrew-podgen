@@ -1032,6 +1032,8 @@ To re-annotate vocabulary on previously published episodes:
 podgen revocab <podcast> [episode-id]     # specific episode or all
 podgen revocab <podcast> --missing-only   # only episodes without vocabulary
 podgen revocab <podcast> --dry-run        # preview without changes
+podgen revocab <podcast> --from 2026-09-01 --to 2026-09-30 --limit 10  # date range (inclusive), earliest N
+# ends with "re-annotated N, skipped N, failed N (<basenames>)"; exit 1 when any file failed
 ```
 
 #### Known Vocabulary
