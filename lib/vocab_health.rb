@@ -3,6 +3,8 @@
 require_relative "transcript_parser"
 require_relative "transcript_renderer"
 require_relative "episode_filtering"
+require_relative "key_terms"
+require_relative "vocab_ledger"
 
 # Didactic census of a show's vocabulary sections (`podgen stats
 # --vocab-health`, P9-0 / Q-95). Self-contained over the show's
@@ -10,22 +12,19 @@ require_relative "episode_filtering"
 # section is read with TranscriptRenderer#parse_vocab_entries. An entry
 # counts when its parenthesis opens with a CEFR level, e.g. `(B1 noun)`.
 #
-# With `last: N` the report covers the latest N transcripts; repeats are
-# still judged against every earlier episode and key-term document
-# frequency against the whole show.
+# Key-term candidates are KeyTerms.candidates (the annotator's own rule,
+# loop call 4) scored against the show's earlier episodes only, exactly as
+# the ledger sees them at annotate time.
+#
+# With `last: N` the report covers the latest N transcripts; repeats and
+# key-term document frequency still count every earlier episode.
 class VocabHealth
   include TranscriptRenderer
 
   LEVELS = %w[A1 A2 B1 B2 C1 C2].freeze
   TOP_N = 12
-  # Key-term candidates (Phase 9 loop call 4).
-  KEY_MIN_LENGTH = 4
-  KEY_MIN_TF = 3
-  KEY_MAX_DF_SHARE = 0.15
   MISS_MIN = 3
   COVER_PREFIX = 5
-  LOOKBACK = 20 # chars inspected before a token to decide "mid-sentence"
-  TOKEN_RE = /[[:alpha:]]+/
 
   Report = Struct.new(:episodes, :total_episodes, :entries, :unlevelled, :unique_lemmas,
     :repeat_entries, :median_per_episode, :median_per_minute, :lemmas_3plus,
@@ -36,51 +35,32 @@ class VocabHealth
     end
   end
 
-  # Candidate key terms of one episode body: downcased token => in-episode tf.
-  # Letters only, >= KEY_MIN_LENGTH chars, tf >= KEY_MIN_TF, show document
-  # frequency <= KEY_MAX_DF_SHARE of `episodes`, and not capitalised in
-  # mid-sentence in more than half of its occurrences (proper nouns).
-  def self.candidates(body, df:, episodes:)
-    tf = Hash.new(0)
-    capital_mid = Hash.new(0)
-    text = body.to_s
-    text.scan(TOKEN_RE) do
-      match = Regexp.last_match
-      token = match[0]
-      next if token.length < KEY_MIN_LENGTH
-
-      word = token.downcase
-      tf[word] += 1
-      capital_mid[word] += 1 if capitalised?(token) && mid_sentence?(text, match.begin(0))
-    end
-    max_df = episodes * KEY_MAX_DF_SHARE
-    tf.select do |word, count|
-      count >= KEY_MIN_TF && df[word] <= max_df && capital_mid[word] * 2 <= count
-    end
-  end
-
   # Drops candidates sharing their first COVER_PREFIX chars with a lemma or
   # a recorded surface form of the episode's vocabulary.
   def self.uncovered(candidates, covers:)
     prefixes = covers.map { |c| c.to_s.downcase[0, COVER_PREFIX] }.to_set
-    candidates.reject { |word, _| prefixes.include?(word[0, COVER_PREFIX]) }
+    candidates.reject { |word| prefixes.include?(word[0, COVER_PREFIX]) }
   end
 
-  def self.capitalised?(token)
-    first = token[0]
-    first != first.downcase
-  end
+  # The ledger interface KeyTerms reads (`episodes`, `df`), accumulated in
+  # chronological order: holds the episodes before the one being scored.
+  class RunningDf
+    attr_reader :episodes
 
-  def self.mid_sentence?(text, pos)
-    start = [pos - LOOKBACK, 0].max
-    window = text[start...pos]
-    trimmed = window.sub(/[\s*"'«»„“”‘’()\[\]—–-]+\z/, "")
-    return false if window[trimmed.length..].include?("\n")
-    return false if trimmed.empty?
+    def initialize
+      @episodes = 0
+      @df = Hash.new(0)
+    end
 
-    !trimmed.end_with?(".", "!", "?", "…", ":")
+    def df(token)
+      @df.fetch(token.to_s.downcase, 0)
+    end
+
+    def add(body)
+      VocabLedger.tokens(body).uniq.each { |t| @df[t] += 1 }
+      @episodes += 1
+    end
   end
-  private_class_method :capitalised?, :mid_sentence?
 
   # durations: basename => seconds (history.yml), for the per-minute density.
   def initialize(episodes_dir:, cutoff: nil, durations: {})
@@ -95,7 +75,7 @@ class VocabHealth
     window = eps[window_start..] || []
 
     repeat_entries = count_repeats(eps, window_start)
-    df = document_frequency(eps)
+    misses = count_key_term_misses(eps, window_start)
     entries = window.flat_map { |e| e[:entries] }
     lemma_counts = entries.map { |e| e[:lemma] }.tally
     drift, repeated = definition_drift(entries)
@@ -112,7 +92,7 @@ class VocabHealth
       lemmas_3plus: lemma_counts.count { |_, c| c >= 3 },
       top_lemmas: lemma_counts.sort_by { |l, c| [-c, l] }.first(TOP_N),
       levels: level_distribution(entries),
-      key_term_misses: window.count { |e| misses(e, df, eps.length) >= MISS_MIN },
+      key_term_misses: misses,
       drift: drift,
       repeated_with_definitions: repeated
     )
@@ -175,16 +155,19 @@ class VocabHealth
     repeats
   end
 
-  def document_frequency(eps)
-    df = Hash.new(0)
-    eps.each do |ep|
-      ep[:body].downcase.scan(TOKEN_RE).select { |t| t.length >= KEY_MIN_LENGTH }.uniq.each { |t| df[t] += 1 }
+  # Window episodes with >= MISS_MIN key-term candidates left unexplained;
+  # each episode is scored against the episodes before it (O(N) overall).
+  def count_key_term_misses(eps, window_start)
+    running = RunningDf.new
+    misses = 0
+    eps.each_with_index do |ep, i|
+      if i >= window_start
+        candidates = KeyTerms.candidates(ep[:body], ledger: running)
+        misses += 1 if self.class.uncovered(candidates, covers: ep[:covers]).size >= MISS_MIN
+      end
+      running.add(ep[:body])
     end
-    df
-  end
-
-  def misses(ep, df, total)
-    self.class.uncovered(self.class.candidates(ep[:body], df: df, episodes: total), covers: ep[:covers]).size
+    misses
   end
 
   def per_minute(window)

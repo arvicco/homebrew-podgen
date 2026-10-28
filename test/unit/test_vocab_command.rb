@@ -194,6 +194,17 @@ class TestVocabCommand < Minitest::Test
     refute File.exist?(cache_path)
   end
 
+  def test_edit_rejects_language_outside_configured_targets
+    code = nil
+    _out, err = capture_io do
+      code = build_command("edit", "testpod", "lupo", "--lang", "english", "--translation", "wolf").run
+    end
+
+    assert_equal 2, code
+    assert_includes err, "English" # the allowed list
+    refute File.exist?(cache_path)
+  end
+
   def test_edit_without_translation_is_usage_error
     code = nil
     capture_io { code = build_command("edit", "testpod", "lupo", "--lang", "English").run }
