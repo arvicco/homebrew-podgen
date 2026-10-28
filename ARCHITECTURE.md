@@ -26,6 +26,16 @@ Vocabulary filtering for cognates (words similar enough to the target-language e
 
 ---
 
+## Vocabulary memory is derived; selection is by level band
+
+`VocabLedger` (`lib/vocab_ledger.rb`) is rebuilt on every run from the show's `*_transcript.md` files in basename order, parsing the vocabulary sections with `TranscriptRenderer#parse_vocab_entries`; it answers how often and when a lemma was explained (spaced re-exposure gaps `[8, 20, 50]`, excluded after four; re-exposures capped at a quarter of `max`, oldest first) and the show's document frequency per body token. `before:` cuts it at a basename so a re-annotation sees only the past. `VocabCache` (`lib/vocab_cache.rb`, `output/<pod>/vocab_cache.yml`) holds enrichments per lemma and target language, written atomically once per annotate. `KeyTerms` (`lib/key_terms.rb`) scores story-critical tokens by tf × idf against the ledger. When `max` binds, `VocabularyAnnotator#select_by_bands` fills per-band quotas (distance above the cutoff 0/1/2+, preset weights per `priority:`) by tf × idf, spilling unfilled quota down then up; key and `--include` entries are pinned outside the selection.
+
+**Why.** The transcripts are already the record of what each episode explained; a stored ledger would be a second source of truth that goes stale when an episode is re-annotated or deleted, and 400 transcripts parse in well under a second. The cache is different: it saves paid calls and keeps one gloss per lemma, so it is stored — but as derived data, not a frozen schema. Selecting by level alone either pinned everything to the cutoff or filled B1 shows with C2 words; bands keep a deliberate spread and let frequency decide within it.
+
+**Implication.** Anything that changes the vocabulary entry line format breaks the ledger (and WordStats, the renderer, the census) together — the line format is the contract; sub-headings (`### Key words` / `### Also new`) are additive and every parser ignores them. Do not add a persisted ledger; deleting `vocab_cache.yml` must always be safe.
+
+---
+
 ## Twitter publish is non-fatal by design
 
 `R2Publisher#tweet_new_episodes` (`lib/r2_publisher.rb`) rescues all Twitter errors and logs `"non-fatal"` with the exception class. A failed tweet never aborts a publish. HTTP 402 (X pay-per-use credits at zero) raises `TwitterAgent::CreditsDepleted` after one call instead of being retried.
