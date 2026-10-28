@@ -92,6 +92,15 @@ class VocabLedger
     @episodes - history.last.first >= gap
   end
 
+  # Episodes since lemma was last explained (as seen from the next
+  # episode), or nil when it never was.
+  def episodes_since(lemma)
+    history = @explained.fetch(key(lemma), nil)
+    return nil if history.nil? || history.empty?
+
+    @episodes - history.last.first
+  end
+
   # Number of episodes whose body contains token.
   def df(token)
     @df.fetch(token.to_s.downcase, 0)

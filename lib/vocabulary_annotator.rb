@@ -21,6 +21,8 @@ class VocabularyAnnotator
 
   CEFR_LEVELS = %w[A1 A2 B1 B2 C1 C2].freeze
   MAX_PARTICLE_LENGTH = 3
+  # Re-exposed lemmas may fill at most this share of max (ceil).
+  REEXPOSURE_SHARE = 0.25
   PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
   def initialize(api_key, model: nil, logger: nil)
@@ -83,6 +85,7 @@ class VocabularyAnnotator
 
     count_occurrences(text, entries, language)
     priority = filters[:priority] || "balanced"
+    cap_reexposures!(entries, ledger, pinned, max, priority) if ledger
 
     # Over-select to leave room for cognate filtering after enrichment
     has_cognate_filter = filters[:similar] && !filters[:similar].empty?
@@ -458,9 +461,25 @@ class VocabularyAnnotator
     entries.reject! { |e| !exempt.call(e) && !ledger.allowed?(e[:lemma]) }
     dropped = before - entries.length
     log("Ledger: dropped #{dropped} already-explained lemma(s)") if dropped > 0
+  end
 
-    reexposed = entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }.map { |e| e[:lemma] }
-    log("Ledger: re-exposing #{reexposed.join(", ")}") unless reexposed.empty?
+  # Re-exposures (lemmas the ledger has seen explained) may take at most
+  # REEXPOSURE_SHARE of max (ceil; uncapped without max); the ones explained
+  # longest ago win, then band score, then lemma. Exempt (pinned) entries
+  # neither count nor are cut. Logs the surviving re-exposed lemmas.
+  def cap_reexposures!(entries, ledger, exempt, max, priority)
+    reexposed = entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }
+    allowed = max && (max * REEXPOSURE_SHARE).ceil
+    if allowed && reexposed.length > allowed
+      keep = reexposed.sort_by do |e|
+        [-(ledger.episodes_since(e[:lemma]) || Float::INFINITY), -band_score(e, priority, ledger), e[:lemma].to_s.downcase]
+      end.first(allowed)
+      cut = reexposed.reject { |e| keep.any? { |k| k.equal?(e) } }
+      entries.reject! { |e| cut.any? { |c| c.equal?(e) } }
+      log("Ledger: re-exposure cap #{allowed} of #{reexposed.length} (max × #{REEXPOSURE_SHARE})")
+      reexposed = keep
+    end
+    log("Ledger: re-exposing #{reexposed.map { |e| e[:lemma] }.join(", ")}") unless reexposed.empty?
   end
 
   # key: true on entries whose lemma or any word form is a key-term candidate.
