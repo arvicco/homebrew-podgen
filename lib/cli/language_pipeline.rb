@@ -15,6 +15,8 @@ require_relative File.join(root, "lib", "agents", "cover_agent")
 require_relative File.join(root, "lib", "agents", "description_agent")
 require_relative File.join(root, "lib", "youtube_downloader")
 require_relative File.join(root, "lib", "vocabulary_annotator")
+require_relative File.join(root, "lib", "vocab_ledger")
+require_relative File.join(root, "lib", "vocab_cache")
 require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "timestamp_persister")
 require_relative File.join(root, "lib", "subtitle_reconciliation_runner")
@@ -559,7 +561,12 @@ module PodgenCLI
         max: @config.vocabulary_max,
         filters: @config.vocabulary_filters,
         include_words: @options[:include_words] || Set.new,
-        target_languages: @config.vocabulary_target_languages
+        target_languages: @config.vocabulary_target_languages,
+        # The staged transcript is not in episodes_dir yet: the whole
+        # published back catalogue is this episode's past.
+        ledger: VocabLedger.for_config(@config),
+        cache: VocabCache.for_config(@config),
+        episode: @base_name
       )
 
       # Rewrite transcript file with marked words + vocabulary appendix
