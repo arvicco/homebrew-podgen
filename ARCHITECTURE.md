@@ -130,6 +130,14 @@ Every broad `rescue` in `lib/` (no class, `=> e`, `StandardError`, `Exception`, 
 
 **Implication.** A naming change is a change to one module plus `test/unit/test_characterization_filename_scheme.rb` (the 8-row oracle). Callers that pass no `languages:` get the legacy any-tail rule; pass the configured codes for language attribution (feeds, site, filtering). Deleting and moving deliberately do not: `EpisodeArtifacts` takes every `<base>-*` file, so a language commented out of the config is never left behind by `scrap`/`move`. Stats keys only primary files, so translated mp3s are measured with ffprobe.
 
+## The listening archive is write-only owner data
+
+`lib/listening_archive.rb` (`ListeningArchive`) writes the owner's `--ask-trim` decisions into `output/<pod>/archive/`, next to `episodes/`: kept pairs `<basename>.source.<ext>` + `<basename>.trim.yml`, and rejected candidates under `rejected/` with one row each in `rejected.yml` (yml written atomically; audio copied, never moved). `LanguagePipeline` writes the pair before `apply_trim` (kept segments from `AudioTrimmer.keep_segments`, the same rule the trimmer cuts by) and the rejection rows at the `x`/`[a]bort` answers; for the interactive window only (download done → trim values entered) it installs its own INT handler that records `interrupted`, restores the previous handler and hands it the signal (bin/podgen's trap, exit 130). Archive write failures are skippable warnings.
+
+**Why.** The owner's listening work — where each story really starts and ends, which candidates were not worth an episode — was deleted with the temp files at the end of every run; it is the training set for automatic cutting and selection.
+
+**Implication.** Nothing reads the archive yet: history.yml, uploads.yml, excluded_urls.yml, episode naming and the feed are untouched, and no cleanup may ever touch `archive/`. A reader (e.g. an archive listing) is a separate item.
+
 ## A run says how it went in one line
 
 Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|warn|error warnings=N errors=M[ first=<text>]` (`lib/run_outcome.rb`, written by `GenerateCommand#finish_run`). `status` is `error` on a non-zero exit, `warn` when the run succeeded with warnings or logged ERROR entries, `ok` otherwise; `first` is the first error on an `error` run (what killed it, not an earlier degradation) and the first warning otherwise, falling back to the other, one line, clipped, always the last field. `podgen status` judges the newest log by that line first; an `ok` outcome or an older log without one falls back to the regex scan.

@@ -119,6 +119,21 @@ class EpisodeSource
     end
   end
 
+  # Same-feed key (P10-0b): host + first path segment, plus the next
+  # segment when the first is a redirector (ends in .mp3 or is listed).
+  # Class-level so the listening archive (P11-0) labels with the same key.
+  def self.feed_key(url)
+    uri = URI.parse(url.to_s)
+    return nil unless uri.host
+
+    segments = uri.path.to_s.split("/").reject(&:empty?)
+    first = segments.first.to_s.downcase
+    take = (first.end_with?(".mp3") || REDIRECT_SEGMENTS.include?(first)) ? 2 : 1
+    [uri.host.downcase, *segments.first(take)].join("/")
+  rescue URI::InvalidURIError
+    nil
+  end
+
   private
 
   # ffprobe format_name → correct extension mapping
@@ -315,19 +330,8 @@ class EpisodeSource
   # `redirect.mp3/<real host>`, anchor.fm's `s/<show>`).
   REDIRECT_SEGMENTS = %w[redirect r track e p s].freeze
 
-  # Same-feed key (P10-0b): host + first path segment, plus the next
-  # segment when the first is a redirector (ends in .mp3 or is listed).
-  def feed_key(url)
-    uri = URI.parse(url.to_s)
-    return nil unless uri.host
-
-    segments = uri.path.to_s.split("/").reject(&:empty?)
-    first = segments.first.to_s.downcase
-    take = (first.end_with?(".mp3") || REDIRECT_SEGMENTS.include?(first)) ? 2 : 1
-    [uri.host.downcase, *segments.first(take)].join("/")
-  rescue URI::InvalidURIError
-    nil
-  end
+  # Same-feed key (P10-0b): see EpisodeSource.feed_key.
+  def feed_key(url) = self.class.feed_key(url)
 
   def feed_weight(feed, default)
     feed.is_a?(Hash) ? (feed[:weight] || default) : default
