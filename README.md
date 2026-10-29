@@ -590,6 +590,10 @@ For `skip`, both formats mean "start playback from this point" — `skip: 80` an
 
 CLI flags `--skip N` / `--cut N` override per-feed values. `skip`/`cut` in `## Audio` is used as a fallback if neither CLI flag nor per-feed config is set.
 
+#### Re-post guard
+
+Episode selection skips candidates whose audio URL is already in history, and also candidates whose *title* matches an earlier episode — sources re-post a story under a new URL with an extended title. Titles are compared case-, accent- and punctuation-folded, with any subtitle after `. `, ` — `, ` – `, ` - `, `: ` or ` | ` dropped; a match is an equal stem, one stem a prefix of the other (shorter ≥ 12 chars), or ≥ 80% overlap of words of 3+ letters. The check runs before the length filter and before any download. When the candidate's audio host equals a host recorded on the matching history entry (same feed), it is skipped with `Already processed as <basename> (<date>): title match "<old title>"` on stderr and in the log, and the next candidate is tried. A match from another feed is skipped the same way in unattended runs; with `--ask-trim` it prompts `[d]uplicate skip / [k]eep as a different telling (earlier: <basename> "<old title>")` (blank, EOF or `d` skips). `--force` bypasses the guard.
+
 #### Episode length filtering
 
 Set `min_length` / `max_length` in `## Sources` to filter out episodes outside the desired duration range:
@@ -1542,6 +1546,7 @@ podgen/
 │   │   ├── engine_manager.rb      # Single or parallel comparison mode
 │   │   └── transcript_merger.rb   # Claude merge of multi-engine transcripts
 │   ├── episode_source.rb     # Episode acquisition: local/YouTube/RSS, dedup, length filter
+│   ├── title_match.rb        # Normalized-title match for the re-post guard
 │   ├── youtube_downloader.rb # yt-dlp wrapper (metadata, audio download, captions)
 │   ├── audio_trimmer.rb      # Trimming: skip/cut/snip, autotrim outro
 │   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, ID3)
