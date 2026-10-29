@@ -1271,7 +1271,10 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   When this show uploaded nothing but another show did in the window, the
   batch's priority order is the cause and the line is a note without the
   quota WARN: `youtube queued behind bajke (priority mode): 0 uploaded in the last 7 d, 120 behind`.
-  With no show uploading in the window the stalled WARN stands. LingQ has no batch
+  The quota condition is a WARN only while no YouTube show uploaded anything
+  in the window (the batch is stuck); once some show progressed it is the
+  daily cap, so a current show gets no quota line at all (`not authorized`
+  always warns). With no show uploading in the window the stalled WARN stands. LingQ has no batch
   count and keeps the plain rule.
 - **WARN (upload holes)** - per upload platform, eligible episodes dated
   strictly between the oldest and the newest tracked upload, untracked and
