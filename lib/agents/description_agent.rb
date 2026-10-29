@@ -172,7 +172,7 @@ class DescriptionAgent
 
     log("Description generated: #{result.length} chars")
     result
-  rescue => e # skippable (non-fatal): the caller falls back to the title; counted (Q-106)
+  rescue => e # skippable (non-fatal): callers keep or fall back (title, or the existing description); counted (Q-106)
     log_warning("Description generation failed: #{e.class}: #{e.message}")
     ""
   end
