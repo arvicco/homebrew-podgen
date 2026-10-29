@@ -226,7 +226,7 @@ module Tell
         model: @model,
         max_tokens: max_tokens,
         messages: [{ role: "user", content: prompt }],
-        **AnthropicClient.effort_params(:gloss)
+        **AnthropicClient.effort_params(:gloss, request_options: {timeout: 15, max_retries: 0})
       )
       AnthropicClient.text_of(message).strip
     end
