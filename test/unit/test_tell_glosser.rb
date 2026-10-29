@@ -599,7 +599,7 @@ class TestTellGlosser < Minitest::Test
       self
     end
 
-    def create(model:, max_tokens:, messages:)
+    def create(model:, max_tokens:, messages:, request_options: nil)
       @calls << { model: model, content: messages.first[:content] }
       MockResponse.new(@response_text)
     end

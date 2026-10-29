@@ -590,6 +590,10 @@ For `skip`, both formats mean "start playback from this point" — `skip: 80` an
 
 CLI flags `--skip N` / `--cut N` override per-feed values. `skip`/`cut` in `## Audio` is used as a fallback if neither CLI flag nor per-feed config is set.
 
+#### Re-post guard
+
+Episode selection skips candidates whose audio URL is already in history, and also candidates whose *title* matches an earlier episode — sources re-post a story under a new URL with an extended title. Titles are compared case-, accent- and punctuation-folded, with any subtitle after `. `, ` — `, ` – `, ` - `, `: ` or ` | ` dropped; a match is an equal stem, one stem a prefix of the other (shorter ≥ 12 chars), or ≥ 80% overlap of words of 3+ letters. The check runs before the length filter and before any download. When the candidate's audio host equals a host recorded on the matching history entry (same feed), it is skipped with `Already processed as <basename> (<date>): title match "<old title>"` on stderr and in the log, and the next candidate is tried. A match from another feed is skipped the same way in unattended runs; with `--ask-trim` it prompts `[d]uplicate skip / [k]eep as a different telling (earlier: <basename> "<old title>")` (blank, EOF or `d` skips). `--force` bypasses the guard.
+
 #### Episode length filtering
 
 Set `min_length` / `max_length` in `## Sources` to filter out episodes outside the desired duration range:
@@ -1177,6 +1181,8 @@ podgen schedule ruby_world --remove
 
 **Note:** macOS must be awake at the scheduled time. Keep the machine plugged in and disable sleep, or use `caffeinate`.
 
+Once started, the wrappers (`scripts/run.sh`, `scripts/run_uploads.sh`) hold the Mac awake for the job's lifetime: the podgen command runs under `caffeinate -is` when `caffeinate` is on the PATH (plain otherwise, exit codes unchanged). The generate preflight then waits up to 120 s for the network (one lookup every 10 s) and fails with `no network after 120 s (preflight; the Mac may have been asleep)`. A job that launchd fires inside a seconds-long dark wake can still be lost before the wrapper starts; preventing that needs a macOS energy setting (no automatic sleep at the scheduled time, or a `pmset repeat wake` shortly before it).
+
 ### podgen status (content-progress check)
 
 `podgen status` prints one line per podcast (podcasts with an installed launchd
@@ -1570,6 +1576,7 @@ podgen/
 │   │   ├── engine_manager.rb      # Single or parallel comparison mode
 │   │   └── transcript_merger.rb   # Claude merge of multi-engine transcripts
 │   ├── episode_source.rb     # Episode acquisition: local/YouTube/RSS, dedup, length filter
+│   ├── title_match.rb        # Normalized-title match for the re-post guard
 │   ├── youtube_downloader.rb # yt-dlp wrapper (metadata, audio download, captions)
 │   ├── audio_trimmer.rb      # Trimming: skip/cut/snip, autotrim outro
 │   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, ID3)

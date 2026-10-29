@@ -23,8 +23,12 @@ require "fileutils"
 ROOT = File.expand_path("..", __dir__)
 $LOAD_PATH.unshift(File.join(ROOT, "lib"))
 
+# Unit files set placeholder keys process-wide; a full `rake test` loads
+# them beside test/api, so a placeholder value counts as absent (Q-86).
+PLACEHOLDER_ENV_VALUE = /\A(test|fake|dummy|placeholder)[-_]?/i
+
 def skip_unless_env(*keys)
-  missing = keys.reject { |k| ENV[k] && !ENV[k].empty? }
+  missing = keys.reject { |k| ENV[k] && !ENV[k].empty? && !ENV[k].match?(PLACEHOLDER_ENV_VALUE) }
   skip "Missing env: #{missing.join(', ')}" unless missing.empty?
 end
 

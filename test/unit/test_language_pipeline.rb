@@ -320,6 +320,33 @@ class TestLanguagePipeline < Minitest::Test
     refute exclude_called, "'e' must no longer trigger exclude_url!"
   end
 
+  # --- re-post guard prompt (Q-88, P10-0) ---
+
+  def test_acquire_rss_with_ask_trim_passes_duplicate_prompt_reading_stdin
+    pipeline = build_pipeline(options: { ask_trim: true })
+    passed = capture_fetch_next_kwargs(pipeline)
+    prompt = passed[:duplicate_prompt]
+    refute_nil prompt, "--ask-trim must pass a duplicate prompt"
+
+    answer = nil
+    err = nil
+    $stdin.stub :gets, "k\n" do
+      _, err = capture_io do
+        answer = prompt.call({ title: "Il lupo e il pastore. Esopo" },
+                             { basename: "fiabe-2026-04-28", date: "2026-04-28", title: "Il lupo e il pastore" })
+      end
+    end
+    assert_equal "k", answer
+    assert_includes err, '[d]uplicate skip / [k]eep as a different telling (earlier: fiabe-2026-04-28 "Il lupo e il pastore")'
+  end
+
+  def test_acquire_rss_without_ask_trim_passes_no_duplicate_prompt
+    pipeline = build_pipeline
+    passed = capture_fetch_next_kwargs(pipeline)
+    assert passed.key?(:duplicate_prompt)
+    assert_nil passed[:duplicate_prompt]
+  end
+
   def test_enforce_length_with_ask_trim_continues_on_t
     pipeline = build_pipeline(options: { ask_trim: true })
     pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
@@ -1060,6 +1087,15 @@ class TestLanguagePipeline < Minitest::Test
     calls
   ensure
     saved.nil? ? ENV.delete("ANTHROPIC_API_KEY") : ENV["ANTHROPIC_API_KEY"] = saved
+  end
+
+  def capture_fetch_next_kwargs(pipeline)
+    passed = nil
+    fake_source = Object.new
+    fake_source.define_singleton_method(:fetch_next) { |**kw| passed = kw; nil }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+    assert_equal 1, pipeline.send(:acquire_rss)
+    passed
   end
 
   def build_pipeline(options: {}, config: nil, name: nil, transcription_language: nil)

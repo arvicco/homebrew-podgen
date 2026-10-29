@@ -569,7 +569,7 @@ class TestScriptReviewer < Minitest::Test
     mock_client = Minitest::Mock.new
     mock_client.expect(:messages, mock_client)
     mock_client.expect(:create, mock_message, [], model: String, max_tokens: Integer,
-                       system: String, messages: Array, output_config: Hash)
+                       system: String, messages: Array, output_config: Hash, request_options: Hash)
 
     reviewer.instance_variable_set(:@client, mock_client)
 
@@ -595,7 +595,7 @@ class TestScriptReviewer < Minitest::Test
     mock_client = Minitest::Mock.new
     mock_client.expect(:messages, mock_client)
     mock_client.expect(:create, mock_message, [], model: String, max_tokens: Integer,
-                       system: String, messages: Array, output_config: Hash)
+                       system: String, messages: Array, output_config: Hash, request_options: Hash)
 
     reviewer.instance_variable_set(:@client, mock_client)
 
@@ -657,7 +657,8 @@ class TestScriptReviewer < Minitest::Test
 
     capture_io { reviewer.send(:run_ai_review, make_script) }
 
-    refute client.calls[0].key?(:request_options), "the first call keeps the client defaults"
+    assert_equal({ timeout: AnthropicClient::REQUEST_TIMEOUT, max_retries: 1 }, client.calls[0][:request_options],
+      "the first call carries the shared bound (P10-1)")
     assert_equal({ timeout: 420, max_retries: 0 }, client.calls[1][:request_options])
     assert_equal ScriptReviewer::RETRY_REQUEST_OPTIONS, client.calls[1][:request_options]
   end
