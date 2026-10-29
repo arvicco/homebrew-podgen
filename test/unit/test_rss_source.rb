@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "stringio"
+require "minitest/mock"
 require "sources/rss_source"
 require "loggable"
 
@@ -135,23 +136,45 @@ class TestRSSSource < Minitest::Test
   end
 
   # Q-101 (P11-4): a feed that cannot be fetched is a counted warning, not
-  # a plain log line.
+  # a plain log line. Q-105 (P12-0): a 404/410 costs one request, not three.
   def test_fetch_episodes_feed_404_records_one_warning
     logger = WarningLogger.new
     source = failing_source("https://example.com/dead.xml", logger)
 
-    assert_empty source.fetch_episodes
+    requests = with_status_server("404") { assert_empty source.fetch_episodes }
+    assert_equal 1, requests
     assert_equal 1, logger.warnings.size
-    assert_match(%r{Warning: Failed to fetch https://example\.com/dead\.xml: RuntimeError: .*HTTP 404}, logger.warnings.first)
+    assert_match(%r{Warning: Failed to fetch https://example\.com/dead\.xml: RSSSource::FeedGone: HTTP 404 from https://example\.com/dead\.xml}, logger.warnings.first)
   end
 
   def test_research_feed_404_records_one_warning
     logger = WarningLogger.new
     source = failing_source("https://example.com/dead.xml", logger)
 
-    source.research(["Topic"])
+    requests = with_status_server("404") { source.research(["Topic"]) }
+    assert_equal 1, requests
     assert_equal 1, logger.warnings.size
-    assert_match(/Failed to fetch https:\/\/example\.com\/dead\.xml/, logger.warnings.first)
+    assert_match(/Failed to fetch https:\/\/example\.com\/dead\.xml: RSSSource::FeedGone: HTTP 404/, logger.warnings.first)
+  end
+
+  def test_fetch_episodes_feed_410_costs_one_request
+    logger = WarningLogger.new
+    source = failing_source("https://example.com/gone.xml", logger)
+
+    requests = with_status_server("410") { assert_empty source.fetch_episodes }
+    assert_equal 1, requests
+    assert_equal 1, logger.warnings.size
+    assert_match(/RSSSource::FeedGone: HTTP 410/, logger.warnings.first)
+  end
+
+  def test_fetch_episodes_feed_500_keeps_retrying
+    logger = WarningLogger.new
+    source = failing_source("https://example.com/flaky.xml", logger)
+
+    requests = with_status_server("500") { assert_empty source.fetch_episodes }
+    assert_equal RSSSource::MAX_RETRIES + 1, requests
+    assert_equal 1, logger.warnings.size
+    assert_match(/RuntimeError: RSS failed after 3 attempts: HTTP 500/, logger.warnings.first)
   end
 
   private
@@ -172,8 +195,21 @@ class TestRSSSource < Minitest::Test
   def failing_source(url, logger)
     source = RSSSource.new(feeds: [url], logger: logger)
     source.define_singleton_method(:sleep) { |_| }
-    source.define_singleton_method(:http_get_with_redirects) { |u, _r = nil| raise "HTTP 404 from #{u}" }
     source
+  end
+
+  # Stubs Net::HTTP.start with a fake connection answering every GET with
+  # +code+; returns how many requests were made.
+  def with_status_server(code)
+    requests = 0
+    response = Net::HTTPResponse::CODE_TO_OBJ.fetch(code).new("1.1", code, "status")
+    http = Object.new
+    http.define_singleton_method(:get) do |*_a|
+      requests += 1
+      response
+    end
+    Net::HTTP.stub(:start, ->(*_a, **_k, &blk) { blk.call(http) }) { yield }
+    requests
   end
 
   def build_source(feeds)
