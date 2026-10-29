@@ -567,6 +567,7 @@ class TestStatusCommand < Minitest::Test
 
   def test_run_youtube_consent_six_days_old_reports_warn
     make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    File.write(@token_file, "{}\n")
     YouTubeConsent.record!(@token_file, Time.new(2026, 10, 5, 10, 30))
     out, code = run_status
     assert_equal 1, code
@@ -574,8 +575,16 @@ class TestStatusCommand < Minitest::Test
     assert_includes out, CONSENT_WARN
   end
 
+  def test_run_youtube_consent_sidecar_without_token_is_not_a_finding
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    YouTubeConsent.record!(@token_file, Time.new(2026, 10, 1, 10, 30))
+    out, = run_status
+    refute_match(/youtube consent/, out)
+  end
+
   def test_run_youtube_consent_five_days_old_is_not_a_finding
     make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    File.write(@token_file, "{}\n")
     YouTubeConsent.record!(@token_file, Time.new(2026, 10, 6, 10, 30))
     out, = run_status
     refute_match(/youtube consent/, out)
@@ -583,6 +592,7 @@ class TestStatusCommand < Minitest::Test
 
   def test_run_youtube_consent_old_but_app_published_is_not_a_finding
     make_pod("alpha", dates: fresh_dates, sections: YOUTUBE, extra: "- youtube_app_published: true\n")
+    File.write(@token_file, "{}\n")
     YouTubeConsent.record!(@token_file, Time.new(2026, 10, 1, 10, 30))
     out, = run_status
     refute_match(/youtube consent/, out)
@@ -590,6 +600,7 @@ class TestStatusCommand < Minitest::Test
 
   def test_run_youtube_consent_ignored_for_podcast_without_youtube
     make_pod("alpha", dates: fresh_dates)
+    File.write(@token_file, "{}\n")
     YouTubeConsent.record!(@token_file, Time.new(2026, 10, 1, 10, 30))
     out, code = run_status
     assert_equal 0, code, out
