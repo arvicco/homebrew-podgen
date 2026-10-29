@@ -22,6 +22,9 @@ class ListeningArchive
   # complete exactly when both exist.
   def keep(source_path, basename:, record:)
     FileUtils.mkdir_p(@root)
+    set_aside_other_pair(basename, record[:audio_url])
+    ext = File.extname(source_path)
+    Dir.glob(File.join(@root, "#{basename}.source.*")).each { |f| File.delete(f) unless File.extname(f) == ext }
     FileUtils.cp(source_path, File.join(@root, "#{basename}.source#{File.extname(source_path)}"))
     AtomicWriter.write_yaml(File.join(@root, "#{basename}.trim.yml"), stamp(record))
   end
@@ -35,12 +38,31 @@ class ListeningArchive
       FileUtils.cp(source_path, File.join(@root, file))
     end
     path = File.join(@root, "rejected.yml")
-    rows = YamlLoader.load(path, default: [])
+    # A file that does not parse as a list is never replaced: raise, so
+    # the earlier rows survive and the caller counts a warning.
+    rows = YamlLoader.load(path, raise_on_error: true) || []
+    raise "#{path} is not a list; left untouched" unless rows.is_a?(Array)
     rows << stamp(record.merge(file: file))
     AtomicWriter.write_yaml(path, rows)
   end
 
   private
+
+  # A pair an earlier run left for another candidate (its episode never
+  # committed, so the day slot was handed out again) moves to the first
+  # free <basename>.<n> instead of being overwritten or mixed.
+  def set_aside_other_pair(basename, audio_url)
+    yml = File.join(@root, "#{basename}.trim.yml")
+    return unless File.exist?(yml)
+    return if YamlLoader.load(yml, default: {})["audio_url"] == audio_url
+
+    n = 1
+    n += 1 while Dir.glob(File.join(@root, "#{basename}.#{n}.{trim.yml,source.*}")).any?
+    Dir.glob(File.join(@root, "#{basename}.source.*")).each do |f|
+      File.rename(f, File.join(@root, "#{basename}.#{n}.source#{File.extname(f)}"))
+    end
+    File.rename(yml, File.join(@root, "#{basename}.#{n}.trim.yml"))
+  end
 
   def stamp(record)
     record.to_h { |k, v| [k.to_s, v] }.merge("recorded_at" => @clock.call.iso8601)
