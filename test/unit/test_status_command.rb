@@ -625,6 +625,33 @@ class TestStatusCommand < Minitest::Test
     assert_nil JSON.parse(run_status("--json").first).first["uploads"]["youtube"]["queued_behind"]
   end
 
+  # P10-3c: the shared quota stop warns only while the batch is stuck.
+  def test_run_current_show_gets_no_quota_line_when_another_show_progressed
+    current_youtube_pod
+    write_upload_batches([["2026/10/10", ["  beta: yt-uploaded 10"], ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+newest 2026-10-10/, out)
+    refute_includes out, "quota"
+  end
+
+  def test_run_current_show_quota_warns_when_no_show_progressed
+    current_youtube_pod
+    write_upload_batches([["2026/10/01", ["  beta: yt-uploaded 10"], []],
+      ["2026/10/10", ["  beta: yt-uploaded 0 (1 yt-errors)"], ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+uploads_stderr\.log: YouTube upload quota exceeded/, out)
+  end
+
+  def test_run_not_authorized_still_warns_when_another_show_progressed
+    current_youtube_pod
+    write_upload_batches([["2026/10/10", ["  beta: yt-uploaded 10"], ["  ✗ alpha-2026-10-10 skipped: YouTube not authorized: x"]]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube not authorized/, out)
+  end
+
   def test_run_served_feed_behind_for_unscheduled_show_is_owner_paced_ok
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
     make_episodes("alpha", %w[alpha-2026-10-07 alpha-2026-10-10])
@@ -1029,6 +1056,13 @@ class TestStatusCommand < Minitest::Test
     make_episodes("alpha", %w[alpha-2026-09-20 alpha-2026-09-21 alpha-2026-09-22 alpha-2026-10-08 alpha-2026-10-09
       alpha-2026-10-10])
     write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-09-20" => "v1", "alpha-2026-09-21" => "v2"}})
+  end
+
+  # YouTube tracked up to the newest episode: not stalled.
+  def current_youtube_pod
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-10-09 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-10-09" => "v1", "alpha-2026-10-10" => "v2"}})
   end
 
   # Both logs of the scheduled batch: the stderr carries the dated begin/end

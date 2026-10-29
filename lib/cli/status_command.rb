@@ -445,10 +445,8 @@ module PodgenCLI
           inform.call("youtube catching up: #{recent} uploaded in the last #{UPLOAD_SINCE} d, " \
             "#{entry[:behind]} behind#{quota}")
         elsif entry[:queued_behind]
-          # P10-3b: another show drained the batch in priority order; the
-          # shared quota stop rides that show's line, not this one.
+          # P10-3b: another show drained the batch in priority order.
           entry[:stalled] = false
-          conditions.delete(QUOTA_CONDITION)
           inform.call("youtube queued behind #{entry[:queued_behind]} (priority mode): 0 uploaded in the last " \
             "#{UPLOAD_SINCE} d, #{entry[:behind]} behind")
         elsif stalled
@@ -457,6 +455,10 @@ module PodgenCLI
         end
         [platform, entry]
       end
+      # P10-3c: the shared quota stop warns only while no YouTube show
+      # progressed in the window (the batch is stuck); otherwise it rides the
+      # catching-up show's line and is the daily cap, not a failure.
+      conditions.delete(QUOTA_CONDITION) if recent_youtube_uploads.values.any?(&:positive?)
       conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
       progress
     end
