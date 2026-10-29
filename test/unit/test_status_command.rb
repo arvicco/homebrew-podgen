@@ -597,6 +597,36 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "catching up"
   end
 
+  # CRPR round 1 W2: stdout blocks are dated by the stdout marker before them.
+  def test_run_batch_without_stdout_block_does_not_shift_older_block_into_window
+    catching_up_pod
+    write_upload_batches([["2026/09/25", ["  alpha: yt-uploaded 5"], []], ["2026/10/09", nil, []]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/youtube uploads stalled since 2026-09-21/, out)
+    refute_includes out, "catching up"
+  end
+
+  def test_run_legacy_stdout_without_markers_pairs_blocks_by_stderr_position
+    catching_up_pod
+    write_upload_batches([["2026/09/25", ["  alpha: yt-uploaded 5"], []], ["2026/10/09", ["  alpha: yt-uploaded 3"], []]],
+      stdout_markers: false)
+    out, = run_status
+    assert_match(/youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+  end
+
+  def test_run_legacy_blocks_before_first_stdout_marker_pair_with_older_stderr_markers
+    catching_up_pod
+    write_uploads_log(upload_batch("2026/10/05", []) + upload_batch("2026/10/09", []) + upload_batch("2026/10/10", []),
+      marked: false)
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"),
+      (upload_block(["  alpha: yt-uploaded 9"]) + upload_block(["  alpha: yt-uploaded 2"]) +
+        ["2026/10/10 17:00:00 podgen uploads alpha,beta begin"] + upload_block(["  alpha: yt-uploaded 4"])).join("\n") + "\n")
+    out, = run_status
+    # 10/05 → 9 and 10/09 → 2 by position among the pre-marker batches, 10/10 → 4 by its own marker
+    assert_match(/youtube catching up: 15 uploaded in the last 7 d/, out)
+  end
+
   # P10-3b: another show drained the batch's quota in the window; this one
   # waits its turn in priority order, which is not a failure.
   def test_run_youtube_stalled_while_another_show_uploads_reports_ok_queued_behind
@@ -1068,17 +1098,24 @@ class TestStatusCommand < Minitest::Test
   # Both logs of the scheduled batch: the stderr carries the dated begin/end
   # markers, the stdout one undated block per batch (UploadsCommand output).
   # batches: [[marker date, summary lines, stderr lines]]; legacy: a stdout
-  # block from before the markers existed (pairs with no marker).
-  def write_upload_batches(batches, legacy: nil)
-    summaries = batches.map { |_, summary, _| summary }
-    summaries.unshift(legacy) if legacy
-    blocks = summaries.flat_map do |summary|
-      ["uploads: priority mode across alpha, beta", "─── alpha ───", "─── summary ───", *summary,
-        "uploads: total YT uploaded 0"]
+  # block from before the markers existed (pairs with no marker). By default
+  # the stdout carries scripts/run_uploads.sh's dated begin marker before
+  # each block (production shape); stdout_markers: false writes the legacy
+  # shape. A nil summary is a batch that died before its "uploads:" line.
+  def write_upload_batches(batches, legacy: nil, stdout_markers: true)
+    blocks = legacy ? upload_block(legacy) : []
+    batches.each do |date, summary, _|
+      blocks << "#{date} 17:00:00 podgen uploads alpha,beta begin" if stdout_markers
+      blocks.concat(upload_block(summary)) if summary
     end
     FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
     File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), blocks.join("\n") + "\n")
     write_uploads_log(batches.flat_map { |date, _, err| upload_batch(date, err) }, marked: false)
+  end
+
+  def upload_block(summary)
+    ["uploads: priority mode across alpha, beta", "─── alpha ───", "─── summary ───", *summary,
+      "uploads: total YT uploaded 0"]
   end
 
   def write_log(pod, file, lines, mtime:)

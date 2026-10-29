@@ -135,6 +135,30 @@ class TestPostPipelineUploads < Minitest::Test
     refute(@logger.messages.any? { |m| m.include?("Warning") }, @logger.messages.inspect)
   end
 
+  # CRPR round 1 W1: recording the existing lesson is the same skippable
+  # side effect; a failing tracker write must not escape the generate.
+  def test_lingq_lesson_exists_with_failing_tracker_write_is_skippable_warning
+    uploads = build_uploads
+    agent = Object.new
+    agent.define_singleton_method(:upload) do |**_|
+      raise LingQAgent::LessonExists.new("A lesson with the same URL already exists", lesson_id: 4242)
+    end
+    tracker = Object.new
+    tracker.define_singleton_method(:record) { |*_| raise Errno::EACCES, "uploads.yml" }
+
+    LingQAgent.stub(:new, ->(**_) { agent }) do
+      UploadTracker.stub(:for_config, ->(_) { tracker }) do
+        uploads.upload_to_lingq(episode: {title: "T"}, transcript: "x",
+          audio_path: "/tmp/a.mp3", base_name: "ep-2026-03-10")
+      end
+    end
+
+    assert_equal 1, uploads.warnings.size
+    assert_includes uploads.warnings.first, "Errno::EACCES"
+    assert(@logger.messages.any? { |m| m.start_with?("Warning: LingQ upload failed") && m.include?("Errno::EACCES") },
+      @logger.messages.inspect)
+  end
+
   # --- upload_to_youtube guards ---
 
   def test_youtube_skipped_when_not_enabled
