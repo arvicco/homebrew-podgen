@@ -130,7 +130,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     agent.translate(script)
 
     call = client.calls.last
-    assert_equal %i[model max_tokens system messages output_config], call.keys
+    assert_equal %i[model max_tokens system messages output_config request_options], call.keys
     assert_equal ClaudeModels.for(:translation), call[:model]
     assert_equal 16384, call[:max_tokens]
     assert_equal agent.send(:build_system_prompt), call[:system]
