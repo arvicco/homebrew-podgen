@@ -1268,7 +1268,10 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `youtube catching up: 10 uploaded in the last 7 d, 112 behind` (behind =
   eligible episodes not yet tracked). A quota stop in the latest batch joins
   that line as `; batch stops at the daily quota` instead of its own WARN.
-  With no uploads in the window the stalled WARN stands. LingQ has no batch
+  When this show uploaded nothing but another show did in the window, the
+  batch's priority order is the cause and the line is a note without the
+  quota WARN: `youtube queued behind bajke (priority mode): 0 uploaded in the last 7 d, 120 behind`.
+  With no show uploading in the window the stalled WARN stands. LingQ has no batch
   count and keeps the plain rule.
 - **WARN (upload holes)** - per upload platform, eligible episodes dated
   strictly between the oldest and the newest tracked upload, untracked and
@@ -1306,7 +1309,8 @@ dates (`null` when none) and `stalled` is the announcement check's verdict.
 entry per platform (`youtube`, `lingq`) of the same shape, with
 `last_uploaded` and `holes` (the count of mid-gap untracked episodes); `youtube` adds `catching_up` (boolean; `stalled` is then
 `false`), `recent_uploads` (the batch log's count over the last 7 days) and
-`behind` (eligible episodes not yet tracked).
+`behind` (eligible episodes not yet tracked) and `queued_behind` (the show
+it waits behind, or `null`).
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes

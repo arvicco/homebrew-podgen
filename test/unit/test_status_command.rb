@@ -433,7 +433,8 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-30 \(newest episode 2026-10-10\)/, out)
     row = JSON.parse(run_status("--json").first).first
     assert_equal({"youtube" => {"last_uploaded" => "2026-09-30", "newest_episode" => "2026-10-10", "stalled" => true,
-                                "holes" => 0, "catching_up" => false, "recent_uploads" => 0, "behind" => 1}},
+                                "holes" => 0, "catching_up" => false, "recent_uploads" => 0, "behind" => 1,
+                                "queued_behind" => nil}},
       row["uploads"])
   end
 
@@ -573,7 +574,8 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "quota exceeded"
     row = JSON.parse(run_status("--json").first).first
     assert_equal({"last_uploaded" => "2026-09-21", "newest_episode" => "2026-10-10", "stalled" => false,
-                  "holes" => 0, "catching_up" => true, "recent_uploads" => 10, "behind" => 4}, row["uploads"]["youtube"])
+                  "holes" => 0, "catching_up" => true, "recent_uploads" => 10, "behind" => 4,
+                  "queued_behind" => nil}, row["uploads"]["youtube"])
   end
 
   def test_run_youtube_catching_up_without_quota_has_no_quota_clause
@@ -593,6 +595,34 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-21 \(newest episode 2026-10-10\)/, out)
     assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
     refute_includes out, "catching up"
+  end
+
+  # P10-3b: another show drained the batch's quota in the window; this one
+  # waits its turn in priority order, which is not a failure.
+  def test_run_youtube_stalled_while_another_show_uploads_reports_ok_queued_behind
+    catching_up_pod
+    write_upload_batches([["2026/10/09", ["  beta: yt-uploaded 4", "  alpha: yt-uploaded 0 (1 yt-errors)"], []],
+      ["2026/10/10", ["  beta: yt-uploaded 6", "  gamma: yt-uploaded 2"],
+        ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+youtube queued behind beta \(priority mode\): 0 uploaded in the last 7 d, 4 behind; newest/, out)
+    refute_includes out, "stalled"
+    refute_includes out, "quota exceeded"
+    yt = JSON.parse(run_status("--json").first).first["uploads"]["youtube"]
+    assert_equal ["beta", false, false], [yt["queued_behind"], yt["stalled"], yt["catching_up"]]
+  end
+
+  def test_run_youtube_stalled_with_other_show_progress_only_outside_window_reports_warn
+    catching_up_pod
+    write_upload_batches([["2026/10/01", ["  beta: yt-uploaded 10"], []],
+      ["2026/10/10", ["  beta: yt-uploaded 0 (1 yt-errors)"], ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-21/, out)
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+    refute_includes out, "queued behind"
+    assert_nil JSON.parse(run_status("--json").first).first["uploads"]["youtube"]["queued_behind"]
   end
 
   def test_run_served_feed_behind_for_unscheduled_show_is_owner_paced_ok
