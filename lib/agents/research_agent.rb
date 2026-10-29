@@ -73,7 +73,7 @@ class ResearchAgent
     all
   rescue Exa::Error, Faraday::Error => e
     # The topic is skipped with a counted warning; the other topics proceed.
-    log_warning("Failed to research '#{topic}' after #{MAX_RETRIES} attempts: #{e.class}: #{e.message}")
+    log_warning("Failed to research '#{topic}': #{e.class}: #{e.message}")
     []
   end
 

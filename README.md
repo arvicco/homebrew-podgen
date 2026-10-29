@@ -1300,7 +1300,11 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   tokens die 7 days after the consent. The consent time is kept beside the
   token (`youtube_token.json.consent`, written at each terminal consent; a
   token consented before it existed is dated by the token file's time at
-  the next upload). Once the consent screen is published, add
+  the next upload, and the log says so. That time is the last refresh, so
+  it can only understate the consent's age: during that one transition a
+  token may die on day 7 without the WARN). The WARN needs the token file
+  itself; a leftover `.consent` beside a deleted token is ignored. Once the
+  consent screen is published, add
   `- youtube_app_published: true` to `## Podcast` to silence it.
 - **WARN (served feed)** - the newest `<item>` pubDate in the served
   `base_url/feed.xml` is more than 1 day older than the newest local

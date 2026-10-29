@@ -475,6 +475,7 @@ module PodgenCLI
     # `youtube_app_published: true`.
     def youtube_consent_finding(config)
       return nil unless config.youtube_config && !config.youtube_app_published?
+      return nil unless File.exist?(@youtube_token_file) # a leftover sidecar of a deleted token says nothing
 
       consented = YouTubeConsent.time(@youtube_token_file)
       return nil unless consented
