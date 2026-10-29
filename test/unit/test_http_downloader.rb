@@ -165,7 +165,11 @@ class TestHttpDownloader < Minitest::Test
     klass = Net::HTTPResponse::CODE_TO_OBJ.fetch(code)
     http = Object.new
     http.define_singleton_method(:request) { |_req, &blk| blk.call(klass.new("1.1", code, "status")) }
-    Net::HTTP.stub(:start, ->(*_a, **_k, &blk) { starts += 1; blk.call(http) }) { yield }
+    start = lambda do |*_a, **_k, &blk|
+      starts += 1
+      blk.call(http)
+    end
+    Net::HTTP.stub(:start, start) { yield }
     starts
   end
 

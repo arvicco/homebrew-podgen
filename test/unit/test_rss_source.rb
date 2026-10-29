@@ -158,8 +158,15 @@ class TestRSSSource < Minitest::Test
 
   class WarningLogger < CapturingLogger
     attr_reader :warnings
-    def initialize; super; @warnings = []; end
-    def warning(msg); @warnings << msg; log(msg); end
+    def initialize
+      super
+      @warnings = []
+    end
+
+    def warning(msg)
+      @warnings << msg
+      log(msg)
+    end
   end
 
   def failing_source(url, logger)

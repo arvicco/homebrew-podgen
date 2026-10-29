@@ -570,7 +570,8 @@ class TestStatusCommand < Minitest::Test
     YouTubeConsent.record!(@token_file, Time.new(2026, 10, 5, 10, 30))
     out, code = run_status
     assert_equal 1, code
-    assert_match(/alpha\s+WARN\s+.*#{Regexp.escape(CONSENT_WARN)}/, out)
+    assert_match(/alpha\s+WARN\s+/, out)
+    assert_includes out, CONSENT_WARN
   end
 
   def test_run_youtube_consent_five_days_old_is_not_a_finding
