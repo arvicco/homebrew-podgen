@@ -305,6 +305,7 @@ module PodgenCLI
         end
       end
 
+      @warnings << "Episode duration #{actual} is #{reason} (allowed range #{range})" # Q-101 (P11-4)
       logger.error("Episode duration #{actual} outside allowed range #{range}; aborting")
       1
     end
@@ -696,7 +697,14 @@ module PodgenCLI
         # Detect wrong-language description → regenerate from transcript
         if wrong_language?(episode[:description], lang)
           logger.log("Description language doesn't match transcript (#{lang}), regenerating")
-          episode[:description] = agent.generate(title: episode[:title], transcript: transcript)
+          regenerated = agent.generate(title: episode[:title], transcript: transcript)
+          if regenerated.to_s.strip.empty?
+            # Q-101 (P11-4): an empty result never wipes the description.
+            logger.log("Warning: Description regeneration returned nothing — keeping the existing description")
+            @warnings << "Description regeneration returned nothing; kept the existing (wrong-language) description"
+          else
+            episode[:description] = regenerated
+          end
         end
       end
     rescue => e # skippable: LLM cleanup is cosmetic; the original title/description stands

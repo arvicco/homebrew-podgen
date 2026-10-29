@@ -127,7 +127,7 @@ class RSSSource
       parse_feed(body)
     end
   rescue => e # skippable: one feed down; the other feeds still feed research
-    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
+    log_warning("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
     []
   end
 
@@ -192,7 +192,7 @@ class RSSSource
       parse_feed_episodes(body)
     end
   rescue => e # skippable: an unreachable feed yields no episodes
-    log("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
+    log_warning("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
     []
   end
 
