@@ -1264,10 +1264,29 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   the last 7 days; a log with no marker yet reports nothing) adds one line
   per condition found, naming it only: `uploads_stderr.log: YouTube not authorized` /
   `uploads_stderr.log: YouTube upload quota exceeded`.
+- **OK (catching up)** - YouTube is behind by the rule above, but the
+  batch uploaded videos for the podcast in the last 7 days (the sum of its
+  `<pod>: yt-uploaded N` summary lines in `logs/uploads_stdout.log`, each
+  batch dated by its begin marker in `uploads_stderr.log`): the backlog is
+  draining oldest first, so the line is a note, not a WARN —
+  `youtube catching up: 10 uploaded in the last 7 d, 112 behind` (behind =
+  eligible episodes not yet tracked). A quota stop in the latest batch joins
+  that line as `; batch stops at the daily quota` instead of its own WARN.
+  With no uploads in the window the stalled WARN stands. LingQ has no batch
+  count and keeps the plain rule.
+- **WARN (upload holes)** - per upload platform, eligible episodes dated
+  strictly between the oldest and the newest tracked upload, untracked and
+  older than 7 days (a stuck episode while newer uploads keep landing):
+  `youtube: 1 untracked episode(s) inside the uploaded range, oldest fiabe-2026-05-14`
+  (same for `lingq`). A backlog after the newest tracked upload is never a
+  hole.
 - **WARN (served feed)** - the newest `<item>` pubDate in the served
   `base_url/feed.xml` is more than 1 day older than the newest local
-  primary-language episode dated today or earlier:
+  primary-language episode dated today or earlier, for a podcast with an
+  installed launchd scheduler:
   `served feed behind local by 5d (served 2026-10-05, local 2026-10-10)`. A
+  podcast without one is published by hand, so its lag is an OK note:
+  `local ahead of served by 3d (owner-paced)`. A
   failed fetch (5s connect / 10s read timeout, one retry) names only the
   error class or HTTP code: `served feed fetch failed: SocketError`.
 - **OK** - otherwise.
@@ -1289,7 +1308,9 @@ when unknown (`age_days` is negative for a scheduled, future-dated episode);
 dates (`null` when none) and `stalled` is the announcement check's verdict.
 `uploads` is `null` when no upload platform is configured; otherwise one
 entry per platform (`youtube`, `lingq`) of the same shape, with
-`last_uploaded`.
+`last_uploaded` and `holes` (the count of mid-gap untracked episodes); `youtube` adds `catching_up` (boolean; `stalled` is then
+`false`), `recent_uploads` (the batch log's count over the last 7 days) and
+`behind` (eligible episodes not yet tracked).
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes
