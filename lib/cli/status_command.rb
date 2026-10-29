@@ -74,10 +74,10 @@ module PodgenCLI
       /not authorized/i => "YouTube not authorized",
       /uploadLimitExceeded|quotaExceeded/ => QUOTA_CONDITION
     }.freeze
-    # Catching up (P10-3): the batch's stdout (logs/uploads_stdout.log) is
-    # undated; each batch opens one block ("uploads: <mode> mode across ...")
-    # whose summary names "<pod>: yt-uploaded N". Blocks pair with the stderr
-    # begin markers from the newest backwards (older blocks predate markers).
+    # Catching up (P10-3): in the batch's stdout (logs/uploads_stdout.log)
+    # each batch opens one block ("uploads: <mode> mode across ...") whose
+    # summary names "<pod>: yt-uploaded N", dated by the begin marker line
+    # before it; blocks from before stdout markers pair with the stderr ones.
     UPLOAD_STDOUT_LOG = File.join("logs", "uploads_stdout.log")
     UPLOAD_BLOCK_RE = /\Auploads: \S+ mode across\b/
     UPLOAD_COUNT_RE = /\A\s+(\S+): yt-uploaded (\d+)\b/
@@ -484,13 +484,13 @@ module PodgenCLI
       end.sort_by { |b| [EpisodeFiltering.parse_date(b), b] }
     end
 
-    # {pod => YouTube uploads} summed over the stdout blocks whose paired
-    # begin marker is dated within UPLOAD_SINCE days; 0 for an absent pod.
+    # {pod => YouTube uploads} summed over the stdout blocks dated within
+    # UPLOAD_SINCE days; 0 for an absent pod.
     def recent_youtube_uploads
       @recent_youtube_uploads ||= begin
         counts = Hash.new(0)
-        upload_stdout_blocks.reverse.zip(upload_marker_dates.reverse).each do |block, date|
-          break if date.nil? || (@today - date).to_i > UPLOAD_SINCE
+        dated_upload_blocks.each do |date, block|
+          next if date.nil? || (@today - date).to_i > UPLOAD_SINCE
 
           block.each do |line|
             m = line.match(UPLOAD_COUNT_RE)
@@ -501,21 +501,46 @@ module PodgenCLI
       end
     end
 
-    def upload_stdout_blocks
+    # [[date or nil, block lines]] for the stdout blocks. scripts/run_uploads.sh
+    # echoes the dated begin marker to stdout too: a block is dated by the
+    # marker right before it (a marker with no block - a batch that died
+    # early - dates nothing). Blocks older than the first stdout marker pair
+    # with the stderr begin markers older than it, newest backwards.
+    def dated_upload_blocks
       return [] unless File.exist?(@uploads_stdout_log)
 
-      File.readlines(@uploads_stdout_log).map(&:scrub).slice_before { |l| l.match?(UPLOAD_BLOCK_RE) }
-        .select { |block| block.first.match?(UPLOAD_BLOCK_RE) }
+      legacy = []
+      dated = []
+      pending = first_stamp = current = nil
+      File.foreach(@uploads_stdout_log) do |raw|
+        line = raw.scrub
+        if (m = line.match(UPLOAD_MARKER_RE))
+          pending = marker_date(m)
+          first_stamp ||= line[0, 19]
+          current = nil
+        elsif line.match?(UPLOAD_BLOCK_RE)
+          current = [line]
+          first_stamp ? dated << [pending, current] : legacy << current
+          pending = nil
+        elsif current
+          current << line
+        end
+      end
+      legacy_dates = stderr_upload_markers.filter_map { |stamp, date| date if first_stamp.nil? || stamp < first_stamp }
+      legacy.reverse.zip(legacy_dates.reverse).map { |block, date| [date, block] } + dated
     end
 
-    def upload_marker_dates
+    # [["YYYY/MM/DD HH:MM:SS", Date]] for the stderr begin markers, oldest first.
+    def stderr_upload_markers
       return [] unless File.exist?(@uploads_log)
 
       File.readlines(@uploads_log).filter_map do |line|
         m = line.scrub.match(UPLOAD_MARKER_RE)
-        Date.new(m[1].to_i, m[2].to_i, m[3].to_i) if m
+        [line[0, 19], marker_date(m)] if m
       end
     end
+
+    def marker_date(match) = Date.new(match[1].to_i, match[2].to_i, match[3].to_i)
 
     def upload_platforms(config)
       platforms = {}
