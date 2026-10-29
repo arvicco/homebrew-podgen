@@ -242,6 +242,49 @@ class TestEpisodeSource < Minitest::Test
     assert_equal [false], asked
   end
 
+  # CRPR round 1: a pending match the length filter removes is never asked about.
+  def test_fetch_next_pending_match_removed_by_length_filter_is_never_prompted
+    dup = rss_ep("Il lupo e il pastore", "https://anchor.fm/s/abc/play/1.m4a", duration: "20:00")
+    nxt = rss_ep("La lepre e la tartaruga", "https://anchor.fm/s/abc/play/2.m4a", duration: "5:00")
+    s, = guard_source(history: [LUPO_ENTRY], feeds: {"f" => [dup, nxt]}, min: 120, max: 600)
+    asked = []
+    picked = with_rss { s.fetch_next(duplicate_prompt: ->(ep, _m) { (asked << ep[:title]) && "" }) }
+    assert_equal nxt, picked
+    assert_empty asked
+  end
+
+  def test_fetch_next_history_entries_with_nil_or_empty_title_are_skipped_by_the_index
+    entries = [LUPO_ENTRY.merge("title" => nil, "basename" => "fiabe-2026-04-01"),
+      LUPO_ENTRY.merge("title" => "", "basename" => "fiabe-2026-04-02")]
+    ep = rss_ep("Il lupo e il pastore", "#{SPREAKER}/24548/x.wav")
+    s, = guard_source(history: entries, feeds: {"f" => [ep]})
+    out, err = capture_io { assert_equal ep, with_rss { s.fetch_next } }
+    refute_includes out + err, "Already processed"
+  end
+
+  def test_fetch_next_candidate_title_normalizing_to_empty_never_matches
+    entry = LUPO_ENTRY.merge("title" => "!!! ???", "basename" => "fiabe-2026-04-03")
+    ep = rss_ep("¡¿…?!", "#{SPREAKER}/24548/x.wav")
+    s, = guard_source(history: [entry], feeds: {"f" => [ep]})
+    out, err = capture_io { assert_equal ep, with_rss { s.fetch_next } }
+    refute_includes out + err, "Already processed"
+  end
+
+  # CRPR round 1 nit: the title index is built once per fetch_next.
+  def test_fetch_weighted_reads_history_titles_once_per_fetch_next
+    feeds = [{url: "f1", tag: "a", weight: 100}, {url: "f2", tag: "b", weight: 100}]
+    too_long = {"f1" => [rss_ep("La lepre", "https://a.example/1.mp3", duration: "99:00")],
+                "f2" => [rss_ep("La volpe", "https://b.example/2.mp3", duration: "99:00")]}
+    s, = guard_source(history: [LUPO_ENTRY], feeds: too_long, rss_feeds: feeds, select: "weights", max: 600)
+    reads = 0
+    s.instance_variable_get(:@history).define_singleton_method(:all_episodes) { (reads += 1) && [LUPO_ENTRY] }
+
+    assert_nil with_rss { s.fetch_next }, "both feeds tried and exhausted"
+    assert_equal 1, reads
+    with_rss { s.fetch_next }
+    assert_equal 2, reads, "no caching across fetch_next calls"
+  end
+
   def test_fetch_weighted_title_guard_skips_and_moves_to_next_feed
     dup = rss_ep("Il lupo e il pastore", "#{SPREAKER}/24548/x.wav")
     other = rss_ep("La lepre e la tartaruga", "https://b.example/lepre.mp3")
