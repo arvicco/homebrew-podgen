@@ -1088,6 +1088,8 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal 300.0, data["source_duration"]
     assert_equal 49.0, data["skip"]
     assert_equal 247.0, data["cut"]
+    assert_equal true, data["cut_absolute"]
+    assert_equal 247.0, data["cut_point"]
     assert_nil data["snip"]
     assert_equal [[49.0, 247.0]], data["kept_segments"]
     assert_equal 198.0, data["final_duration"]
@@ -1102,8 +1104,25 @@ class TestLanguagePipeline < Minitest::Test
     data = YAML.load_file(File.join(archive_root, "test-2026-03-10.trim.yml"))
     assert_nil data["skip"]
     assert_nil data["cut"]
+    assert_nil data["cut_absolute"]
+    assert_nil data["cut_point"]
     assert_equal [[0.0, 300.0]], data["kept_segments"]
     assert_equal 300.0, data["final_duration"]
+  end
+
+  def test_ask_trim_relative_cut_records_that_it_was_relative_and_its_point
+    [["30\n", 30.0, 270.0, [[49.0, 270.0]]], ["400\n", 400.0, nil, [[49.0, 300.0]]]].each do |cut_in, cut, point, keeps|
+      FileUtils.rm_rf(archive_root)
+      pipeline, _source = build_listening_pipeline
+
+      run_listening_trim(pipeline, ["0:49\n", cut_in])
+
+      data = YAML.load_file(File.join(archive_root, "test-2026-03-10.trim.yml"))
+      assert_equal cut, data["cut"]
+      assert_equal false, data["cut_absolute"]
+      assert_equal point, data["cut_point"], "absolute seconds; nil when the cut was invalid and ignored"
+      assert_equal keeps, data["kept_segments"]
+    end
   end
 
   def test_ask_trim_x_archives_the_rejected_download_with_reason_listened
