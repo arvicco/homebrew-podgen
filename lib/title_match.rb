@@ -28,12 +28,21 @@ module TitleMatch
     (stem.length < MIN_STEM_CHARS) ? normalize(raw) : stem
   end
 
-  # Stems equal, or one a word-aligned prefix of the other with the
-  # shorter ≥ MIN_PREFIX_CHARS, or token-set Jaccard ≥ JACCARD_THRESHOLD
-  # over tokens of ≥ MIN_TOKEN_LETTERS letters.
-  def match?(a, b) = stems_match?(stem(a), stem(b))
+  # A title's comparison key: its stem and the set of digit runs in the
+  # whole title (P10-0b: "Planeta Przyjaźni 1" and "… 2" are two parts).
+  Key = Data.define(:stem, :digits)
 
-  # match? over precomputed stems (the selection guard stems history once).
+  def key(title) = Key.new(stem: stem(title), digits: title.to_s.scan(/\p{Nd}+/).to_set)
+
+  # No match when the titles carry different digit runs; otherwise stems
+  # equal, or one a word-aligned prefix of the other with the shorter ≥
+  # MIN_PREFIX_CHARS, or token-set Jaccard ≥ JACCARD_THRESHOLD over tokens
+  # of ≥ MIN_TOKEN_LETTERS letters.
+  def match?(a, b) = keys_match?(key(a), key(b))
+
+  # match? over precomputed keys (the selection guard keys history once).
+  def keys_match?(ka, kb) = ka.digits == kb.digits && stems_match?(ka.stem, kb.stem)
+
   def stems_match?(sa, sb)
     return false if sa.empty? || sb.empty?
     return true if sa == sb

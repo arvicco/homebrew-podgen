@@ -72,7 +72,7 @@ module Tell
         model: @model,
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
-        **AnthropicClient.effort_params(:tell_translate)
+        **AnthropicClient.effort_params(:tell_translate, request_options: {timeout: 15, max_retries: 0})
       )
 
       Tell.extract_translation(AnthropicClient.text_of(message))
