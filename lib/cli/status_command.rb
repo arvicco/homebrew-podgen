@@ -409,7 +409,8 @@ module PodgenCLI
 
     # {platform => {last_uploaded:, newest_episode:, stalled:, holes:}} for
     # each platform the podcast configures, nil when none; YouTube adds
-    # catching_up:, recent_uploads:, behind: (P10-3). Eligible episodes and
+    # catching_up:, recent_uploads:, behind: (P10-3), queued_behind: (P10-3b,
+    # the pod that progressed while this one waited). Eligible episodes and
     # tracker groups mirror YouTubePublisher / LingQPublisher (every scanned
     # episode; playlist or "default", collection id). YouTube behind on
     # dates but with uploads in the batch log's window is catching up (the
@@ -435,21 +436,38 @@ module PodgenCLI
         if platform == "youtube"
           recent = recent_youtube_uploads[config.name]
           entry.merge!(catching_up: stalled && recent.positive?, recent_uploads: recent,
-            behind: (eligible - tracked).size)
+            behind: (eligible - tracked).size,
+            queued_behind: (batch_leader(config.name) if stalled && recent.zero?))
         end
         if entry[:catching_up]
           entry[:stalled] = false
           quota = conditions.delete(QUOTA_CONDITION) ? "; batch stops at the daily quota" : ""
           inform.call("youtube catching up: #{recent} uploaded in the last #{UPLOAD_SINCE} d, " \
             "#{entry[:behind]} behind#{quota}")
+        elsif entry[:queued_behind]
+          # P10-3b: another show drained the batch in priority order.
+          entry[:stalled] = false
+          inform.call("youtube queued behind #{entry[:queued_behind]} (priority mode): 0 uploaded in the last " \
+            "#{UPLOAD_SINCE} d, #{entry[:behind]} behind")
         elsif stalled
           escalate.call("WARN", last ? "#{platform} uploads stalled since #{last} (newest episode #{newest})" :
             "#{platform} uploads never made (newest episode #{newest})")
         end
         [platform, entry]
       end
+      # P10-3c: the shared quota stop warns only while no YouTube show
+      # progressed in the window (the batch is stuck); otherwise it rides the
+      # catching-up show's line and is the daily cap, not a failure.
+      conditions.delete(QUOTA_CONDITION) if recent_youtube_uploads.values.any?(&:positive?)
       conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
       progress
+    end
+
+    # The other pod with the most YouTube uploads in the batch log's window,
+    # nil when none progressed (ties: first by name).
+    def batch_leader(name)
+      leader = recent_youtube_uploads.reject { |pod, n| pod == name || n.zero? }.min_by { |pod, n| [-n, pod] }
+      leader&.first
     end
 
     # Mid-gap holes (P10-4): eligible episodes dated strictly between the
