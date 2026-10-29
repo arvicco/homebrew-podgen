@@ -7,6 +7,7 @@ require "fileutils"
 require "json"
 require "socket"
 require "cgi"
+require_relative "youtube_consent"
 
 # Uploads videos and captions to YouTube via the Data API v3.
 # Handles OAuth2 authentication with persistent token storage.
@@ -122,6 +123,14 @@ class YouTubeUploader
     authorizer = Google::Auth::UserAuthorizer.new(client_id_obj, SCOPE, token_store)
 
     credentials = authorizer.get_credentials("default")
+    # A token consented before the consent record existed (transition only,
+    # Q-102): the file's mtime is the last refresh, so it is a LOWER bound on
+    # the consent's age — a token consented 5 days ago and refreshed today
+    # seeds as today and dies on day 7 without a WARN.
+    if credentials && YouTubeConsent.time(@token_file).nil? && File.exist?(@token_file)
+      YouTubeConsent.record!(@token_file, File.mtime(@token_file))
+      log("YouTube consent date seeded from the token file time; the real consent may be older")
+    end
 
     # If token is expired, try to refresh. Only a grant Google rejected
     # (invalid_grant / revoked) clears the token; a transport error or 5xx
@@ -132,9 +141,11 @@ class YouTubeUploader
       rescue Signet::AuthorizationError => e # fatal: a rejected grant clears the token; retryable: a transient failure re-raises with the token kept
         raise if transient_refresh_failure?(e)
 
-        log(interactive_consent? ? "Stored YouTube token rejected — re-authorizing" :
-                                   "Stored YouTube token rejected by Google — cleared; a terminal consent is needed")
+        reason = rejection_reason(e)
+        log(interactive_consent? ? "Stored YouTube token rejected (#{reason}) — re-authorizing" :
+                                   "Stored YouTube token rejected by Google (#{reason}) — cleared; a terminal consent is needed")
         token_store.delete("default")
+        YouTubeConsent.clear!(@token_file)
         credentials = nil
       end
     end
@@ -147,6 +158,7 @@ class YouTubeUploader
       credentials = authorizer.get_and_store_credentials_from_code(
         user_id: "default", code: code, base_url: redirect
       )
+      YouTubeConsent.record!(@token_file, Time.now)
     end
 
     @service = Google::Apis::YoutubeV3::YouTubeService.new
@@ -298,6 +310,18 @@ class YouTubeUploader
   # cause, or none.
   def transient_refresh_failure?(error)
     !error.cause.nil? && !error.cause.is_a?(Signet::AuthorizationError)
+  end
+
+  # Why Google rejected the grant, safe for a log (Q-102): the error class and
+  # the first 80 characters of its whitespace-squeezed message, with URLs
+  # carrying a query string and token-shaped text (access "ya29.", refresh
+  # "1//", any long opaque run) masked before the cut.
+  def rejection_reason(error)
+    text = error.message.to_s.gsub(/\s+/, " ")
+      .gsub(%r{https?://\S*\?\S*}, "<url>")
+      .gsub(%r{\b(?:ya29\.|1//)\S+}, "[redacted]")
+      .gsub(%r{[A-Za-z0-9_\-./+=]{32,}}, "[redacted]")
+    "#{error.class}: #{text.strip[0, 80]}"
   end
 
   # One line a log reader can act on: which file, what state, what to run.

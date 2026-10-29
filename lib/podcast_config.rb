@@ -260,6 +260,13 @@ class PodcastConfig
     parser.youtube_config
   end
 
+  # `- youtube_app_published: true` in ## Podcast (owner-set once the OAuth
+  # consent screen is published): refresh tokens no longer expire on day 7,
+  # so status stops warning about the consent age (Q-102).
+  def youtube_app_published?
+    parser.podcast_section[:youtube_app_published].to_s.strip.downcase == "true"
+  end
+
   def youtube_enabled?
     config = youtube_config
     has_creds = [ENV["YOUTUBE_CLIENT_ID"], ENV["YOUTUBE_CLIENT_SECRET"]].all? { |v| v && !v.empty? }

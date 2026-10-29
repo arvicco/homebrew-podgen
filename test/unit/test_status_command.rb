@@ -16,6 +16,7 @@ class TestStatusCommand < Minitest::Test
     @plist_dir = File.join(@tmpdir, "LaunchAgents")
     FileUtils.mkdir_p(@plist_dir)
     ENV["PODGEN_ROOT"] = @tmpdir
+    @token_file = File.join(@tmpdir, "youtube_token.json") # never the owner's token
   end
 
   def teardown
@@ -559,6 +560,52 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- YouTube consent age (Q-102, P11-2) ---
+
+  CONSENT_WARN = "youtube consent 6 d old — the token expires on day 7 while the OAuth app is in testing; " \
+    "re-consent from a terminal"
+
+  def test_run_youtube_consent_six_days_old_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    File.write(@token_file, "{}\n")
+    YouTubeConsent.record!(@token_file, Time.new(2026, 10, 5, 10, 30))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+/, out)
+    assert_includes out, CONSENT_WARN
+  end
+
+  def test_run_youtube_consent_sidecar_without_token_is_not_a_finding
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    YouTubeConsent.record!(@token_file, Time.new(2026, 10, 1, 10, 30))
+    out, = run_status
+    refute_match(/youtube consent/, out)
+  end
+
+  def test_run_youtube_consent_five_days_old_is_not_a_finding
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    File.write(@token_file, "{}\n")
+    YouTubeConsent.record!(@token_file, Time.new(2026, 10, 6, 10, 30))
+    out, = run_status
+    refute_match(/youtube consent/, out)
+  end
+
+  def test_run_youtube_consent_old_but_app_published_is_not_a_finding
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE, extra: "- youtube_app_published: true\n")
+    File.write(@token_file, "{}\n")
+    YouTubeConsent.record!(@token_file, Time.new(2026, 10, 1, 10, 30))
+    out, = run_status
+    refute_match(/youtube consent/, out)
+  end
+
+  def test_run_youtube_consent_ignored_for_podcast_without_youtube
+    make_pod("alpha", dates: fresh_dates)
+    File.write(@token_file, "{}\n")
+    YouTubeConsent.record!(@token_file, Time.new(2026, 10, 1, 10, 30))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
   # --- catching up: the batch stdout counts uploads (P10-3, Q-85) ---
 
   def test_run_youtube_behind_but_uploading_in_window_reports_ok_catching_up_with_quota
@@ -985,7 +1032,8 @@ class TestStatusCommand < Minitest::Test
     fetcher = @feed_fetcher || ->(url) { flunk "unexpected served-feed fetch: #{url}" }
     served_feed = ServedFeed.new(fetcher: fetcher)
     served_feed.define_singleton_method(:sleep) { |_| nil } # retry backoff
-    PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY, served_feed: served_feed)
+    PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY, served_feed: served_feed,
+      youtube_token_file: @token_file)
   end
 
   def publish_entries = status_command([]).send(:publish_entries)

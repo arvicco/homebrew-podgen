@@ -120,7 +120,7 @@ Every broad `rescue` in `lib/` (no class, `=> e`, `StandardError`, `Exception`, 
 
 **Why.** The consent collaborator used to default to "open a browser and wait five minutes" wherever an uploader was built, including the daily launchd batch. With an empty token file that meant four Google sign-in tabs on the owner's desktop every morning, one per podcast, each waiting for a click nobody could give; before that it meant a URL printed into a log nobody read. An authorization that cannot complete must fail once, fast and legibly, not per podcast and not interactively.
 
-**Implication.** Any new scheduled caller of the uploader inherits the refusal for free. A new interactive entry point that should prompt passes `interactive: true` explicitly rather than widening the probe. The token refill itself stays an owner act from a terminal. A failed refresh clears the stored token only when Google rejected the grant; a transport error or 5xx (which googleauth re-raises as `AuthorizationError` with the transport error as its `cause`) propagates with the token intact, so the next run refreshes.
+**Implication.** Any new scheduled caller of the uploader inherits the refusal for free. A new interactive entry point that should prompt passes `interactive: true` explicitly rather than widening the probe. The token refill itself stays an owner act from a terminal. A failed refresh clears the stored token only when Google rejected the grant; a transport error or 5xx (which googleauth re-raises as `AuthorizationError` with the transport error as its `cause`) propagates with the token intact, so the next run refreshes. The rejection is logged with its reason redacted (error class + 80 characters, tokens and query strings masked). The consent time lives in a sidecar (`YouTubeConsent`, `<token>.consent`), not in the token file's mtime: googleauth rewrites the token file at every refresh, so the mtime dates the last refresh, while a testing-status OAuth app's refresh token dies 7 days after the consent — `podgen status` warns from day 6.
 
 ## Episode naming lives in one module
 
@@ -129,6 +129,14 @@ Every broad `rescue` in `lib/` (no class, `=> e`, `StandardError`, `Exception`, 
 **Why.** Until P4-9 the rule had eleven copies that disagreed at the edges (Q-44): stats ignored explicit basenames and language variants, `remove_by_date!` was positional only, `scrap`/`move` treated any `-xx` tail as a variant, and the site hard-coded `"en"` as the suffix-less language.
 
 **Implication.** A naming change is a change to one module plus `test/unit/test_characterization_filename_scheme.rb` (the 8-row oracle). Callers that pass no `languages:` get the legacy any-tail rule; pass the configured codes for language attribution (feeds, site, filtering). Deleting and moving deliberately do not: `EpisodeArtifacts` takes every `<base>-*` file, so a language commented out of the config is never left behind by `scrap`/`move`. Stats keys only primary files, so translated mp3s are measured with ffprobe.
+
+## The listening archive is write-only owner data
+
+`lib/listening_archive.rb` (`ListeningArchive`) writes the owner's `--ask-trim` decisions into `output/<pod>/archive/`, next to `episodes/`: kept pairs `<basename>.source.<ext>` + `<basename>.trim.yml`, and rejected candidates under `rejected/` with one row each in `rejected.yml` (yml written atomically; audio copied, never moved). `LanguagePipeline` writes the pair before `apply_trim` (kept segments from `AudioTrimmer.keep_segments`, the same rule the trimmer cuts by) and the rejection rows at the `x`/`[a]bort` answers; for the interactive window only (download done → trim values entered) it installs its own INT handler that records `interrupted`, restores the previous handler and hands it the signal (bin/podgen's trap, exit 130). Archive write failures are skippable warnings.
+
+**Why.** The owner's listening work — where each story really starts and ends, which candidates were not worth an episode — was deleted with the temp files at the end of every run; it is the training set for automatic cutting and selection.
+
+**Implication.** Nothing reads the archive yet: history.yml, uploads.yml, excluded_urls.yml, episode naming and the feed are untouched, and no cleanup may ever touch `archive/`. A reader (e.g. an archive listing) is a separate item.
 
 ## A run says how it went in one line
 

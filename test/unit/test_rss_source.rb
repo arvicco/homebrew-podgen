@@ -134,7 +134,47 @@ class TestRSSSource < Minitest::Test
     assert_equal [], build_source([]).send(:topic_keywords, "AI is ok")
   end
 
+  # Q-101 (P11-4): a feed that cannot be fetched is a counted warning, not
+  # a plain log line.
+  def test_fetch_episodes_feed_404_records_one_warning
+    logger = WarningLogger.new
+    source = failing_source("https://example.com/dead.xml", logger)
+
+    assert_empty source.fetch_episodes
+    assert_equal 1, logger.warnings.size
+    assert_match(%r{Warning: Failed to fetch https://example\.com/dead\.xml: RuntimeError: .*HTTP 404}, logger.warnings.first)
+  end
+
+  def test_research_feed_404_records_one_warning
+    logger = WarningLogger.new
+    source = failing_source("https://example.com/dead.xml", logger)
+
+    source.research(["Topic"])
+    assert_equal 1, logger.warnings.size
+    assert_match(/Failed to fetch https:\/\/example\.com\/dead\.xml/, logger.warnings.first)
+  end
+
   private
+
+  class WarningLogger < CapturingLogger
+    attr_reader :warnings
+    def initialize
+      super
+      @warnings = []
+    end
+
+    def warning(msg)
+      @warnings << msg
+      log(msg)
+    end
+  end
+
+  def failing_source(url, logger)
+    source = RSSSource.new(feeds: [url], logger: logger)
+    source.define_singleton_method(:sleep) { |_| }
+    source.define_singleton_method(:http_get_with_redirects) { |u, _r = nil| raise "HTTP 404 from #{u}" }
+    source
+  end
 
   def build_source(feeds)
     source = RSSSource.new(feeds: feeds, logger: @logger)

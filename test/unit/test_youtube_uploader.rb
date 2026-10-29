@@ -49,8 +49,11 @@ class TestYouTubeUploader < Minitest::Test
     mock_authorizer = Minitest::Mock.new
     mock_authorizer.expect(:get_credentials, expired_cred, ["default"])
 
-    # P1-16: consent is a collaborator; here it yields no code
-    uploader = YouTubeUploader.new(consent: ->(_authorizer) { [nil, "http://127.0.0.1:1"] })
+    # P1-16: consent is a collaborator; here it yields no code. A temp token
+    # file: a rejected grant clears the consent record beside it.
+    dir = Dir.mktmpdir("podgen_yt_token")
+    uploader = YouTubeUploader.new(consent: ->(_authorizer) { [nil, "http://127.0.0.1:1"] },
+      token_file: File.join(dir, "youtube_token.json"))
     Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
       Google::Auth::Stores::FileTokenStore.stub(:new, mock_token_store) do
         err = assert_raises(RuntimeError) { uploader.authorize! }
@@ -62,6 +65,7 @@ class TestYouTubeUploader < Minitest::Test
   ensure
     ENV["YOUTUBE_CLIENT_ID"] = original_id
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+    FileUtils.rm_rf(dir) if dir
   end
 
   # --- Q-79: a transient refresh failure must not wipe the refresh token ---
@@ -108,6 +112,116 @@ class TestYouTubeUploader < Minitest::Test
     assert(logs.any? { |l| l.include?("rejected") }, "says why the token was cleared")
   end
 
+  # Q-102 (P11-2): the rejection reason is logged, redacted — the error
+  # class and the first 80 characters, never token text or query strings.
+  def test_authorize_refresh_rejected_grant_logs_redacted_reason
+    message = "Authorization failed.  Server message:\n{\n  \"error\": \"invalid_grant\",\n  " \
+      "\"error_description\": \"Token has been expired or revoked.\"\n}"
+    wrapped = googleauth_wrapped(Signet::AuthorizationError.new(message), message)
+    _store, logs = refresh_failing_with(wrapped, interactive: false) do |run|
+      assert_raises(YouTubeUploader::NotInteractive) { run.call }
+    end
+
+    line = logs.find { |l| l.include?("rejected") }
+    assert_includes line, "invalid_grant"
+    assert_includes line, "Google::Auth::AuthorizationError"
+  end
+
+  def test_authorize_refresh_rejected_grant_reason_carries_no_token_or_query_string
+    message = "invalid_grant ya29.A0AfB_byFAKEFAKEFAKE 1//0gFAKEREFRESH https://oauth2.example.com/t?refresh_token=abc"
+    wrapped = googleauth_wrapped(Signet::AuthorizationError.new(message), message)
+    _store, logs = refresh_failing_with(wrapped, interactive: false) do |run|
+      assert_raises(YouTubeUploader::NotInteractive) { run.call }
+    end
+
+    line = logs.find { |l| l.include?("rejected") }
+    assert_includes line, "invalid_grant"
+    %w[ya29 1//0g refresh_token= FAKE].each { |secret| refute_includes line, secret }
+  end
+
+  # --- consent age (Q-102, P11-2) ---
+
+  # Pins googleauth 1.16 as read: UserAuthorizer#get_credentials wires
+  # on_refresh to store_credentials, so EVERY refresh rewrites the token
+  # file — its mtime is the last refresh, not the consent. Hence the
+  # consent sidecar.
+  def test_googleauth_refresh_rewrites_the_token_file
+    dir = Dir.mktmpdir("podgen_yt_token")
+    token_file = File.join(dir, "youtube_token.json")
+    store = Google::Auth::Stores::FileTokenStore.new(file: token_file)
+    client = Google::Auth::ClientId.new("test-id", "test-secret")
+    authorizer = Google::Auth::UserAuthorizer.new(client, YouTubeUploader::SCOPE, store)
+    store.store("default", JSON.generate(client_id: "test-id", access_token: "old", refresh_token: "r",
+      scope: [YouTubeUploader::SCOPE], expiration_time_millis: 0))
+    week_ago = Time.now - (8 * 86_400)
+    File.utime(week_ago, week_ago, token_file)
+
+    credentials = authorizer.get_credentials("default")
+    credentials.define_singleton_method(:fetch_access_token) { |*| {"access_token" => "new", "expires_in" => 3600} }
+    credentials.refresh!
+
+    assert_in_delta Time.now, File.mtime(token_file), 60, "a refresh rewrites the token file"
+  ensure
+    FileUtils.rm_rf(dir) if dir
+  end
+
+  def test_authorize_fresh_consent_records_the_consent_time
+    dir = Dir.mktmpdir("podgen_yt_token")
+    token_file = File.join(dir, "youtube_token.json")
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_credentials) { |_| nil }
+    authorizer.define_singleton_method(:get_and_store_credentials_from_code) { |**| :creds }
+    uploader = YouTubeUploader.new(consent: ->(_a) { ["code", "http://127.0.0.1:1"] }, token_file: token_file)
+
+    with_youtube_env do
+      Google::Auth::UserAuthorizer.stub(:new, authorizer) do
+        Google::Auth::Stores::FileTokenStore.stub(:new, Object.new) { uploader.authorize! }
+      end
+    end
+
+    assert_in_delta Time.now, YouTubeConsent.time(token_file), 60
+  ensure
+    FileUtils.rm_rf(dir) if dir
+  end
+
+  def test_authorize_rejected_grant_clears_the_consent_time
+    _store, _logs = refresh_failing_with(Signet::AuthorizationError.new("invalid_grant"), interactive: false,
+      consent_at: Time.now - 86_400) do |run, token_file|
+      assert_raises(YouTubeUploader::NotInteractive) { run.call }
+      assert_nil YouTubeConsent.time(token_file)
+    end
+  end
+
+  def test_authorize_stored_token_without_consent_record_seeds_it_from_the_token_mtime
+    dir = Dir.mktmpdir("podgen_yt_token")
+    token_file = File.join(dir, "youtube_token.json")
+    File.write(token_file, "{}\n")
+    seen = Time.now - (3 * 86_400)
+    File.utime(seen, seen, token_file)
+    fresh = Object.new
+    fresh.define_singleton_method(:expired?) { false }
+    authorizer = Object.new
+    authorizer.define_singleton_method(:get_credentials) { |_| fresh }
+    logger = RecordingLogger.new
+    uploader = YouTubeUploader.new(logger: logger, consent: ->(_a) { flunk "no consent needed" }, token_file: token_file)
+
+    with_youtube_env do
+      Google::Auth::UserAuthorizer.stub(:new, authorizer) do
+        Google::Auth::Stores::FileTokenStore.stub(:new, Object.new) { uploader.authorize! }
+      end
+    end
+
+    assert_in_delta seen, YouTubeConsent.time(token_file), 1
+    assert_includes logger.lines,
+      "[YouTubeUploader] YouTube consent date seeded from the token file time; the real consent may be older"
+  ensure
+    FileUtils.rm_rf(dir) if dir
+  end
+
+  def test_consent_token_file_is_the_uploaders
+    assert_equal YouTubeUploader::TOKEN_FILE, YouTubeConsent::TOKEN_FILE
+  end
+
   def test_authorize_refresh_rejected_grant_interactive_logs_reauthorizing
     _store, logs = refresh_failing_with(Signet::AuthorizationError.new("expired"), interactive: true) do |run|
       err = assert_raises(RuntimeError) { run.call }
@@ -134,7 +248,9 @@ class TestYouTubeUploader < Minitest::Test
     end
     consent = ->(_authorizer) { ["code-abc", "http://127.0.0.1:4242"] }
 
-    uploader = YouTubeUploader.new(consent: consent)
+    # A temp token file: a fresh consent records its time beside it.
+    dir = Dir.mktmpdir("podgen_yt_token")
+    uploader = YouTubeUploader.new(consent: consent, token_file: File.join(dir, "youtube_token.json"))
     Google::Auth::UserAuthorizer.stub(:new, mock_authorizer) do
       Google::Auth::Stores::FileTokenStore.stub(:new, Object.new) do
         uploader.authorize!
@@ -148,6 +264,7 @@ class TestYouTubeUploader < Minitest::Test
   ensure
     ENV["YOUTUBE_CLIENT_ID"] = original_id
     ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+    FileUtils.rm_rf(dir) if dir
   end
 
   # --- Q-77 / I-9: no browser, no port, no wait without a terminal ---
@@ -423,6 +540,17 @@ class TestYouTubeUploader < Minitest::Test
     def log(msg) = @lines << msg
   end
 
+  def with_youtube_env
+    original_id = ENV["YOUTUBE_CLIENT_ID"]
+    original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
+    ENV["YOUTUBE_CLIENT_ID"] = "test-id"
+    ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
+    yield
+  ensure
+    ENV["YOUTUBE_CLIENT_ID"] = original_id
+    ENV["YOUTUBE_CLIENT_SECRET"] = original_secret
+  end
+
   # Raises error_class.new(message) from inside a rescue of cause, as
   # googleauth's retry_with_error does, so #cause is set the real way.
   def googleauth_wrapped(cause, message)
@@ -437,12 +565,14 @@ class TestYouTubeUploader < Minitest::Test
 
   # Stored credentials are expired and refresh! raises error; consent yields
   # no code. Yields a runner for authorize!; returns [token_store, log lines].
-  def refresh_failing_with(error, interactive: true)
+  def refresh_failing_with(error, interactive: true, consent_at: nil)
     original_id = ENV["YOUTUBE_CLIENT_ID"]
     original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
     ENV["YOUTUBE_CLIENT_ID"] = "test-id"
     ENV["YOUTUBE_CLIENT_SECRET"] = "test-secret"
     dir = Dir.mktmpdir("podgen_yt_token")
+    token_file = File.join(dir, "youtube_token.json")
+    YouTubeConsent.record!(token_file, consent_at) if consent_at
 
     expired_cred = Object.new
     expired_cred.define_singleton_method(:expired?) { true }
@@ -454,11 +584,11 @@ class TestYouTubeUploader < Minitest::Test
     consent.define_singleton_method(:call) { |_| [nil, "http://127.0.0.1:1"] }
     store = RecordingTokenStore.new
     logger = RecordingLogger.new
-    uploader = YouTubeUploader.new(logger: logger, consent: consent, token_file: File.join(dir, "youtube_token.json"))
+    uploader = YouTubeUploader.new(logger: logger, consent: consent, token_file: token_file)
 
     Google::Auth::UserAuthorizer.stub(:new, authorizer) do
       Google::Auth::Stores::FileTokenStore.stub(:new, store) do
-        yield -> { uploader.authorize! }
+        yield(-> { uploader.authorize! }, token_file)
       end
     end
     [store, logger.lines]

@@ -129,7 +129,49 @@ class TestHttpDownloader < Minitest::Test
     assert_match(/failed after/, err.message)
   end
 
+  # Q-100 (P11-1): a 404/410 is permanent — one attempt, a typed error
+  # carrying the status; every other status keeps today's retries.
+  def test_download_404_makes_one_attempt_and_raises_gone
+    starts = with_status_server("404") do
+      err = assert_raises(HttpDownloader::Gone) { build_downloader.download("http://example.com/gone.mp3", @dest) }
+      assert_equal 404, err.status
+      assert_match(/HTTP 404/, err.message)
+    end
+    assert_equal 1, starts
+  end
+
+  def test_download_410_makes_one_attempt_and_raises_gone
+    starts = with_status_server("410") do
+      err = assert_raises(HttpDownloader::Gone) { build_downloader.download("http://example.com/gone.mp3", @dest) }
+      assert_equal 410, err.status
+    end
+    assert_equal 1, starts
+  end
+
+  def test_download_403_keeps_retrying
+    starts = with_status_server("403") do
+      err = assert_raises(RuntimeError) { build_downloader.download("http://example.com/denied.mp3", @dest) }
+      assert_match(/failed after 4 attempts: HTTP 403/, err.message)
+    end
+    assert_equal HttpDownloader::MAX_RETRIES + 1, starts
+  end
+
   private
+
+  # Stubs Net::HTTP.start with a fake connection answering every request
+  # with +code+; returns how many connections were opened.
+  def with_status_server(code)
+    starts = 0
+    klass = Net::HTTPResponse::CODE_TO_OBJ.fetch(code)
+    http = Object.new
+    http.define_singleton_method(:request) { |_req, &blk| blk.call(klass.new("1.1", code, "status")) }
+    start = lambda do |*_a, **_k, &blk|
+      starts += 1
+      blk.call(http)
+    end
+    Net::HTTP.stub(:start, start) { yield }
+    starts
+  end
 
   def build_downloader
     d = HttpDownloader.new

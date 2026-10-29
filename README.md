@@ -624,7 +624,11 @@ podgen generate lahko_noc --ask-trim
 podgen generate lahko_noc --file story.mp3 --ask-trim
 ```
 
-At either prompt, type `x` to exclude the episode — this adds its source URL to the excluded list and stops processing (same as `podgen exclude`). Useful when you hear during preview that an episode isn't worth processing.
+At either prompt, type `x` to exclude the episode — this adds its source URL to the excluded list and stops processing (same as `podgen exclude`). Useful when you hear during preview that an episode isn't worth processing. A value that is not a time (a typo such as `e43`) is asked for again, three attempts in all; after the third the candidate is excluded as if you had typed `x`.
+
+#### Listening archive
+
+Every `--ask-trim` run keeps what you decided while listening under `output/<podcast>/archive/` — owner data, never read by the pipeline, feed, site, status or stats, and never written by unattended runs. A kept episode leaves a pair: `<basename>.source.<ext>` (the untrimmed download, byte for byte) and `<basename>.trim.yml` (`audio_url`, `title`, `feed_key`, `source_duration`, the `skip`/`cut`/`snip` you entered in seconds — blank is `nil`, and blank + blank still archives — `cut_absolute` (`true` for a `min:sec` point, `false` for seconds from the end), `cut_point` (where the cut starts, in seconds; `nil` when the cut was invalid and ignored), `kept_segments`, `final_duration`, `recorded_at`), both written before the trimmer runs. A pair a failed same-day run left for another candidate is moved aside to `<basename>.<n>.*`, never overwritten. A rejected candidate is copied to `rejected/<date>-<slug>.<ext>` with a row in `rejected.yml` (`audio_url`, `title`, `feed_key`, `duration`, `reason`, `prompt`, `file`, `recorded_at`); reasons are `listened` (`x` at skip/cut), `too_long`/`too_short` (`x` at the length prompt), `bad_input` (three unreadable values at one prompt), `aborted` (`[a]bort`) and `interrupted` (Ctrl-C between the download and the entered values — the run still exits 130). `excluded_urls.yml` is unchanged: it stays the selection filter.
 
 #### Snip format
 
@@ -1289,6 +1293,19 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `youtube: 1 untracked episode(s) inside the uploaded range, oldest fiabe-2026-05-14`
   (same for `lingq`). A backlog after the newest tracked upload is never a
   hole.
+- **WARN (YouTube consent)** - for podcasts with a `## YouTube` section: the
+  stored consent is 6 or more days old (`youtube consent N d old — the token
+  expires on day 7 while the OAuth app is in testing; re-consent from a
+  terminal`). While Google's OAuth consent screen is in "Testing", refresh
+  tokens die 7 days after the consent. The consent time is kept beside the
+  token (`youtube_token.json.consent`, written at each terminal consent; a
+  token consented before it existed is dated by the token file's time at
+  the next upload, and the log says so. That time is the last refresh, so
+  it can only understate the consent's age: during that one transition a
+  token may die on day 7 without the WARN). The WARN needs the token file
+  itself; a leftover `.consent` beside a deleted token is ignored. Once the
+  consent screen is published, add
+  `- youtube_app_published: true` to `## Podcast` to silence it.
 - **WARN (served feed)** - the newest `<item>` pubDate in the served
   `base_url/feed.xml` is more than 1 day older than the newest local
   primary-language episode dated today or earlier, for a podcast with an
