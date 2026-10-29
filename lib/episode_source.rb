@@ -82,6 +82,7 @@ class EpisodeSource
   # duplicate_prompt: nil (unattended) or a callable (episode, match) →
   # answer; "k" keeps an other-feed title match, anything else skips it.
   def fetch_next(force: false, rss_filter: nil, duplicate_prompt: nil)
+    @title_index = nil # built at most once per call (fetch_weighted tries several feeds)
     rss_feeds = @config.sources["rss"]
     unless rss_feeds.is_a?(Array) && rss_feeds.any?
       raise "Language pipeline requires RSS sources in guidelines.md (## Sources → - rss:)"
@@ -248,7 +249,7 @@ class EpisodeSource
     pending = {}.compare_by_identity
     return [episodes, pending] if force || episodes.empty?
 
-    index = history_title_index
+    index = (@title_index ||= history_title_index)
     return [episodes, pending] if index.empty?
 
     kept = episodes.reject do |ep|
