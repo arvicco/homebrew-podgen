@@ -44,8 +44,11 @@ module HttpRetryable
     response.body[0..200]
   end
 
-  def with_http_retries(label, max: 2)
-    with_retries(max: max, on: HTTP_EXCEPTIONS, label: label) { yield }
+  # on: a client whose library raises its own classes passes them instead
+  # of HTTP_EXCEPTIONS; reraise: give up with the original error (see
+  # Retryable#with_retries).
+  def with_http_retries(label, max: 2, on: HTTP_EXCEPTIONS, reraise: false)
+    with_retries(max: max, on: on, label: label, reraise: reraise) { yield }
   end
 
   def self.included(base)

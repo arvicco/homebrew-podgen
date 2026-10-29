@@ -3,14 +3,17 @@
 require "exa-ai"
 require "set"
 require_relative "../loggable"
-require_relative "../retryable"
+require_relative "../http_retryable"
 
 class ResearchAgent
   include Loggable
-  include Retryable
+  include HttpRetryable
 
   MAX_RETRIES = 3
   RESULTS_PER_TOPIC = 5
+  # exa-ai raises its own classes only from HTTP responses; a timeout or a
+  # failed connection arrives as Faraday's (Q-99). All four are transient.
+  RETRIABLE_ERRORS = [Exa::TooManyRequests, Exa::ServerError, Faraday::TimeoutError, Faraday::ConnectionFailed].freeze
 
   def initialize(results_per_topic: RESULTS_PER_TOPIC, exclude_urls: Set.new, category: "news", logger: nil)
     @results_per_topic = results_per_topic
@@ -68,13 +71,14 @@ class ResearchAgent
     end
 
     all
-  rescue Exa::Error => e
-    log_warning("Failed to research '#{topic}' after #{MAX_RETRIES} attempts: #{e.message}")
+  rescue Exa::Error, Faraday::Error => e
+    # The topic is skipped with a counted warning; the other topics proceed.
+    log_warning("Failed to research '#{topic}' after #{MAX_RETRIES} attempts: #{e.class}: #{e.message}")
     []
   end
 
   def search_with_retry(query, **params)
-    with_retries(max: MAX_RETRIES, on: [Exa::TooManyRequests, Exa::ServerError]) do
+    with_http_retries("ResearchAgent", max: MAX_RETRIES, on: RETRIABLE_ERRORS, reraise: true) do
       @client.search(query, **params)
     end
   end
