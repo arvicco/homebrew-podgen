@@ -292,6 +292,22 @@ class TestDescriptionAgent < Minitest::Test
     ENV["CLAUDE_EFFORT_DESCRIPTION"] = saved if saved
   end
 
+  # P10-1 (Q-87): every call carries the bounded request options.
+  def test_every_call_carries_the_bounded_request_options
+    agent = build_agent("Some text")
+    client = agent.instance_variable_get(:@client)
+
+    agent.clean_title(title: "A title")
+    agent.clean(title: "A title", description: "A description")
+    agent.generate_title(transcript: "Once upon a time", language: "English")
+    agent.generate(title: "A title", transcript: "Once upon a time")
+
+    assert_equal 4, client.calls.length
+    client.calls.each do |kw|
+      assert_equal({timeout: AnthropicClient::REQUEST_TIMEOUT, max_retries: 1}, kw[:request_options])
+    end
+  end
+
   private
 
   def build_agent(response_text)

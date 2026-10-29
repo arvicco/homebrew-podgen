@@ -8,6 +8,7 @@ require_relative "loggable"
 require_relative "sources/rss_source"
 require_relative "http_downloader"
 require_relative "time_value"
+require_relative "title_match"
 
 class EpisodeSource
   include Loggable
@@ -78,7 +79,9 @@ class EpisodeSource
     true
   end
 
-  def fetch_next(force: false, rss_filter: nil)
+  # duplicate_prompt: nil (unattended) or a callable (episode, match) →
+  # answer; "k" keeps an other-feed title match, anything else skips it.
+  def fetch_next(force: false, rss_filter: nil, duplicate_prompt: nil)
     rss_feeds = @config.sources["rss"]
     unless rss_feeds.is_a?(Array) && rss_feeds.any?
       raise "Language pipeline requires RSS sources in guidelines.md (## Sources → - rss:)"
@@ -89,9 +92,9 @@ class EpisodeSource
 
     case mode
     when "cycle", "weights"
-      fetch_weighted(feeds, force: force)
+      fetch_weighted(feeds, force: force, duplicate_prompt: duplicate_prompt)
     else
-      fetch_from_feeds(feeds, force: force)
+      fetch_from_feeds(feeds, force: force, duplicate_prompt: duplicate_prompt)
     end
   end
 
@@ -180,7 +183,7 @@ class EpisodeSource
     mode || "latest"
   end
 
-  def fetch_from_feeds(feeds, force: false)
+  def fetch_from_feeds(feeds, force: false, duplicate_prompt: nil)
     source = RSSSource.new(feeds: feeds, logger: @logger)
     exclude = force ? Set.new : @history.all_urls
     episodes = source.fetch_episodes(exclude_urls: exclude)
@@ -191,13 +194,15 @@ class EpisodeSource
     end
 
     log("Found #{episodes.length} episodes with audio enclosures")
+    episodes, pending = guard_titles(episodes, force: force, prompt: duplicate_prompt)
+    return nil if episodes.empty?
     episodes = filter_by_length(episodes)
     return nil if episodes.empty?
 
-    episodes.first
+    pick_first(episodes, pending, duplicate_prompt)
   end
 
-  def fetch_weighted(feeds, force: false)
+  def fetch_weighted(feeds, force: false, duplicate_prompt: nil)
     mode = select_mode
     default_weight = mode == "cycle" ? 1 : 0
     pool = feeds.select { |f| feed_weight(f, default_weight) > 0 }
@@ -214,18 +219,99 @@ class EpisodeSource
       feed = weighted_pick(pool, default_weight)
       source = RSSSource.new(feeds: [feed], logger: @logger)
       episodes = source.fetch_episodes(exclude_urls: exclude)
+      episodes, pending = guard_titles(episodes, force: force, prompt: duplicate_prompt)
       episodes = filter_by_length(episodes) if episodes.any?
+      picked = pick_first(episodes, pending, duplicate_prompt) if episodes.any?
 
-      if episodes.any?
+      if picked
         tag = feed.is_a?(Hash) ? feed[:tag] : nil
         log("Selected feed#{tag ? " '#{tag}'" : ""} (weight #{feed_weight(feed, default_weight)}): #{episodes.length} episode(s) available")
-        return episodes.first
+        return picked
       end
 
       pool.delete(feed)
     end
 
     log("No episodes with audio enclosures found (all feeds exhausted)")
+    nil
+  end
+
+  # Re-post guard (Q-88, P10-0): sources re-post a story under a new audio
+  # URL with an extended title, which the URL exclusion cannot see. A
+  # candidate whose title matches a history title (TitleMatch) is skipped
+  # when its audio host equals a host recorded on that entry (same feed),
+  # or when it comes from another feed and no prompt is given. Other-feed
+  # matches under a prompt stay in the list as `pending` and are asked
+  # about only when they would be the pick (still before any download).
+  # Returns [kept_episodes, pending (identity hash episode → match)].
+  def guard_titles(episodes, force:, prompt:)
+    pending = {}.compare_by_identity
+    return [episodes, pending] if force || episodes.empty?
+
+    index = history_title_index
+    return [episodes, pending] if index.empty?
+
+    kept = episodes.reject do |ep|
+      match = title_match_for(ep, index)
+      next false unless match
+
+      if match[:same_feed] || prompt.nil?
+        report_title_duplicate(match)
+        next true
+      end
+      pending[ep] = match
+      false
+    end
+    [kept, pending]
+  end
+
+  def pick_first(episodes, pending, prompt)
+    episodes.find do |ep|
+      match = pending[ep]
+      next true unless match
+
+      if prompt.call(ep, match).to_s.strip.downcase == "k"
+        log("Keeping \"#{ep[:title]}\" as a different telling (earlier: #{match[:basename]})")
+        next true
+      end
+      report_title_duplicate(match)
+      false
+    end
+  end
+
+  def report_title_duplicate(match)
+    line = "Already processed as #{match[:basename]} (#{match[:date]}): title match \"#{match[:title]}\""
+    log(line)
+    $stderr.puts line
+  end
+
+  # The history match for a candidate (a same-feed match wins over an
+  # other-feed one), or nil when no history title matches.
+  def title_match_for(episode, index)
+    stem = TitleMatch.stem(episode[:title])
+    return nil if stem.empty?
+
+    matches = index.select { |entry| TitleMatch.stems_match?(entry[:stem], stem) }
+    return nil if matches.empty?
+
+    host = url_host(episode[:audio_url])
+    same = host && matches.find { |m| m[:hosts].include?(host) }
+    (same || matches.first).merge(same_feed: !same.nil?)
+  end
+
+  def history_title_index
+    @history.all_episodes.filter_map do |e|
+      title = e["title"].to_s
+      next if title.strip.empty?
+
+      {basename: e["basename"] || e["date"], date: e["date"], title: title,
+       stem: TitleMatch.stem(title), hosts: (e["urls"] || []).filter_map { |u| url_host(u) }.to_set}
+    end
+  end
+
+  def url_host(url)
+    URI.parse(url.to_s).host&.downcase
+  rescue URI::InvalidURIError
     nil
   end
 

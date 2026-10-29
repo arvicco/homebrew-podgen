@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "open3"
+require "minitest/mock"
 require "episode_source"
 
 class TestEpisodeSource < Minitest::Test
@@ -98,6 +99,109 @@ class TestEpisodeSource < Minitest::Test
   def test_fetch_next_raises_with_empty_rss_sources
     s = source(rss_feeds: [])
     assert_raises(RuntimeError) { s.fetch_next }
+  end
+
+  # --- re-post guard by normalized title (Q-88, P10-0) ---
+
+  SPREAKER = "https://api.spreaker.com/download/episode"
+  LUPO_ENTRY = {
+    "date" => "2026-04-28", "title" => "Il lupo e il pastore", "basename" => "fiabe-2026-04-28",
+    "urls" => ["#{SPREAKER}/24548/il-lupo-e-il-pastore-una-favola-di-esopo.mp3"]
+  }.freeze
+
+  def test_fetch_next_same_host_title_match_skipped_next_candidate_returned
+    dup = rss_ep("Il lupo e il pastore. Una favola di Esopo", "#{SPREAKER}/24548/il-lupo-e-altre.wav")
+    nxt = rss_ep("La lepre e la tartaruga", "#{SPREAKER}/24600/lepre.mp3")
+    s, logger = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup, nxt] })
+
+    picked = nil
+    _, err = capture_io { picked = with_rss { s.fetch_next } }
+
+    assert_equal nxt, picked
+    line = 'Already processed as fiabe-2026-04-28 (2026-04-28): title match "Il lupo e il pastore"'
+    assert_includes err, line
+    assert(logger.lines.any? { |l| l.include?(line) }, "log line missing: #{logger.lines.inspect}")
+  end
+
+  def test_fetch_next_different_story_same_opening_not_skipped
+    other = rss_ep("Il lupo e i sette capretti", "#{SPREAKER}/24601/capretti.mp3")
+    s, = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [other] })
+    assert_equal other, with_rss { s.fetch_next }
+  end
+
+  def test_fetch_next_other_host_match_unattended_skipped_and_logged
+    dup = rss_ep("Il lupo e il pastore", "https://anchor.fm/s/abc/play/1.m4a")
+    s, logger = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] })
+
+    picked = :unset
+    _, err = capture_io { picked = with_rss { s.fetch_next } }
+
+    assert_nil picked
+    assert_includes err, "Already processed as fiabe-2026-04-28"
+    assert(logger.lines.any? { |l| l.include?("Already processed as fiabe-2026-04-28") })
+  end
+
+  def test_fetch_next_other_host_match_prompt_keep_returns_candidate
+    dup = rss_ep("Il lupo e il pastore", "https://anchor.fm/s/abc/play/1.m4a")
+    s, = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] })
+    asked = []
+    prompt = ->(ep, match) {
+      asked << [ep[:title], match[:basename], match[:title]]
+      "k"
+    }
+
+    assert_equal dup, with_rss { s.fetch_next(duplicate_prompt: prompt) }
+    assert_equal [["Il lupo e il pastore", "fiabe-2026-04-28", "Il lupo e il pastore"]], asked
+  end
+
+  def test_fetch_next_other_host_match_prompt_blank_or_eof_or_d_skips
+    ["", nil, "d", "D"].each do |answer|
+      dup = rss_ep("Il lupo e il pastore", "https://anchor.fm/s/abc/play/1.m4a")
+      nxt = rss_ep("La lepre e la tartaruga", "https://anchor.fm/s/abc/play/2.m4a")
+      s, = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup, nxt] })
+      picked = nil
+      capture_io { picked = with_rss { s.fetch_next(duplicate_prompt: ->(_e, _m) { answer }) } }
+      assert_equal nxt, picked, "answer #{answer.inspect} should skip"
+    end
+  end
+
+  def test_fetch_next_same_host_match_never_prompts
+    dup = rss_ep("Il lupo e il pastore", "#{SPREAKER}/24548/x.wav")
+    s, = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] })
+    prompt = ->(_e, _m) { flunk "same-feed match must not prompt" }
+    capture_io { assert_nil with_rss { s.fetch_next(duplicate_prompt: prompt) } }
+  end
+
+  def test_fetch_next_force_bypasses_title_guard
+    dup = rss_ep("Il lupo e il pastore. Una favola di Esopo", "#{SPREAKER}/24548/x.wav")
+    s, = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] })
+    assert_equal dup, with_rss { s.fetch_next(force: true) }
+  end
+
+  def test_fetch_next_jaccard_reordered_title_skipped
+    entry = { "date" => "2026-05-01", "title" => "La volpe e l'uva — favola", "basename" => "fiabe-2026-05-01",
+              "urls" => ["https://example.com/a.mp3"] }
+    dup = rss_ep("L'uva e la volpe", "https://example.com/b.mp3")
+    s, = guard_source(history: [entry], feeds: { "f" => [dup] })
+    capture_io { assert_nil with_rss { s.fetch_next } }
+  end
+
+  def test_fetch_next_guard_runs_before_length_filter
+    dup = rss_ep("Il lupo e il pastore", "#{SPREAKER}/24548/x.wav", duration: "3:00")
+    s, logger = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] }, min: 120, max: 600)
+    capture_io { assert_nil with_rss { s.fetch_next } }
+    refute(logger.lines.any? { |l| l.include?("Length filter") }, "length filter must not see the duplicate")
+  end
+
+  def test_fetch_weighted_title_guard_skips_and_moves_to_next_feed
+    dup = rss_ep("Il lupo e il pastore", "#{SPREAKER}/24548/x.wav")
+    other = rss_ep("La lepre e la tartaruga", "https://b.example/lepre.mp3")
+    feeds = [{ url: "f1", tag: "a", weight: 100 }, { url: "f2", tag: "b", weight: 100 }]
+    s, = guard_source(history: [LUPO_ENTRY], feeds: { "f1" => [dup], "f2" => [other] },
+      rss_feeds: feeds, select: "weights")
+    picked = nil
+    capture_io { picked = with_rss { s.fetch_next } }
+    assert_equal other, picked
   end
 
   # --- resolve_feeds ---
@@ -519,6 +623,44 @@ class TestEpisodeSource < Minitest::Test
     )
     history = Struct.new(:all_urls).new(Set.new)
     EpisodeSource.new(config: config, history: history, logger: logger)
+  end
+
+  class LineLogger
+    attr_reader :lines
+
+    def initialize = @lines = []
+    def log(msg) = @lines << msg
+  end
+
+  # Stands in for RSSSource: serves the episodes configured per feed URL,
+  # honouring exclude_urls as the real one does.
+  class FakeRSS
+    def initialize(by_feed, feeds)
+      @episodes = feeds.flat_map { |f| by_feed.fetch(f.is_a?(Hash) ? f[:url] : f, []) }
+    end
+
+    def fetch_episodes(exclude_urls: Set.new)
+      @episodes.reject { |e| exclude_urls.include?(e[:audio_url]) }
+    end
+  end
+
+  def rss_ep(title, url, duration: nil)
+    { title: title, audio_url: url, description: "", duration: duration }
+  end
+
+  def guard_source(history:, feeds:, rss_feeds: nil, select: nil, min: nil, max: nil)
+    sources = { "rss" => rss_feeds || feeds.keys }
+    sources["select"] = [select] if select
+    config = Struct.new(:sources, :min_length_seconds, :max_length_seconds).new(sources, min, max)
+    hist = Struct.new(:all_urls, :all_episodes).new(Set.new(history.flat_map { |e| e["urls"] }), history)
+    logger = LineLogger.new
+    @fake_feeds = feeds
+    [EpisodeSource.new(config: config, history: hist, logger: logger), logger]
+  end
+
+  def with_rss(&block)
+    by_feed = @fake_feeds
+    RSSSource.stub(:new, ->(feeds:, **) { FakeRSS.new(by_feed, feeds) }, &block)
   end
 
   def stub_status(success)

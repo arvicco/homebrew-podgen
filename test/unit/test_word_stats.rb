@@ -29,6 +29,22 @@ class TestWordStats < Minitest::Test
     assert_equal AnthropicClient::REQUEST_TIMEOUT, captured[:timeout]
   end
 
+  # P10-1 (Q-87): the request itself carries the bound, else the SDK's 600 s applies.
+  def test_language_detection_request_carries_the_bounded_request_options
+    sent = nil
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) do |**kw|
+      sent = kw
+      Struct.new(:content).new([Struct.new(:text).new("Slovenian")])
+    end
+    fake_client = Struct.new(:messages).new(fake_messages)
+    stats = WordStats.allocate
+    Anthropic::Client.stub(:new, fake_client) do
+      stats.send(:ask_claude_for_language, "dober dan", %w[Slovenian Croatian])
+    end
+    assert_equal({timeout: AnthropicClient::REQUEST_TIMEOUT, max_retries: 1}, sent[:request_options])
+  end
+
   # P5-1: language detection is a one-word answer, run at low effort.
   def test_language_detection_passes_low_effort
     saved = ENV.delete("CLAUDE_EFFORT_LANGUAGE_DETECT")
