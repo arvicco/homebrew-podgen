@@ -49,7 +49,8 @@ class TestResearchAgent < Minitest::Test
     logger = with_run_logger { agent.research(["topic"]) }
 
     assert_equal 1, logger.logged_warnings.size
-    assert_match(/Warning: Failed to research 'topic'/, logger.logged_warnings.first)
+    assert_match(/Warning: Failed to research 'topic': Exa::Unauthorized: API error/, logger.logged_warnings.first)
+    refute_match(/attempts/, logger.logged_warnings.first, "a 401 is not retried; no attempt count to claim")
   end
 
   # --- Q-99 (P11-3): exa-ai raises its own classes only from HTTP responses;

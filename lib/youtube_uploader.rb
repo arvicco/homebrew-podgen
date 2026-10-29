@@ -123,10 +123,13 @@ class YouTubeUploader
     authorizer = Google::Auth::UserAuthorizer.new(client_id_obj, SCOPE, token_store)
 
     credentials = authorizer.get_credentials("default")
-    # A token consented before the consent record existed: the file's mtime
-    # (the last refresh or the consent) is the best bound available (Q-102).
+    # A token consented before the consent record existed (transition only,
+    # Q-102): the file's mtime is the last refresh, so it is a LOWER bound on
+    # the consent's age — a token consented 5 days ago and refreshed today
+    # seeds as today and dies on day 7 without a WARN.
     if credentials && YouTubeConsent.time(@token_file).nil? && File.exist?(@token_file)
       YouTubeConsent.record!(@token_file, File.mtime(@token_file))
+      log("YouTube consent date seeded from the token file time; the real consent may be older")
     end
 
     # If token is expired, try to refresh. Only a grant Google rejected

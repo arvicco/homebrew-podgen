@@ -202,7 +202,8 @@ class TestYouTubeUploader < Minitest::Test
     fresh.define_singleton_method(:expired?) { false }
     authorizer = Object.new
     authorizer.define_singleton_method(:get_credentials) { |_| fresh }
-    uploader = YouTubeUploader.new(consent: ->(_a) { flunk "no consent needed" }, token_file: token_file)
+    logger = RecordingLogger.new
+    uploader = YouTubeUploader.new(logger: logger, consent: ->(_a) { flunk "no consent needed" }, token_file: token_file)
 
     with_youtube_env do
       Google::Auth::UserAuthorizer.stub(:new, authorizer) do
@@ -211,6 +212,8 @@ class TestYouTubeUploader < Minitest::Test
     end
 
     assert_in_delta seen, YouTubeConsent.time(token_file), 1
+    assert_includes logger.lines,
+      "[YouTubeUploader] YouTube consent date seeded from the token file time; the real consent may be older"
   ensure
     FileUtils.rm_rf(dir) if dir
   end
