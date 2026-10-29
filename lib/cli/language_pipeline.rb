@@ -29,6 +29,7 @@ require_relative File.join(root, "lib", "cover_resolver")
 require_relative File.join(root, "lib", "auto_cover_resolver")
 require_relative File.join(root, "lib", "episode_cover_resolver")
 require_relative File.join(root, "lib", "post_pipeline_uploads")
+require_relative File.join(root, "lib", "listening_archive")
 
 module PodgenCLI
   class LanguagePipeline
@@ -252,7 +253,7 @@ module PodgenCLI
       end
       logger.phase_end("Download Audio")
 
-      verdict = enforce_length_post_download
+      verdict = listening_window("length") { enforce_length_post_download }
       return verdict if verdict
 
       nil
@@ -276,6 +277,7 @@ module PodgenCLI
     # exit code to abort.
     def enforce_length_post_download
       duration = AudioAssembler.probe_duration(@source_audio_path)
+      @source_duration = duration
       verdict = @episode_source.length_check(duration)
       return nil if verdict == :ok
 
@@ -296,10 +298,12 @@ module PodgenCLI
           logger.log("Continuing with manual trim despite out-of-range duration")
           return nil
         when "x", "exclude"
+          archive_rejection(verdict.to_s, "length")
           @episode_source.exclude_url!(@episode[:audio_url])
           logger.log("Excluded #{@episode[:audio_url]}")
           return 0
         else
+          archive_rejection("aborted", "length")
           logger.log("Aborted by user")
           return 1
         end
@@ -322,8 +326,9 @@ module PodgenCLI
       @trimmer = AudioTrimmer.new(assembler: assembler, logger: logger)
 
       if @options[:ask_trim]
-        result = ask_trim_interactive
+        result = listening_window("trim") { ask_trim_interactive }
         if result == :exclude
+          archive_rejection(@trim_reject_reason, @listening_prompt)
           exclude_current_episode!
           return :excluded
         end
@@ -333,6 +338,7 @@ module PodgenCLI
         cut = @options[:no_cut] ? nil : (@options[:cut] || @episode[:cut] || @config.cut)
       end
       snip = @options[:snip]
+      archive_kept_pair(skip, cut, snip) if @options[:ask_trim]
       @source_audio_path = @trimmer.apply_trim(@source_audio_path, skip: skip, cut: cut, snip: snip)
     end
 
@@ -398,22 +404,109 @@ module PodgenCLI
     def ask_trim_interactive
       duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
       $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
+      @source_duration = duration
       $stderr.puts "Opening QuickTime preview — auto-plays in front; scrub, read min:sec; prompt is ready now:"
       start_preview(@source_audio_path)
 
-      $stderr.print "Enter skip intro (seconds or min:sec), x to exclude, blank for none: "
-      skip_input = $stdin.gets&.strip
-      return :exclude if skip_input&.downcase == "x"
-      skip = skip_input.nil? || skip_input.empty? ? nil : TimeValue.parse(skip_input)
+      @listening_prompt = "skip"
+      skip = ask_time_value("skip intro")
+      return trim_exclusion(skip) if skip.is_a?(Symbol)
 
-      $stderr.print "Enter cut outro (seconds or min:sec), x to exclude, blank for none: "
-      cut_input = $stdin.gets&.strip
-      return :exclude if cut_input&.downcase == "x"
-      cut = cut_input.nil? || cut_input.empty? ? nil : TimeValue.parse(cut_input)
+      @listening_prompt = "cut"
+      cut = ask_time_value("cut outro")
+      return trim_exclusion(cut) if cut.is_a?(Symbol)
 
       [skip, cut]
     ensure
       stop_preview
+    end
+
+    TRIM_ATTEMPTS = 3
+
+    # One skip/cut answer: a TimeValue, nil (blank), :exclude (x), or
+    # :bad_input once a typo has been entered TRIM_ATTEMPTS times (P11-5:
+    # a typo used to abort the whole run after the download).
+    def ask_time_value(label)
+      TRIM_ATTEMPTS.times do
+        $stderr.print "Enter #{label} (seconds or min:sec), x to exclude, blank for none: "
+        input = $stdin.gets&.strip
+        return :exclude if input&.downcase == "x"
+        return nil if input.nil? || input.empty?
+        return TimeValue.parse(input)
+      rescue ArgumentError
+        $stderr.puts "Not a time value: #{input.inspect} (seconds like 30, or min:sec like 1:20)"
+      end
+      logger.log("No valid #{label} value after #{TRIM_ATTEMPTS} attempts; excluding the candidate")
+      :bad_input
+    end
+
+    def trim_exclusion(answer)
+      @trim_reject_reason = (answer == :bad_input) ? "bad_input" : "listened"
+      :exclude
+    end
+
+    # Listening archive (P11-0): the owner's interactive decisions kept as
+    # labelled examples under output/<pod>/archive/ — written only under
+    # --ask-trim, never read back by the pipeline.
+    def listening_archive
+      @listening_archive ||= ListeningArchive.new(root: File.join(File.dirname(@config.episodes_dir), "archive"))
+    end
+
+    # Ctrl-C inside the interactive window (download done, trim values not
+    # yet entered) records the candidate as rejected, then hands the signal
+    # to the previous handler (bin/podgen's trap: exit 130) or, with none,
+    # re-raises Interrupt. Unattended runs: a plain yield, trap untouched.
+    def listening_window(prompt)
+      return yield unless @options[:ask_trim]
+
+      @listening_prompt = prompt
+      previous = Signal.trap("INT") { raise Interrupt }
+      restored = false
+      begin
+        yield
+      rescue Interrupt
+        archive_rejection("interrupted", @listening_prompt)
+        Signal.trap("INT", previous)
+        restored = true
+        previous.call(Signal.list.fetch("INT")) if previous.respond_to?(:call)
+        raise
+      ensure
+        Signal.trap("INT", previous) unless restored
+      end
+    end
+
+    # Untrimmed source + the typed values, before the trimmer runs: a later
+    # failure still leaves a complete pair.
+    def archive_kept_pair(skip, cut, snip)
+      @base_name = @config.episode_basename(@today)
+      total = @source_duration.to_f
+      keeps = AudioTrimmer.keep_segments(total, skip: skip, cut: cut, snip: snip).map { [it.from, it.to] }
+      listening_archive.keep(@source_audio_path, basename: @base_name, record: listening_record.merge(
+        source_duration: total, skip: skip&.to_f, cut: cut&.to_f,
+        snip: snip&.intervals&.map { [it.from, it.to] }, kept_segments: keeps,
+        final_duration: keeps.empty? ? total : keeps.sum { |from, to| to - from }.round(3)
+      ))
+    rescue => e # skippable: the archive is a side record; the episode proceeds without it
+      archive_failed(e)
+    end
+
+    def archive_rejection(reason, prompt)
+      return unless @options[:ask_trim]
+
+      listening_archive.reject(@source_audio_path, date: @today,
+        record: listening_record.merge(duration: @source_duration&.to_f, reason: reason, prompt: prompt))
+    rescue => e # skippable: the archive is a side record; the rejection itself stands
+      archive_failed(e)
+    end
+
+    def listening_record
+      url = @episode[:audio_url]
+      { audio_url: url, title: @episode[:title], feed_key: EpisodeSource.feed_key(url) }
+    end
+
+    def archive_failed(error)
+      logger.log("Warning: listening archive write failed: #{error.class}: #{error.message}")
+      @warnings << "Listening archive write failed (#{error.class}: #{error.message})"
     end
 
     def discover_transcript
@@ -438,7 +531,7 @@ module PodgenCLI
 
     def transcribe
       logger.phase_start("Transcription")
-      @base_name = @config.episode_basename(@today)
+      @base_name ||= @config.episode_basename(@today) # the listening archive may have named it already
       @transcription_result = transcribe_audio(@source_audio_path, captions: @youtube_captions)
       logger.phase_end("Transcription")
     end

@@ -1028,6 +1028,239 @@ class TestLanguagePipeline < Minitest::Test
     end
   end
 
+  # --- listening archive (P11-0, Q-104) ---
+
+  LISTEN_URL = "https://cdn.ex.com/show/ep1.mp3"
+
+  def archive_root = File.join(@tmpdir, "archive")
+
+  def build_listening_pipeline(options: { ask_trim: true }, config: build_config)
+    pipeline = build_pipeline(options: options, config: config)
+    source = File.join(@tmpdir, "podgen_source_test.mp3")
+    File.binwrite(source, "ID3\x00source-audio\xFF".b)
+    pipeline.instance_variable_set(:@episode, { title: "Zlata ribica", audio_url: LISTEN_URL })
+    pipeline.instance_variable_set(:@source_audio_path, source)
+    [pipeline, source]
+  end
+
+  # Runs trim_source_audio with scripted stdin (a Proc entry is called,
+  # e.g. to raise Interrupt) and a trimmer that records what it saw.
+  def run_listening_trim(pipeline, inputs, duration: 300.0)
+    queue = inputs.dup
+    fake_gets = -> { v = queue.shift; v.respond_to?(:call) ? v.call : v }
+    fake_assembler = Object.new
+    fake_assembler.define_singleton_method(:probe_duration) { |_p| duration }
+    seen = {}
+    fake_trimmer = Object.new
+    fake_trimmer.define_singleton_method(:apply_trim) do |path, skip:, cut:, snip:|
+      seen[:pair_at_trim] = Dir.glob(File.join(File.dirname(path), "archive", "*")).map { File.basename(it) }.sort
+      seen[:skip] = skip
+      seen[:cut] = cut
+      path
+    end
+    result = nil
+    AudioAssembler.stub(:new, fake_assembler) do
+      AudioTrimmer.stub(:new, fake_trimmer) do
+        pipeline.stub(:start_preview, nil) do
+          $stdin.stub(:gets, fake_gets) do
+            capture_io { result = pipeline.send(:trim_source_audio) }
+          end
+        end
+      end
+    end
+    [result, seen]
+  end
+
+  def test_ask_trim_kept_episode_archives_source_copy_and_sidecar_before_trimming
+    pipeline, source = build_listening_pipeline
+
+    _result, seen = run_listening_trim(pipeline, ["0:49\n", "4:07\n"])
+
+    copy = File.join(archive_root, "test-2026-03-10.source.mp3")
+    assert File.exist?(copy), "untrimmed source must be archived"
+    assert_equal File.binread(source), File.binread(copy)
+    assert_equal ["test-2026-03-10.source.mp3", "test-2026-03-10.trim.yml"], seen[:pair_at_trim],
+      "the pair is complete before the trimmer runs"
+    data = YAML.load_file(File.join(archive_root, "test-2026-03-10.trim.yml"))
+    assert_equal LISTEN_URL, data["audio_url"]
+    assert_equal "Zlata ribica", data["title"]
+    assert_equal "cdn.ex.com/show", data["feed_key"]
+    assert_equal 300.0, data["source_duration"]
+    assert_equal 49.0, data["skip"]
+    assert_equal 247.0, data["cut"]
+    assert_nil data["snip"]
+    assert_equal [[49.0, 247.0]], data["kept_segments"]
+    assert_equal 198.0, data["final_duration"]
+    refute_nil data["recorded_at"]
+  end
+
+  def test_ask_trim_blank_values_still_archive_the_pair
+    pipeline, _source = build_listening_pipeline
+
+    run_listening_trim(pipeline, ["\n", "\n"])
+
+    data = YAML.load_file(File.join(archive_root, "test-2026-03-10.trim.yml"))
+    assert_nil data["skip"]
+    assert_nil data["cut"]
+    assert_equal [[0.0, 300.0]], data["kept_segments"]
+    assert_equal 300.0, data["final_duration"]
+  end
+
+  def test_ask_trim_x_archives_the_rejected_download_with_reason_listened
+    [[["x\n"], "skip"], [["10\n", "x\n"], "cut"]].each do |inputs, prompt|
+      FileUtils.rm_rf(archive_root)
+      pipeline, source = build_listening_pipeline
+
+      result, = run_listening_trim(pipeline, inputs)
+
+      assert_equal :excluded, result
+      file = File.join(archive_root, "rejected", "2026-03-10-zlata-ribica.mp3")
+      assert File.exist?(file), "rejected download must be archived (#{prompt})"
+      assert_equal File.binread(source), File.binread(file)
+      rows = YAML.load_file(File.join(archive_root, "rejected.yml"))
+      assert_equal 1, rows.length
+      assert_equal({ "audio_url" => LISTEN_URL, "title" => "Zlata ribica", "feed_key" => "cdn.ex.com/show",
+                     "duration" => 300.0, "reason" => "listened", "prompt" => prompt },
+        rows.first.slice("audio_url", "title", "feed_key", "duration", "reason", "prompt"))
+      refute File.exist?(File.join(archive_root, "test-2026-03-10.trim.yml")), "no kept pair for a rejection"
+      assert_includes YAML.load_file(@config.excluded_urls_path), LISTEN_URL, "selection filter unchanged"
+    end
+  end
+
+  def test_ask_trim_interrupt_archives_rejection_and_hands_the_signal_on
+    pipeline, source = build_listening_pipeline
+    handed_on = false
+    marker = proc { handed_on = true }
+    original = Signal.trap("INT", marker)
+    begin
+      assert_raises(Interrupt) { run_listening_trim(pipeline, [-> { raise Interrupt }]) }
+      restored = Signal.trap("INT", original)
+    ensure
+      Signal.trap("INT", original)
+    end
+
+    assert_same marker, restored, "the previous INT handler is restored"
+    assert handed_on, "the previous handler (bin/podgen's exit 130) gets the signal"
+    rows = YAML.load_file(File.join(archive_root, "rejected.yml"))
+    assert_equal ["interrupted"], rows.map { it["reason"] }
+    assert_equal "skip", rows.first["prompt"]
+    assert File.exist?(File.join(archive_root, rows.first["file"])), "the download is kept"
+    assert File.exist?(source)
+    refute File.exist?(@config.excluded_urls_path), "an interrupt is not an exclusion"
+  end
+
+  # --- trim prompt re-ask on a bad value (P11-5, Q-103) ---
+
+  def test_ask_trim_bad_value_reasks_then_accepts
+    pipeline, _source = build_listening_pipeline
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    result, calls = run_ask_trim(pipeline, input: fake_gets_from(["e43\n", "30\n", "\n"]))
+
+    assert_equal [30.0, nil], result
+    assert_equal "osascript", calls[:system].last.first, "preview still closes after a re-ask"
+  end
+
+  def test_ask_trim_three_bad_values_take_the_rejected_path_with_bad_input
+    [[["e43\n", "x1\n", "1:2:3\n"], "skip"], [["10\n", "a\n", "b\n", "c\n"], "cut"]].each do |inputs, prompt|
+      FileUtils.rm_rf(archive_root)
+      FileUtils.rm_f(@config.excluded_urls_path)
+      pipeline, _source = build_listening_pipeline
+
+      result, seen = run_listening_trim(pipeline, inputs)
+
+      assert_equal :excluded, result
+      assert_nil seen[:skip], "the trimmer never runs"
+      rows = YAML.load_file(File.join(archive_root, "rejected.yml"))
+      assert_equal [["bad_input", prompt]], rows.map { [it["reason"], it["prompt"]] }
+      assert_includes YAML.load_file(@config.excluded_urls_path), LISTEN_URL
+    end
+  end
+
+  def fake_gets_from(inputs)
+    queue = inputs.dup
+    -> { queue.shift }
+  end
+
+  def test_unattended_trim_writes_nothing_to_the_archive
+    pipeline, _source = build_listening_pipeline(options: {}, config: build_config(skip: 10))
+
+    run_listening_trim(pipeline, [])
+
+    refute Dir.exist?(archive_root), "unattended runs never write the archive"
+  end
+
+  def run_length_prompt(answer, verdict:, duration:)
+    pipeline, source = build_listening_pipeline
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    fake_source = Object.new
+    fake_source.define_singleton_method(:length_check) { |_d| verdict }
+    fake_source.define_singleton_method(:exclude_url!) { |_url| nil }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+    result = nil
+    $stdin.stub :gets, answer do
+      AudioAssembler.stub :probe_duration, duration do
+        capture_io { result = pipeline.send(:enforce_length_post_download) }
+      end
+    end
+    [result, source]
+  end
+
+  def test_length_prompt_x_archives_rejection_with_too_long_or_too_short
+    [[:too_long, 700.0, "too_long"], [:too_short, 60.0, "too_short"]].each do |verdict, duration, reason|
+      FileUtils.rm_rf(archive_root)
+      result, source = run_length_prompt("x\n", verdict: verdict, duration: duration)
+
+      assert_equal 0, result
+      rows = YAML.load_file(File.join(archive_root, "rejected.yml"))
+      assert_equal [[reason, "length", duration, "cdn.ex.com/show"]],
+        rows.map { [it["reason"], it["prompt"], it["duration"], it["feed_key"]] }
+      assert_equal File.binread(source), File.binread(File.join(archive_root, rows.first["file"]))
+    end
+  end
+
+  def test_length_prompt_abort_archives_rejection_with_reason_aborted
+    result, _source = run_length_prompt("a\n", verdict: :too_long, duration: 700.0)
+
+    assert_equal 1, result
+    rows = YAML.load_file(File.join(archive_root, "rejected.yml"))
+    assert_equal [["aborted", "length"]], rows.map { [it["reason"], it["prompt"]] }
+  end
+
+  def test_length_prompt_trim_choice_archives_nothing_yet
+    result, _source = run_length_prompt("t\n", verdict: :too_long, duration: 700.0)
+
+    assert_nil result
+    refute Dir.exist?(archive_root)
+  end
+
+  def test_listening_window_interrupt_in_length_prompt_is_archived_and_reraised
+    pipeline, _source = build_listening_pipeline
+    original = Signal.trap("INT", "DEFAULT")
+    begin
+      assert_raises(Interrupt) do
+        pipeline.send(:listening_window, "length") { raise Interrupt }
+      end
+    ensure
+      Signal.trap("INT", original)
+    end
+    rows = YAML.load_file(File.join(archive_root, "rejected.yml"))
+    assert_equal [["interrupted", "length"]], rows.map { [it["reason"], it["prompt"]] }
+  end
+
+  def test_listening_window_without_ask_trim_leaves_the_trap_alone
+    pipeline, _source = build_listening_pipeline(options: {})
+    marker = proc {}
+    original = Signal.trap("INT", marker)
+    begin
+      inside = pipeline.send(:listening_window, "length") { Signal.trap("INT", marker) }
+      assert_same marker, inside, "no handler is installed for unattended runs"
+    ensure
+      Signal.trap("INT", original)
+    end
+    refute Dir.exist?(archive_root)
+  end
+
   # --- staged output lifecycle ---
 
   def test_setup_staging_creates_directory

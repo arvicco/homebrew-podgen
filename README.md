@@ -624,7 +624,11 @@ podgen generate lahko_noc --ask-trim
 podgen generate lahko_noc --file story.mp3 --ask-trim
 ```
 
-At either prompt, type `x` to exclude the episode — this adds its source URL to the excluded list and stops processing (same as `podgen exclude`). Useful when you hear during preview that an episode isn't worth processing.
+At either prompt, type `x` to exclude the episode — this adds its source URL to the excluded list and stops processing (same as `podgen exclude`). Useful when you hear during preview that an episode isn't worth processing. A value that is not a time (a typo such as `e43`) is asked for again, three attempts in all; after the third the candidate is excluded as if you had typed `x`.
+
+#### Listening archive
+
+Every `--ask-trim` run keeps what you decided while listening under `output/<podcast>/archive/` — owner data, never read by the pipeline, feed, site, status or stats, and never written by unattended runs. A kept episode leaves a pair: `<basename>.source.<ext>` (the untrimmed download, byte for byte) and `<basename>.trim.yml` (`audio_url`, `title`, `feed_key`, `source_duration`, the `skip`/`cut`/`snip` you entered in seconds — blank is `nil`, and blank + blank still archives — `kept_segments`, `final_duration`, `recorded_at`), both written before the trimmer runs. A rejected candidate is copied to `rejected/<date>-<slug>.<ext>` with a row in `rejected.yml` (`audio_url`, `title`, `feed_key`, `duration`, `reason`, `prompt`, `file`, `recorded_at`); reasons are `listened` (`x` at skip/cut), `too_long`/`too_short` (`x` at the length prompt), `bad_input` (three unreadable values at one prompt), `aborted` (`[a]bort`) and `interrupted` (Ctrl-C between the download and the entered values — the run still exits 130). `excluded_urls.yml` is unchanged: it stays the selection filter.
 
 #### Snip format
 
