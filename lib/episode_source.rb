@@ -239,10 +239,10 @@ class EpisodeSource
   # Re-post guard (Q-88, P10-0): sources re-post a story under a new audio
   # URL with an extended title, which the URL exclusion cannot see. A
   # candidate whose title matches a history title (TitleMatch) is skipped
-  # when its feed_key equals one recorded on that entry (same feed),
-  # or when it comes from another feed and no prompt is given. Other-feed
-  # matches under a prompt stay in the list as `pending` and are asked
-  # about only when they would be the pick (still before any download).
+  # when no prompt is given. Under a prompt (--ask-trim) matches stay in
+  # the list as `pending` and are asked about only when they would be the
+  # pick (still before any download); the match says whether its feed_key
+  # equals one recorded on that entry (same feed — likely a re-post).
   # Returns [kept_episodes, pending (identity hash episode → match)].
   def guard_titles(episodes, force:, prompt:)
     pending = {}.compare_by_identity
@@ -255,7 +255,7 @@ class EpisodeSource
       match = title_match_for(ep, index)
       next false unless match
 
-      if match[:same_feed] || prompt.nil?
+      if prompt.nil?
         report_title_duplicate(match)
         next true
       end
@@ -271,7 +271,7 @@ class EpisodeSource
       next true unless match
 
       if prompt.call(ep, match).to_s.strip.downcase == "k"
-        log("Keeping \"#{ep[:title]}\" as a different telling (earlier: #{match[:basename]})")
+        log("Keeping \"#{ep[:title]}\" (earlier: #{match[:basename]})")
         next true
       end
       report_title_duplicate(match)
