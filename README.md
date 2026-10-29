@@ -1181,6 +1181,8 @@ podgen schedule ruby_world --remove
 
 **Note:** macOS must be awake at the scheduled time. Keep the machine plugged in and disable sleep, or use `caffeinate`.
 
+Once started, the wrappers (`scripts/run.sh`, `scripts/run_uploads.sh`) hold the Mac awake for the job's lifetime: the podgen command runs under `caffeinate -is` when `caffeinate` is on the PATH (plain otherwise, exit codes unchanged). The generate preflight then waits up to 120 s for the network (one lookup every 10 s) and fails with `no network after 120 s (preflight; the Mac may have been asleep)`. A job that launchd fires inside a seconds-long dark wake can still be lost before the wrapper starts; preventing that needs a macOS energy setting (no automatic sleep at the scheduled time, or a `pmset repeat wake` shortly before it).
+
 ### podgen status (content-progress check)
 
 `podgen status` prints one line per podcast (podcasts with an installed launchd
