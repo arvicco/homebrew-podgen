@@ -1289,6 +1289,15 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `youtube: 1 untracked episode(s) inside the uploaded range, oldest fiabe-2026-05-14`
   (same for `lingq`). A backlog after the newest tracked upload is never a
   hole.
+- **WARN (YouTube consent)** - for podcasts with a `## YouTube` section: the
+  stored consent is 6 or more days old (`youtube consent N d old — the token
+  expires on day 7 while the OAuth app is in testing; re-consent from a
+  terminal`). While Google's OAuth consent screen is in "Testing", refresh
+  tokens die 7 days after the consent. The consent time is kept beside the
+  token (`youtube_token.json.consent`, written at each terminal consent; a
+  token consented before it existed is dated by the token file's time at
+  the next upload). Once the consent screen is published, add
+  `- youtube_app_published: true` to `## Podcast` to silence it.
 - **WARN (served feed)** - the newest `<item>` pubDate in the served
   `base_url/feed.xml` is more than 1 day older than the newest local
   primary-language episode dated today or earlier, for a podcast with an
