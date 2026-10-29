@@ -58,6 +58,10 @@ class PostPipelineUploads
     record_lingq_upload(lc[:collection], base_name, lesson_id)
 
     @logger.phase_end("LingQ Upload")
+  rescue LingQAgent::LessonExists => e # tracking success: the lesson is on LingQ, record it as LingQPublisher does (Q-82)
+    UploadTracker.for_config(@config).record(:lingq, lc[:collection], base_name, e.lesson_id)
+    @logger.log("  LingQ: lesson already exists (#{e.lesson_id}) — recorded")
+    @logger.phase_end("LingQ Upload")
   rescue => e # skippable: side effect after commit; tracker-based retry on next publish
     @logger.log("Warning: LingQ upload failed: #{e.class}: #{e.message} (non-fatal, continuing)")
     @logger.log(e.backtrace.first(3).join("\n"))
