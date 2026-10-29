@@ -481,8 +481,11 @@ module PodgenCLI
       @base_name = @config.episode_basename(@today)
       total = @source_duration.to_f
       keeps = AudioTrimmer.keep_segments(total, skip: skip, cut: cut, snip: snip).map { [it.from, it.to] }
+      point = AudioTrimmer.cut_point(cut, total)
       listening_archive.keep(@source_audio_path, basename: @base_name, record: listening_record.merge(
         source_duration: total, skip: skip&.to_f, cut: cut&.to_f,
+        cut_absolute: cut.nil? ? nil : cut.respond_to?(:absolute?) && cut.absolute?,
+        cut_point: (point if point && point > 0 && point < total),
         snip: snip&.intervals&.map { [it.from, it.to] }, kept_segments: keeps,
         final_duration: keeps.empty? ? total : keeps.sum { |from, to| to - from }.round(3)
       ))

@@ -79,4 +79,42 @@ class TestListeningArchive < Minitest::Test
     assert_equal 1, rows.length
     assert_nil rows.first["file"]
   end
+
+  def test_reject_with_corrupt_rejected_yml_raises_and_leaves_it_untouched
+    FileUtils.mkdir_p(@root)
+    path = File.join(@root, "rejected.yml")
+    ["- audio_url: a\n  reason: [unclosed\n", "just: a hash\n"].each do |body|
+      File.write(path, body)
+      assert_raises(RuntimeError) do
+        @archive.reject(@source, date: Date.new(2026, 10, 29), record: {title: "New", reason: "listened"})
+      end
+      assert_equal body, File.read(path), "earlier owner labels must never be replaced"
+    end
+  end
+
+  def test_keep_same_url_other_extension_leaves_one_source
+    FileUtils.mkdir_p(@root)
+    File.write(File.join(@root, "fiabe-2026-10-29.source.mp3"), "old")
+    File.write(File.join(@root, "fiabe-2026-10-29.trim.yml"), {"audio_url" => "https://ex.com/a.m4a"}.to_yaml)
+
+    @archive.keep(@source, basename: "fiabe-2026-10-29", record: {audio_url: "https://ex.com/a.m4a"})
+
+    assert_equal ["fiabe-2026-10-29.source.m4a", "fiabe-2026-10-29.trim.yml"], Dir.children(@root).sort
+  end
+
+  def test_keep_other_url_moves_the_existing_pair_aside
+    FileUtils.mkdir_p(@root)
+    File.write(File.join(@root, "fiabe-2026-10-29.source.mp3"), "first")
+    File.write(File.join(@root, "fiabe-2026-10-29.trim.yml"), {"audio_url" => "https://ex.com/first.mp3"}.to_yaml)
+    File.write(File.join(@root, "fiabe-2026-10-29.1.trim.yml"), {"audio_url" => "https://ex.com/zero.mp3"}.to_yaml)
+
+    @archive.keep(@source, basename: "fiabe-2026-10-29", record: {audio_url: "https://ex.com/a.m4a"})
+
+    assert_equal "first", File.read(File.join(@root, "fiabe-2026-10-29.2.source.mp3"))
+    assert_equal "https://ex.com/first.mp3", YAML.load_file(File.join(@root, "fiabe-2026-10-29.2.trim.yml"))["audio_url"]
+    assert_equal "https://ex.com/zero.mp3", YAML.load_file(File.join(@root, "fiabe-2026-10-29.1.trim.yml"))["audio_url"]
+    assert_equal "https://ex.com/a.m4a", YAML.load_file(File.join(@root, "fiabe-2026-10-29.trim.yml"))["audio_url"]
+    assert_equal File.binread(@source), File.binread(File.join(@root, "fiabe-2026-10-29.source.m4a"))
+    refute File.exist?(File.join(@root, "fiabe-2026-10-29.source.mp3"))
+  end
 end
