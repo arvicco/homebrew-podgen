@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require "open3"
 require "minitest/mock"
+require "yaml"
 require "episode_source"
 
 class TestEpisodeSource < Minitest::Test
@@ -165,11 +166,21 @@ class TestEpisodeSource < Minitest::Test
     end
   end
 
-  def test_fetch_next_same_host_match_never_prompts
+  # P10-0c: under --ask-trim a same-feed match is asked about too (a sequel
+  # must not be skipped forever); unattended it is still skipped.
+  def test_fetch_next_same_feed_match_prompt_keep_returns_candidate
     dup = rss_ep("Il lupo e il pastore", "#{SPREAKER}/24548/x.wav")
     s, = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] })
-    prompt = ->(_e, _m) { flunk "same-feed match must not prompt" }
-    capture_io { assert_nil with_rss { s.fetch_next(duplicate_prompt: prompt) } }
+    asked = []
+    prompt = ->(_e, match) { (asked << match[:same_feed]) && "k" }
+    assert_equal dup, with_rss { s.fetch_next(duplicate_prompt: prompt) }
+    assert_equal [true], asked
+  end
+
+  def test_fetch_next_same_feed_match_prompt_nil_skips
+    dup = rss_ep("Il lupo e il pastore", "#{SPREAKER}/24548/x.wav")
+    s, = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] })
+    capture_io { assert_nil with_rss { s.fetch_next(duplicate_prompt: nil) } }
   end
 
   def test_fetch_next_force_bypasses_title_guard
@@ -191,6 +202,44 @@ class TestEpisodeSource < Minitest::Test
     s, logger = guard_source(history: [LUPO_ENTRY], feeds: { "f" => [dup] }, min: 120, max: 600)
     capture_io { assert_nil with_rss { s.fetch_next } }
     refute(logger.lines.any? { |l| l.include?("Length filter") }, "length filter must not see the duplicate")
+  end
+
+  # P10-0b: same feed = host + first path segment, through redirector segments.
+  def test_feed_key_shapes
+    s = source
+    assert_equal "paroledistorie.net/podcast-download",
+      s.send(:feed_key, "https://paroledistorie.net/podcast-download/24548/il-lupo-e-il-pastore-una-favola-di-esopo.mp3")
+    assert_equal "anchor.fm/s/54a7b1e8", s.send(:feed_key, "https://anchor.fm/s/54a7b1e8/podcast/play/81353291/x.m4a")
+    assert_equal "dts.podtrac.com/redirect.mp3/videoweb.rtvslo.si",
+      s.send(:feed_key, "https://dts.podtrac.com/redirect.mp3/videoweb.rtvslo.si/podcast/a.mp3")
+    assert_nil s.send(:feed_key, "not a url")
+  end
+
+  def test_fetch_next_same_spreaker_item_reposted_is_same_feed
+    entry = LUPO_ENTRY.merge("urls" => ["https://paroledistorie.net/podcast-download/24548/il-lupo-e-il-pastore-una-favola-di-esopo.mp3"])
+    dup = rss_ep("Il lupo e il pastore", "https://paroledistorie.net/podcast-download/24548/il-lupo-e-il-pastore-e-altre-favole-di-esopo.wav")
+    s, = guard_source(history: [entry], feeds: {"f" => [dup]})
+    asked = []
+    capture_io { assert_nil with_rss { s.fetch_next(duplicate_prompt: ->(_e, m) { (asked << m[:same_feed]) && "" }) } }
+    assert_equal [true], asked, "the spreaker re-post is asked about as same feed"
+  end
+
+  def test_fetch_next_two_anchor_shows_are_other_feeds
+    entry = LUPO_ENTRY.merge("urls" => ["https://anchor.fm/s/11049c0a8/podcast/play/1/a.mp3"])
+    dup = rss_ep("Il lupo e il pastore", "https://anchor.fm/s/dcf9365c/podcast/play/2/b.mp3")
+    s, = guard_source(history: [entry], feeds: {"f" => [dup]})
+    asked = []
+    assert_equal dup, with_rss { s.fetch_next(duplicate_prompt: ->(_e, m) { (asked << m[:same_feed]) && "k" }) }
+    assert_equal [false], asked
+  end
+
+  def test_fetch_next_podtrac_to_two_real_hosts_are_other_feeds
+    entry = LUPO_ENTRY.merge("urls" => ["https://dts.podtrac.com/redirect.mp3/videoweb.rtvslo.si/podcast/a.mp3"])
+    dup = rss_ep("Il lupo e il pastore", "https://dts.podtrac.com/redirect.mp3/feeds.soundcloud.com/stream/b.mp3")
+    s, = guard_source(history: [entry], feeds: {"f" => [dup]})
+    asked = []
+    assert_equal dup, with_rss { s.fetch_next(duplicate_prompt: ->(_e, m) { (asked << m[:same_feed]) && "k" }) }
+    assert_equal [false], asked
   end
 
   def test_fetch_weighted_title_guard_skips_and_moves_to_next_feed

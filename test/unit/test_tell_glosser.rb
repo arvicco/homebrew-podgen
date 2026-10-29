@@ -17,6 +17,18 @@ class TestTellGlosser < Minitest::Test
     assert_includes client.calls.first[:content], "Agrammatical forms"
   end
 
+  # P10-0b: Tell is interactive — its Claude calls keep the 15 s bound
+  # (the SDK otherwise applies 600 s per request over the client's 15).
+  def test_gloss_request_keeps_the_tell_15s_bound
+    glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
+    client = MockAnthropicClient.new("danes(adv)today")
+    glosser.instance_variable_set(:@client, client)
+
+    glosser.gloss("danes", from: "sl", to: "en")
+
+    assert_equal({timeout: 15, max_retries: 0}, client.calls.first[:request_options])
+  end
+
   def test_gloss_translate_sends_prompt_with_translations
     glosser = Tell::Glosser.new("fake_key", model: "claude-opus-4-6")
     client = MockAnthropicClient.new("danes(adv)today je(v.aux.3p.pres.sg)is")
@@ -600,7 +612,7 @@ class TestTellGlosser < Minitest::Test
     end
 
     def create(model:, max_tokens:, messages:, request_options: nil)
-      @calls << { model: model, content: messages.first[:content] }
+      @calls << { model: model, content: messages.first[:content], request_options: request_options }
       MockResponse.new(@response_text)
     end
   end
