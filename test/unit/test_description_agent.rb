@@ -214,6 +214,19 @@ class TestDescriptionAgent < Minitest::Test
     assert_equal "", result
   end
 
+  # Q-106 (P12-1): a failed generation is a counted warning, not a plain line.
+  def test_generate_on_api_error_records_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    agent = DescriptionAgent.new(logger: logger)
+    agent.instance_variable_set(:@client, MockTextClient.new(nil, error: RuntimeError.new("API down")))
+
+    assert_equal "", agent.generate(title: "T", transcript: "Some transcript")
+    assert_equal ["[DescriptionAgent] Warning: Description generation failed: RuntimeError: API down"], warnings
+  end
+
   def test_generate_truncates_long_transcript
     agent = build_agent("Short description")
     client = agent.instance_variable_get(:@client)
