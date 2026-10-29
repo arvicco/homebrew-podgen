@@ -35,21 +35,23 @@ module AnthropicClient
   # registry resolves nil, so the API default applies. Structured-output
   # callers pass their other output_config keys (format:) to merge beside
   # effort (P6-0); the hash is fresh per call because the SDK rewrites
-  # output_config[:format] in place.
-  def self.effort_params(role, **output_config)
+  # output_config[:format] in place. Every call also carries request_options
+  # bounding one request to REQUEST_TIMEOUT with one SDK transport retry
+  # (P10-1, Q-87); a caller's own request_options merge over that bound.
+  def self.effort_params(role, request_options: nil, **output_config)
     effort = ClaudeModels.effort(role)
     output_config[:effort] = effort.to_sym if effort
-    output_config.empty? ? {} : {output_config: output_config}
+    params = {request_options: {timeout: REQUEST_TIMEOUT, max_retries: 1}.merge(request_options || {})}
+    output_config.empty? ? params : {output_config: output_config, **params}
   end
 
   private
 
   # REQUEST_TIMEOUT is the intended bound for one HTTP request (the SDK
   # default is 10 min, and with its internal retries a dead network cost
-  # hours — P1-13). Caveat found 2026-10-16 (Q-87): anthropic 1.21.0's
-  # messages.create merges its own 600 s default unless the call passes
-  # request_options, so today only calls that pass them (the reviewer's
-  # retry) are actually bound by this value. Longest observed calls: script
+  # hours — P1-13). anthropic 1.21.0's messages.create applies its own 600 s
+  # per request unless the call passes request_options, so effort_params
+  # carries this bound on every call (P10-1). Longest observed calls: script
   # ~90 s, enrichment ~80 s, reconciliation ~55 s.
   REQUEST_TIMEOUT = 300
 

@@ -59,8 +59,13 @@ send_telegram_alert() {
     > /dev/null 2>&1
 }
 
+# Hold system + idle sleep off for the job's lifetime: launchd can fire
+# inside a seconds-long dark wake that sleeps again mid-run (I-10, P10-6).
+KEEP_AWAKE=()
+command -v caffeinate > /dev/null 2>&1 && KEEP_AWAKE=(caffeinate -is)
+
 # ── Run generate ──
-bundle exec ruby bin/podgen --quiet generate "$PODCAST_NAME"
+"${KEEP_AWAKE[@]}" bundle exec ruby bin/podgen --quiet generate "$PODCAST_NAME"
 GEN_EXIT=$?
 
 if [ $GEN_EXIT -ne 0 ]; then
@@ -74,7 +79,7 @@ fi
 # ── Run publish (only if generate succeeded) ──
 if [ "$PUBLISH" = true ]; then
   echo "$(date '+%Y/%m/%d %H:%M:%S') podgen publish $PODCAST_NAME begin" >&2
-  bundle exec ruby bin/podgen publish "$PODCAST_NAME"
+  "${KEEP_AWAKE[@]}" bundle exec ruby bin/podgen publish "$PODCAST_NAME"
   PUB_EXIT=$?
   echo "$(date '+%Y/%m/%d %H:%M:%S') podgen publish $PODCAST_NAME end exit=$PUB_EXIT" >&2
   if [ $PUB_EXIT -ne 0 ]; then

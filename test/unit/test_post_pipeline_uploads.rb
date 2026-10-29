@@ -114,6 +114,51 @@ class TestPostPipelineUploads < Minitest::Test
     assert_includes uploads.warnings.first, "RuntimeError"
   end
 
+  # Q-82 (P10-5): the lesson is already on LingQ — a re-run of a published
+  # episode records it like LingQPublisher does, with no failure reported.
+  def test_lingq_lesson_exists_records_lesson_id_without_warning
+    uploads = build_uploads
+    agent = Object.new
+    agent.define_singleton_method(:upload) do |**_|
+      raise LingQAgent::LessonExists.new("A lesson with the same URL already exists", lesson_id: 4242)
+    end
+
+    LingQAgent.stub(:new, ->(**_) { agent }) do
+      uploads.upload_to_lingq(episode: {title: "T"}, transcript: "x",
+        audio_path: "/tmp/a.mp3", base_name: "ep-2026-03-10")
+    end
+
+    assert_empty uploads.warnings
+    data = YAML.load_file(File.join(@tmpdir, "uploads.yml"))
+    assert_equal 4242, data["lingq"]["12345"]["ep-2026-03-10"]
+    assert_includes @logger.messages, "  LingQ: lesson already exists (4242) — recorded"
+    refute(@logger.messages.any? { |m| m.include?("Warning") }, @logger.messages.inspect)
+  end
+
+  # CRPR round 1 W1: recording the existing lesson is the same skippable
+  # side effect; a failing tracker write must not escape the generate.
+  def test_lingq_lesson_exists_with_failing_tracker_write_is_skippable_warning
+    uploads = build_uploads
+    agent = Object.new
+    agent.define_singleton_method(:upload) do |**_|
+      raise LingQAgent::LessonExists.new("A lesson with the same URL already exists", lesson_id: 4242)
+    end
+    tracker = Object.new
+    tracker.define_singleton_method(:record) { |*_| raise Errno::EACCES, "uploads.yml" }
+
+    LingQAgent.stub(:new, ->(**_) { agent }) do
+      UploadTracker.stub(:for_config, ->(_) { tracker }) do
+        uploads.upload_to_lingq(episode: {title: "T"}, transcript: "x",
+          audio_path: "/tmp/a.mp3", base_name: "ep-2026-03-10")
+      end
+    end
+
+    assert_equal 1, uploads.warnings.size
+    assert_includes uploads.warnings.first, "Errno::EACCES"
+    assert(@logger.messages.any? { |m| m.start_with?("Warning: LingQ upload failed") && m.include?("Errno::EACCES") },
+      @logger.messages.inspect)
+  end
+
   # --- upload_to_youtube guards ---
 
   def test_youtube_skipped_when_not_enabled
