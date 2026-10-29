@@ -224,7 +224,8 @@ log, LingQ generate path, placeholder-key lint; phase clock 47m).
 Phase 11 (listening archive of untrimmed source audio and rejected
 candidates; 404 source URLs excluded in-run; YouTube token rejection
 logged and consent-age WARN; Exa network errors retried; uncounted
-content failures counted; trim-prompt re-ask) EXECUTING — adopted
-2026-10-29 15:40 on phase-11. R9-02, R10-01, R10-02 on the register;
-I-11 open (YouTube consent expires every 7 days while the OAuth app is
-in testing). Update this line at each gate.
+content failures counted; trim-prompt re-ask) AT GATE 11 — adopted
+2026-10-29 15:40, all packets landed, CRPR APPROVED (refs/cr/reviewed =
+8e85c7f); gate PR open, the owner merges. R9-02, R10-01, R10-02 on the
+register; I-11 open (YouTube consent expires every 7 days while the
+OAuth app is in testing). Update this line at each gate.
