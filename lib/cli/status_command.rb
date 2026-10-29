@@ -22,12 +22,15 @@ module PodgenCLI
   #          or the same publish warning in the last PUBLISH_REPEAT scheduled
   #          publishes (shared launchd stderr), or Twitter announcements
   #          stalled behind the newest episode (P3-2), or YouTube/LingQ
-  #          uploads stalled the same way, or the upload batch's stderr
+  #          uploads stalled the same way or holed mid-range (P10-4), or the upload batch's stderr
   #          names a not-authorized / quota condition (P7-1), or the served
-  #          base_url/feed.xml lags the newest local episode or cannot be
-  #          fetched (P7-2; the one network read, skipped with --offline)
+  #          base_url/feed.xml of a scheduled show lags the newest local
+  #          episode, or cannot be fetched (P7-2; the one network read,
+  #          skipped with --offline)
   #   OK   - otherwise; a show with no cadence whose newest episode is old is
-  #          noted "dormant — no cadence" (P3-4)
+  #          noted "dormant — no cadence" (P3-4); YouTube behind but uploading
+  #          in the batch log's window is noted "catching up", an unscheduled
+  #          show's served-feed lag "owner-paced" (P10-3)
   # Exit 0 when every podcast is OK, 1 otherwise, so a scheduled run can alert.
   class StatusCommand
     VERDICT_RANK = {"OK" => 0, "WARN" => 1, "OLD" => 2}.freeze
@@ -65,19 +68,28 @@ module PodgenCLI
     # begin marker (scripts/run_upl*.sh); it names conditions, never bodies.
     UPLOAD_SINCE = 7
     UPLOAD_LOG = File.join("logs", "uploads_stderr.log")
-    UPLOAD_MARKER_RE = %r{\A\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} podgen uploads \S* begin\b}
+    UPLOAD_MARKER_RE = %r{\A(\d{4})/(\d{2})/(\d{2}) \d{2}:\d{2}:\d{2} podgen uploads \S* begin\b}
+    QUOTA_CONDITION = "YouTube upload quota exceeded"
     UPLOAD_CONDITIONS = {
       /not authorized/i => "YouTube not authorized",
-      /uploadLimitExceeded|quotaExceeded/ => "YouTube upload quota exceeded"
+      /uploadLimitExceeded|quotaExceeded/ => QUOTA_CONDITION
     }.freeze
+    # Catching up (P10-3): the batch's stdout (logs/uploads_stdout.log) is
+    # undated; each batch opens one block ("uploads: <mode> mode across ...")
+    # whose summary names "<pod>: yt-uploaded N". Blocks pair with the stderr
+    # begin markers from the newest backwards (older blocks predate markers).
+    UPLOAD_STDOUT_LOG = File.join("logs", "uploads_stdout.log")
+    UPLOAD_BLOCK_RE = /\Auploads: \S+ mode across\b/
+    UPLOAD_COUNT_RE = /\A\s+(\S+): yt-uploaded (\d+)\b/
 
     def initialize(args, options, plist_dir: ScheduleCommand::LAUNCH_AGENTS_DIR, today: Date.today, publish_log: nil,
-      uploads_log: nil, served_feed: nil)
+      uploads_log: nil, served_feed: nil, uploads_stdout_log: nil)
       @options = options
       @plist_dir = plist_dir
       @today = today
       @publish_log = publish_log || File.join(PodcastConfig.root, PUBLISH_LOG)
       @uploads_log = uploads_log || File.join(PodcastConfig.root, UPLOAD_LOG)
+      @uploads_stdout_log = uploads_stdout_log || File.join(PodcastConfig.root, UPLOAD_STDOUT_LOG)
       @served_feed = served_feed || ServedFeed.new
       @offline = false
       @json = false
@@ -162,8 +174,9 @@ module PodgenCLI
       log_findings(config).each { |reason| escalate.call("WARN", reason) }
       publish_findings(config).each { |reason| escalate.call("WARN", reason) }
       announcements = announcement_progress(config, escalate)
-      uploads = upload_progress(config, escalate)
-      served_feed_findings(config).each { |reason| escalate.call("WARN", reason) }
+      inform = ->(reason) { reasons << reason } # an OK-level note, never escalates
+      uploads = upload_progress(config, escalate, inform)
+      served_feed_findings(config, inform).each { |reason| escalate.call("WARN", reason) }
       if verdict == "OK" && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
       end
@@ -369,8 +382,10 @@ module PodgenCLI
     # base_url/feed.xml vs the newest local primary-language episode dated
     # today or earlier (feed.xml carries the primary language; pre-generated
     # future episodes are not expected to be served yet). Fetch errors name
-    # the exception class or the HTTP code only, never a body.
-    def served_feed_findings(config)
+    # the exception class or the HTTP code only, never a body. The lag
+    # escalates only for a show with an installed launchd scheduler; an
+    # unscheduled show is published by the owner's hand (P10-3).
+    def served_feed_findings(config, inform)
       return [] if @offline || config.base_url.to_s.strip.empty?
 
       local = announced_episode_dates(config, []).select { |d| d <= @today }.max
@@ -380,7 +395,11 @@ module PodgenCLI
       return ["served feed has no dated items (local #{local})"] unless served
 
       behind = (local - served).to_i
-      (behind > SERVED_FEED_SLACK) ? ["served feed behind local by #{behind}d (served #{served}, local #{local})"] : []
+      return [] unless behind > SERVED_FEED_SLACK
+      return ["served feed behind local by #{behind}d (served #{served}, local #{local})"] if scheduled?(config.name)
+
+      inform.call("local ahead of served by #{behind}d (owner-paced)")
+      []
     rescue => e # skippable: a failed read-back is itself the finding (WARN); the other checks still run
       root = e.cause || e
       ["served feed fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
@@ -388,29 +407,96 @@ module PodgenCLI
 
     # --- upload progress (YouTube, LingQ; P7-1) ---
 
-    # {platform => {last_uploaded:, newest_episode:, stalled:}} for each
-    # platform the podcast configures, nil when none. Eligible episodes and
+    # {platform => {last_uploaded:, newest_episode:, stalled:, holes:}} for
+    # each platform the podcast configures, nil when none; YouTube adds
+    # catching_up:, recent_uploads:, behind: (P10-3). Eligible episodes and
     # tracker groups mirror YouTubePublisher / LingQPublisher (every scanned
-    # episode; playlist or "default", collection id).
-    def upload_progress(config, escalate)
+    # episode; playlist or "default", collection id). YouTube behind on
+    # dates but with uploads in the batch log's window is catching up (the
+    # backlog drains oldest first): an OK note, the quota stop joined to it.
+    def upload_progress(config, escalate, inform)
       platforms = upload_platforms(config)
       return nil if platforms.empty?
 
-      dates = EpisodeScanner.scan(config.episodes_dir).filter_map { |ep| EpisodeFiltering.parse_date(ep[:base_name]) }
+      eligible = EpisodeScanner.scan(config.episodes_dir).map { |ep| ep[:base_name] }
+      dates = eligible.filter_map { |b| EpisodeFiltering.parse_date(b) }
       newest = dates.max
+      conditions = platforms.key?("youtube") ? upload_log_conditions : []
       progress = platforms.to_h do |platform, group|
-        last = tracked_dates(config, platform, group).max
+        tracked = tracked_basenames(config, platform, group)
+        last = tracked.filter_map { |b| EpisodeFiltering.parse_date(b) }.max
         stalled = progress_stalled?(dates, last, UPLOAD_SINCE)
-        if stalled
+        holes = upload_holes(eligible, tracked)
+        entry = {last_uploaded: last&.to_s, newest_episode: newest&.to_s, stalled: stalled, holes: holes.size}
+        unless holes.empty?
+          escalate.call("WARN", "#{platform}: #{holes.size} untracked episode(s) inside the uploaded range, " \
+            "oldest #{holes.first}")
+        end
+        if platform == "youtube"
+          recent = recent_youtube_uploads[config.name]
+          entry.merge!(catching_up: stalled && recent.positive?, recent_uploads: recent,
+            behind: (eligible - tracked).size)
+        end
+        if entry[:catching_up]
+          entry[:stalled] = false
+          quota = conditions.delete(QUOTA_CONDITION) ? "; batch stops at the daily quota" : ""
+          inform.call("youtube catching up: #{recent} uploaded in the last #{UPLOAD_SINCE} d, " \
+            "#{entry[:behind]} behind#{quota}")
+        elsif stalled
           escalate.call("WARN", last ? "#{platform} uploads stalled since #{last} (newest episode #{newest})" :
             "#{platform} uploads never made (newest episode #{newest})")
         end
-        [platform, {last_uploaded: last&.to_s, newest_episode: newest&.to_s, stalled: stalled}]
+        [platform, entry]
       end
-      if platforms.key?("youtube")
-        upload_log_conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
-      end
+      conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
       progress
+    end
+
+    # Mid-gap holes (P10-4): eligible episodes dated strictly between the
+    # oldest and newest tracked dates, untracked, older than UPLOAD_SINCE
+    # days; oldest first. A backlog after the newest tracked date is never one.
+    def upload_holes(eligible, tracked)
+      tracked_dates = tracked.filter_map { |b| EpisodeFiltering.parse_date(b) }
+      return [] if tracked_dates.empty?
+
+      oldest, newest = tracked_dates.minmax
+      (eligible - tracked).select do |base_name|
+        date = EpisodeFiltering.parse_date(base_name)
+        date && date > oldest && date < newest && (@today - date).to_i > UPLOAD_SINCE
+      end.sort_by { |b| [EpisodeFiltering.parse_date(b), b] }
+    end
+
+    # {pod => YouTube uploads} summed over the stdout blocks whose paired
+    # begin marker is dated within UPLOAD_SINCE days; 0 for an absent pod.
+    def recent_youtube_uploads
+      @recent_youtube_uploads ||= begin
+        counts = Hash.new(0)
+        upload_stdout_blocks.reverse.zip(upload_marker_dates.reverse).each do |block, date|
+          break if date.nil? || (@today - date).to_i > UPLOAD_SINCE
+
+          block.each do |line|
+            m = line.match(UPLOAD_COUNT_RE)
+            counts[m[1]] += m[2].to_i if m
+          end
+        end
+        counts
+      end
+    end
+
+    def upload_stdout_blocks
+      return [] unless File.exist?(@uploads_stdout_log)
+
+      File.readlines(@uploads_stdout_log).map(&:scrub).slice_before { |l| l.match?(UPLOAD_BLOCK_RE) }
+        .select { |block| block.first.match?(UPLOAD_BLOCK_RE) }
+    end
+
+    def upload_marker_dates
+      return [] unless File.exist?(@uploads_log)
+
+      File.readlines(@uploads_log).filter_map do |line|
+        m = line.scrub.match(UPLOAD_MARKER_RE)
+        Date.new(m[1].to_i, m[2].to_i, m[3].to_i) if m
+      end
     end
 
     def upload_platforms(config)
@@ -458,10 +544,14 @@ module PodgenCLI
     end
 
     def tracked_dates(config, platform, group)
+      tracked_basenames(config, platform, group).filter_map { |b| EpisodeFiltering.parse_date(b) }
+    end
+
+    def tracked_basenames(config, platform, group)
       path = File.join(File.dirname(config.episodes_dir), "uploads.yml") # UploadTracker.for_config
       return [] unless File.exist?(path)
 
-      UploadTracker.new(path).entries_for(platform, group).keys.filter_map { |b| EpisodeFiltering.parse_date(b) }
+      UploadTracker.new(path).entries_for(platform, group).keys
     end
 
     def clip_middle(line)
