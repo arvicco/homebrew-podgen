@@ -432,7 +432,9 @@ class TestStatusCommand < Minitest::Test
     assert_equal 1, code
     assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-30 \(newest episode 2026-10-10\)/, out)
     row = JSON.parse(run_status("--json").first).first
-    assert_equal({"youtube" => {"last_uploaded" => "2026-09-30", "newest_episode" => "2026-10-10", "stalled" => true}},
+    assert_equal({"youtube" => {"last_uploaded" => "2026-09-30", "newest_episode" => "2026-10-10", "stalled" => true,
+                                "holes" => 0, "catching_up" => false, "recent_uploads" => 0, "behind" => 1,
+                                "queued_behind" => nil}},
       row["uploads"])
   end
 
@@ -557,10 +559,184 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- catching up: the batch stdout counts uploads (P10-3, Q-85) ---
+
+  def test_run_youtube_behind_but_uploading_in_window_reports_ok_catching_up_with_quota
+    catching_up_pod
+    write_upload_batches([["2026/10/01", ["  alpha: yt-uploaded 5"], []],
+      ["2026/10/09", ["  alpha: yt-uploaded 4", "  beta: yt-uploaded 2"], []],
+      ["2026/10/10", ["  alpha: yt-uploaded 6 (1 yt-errors)"], ["  ✗ alpha-2026-10-08 failed: uploadLimitExceeded: x"]]],
+      legacy: ["  alpha: yt-uploaded 7"])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+youtube catching up: 10 uploaded in the last 7 d, 4 behind; batch stops at the daily quota/, out)
+    refute_includes out, "stalled"
+    refute_includes out, "quota exceeded"
+    row = JSON.parse(run_status("--json").first).first
+    assert_equal({"last_uploaded" => "2026-09-21", "newest_episode" => "2026-10-10", "stalled" => false,
+                  "holes" => 0, "catching_up" => true, "recent_uploads" => 10, "behind" => 4,
+                  "queued_behind" => nil}, row["uploads"]["youtube"])
+  end
+
+  def test_run_youtube_catching_up_without_quota_has_no_quota_clause
+    catching_up_pod
+    write_upload_batches([["2026/10/10", ["  alpha: yt-uploaded 3"], []]])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/youtube catching up: 3 uploaded in the last 7 d, 4 behind; newest/, out)
+  end
+
+  def test_run_youtube_behind_with_zero_uploads_in_window_reports_stalled_and_quota
+    catching_up_pod
+    write_upload_batches([["2026/10/01", ["  alpha: yt-uploaded 5"], []],
+      ["2026/10/10", ["  alpha: yt-uploaded 0 (1 yt-errors)"], ["  ✗ alpha-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-21 \(newest episode 2026-10-10\)/, out)
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+    refute_includes out, "catching up"
+  end
+
+  # CRPR round 1 W2: stdout blocks are dated by the stdout marker before them.
+  def test_run_batch_without_stdout_block_does_not_shift_older_block_into_window
+    catching_up_pod
+    write_upload_batches([["2026/09/25", ["  alpha: yt-uploaded 5"], []], ["2026/10/09", nil, []]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/youtube uploads stalled since 2026-09-21/, out)
+    refute_includes out, "catching up"
+  end
+
+  def test_run_legacy_stdout_without_markers_pairs_blocks_by_stderr_position
+    catching_up_pod
+    write_upload_batches([["2026/09/25", ["  alpha: yt-uploaded 5"], []], ["2026/10/09", ["  alpha: yt-uploaded 3"], []]],
+      stdout_markers: false)
+    out, = run_status
+    assert_match(/youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+  end
+
+  def test_run_legacy_blocks_before_first_stdout_marker_pair_with_older_stderr_markers
+    catching_up_pod
+    write_uploads_log(upload_batch("2026/10/05", []) + upload_batch("2026/10/09", []) + upload_batch("2026/10/10", []),
+      marked: false)
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"),
+      (upload_block(["  alpha: yt-uploaded 9"]) + upload_block(["  alpha: yt-uploaded 2"]) +
+        ["2026/10/10 17:00:00 podgen uploads alpha,beta begin"] + upload_block(["  alpha: yt-uploaded 4"])).join("\n") + "\n")
+    out, = run_status
+    # 10/05 → 9 and 10/09 → 2 by position among the pre-marker batches, 10/10 → 4 by its own marker
+    assert_match(/youtube catching up: 15 uploaded in the last 7 d/, out)
+  end
+
+  # P10-3b: another show drained the batch's quota in the window; this one
+  # waits its turn in priority order, which is not a failure.
+  def test_run_youtube_stalled_while_another_show_uploads_reports_ok_queued_behind
+    catching_up_pod
+    write_upload_batches([["2026/10/09", ["  beta: yt-uploaded 4", "  alpha: yt-uploaded 0 (1 yt-errors)"], []],
+      ["2026/10/10", ["  beta: yt-uploaded 6", "  gamma: yt-uploaded 2"],
+        ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+youtube queued behind beta \(priority mode\): 0 uploaded in the last 7 d, 4 behind; newest/, out)
+    refute_includes out, "stalled"
+    refute_includes out, "quota exceeded"
+    yt = JSON.parse(run_status("--json").first).first["uploads"]["youtube"]
+    assert_equal ["beta", false, false], [yt["queued_behind"], yt["stalled"], yt["catching_up"]]
+  end
+
+  def test_run_youtube_stalled_with_other_show_progress_only_outside_window_reports_warn
+    catching_up_pod
+    write_upload_batches([["2026/10/01", ["  beta: yt-uploaded 10"], []],
+      ["2026/10/10", ["  beta: yt-uploaded 0 (1 yt-errors)"], ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-21/, out)
+    assert_match(/uploads_stderr\.log: YouTube upload quota exceeded/, out)
+    refute_includes out, "queued behind"
+    assert_nil JSON.parse(run_status("--json").first).first["uploads"]["youtube"]["queued_behind"]
+  end
+
+  # P10-3c: the shared quota stop warns only while the batch is stuck.
+  def test_run_current_show_gets_no_quota_line_when_another_show_progressed
+    current_youtube_pod
+    write_upload_batches([["2026/10/10", ["  beta: yt-uploaded 10"], ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+newest 2026-10-10/, out)
+    refute_includes out, "quota"
+  end
+
+  def test_run_current_show_quota_warns_when_no_show_progressed
+    current_youtube_pod
+    write_upload_batches([["2026/10/01", ["  beta: yt-uploaded 10"], []],
+      ["2026/10/10", ["  beta: yt-uploaded 0 (1 yt-errors)"], ["  ✗ beta-2026-10-08 failed: uploadLimitExceeded: x"]]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+uploads_stderr\.log: YouTube upload quota exceeded/, out)
+  end
+
+  def test_run_not_authorized_still_warns_when_another_show_progressed
+    current_youtube_pod
+    write_upload_batches([["2026/10/10", ["  beta: yt-uploaded 10"], ["  ✗ alpha-2026-10-10 skipped: YouTube not authorized: x"]]])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube not authorized/, out)
+  end
+
+  def test_run_served_feed_behind_for_unscheduled_show_is_owner_paced_ok
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-07 alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { feed_xml("Wed, 07 Oct 2026 06:00:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+local ahead of served by 3d \(owner-paced\)/, out)
+    refute_includes out, "served feed behind"
+  end
+
+  # --- mid-gap upload holes (P10-4, Q-83) ---
+
+  def test_run_untracked_episode_inside_uploaded_range_reports_hole_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-08-20 alpha-2026-09-11 alpha-2026-10-10])
+    tracked = {"alpha-2026-08-01" => "v1", "alpha-2026-08-20" => "v2", "alpha-2026-10-10" => "v4"}
+    write_uploads("alpha", "youtube" => {"PL1" => tracked})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+youtube: 1 untracked episode\(s\) inside the uploaded range, oldest alpha-2026-09-11/, out)
+    assert_equal 1, JSON.parse(run_status("--json").first).first["uploads"]["youtube"]["holes"]
+  end
+
+  def test_run_lingq_holes_counted_with_oldest_named
+    make_pod("alpha", dates: fresh_dates, sections: LINGQ)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-08-20 alpha-2026-09-11 alpha-2026-10-10])
+    write_uploads("alpha", "lingq" => {"123" => {"alpha-2026-08-01" => 1, "alpha-2026-10-10" => 4}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/lingq: 2 untracked episode\(s\) inside the uploaded range, oldest alpha-2026-08-20/, out)
+  end
+
+  def test_run_backlog_after_newest_tracked_is_never_a_hole
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-08-20 alpha-2026-09-11 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-08-01" => "v1", "alpha-2026-08-20" => "v2"}})
+    out, = run_status
+    refute_includes out, "inside the uploaded range"
+    assert_equal 0, JSON.parse(run_status("--json").first).first["uploads"]["youtube"]["holes"]
+  end
+
+  def test_run_recent_untracked_episode_inside_range_is_not_a_hole_yet
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-01 alpha-2026-10-04 alpha-2026-10-05 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-09-01" => "v1", "alpha-2026-10-10" => "v2"}})
+    out, code = run_status
+    assert_equal 0, code, out
+    refute_includes out, "inside the uploaded range"
+  end
+
   # --- served feed read-back (P7-2) ---
 
   def test_run_served_feed_five_days_behind_local_reports_warn
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>") # scheduled: the lag escalates
     make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
     seen = nil
     @feed_fetcher = ->(url) { (seen = url) && feed_xml("Mon, 05 Oct 2026 06:00:00 +0200") }
@@ -901,6 +1077,45 @@ class TestStatusCommand < Minitest::Test
 
   def upload_batch(date, lines)
     ["#{date} 17:00:00 podgen uploads alpha,beta begin", *lines, "#{date} 17:20:00 podgen uploads alpha,beta end exit=0"]
+  end
+
+  # Episodes 09-20..10-10 with YouTube tracked only up to 09-21: newest-vs-
+  # newest reads stalled; 4 eligible episodes are untracked.
+  def catching_up_pod
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-20 alpha-2026-09-21 alpha-2026-09-22 alpha-2026-10-08 alpha-2026-10-09
+      alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-09-20" => "v1", "alpha-2026-09-21" => "v2"}})
+  end
+
+  # YouTube tracked up to the newest episode: not stalled.
+  def current_youtube_pod
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-10-09 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-10-09" => "v1", "alpha-2026-10-10" => "v2"}})
+  end
+
+  # Both logs of the scheduled batch: the stderr carries the dated begin/end
+  # markers, the stdout one undated block per batch (UploadsCommand output).
+  # batches: [[marker date, summary lines, stderr lines]]; legacy: a stdout
+  # block from before the markers existed (pairs with no marker). By default
+  # the stdout carries scripts/run_uploads.sh's dated begin marker before
+  # each block (production shape); stdout_markers: false writes the legacy
+  # shape. A nil summary is a batch that died before its "uploads:" line.
+  def write_upload_batches(batches, legacy: nil, stdout_markers: true)
+    blocks = legacy ? upload_block(legacy) : []
+    batches.each do |date, summary, _|
+      blocks << "#{date} 17:00:00 podgen uploads alpha,beta begin" if stdout_markers
+      blocks.concat(upload_block(summary)) if summary
+    end
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), blocks.join("\n") + "\n")
+    write_uploads_log(batches.flat_map { |date, _, err| upload_batch(date, err) }, marked: false)
+  end
+
+  def upload_block(summary)
+    ["uploads: priority mode across alpha, beta", "─── alpha ───", "─── summary ───", *summary,
+      "uploads: total YT uploaded 0"]
   end
 
   def write_log(pod, file, lines, mtime:)

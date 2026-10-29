@@ -76,7 +76,7 @@ class TestCharacterizationReconcilers < Minitest::Test
     end
 
     call = fake.calls.first
-    assert_equal %i[max_tokens messages model], call.keys.sort, "no system: key"
+    assert_equal %i[max_tokens messages model request_options], call.keys.sort, "no system: key"
     assert_equal 4096, call[:max_tokens], "max(4096, segments * 80)"
     many = Array.new(60) { |i| {"start" => i.to_f, "end" => i + 1.0, "text" => "x"} }
     fake2 = FakeSubtitleClient.new(JSON.generate(many))
@@ -149,7 +149,7 @@ class TestCharacterizationReconcilers < Minitest::Test
     assert_kind_of String, result
     assert_equal "Merged text.", result
     call = client.calls.first
-    assert_equal %i[max_tokens messages model system], call.keys.sort
+    assert_equal %i[max_tokens messages model request_options system], call.keys.sort
     assert_equal 16384, call[:max_tokens]
   end
 

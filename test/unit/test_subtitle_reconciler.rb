@@ -237,7 +237,7 @@ class TestSubtitleReconciler < Minitest::Test
 
     mock_messages = Minitest::Mock.new
     mock_messages.expect(:create, api_response,
-      [], model: String, max_tokens: Integer, messages: Array)
+      [], model: String, max_tokens: Integer, messages: Array, request_options: Hash)
 
     mock_client = Struct.new(:messages).new(mock_messages)
 

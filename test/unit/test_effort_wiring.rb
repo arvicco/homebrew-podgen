@@ -126,6 +126,30 @@ class TestEffortWiring < Minitest::Test
     end
   end
 
+  # P10-1 (Q-87): every role's request carries the bounded request options,
+  # so anthropic 1.21.0's 600 s per-request default never applies.
+  # Tell is interactive and keeps its own 15 s, no-retry bound (P10-0b).
+  TELL_ROLES = %i[tell_translate gloss].freeze
+
+  SITES.each do |role, (_format, drive)|
+    define_method(:"test_#{role}_request_carries_the_bounded_request_options") do
+      opts = capture(drive)[:request_options]
+      expected = TELL_ROLES.include?(role) ? {timeout: 15, max_retries: 0} : {timeout: AnthropicClient::REQUEST_TIMEOUT, max_retries: 1}
+
+      assert_equal expected, opts, "role #{role}"
+    end
+  end
+
+  def test_vocab_enrich_call_carries_the_bounded_request_options
+    opts = capture(->(c) {
+      annotator = VocabularyAnnotator.new("k")
+      annotator.instance_variable_set(:@client, c)
+      annotator.send(:call_enrich_api, [{lemma: "beseda"}], language: "Slovenian", target_language: "English", filters: {})
+    })[:request_options]
+
+    assert_equal({timeout: AnthropicClient::REQUEST_TIMEOUT, max_retries: 1}, opts)
+  end
+
   def test_vocab_enrich_call_carries_effort_too
     ENV["CLAUDE_EFFORT_VOCAB"] = "low"
     config = capture(->(c) {

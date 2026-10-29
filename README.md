@@ -590,6 +590,10 @@ For `skip`, both formats mean "start playback from this point" — `skip: 80` an
 
 CLI flags `--skip N` / `--cut N` override per-feed values. `skip`/`cut` in `## Audio` is used as a fallback if neither CLI flag nor per-feed config is set.
 
+#### Re-post guard
+
+Episode selection skips candidates whose audio URL is already in history, and also candidates whose *title* matches an earlier episode — sources re-post a story under a new URL with an extended title. Titles are compared case-, accent- and punctuation-folded, with any subtitle after `. `, ` — `, ` – `, ` - `, `: ` or ` | ` dropped; a match is an equal stem, one stem a prefix of the other (shorter ≥ 12 chars), or ≥ 80% overlap of words of 3+ letters — and never when the two titles carry different numbers (`Part 1` vs `Part 2`). A sequel without a number (`L'investigatore Poldo` → `… ha colpito ancora`) still matches; the `--ask-trim` prompt is the net for it. The check runs before the length filter and before any download. In unattended runs a match is skipped with `Already processed as <basename> (<date>): title match "<old title>"` on stderr and in the log, and the next candidate is tried. With `--ask-trim` every match prompts instead, naming whether it comes from the same feed — the candidate's feed key (audio host plus first path segment, read through redirectors such as podtrac's `redirect.mp3/<host>` and anchor.fm's `s/<show>`) equals one recorded on the matching history entry: `[d]uplicate skip / [k]eep (same feed — likely a re-post; earlier: <basename> "<old title>")` or `[d]uplicate skip / [k]eep (other feed — possibly a different telling; earlier: …)`. Anything but `k` (blank and EOF included) skips. `--force` bypasses the guard.
+
 #### Episode length filtering
 
 Set `min_length` / `max_length` in `## Sources` to filter out episodes outside the desired duration range:
@@ -1177,6 +1181,8 @@ podgen schedule ruby_world --remove
 
 **Note:** macOS must be awake at the scheduled time. Keep the machine plugged in and disable sleep, or use `caffeinate`.
 
+Once started, the wrappers (`scripts/run.sh`, `scripts/run_uploads.sh`) hold the Mac awake for the job's lifetime: the podgen command runs under `caffeinate -is` when `caffeinate` is on the PATH (plain otherwise, exit codes unchanged). The generate preflight then waits up to 120 s for the network (one lookup every 10 s) and fails with `no network after 120 s (preflight; the Mac may have been asleep)`. A job that launchd fires inside a seconds-long dark wake can still be lost before the wrapper starts; preventing that needs a macOS energy setting (no automatic sleep at the scheduled time, or a `pmset repeat wake` shortly before it).
+
 ### podgen status (content-progress check)
 
 `podgen status` prints one line per podcast (podcasts with an installed launchd
@@ -1260,10 +1266,36 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   the last 7 days; a log with no marker yet reports nothing) adds one line
   per condition found, naming it only: `uploads_stderr.log: YouTube not authorized` /
   `uploads_stderr.log: YouTube upload quota exceeded`.
+- **OK (catching up)** - YouTube is behind by the rule above, but the
+  batch uploaded videos for the podcast in the last 7 days (the sum of its
+  `<pod>: yt-uploaded N` summary lines in `logs/uploads_stdout.log`, each
+  batch dated by the begin marker `scripts/run_uploads.sh` writes before it;
+  older batches without one pair with the markers in `uploads_stderr.log`): the backlog is
+  draining oldest first, so the line is a note, not a WARN —
+  `youtube catching up: 10 uploaded in the last 7 d, 112 behind` (behind =
+  eligible episodes not yet tracked). A quota stop in the latest batch joins
+  that line as `; batch stops at the daily quota` instead of its own WARN.
+  When this show uploaded nothing but another show did in the window, the
+  batch's priority order is the cause and the line is a note without the
+  quota WARN: `youtube queued behind bajke (priority mode): 0 uploaded in the last 7 d, 120 behind`.
+  The quota condition is a WARN only while no YouTube show uploaded anything
+  in the window (the batch is stuck); once some show progressed it is the
+  daily cap, so a current show gets no quota line at all (`not authorized`
+  always warns). With no show uploading in the window the stalled WARN stands. LingQ has no batch
+  count and keeps the plain rule.
+- **WARN (upload holes)** - per upload platform, eligible episodes dated
+  strictly between the oldest and the newest tracked upload, untracked and
+  older than 7 days (a stuck episode while newer uploads keep landing):
+  `youtube: 1 untracked episode(s) inside the uploaded range, oldest fiabe-2026-05-14`
+  (same for `lingq`). A backlog after the newest tracked upload is never a
+  hole.
 - **WARN (served feed)** - the newest `<item>` pubDate in the served
   `base_url/feed.xml` is more than 1 day older than the newest local
-  primary-language episode dated today or earlier:
+  primary-language episode dated today or earlier, for a podcast with an
+  installed launchd scheduler:
   `served feed behind local by 5d (served 2026-10-05, local 2026-10-10)`. A
+  podcast without one is published by hand, so its lag is an OK note:
+  `local ahead of served by 3d (owner-paced)`. A
   failed fetch (5s connect / 10s read timeout, one retry) names only the
   error class or HTTP code: `served feed fetch failed: SocketError`.
 - **OK** - otherwise.
@@ -1285,7 +1317,10 @@ when unknown (`age_days` is negative for a scheduled, future-dated episode);
 dates (`null` when none) and `stalled` is the announcement check's verdict.
 `uploads` is `null` when no upload platform is configured; otherwise one
 entry per platform (`youtube`, `lingq`) of the same shape, with
-`last_uploaded`.
+`last_uploaded` and `holes` (the count of mid-gap untracked episodes); `youtube` adds `catching_up` (boolean; `stalled` is then
+`false`), `recent_uploads` (the batch log's count over the last 7 days) and
+`behind` (eligible episodes not yet tracked) and `queued_behind` (the show
+it waits behind, or `null`).
 
 The daily check is installed by the owner only (`podgen status --install-hint`
 prints the command): `bin/podgen schedule --status-check --time 07:00` writes
@@ -1542,6 +1577,7 @@ podgen/
 │   │   ├── engine_manager.rb      # Single or parallel comparison mode
 │   │   └── transcript_merger.rb   # Claude merge of multi-engine transcripts
 │   ├── episode_source.rb     # Episode acquisition: local/YouTube/RSS, dedup, length filter
+│   ├── title_match.rb        # Normalized-title match for the re-post guard
 │   ├── youtube_downloader.rb # yt-dlp wrapper (metadata, audio download, captions)
 │   ├── audio_trimmer.rb      # Trimming: skip/cut/snip, autotrim outro
 │   ├── audio_assembler.rb    # ffmpeg wrapper (assembly, loudnorm, ID3)

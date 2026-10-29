@@ -208,7 +208,9 @@ module PodgenCLI
 
     def acquire_rss
       logger.phase_start("Fetch Episode")
-      @episode = @episode_source.fetch_next(force: @options[:force], rss_filter: @rss_filter)
+      duplicate_prompt = @options[:ask_trim] ? method(:ask_duplicate_interactive) : nil
+      @episode = @episode_source.fetch_next(force: @options[:force], rss_filter: @rss_filter,
+        duplicate_prompt: duplicate_prompt)
       unless @episode
         logger.error("No new episodes found in RSS feeds")
         return 1
@@ -365,6 +367,15 @@ module PodgenCLI
       return unless @preview_started
       system("osascript", "-e", PREVIEW_CLOSE_SCRIPT, [:out, :err] => "/dev/null")
       @preview_started = false
+    end
+
+    # Re-post guard (Q-88): a candidate whose title matches an earlier
+    # episode — asked before any download; anything but k = skip.
+    def ask_duplicate_interactive(episode, match)
+      kind = match[:same_feed] ? "same feed — likely a re-post" : "other feed — possibly a different telling"
+      $stderr.puts "\nCandidate \"#{episode[:title]}\" matches an earlier episode by title."
+      $stderr.print "[d]uplicate skip / [k]eep (#{kind}; earlier: #{match[:basename]} \"#{match[:title]}\"): "
+      $stdin.gets&.strip
     end
 
     def ask_trim_interactive

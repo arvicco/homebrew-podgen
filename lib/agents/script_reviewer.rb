@@ -359,7 +359,6 @@ class ScriptReviewer
   end
 
   def request_ai_review(script, max_tokens, retries: 2, request_options: nil)
-    options = request_options ? { request_options: request_options.dup } : {}
     with_retries(max: retries, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
       message, elapsed = measure_time do
         @client.messages.create(
@@ -367,8 +366,7 @@ class ScriptReviewer
           max_tokens: max_tokens,
           system: build_review_system_prompt,
           messages: [{ role: "user", content: build_review_user_message(script) }],
-          **AnthropicClient.effort_params(:reviewer, format: ScriptReview),
-          **options
+          **AnthropicClient.effort_params(:reviewer, format: ScriptReview, request_options: request_options)
         )
       end
 
