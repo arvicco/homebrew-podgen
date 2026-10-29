@@ -216,6 +216,11 @@ hardening). Gate 8 CLOSED 2026-10-28
 authority; phase clock 56m). Gate 9 CLOSED 2026-10-28 18:04 (PR #11,
 merge a177a33 — vocabulary didactics: ledger, key words, level bands,
 gloss cache, grouped section, vocab-health measurement, revocab ranges;
-phase clock 1h 42m). Phase 10: slate presented (.docs/p10-slate.md),
-awaiting the owner's name; R9-01 and R9-02 on the register.
+phase clock 1h 42m). Phase 10 (resilience of the scheduled run + a
+truthful board: re-post guard at selection, the intended timeout on
+every Claude call, caffeinate + bounded preflight, upload progress read
+from the batch log, LingQ generate path, placeholder-key lint) AT GATE
+10 — adopted 2026-10-29 06:23, all packets landed, CRPR APPROVED
+(refs/cr/reviewed = 91ffbc3); gate PR open, the owner merges. R9-02,
+R10-01, R10-02 on the register (R9-01 withdrawn: the cause was sleep).
 Update this line at each gate.
