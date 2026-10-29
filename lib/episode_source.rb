@@ -239,10 +239,10 @@ class EpisodeSource
   # Re-post guard (Q-88, P10-0): sources re-post a story under a new audio
   # URL with an extended title, which the URL exclusion cannot see. A
   # candidate whose title matches a history title (TitleMatch) is skipped
-  # when its audio host equals a host recorded on that entry (same feed),
-  # or when it comes from another feed and no prompt is given. Other-feed
-  # matches under a prompt stay in the list as `pending` and are asked
-  # about only when they would be the pick (still before any download).
+  # when no prompt is given. Under a prompt (--ask-trim) matches stay in
+  # the list as `pending` and are asked about only when they would be the
+  # pick (still before any download); the match says whether its feed_key
+  # equals one recorded on that entry (same feed — likely a re-post).
   # Returns [kept_episodes, pending (identity hash episode → match)].
   def guard_titles(episodes, force:, prompt:)
     pending = {}.compare_by_identity
@@ -255,7 +255,7 @@ class EpisodeSource
       match = title_match_for(ep, index)
       next false unless match
 
-      if match[:same_feed] || prompt.nil?
+      if prompt.nil?
         report_title_duplicate(match)
         next true
       end
@@ -271,7 +271,7 @@ class EpisodeSource
       next true unless match
 
       if prompt.call(ep, match).to_s.strip.downcase == "k"
-        log("Keeping \"#{ep[:title]}\" as a different telling (earlier: #{match[:basename]})")
+        log("Keeping \"#{ep[:title]}\" (earlier: #{match[:basename]})")
         next true
       end
       report_title_duplicate(match)
@@ -288,14 +288,14 @@ class EpisodeSource
   # The history match for a candidate (a same-feed match wins over an
   # other-feed one), or nil when no history title matches.
   def title_match_for(episode, index)
-    stem = TitleMatch.stem(episode[:title])
-    return nil if stem.empty?
+    key = TitleMatch.key(episode[:title])
+    return nil if key.stem.empty?
 
-    matches = index.select { |entry| TitleMatch.stems_match?(entry[:stem], stem) }
+    matches = index.select { |entry| TitleMatch.keys_match?(entry[:key], key) }
     return nil if matches.empty?
 
-    host = url_host(episode[:audio_url])
-    same = host && matches.find { |m| m[:hosts].include?(host) }
+    feed = feed_key(episode[:audio_url])
+    same = feed && matches.find { |m| m[:feeds].include?(feed) }
     (same || matches.first).merge(same_feed: !same.nil?)
   end
 
@@ -305,12 +305,25 @@ class EpisodeSource
       next if title.strip.empty?
 
       {basename: e["basename"] || e["date"], date: e["date"], title: title,
-       stem: TitleMatch.stem(title), hosts: (e["urls"] || []).filter_map { |u| url_host(u) }.to_set}
+       key: TitleMatch.key(title), feeds: (e["urls"] || []).filter_map { |u| feed_key(u) }.to_set}
     end
   end
 
-  def url_host(url)
-    URI.parse(url.to_s).host&.downcase
+  # Path segments that name a redirector or a hosting platform's show
+  # prefix, not the feed: the next segment joins the key (podtrac's
+  # `redirect.mp3/<real host>`, anchor.fm's `s/<show>`).
+  REDIRECT_SEGMENTS = %w[redirect r track e p s].freeze
+
+  # Same-feed key (P10-0b): host + first path segment, plus the next
+  # segment when the first is a redirector (ends in .mp3 or is listed).
+  def feed_key(url)
+    uri = URI.parse(url.to_s)
+    return nil unless uri.host
+
+    segments = uri.path.to_s.split("/").reject(&:empty?)
+    first = segments.first.to_s.downcase
+    take = (first.end_with?(".mp3") || REDIRECT_SEGMENTS.include?(first)) ? 2 : 1
+    [uri.host.downcase, *segments.first(take)].join("/")
   rescue URI::InvalidURIError
     nil
   end

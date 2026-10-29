@@ -46,6 +46,19 @@ class TestTitleMatch < Minitest::Test
     assert TitleMatch.match?("La volpe e l'uva — favola", "L'uva e la volpe")
   end
 
+  def test_match_different_number_tokens_do_not_match
+    refute TitleMatch.match?("Planeta Przyjaźni 1", "Planeta Przyjaźni 2")
+    refute TitleMatch.match?("Pinocchio. Capitolo 1", "Pinocchio. Capitolo 2")
+  end
+
+  def test_match_same_number_tokens_still_match
+    assert TitleMatch.match?("Planeta Przyjaźni 2", "Planeta Przyjaźni 2 — bajka")
+  end
+
+  def test_match_sequel_without_numbers_still_matches
+    assert TitleMatch.match?("L'investigatore Poldo", "L'investigatore Poldo ha colpito ancora")
+  end
+
   def test_match_blank_titles_never_match
     refute TitleMatch.match?("", "")
     refute TitleMatch.match?(nil, "Il lupo e il pastore")
