@@ -442,6 +442,18 @@ class TestEpisodeSource < Minitest::Test
     assert_equal 1, data.count("http://example.com/ep.mp3")
   end
 
+  # Q-100 (P11-1): the pipeline excludes a gone URL and asks again in the
+  # same run — the next pick must not return it, even under --force.
+  def test_fetch_next_skips_url_excluded_this_run_even_under_force
+    gone = rss_ep("Gone", "https://h.com/a.mp3")
+    nxt = rss_ep("Next", "https://h.com/b.mp3")
+    s, = guard_source(history: [], feeds: { "f" => [gone, nxt] })
+    s.exclude_url!(gone[:audio_url])
+
+    assert_equal nxt, with_rss { s.fetch_next }
+    assert_equal nxt, with_rss { s.fetch_next(force: true) }
+  end
+
   def test_exclude_url_noop_without_path
     s = source(rss_feeds: ["https://a.com/feed"])
     # Should not raise

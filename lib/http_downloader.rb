@@ -18,6 +18,18 @@ class HttpDownloader
   MAX_REDIRECTS = 6
   MAX_SIZE = 200 * 1024 * 1024 # 200 MB
   USER_AGENT = "PodcastAgent/1.0"
+  # Statuses that will not change on a retry (Q-100, P11-1): one attempt.
+  PERMANENT_STATUSES = [404, 410].freeze
+
+  # The resource is gone for good (404/410); +status+ is the HTTP code.
+  class Gone < StandardError
+    attr_reader :status
+
+    def initialize(status, url)
+      @status = status
+      super("HTTP #{status} downloading #{url}")
+    end
+  end
 
   def initialize(logger: nil, max_size: MAX_SIZE)
     @logger = logger
@@ -30,10 +42,14 @@ class HttpDownloader
   def download(url, path)
     log("Downloading: #{url}")
 
+    gone = nil
     with_retries(max: MAX_RETRIES, on: [StandardError], label: "Download") do
       uri = URI.parse(url)
       fetch(uri, path)
+    rescue Gone => e
+      gone = e # permanent: leave the retry loop after one attempt
     end
+    raise gone if gone
 
     raise "Downloaded file is empty: #{url}" unless File.size(path) > 0
 
@@ -54,6 +70,7 @@ class HttpDownloader
         when Net::HTTPRedirection
           follow_redirect(response, uri, path, redirects_left)
         else
+          raise Gone.new(response.code.to_i, uri) if PERMANENT_STATUSES.include?(response.code.to_i)
           raise "HTTP #{response.code} downloading #{uri}"
         end
       end
