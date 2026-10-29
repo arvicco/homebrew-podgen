@@ -1270,6 +1270,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   that line as `; batch stops at the daily quota` instead of its own WARN.
   With no uploads in the window the stalled WARN stands. LingQ has no batch
   count and keeps the plain rule.
+- **WARN (upload holes)** - per upload platform, eligible episodes dated
+  strictly between the oldest and the newest tracked upload, untracked and
+  older than 7 days (a stuck episode while newer uploads keep landing):
+  `youtube: 1 untracked episode(s) inside the uploaded range, oldest fiabe-2026-05-14`
+  (same for `lingq`). A backlog after the newest tracked upload is never a
+  hole.
 - **WARN (served feed)** - the newest `<item>` pubDate in the served
   `base_url/feed.xml` is more than 1 day older than the newest local
   primary-language episode dated today or earlier, for a podcast with an
@@ -1298,7 +1304,7 @@ when unknown (`age_days` is negative for a scheduled, future-dated episode);
 dates (`null` when none) and `stalled` is the announcement check's verdict.
 `uploads` is `null` when no upload platform is configured; otherwise one
 entry per platform (`youtube`, `lingq`) of the same shape, with
-`last_uploaded`; `youtube` adds `catching_up` (boolean; `stalled` is then
+`last_uploaded` and `holes` (the count of mid-gap untracked episodes); `youtube` adds `catching_up` (boolean; `stalled` is then
 `false`), `recent_uploads` (the batch log's count over the last 7 days) and
 `behind` (eligible episodes not yet tracked).
 

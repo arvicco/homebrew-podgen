@@ -433,7 +433,7 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-30 \(newest episode 2026-10-10\)/, out)
     row = JSON.parse(run_status("--json").first).first
     assert_equal({"youtube" => {"last_uploaded" => "2026-09-30", "newest_episode" => "2026-10-10", "stalled" => true,
-                                "catching_up" => false, "recent_uploads" => 0, "behind" => 1}},
+                                "holes" => 0, "catching_up" => false, "recent_uploads" => 0, "behind" => 1}},
       row["uploads"])
   end
 
@@ -573,7 +573,7 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "quota exceeded"
     row = JSON.parse(run_status("--json").first).first
     assert_equal({"last_uploaded" => "2026-09-21", "newest_episode" => "2026-10-10", "stalled" => false,
-                  "catching_up" => true, "recent_uploads" => 10, "behind" => 4}, row["uploads"]["youtube"])
+                  "holes" => 0, "catching_up" => true, "recent_uploads" => 10, "behind" => 4}, row["uploads"]["youtube"])
   end
 
   def test_run_youtube_catching_up_without_quota_has_no_quota_clause
@@ -603,6 +603,46 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
     assert_match(/alpha\s+OK\s+local ahead of served by 3d \(owner-paced\)/, out)
     refute_includes out, "served feed behind"
+  end
+
+  # --- mid-gap upload holes (P10-4, Q-83) ---
+
+  def test_run_untracked_episode_inside_uploaded_range_reports_hole_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-08-20 alpha-2026-09-11 alpha-2026-10-10])
+    tracked = {"alpha-2026-08-01" => "v1", "alpha-2026-08-20" => "v2", "alpha-2026-10-10" => "v4"}
+    write_uploads("alpha", "youtube" => {"PL1" => tracked})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+youtube: 1 untracked episode\(s\) inside the uploaded range, oldest alpha-2026-09-11/, out)
+    assert_equal 1, JSON.parse(run_status("--json").first).first["uploads"]["youtube"]["holes"]
+  end
+
+  def test_run_lingq_holes_counted_with_oldest_named
+    make_pod("alpha", dates: fresh_dates, sections: LINGQ)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-08-20 alpha-2026-09-11 alpha-2026-10-10])
+    write_uploads("alpha", "lingq" => {"123" => {"alpha-2026-08-01" => 1, "alpha-2026-10-10" => 4}})
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/lingq: 2 untracked episode\(s\) inside the uploaded range, oldest alpha-2026-08-20/, out)
+  end
+
+  def test_run_backlog_after_newest_tracked_is_never_a_hole
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-08-01 alpha-2026-08-20 alpha-2026-09-11 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-08-01" => "v1", "alpha-2026-08-20" => "v2"}})
+    out, = run_status
+    refute_includes out, "inside the uploaded range"
+    assert_equal 0, JSON.parse(run_status("--json").first).first["uploads"]["youtube"]["holes"]
+  end
+
+  def test_run_recent_untracked_episode_inside_range_is_not_a_hole_yet
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    make_episodes("alpha", %w[alpha-2026-09-01 alpha-2026-10-04 alpha-2026-10-05 alpha-2026-10-10])
+    write_uploads("alpha", "youtube" => {"PL1" => {"alpha-2026-09-01" => "v1", "alpha-2026-10-10" => "v2"}})
+    out, code = run_status
+    assert_equal 0, code, out
+    refute_includes out, "inside the uploaded range"
   end
 
   # --- served feed read-back (P7-2) ---

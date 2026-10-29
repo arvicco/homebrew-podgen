@@ -22,7 +22,7 @@ module PodgenCLI
   #          or the same publish warning in the last PUBLISH_REPEAT scheduled
   #          publishes (shared launchd stderr), or Twitter announcements
   #          stalled behind the newest episode (P3-2), or YouTube/LingQ
-  #          uploads stalled the same way, or the upload batch's stderr
+  #          uploads stalled the same way or holed mid-range (P10-4), or the upload batch's stderr
   #          names a not-authorized / quota condition (P7-1), or the served
   #          base_url/feed.xml of a scheduled show lags the newest local
   #          episode, or cannot be fetched (P7-2; the one network read,
@@ -407,8 +407,8 @@ module PodgenCLI
 
     # --- upload progress (YouTube, LingQ; P7-1) ---
 
-    # {platform => {last_uploaded:, newest_episode:, stalled:}} for each
-    # platform the podcast configures, nil when none; YouTube adds
+    # {platform => {last_uploaded:, newest_episode:, stalled:, holes:}} for
+    # each platform the podcast configures, nil when none; YouTube adds
     # catching_up:, recent_uploads:, behind: (P10-3). Eligible episodes and
     # tracker groups mirror YouTubePublisher / LingQPublisher (every scanned
     # episode; playlist or "default", collection id). YouTube behind on
@@ -426,7 +426,12 @@ module PodgenCLI
         tracked = tracked_basenames(config, platform, group)
         last = tracked.filter_map { |b| EpisodeFiltering.parse_date(b) }.max
         stalled = progress_stalled?(dates, last, UPLOAD_SINCE)
-        entry = {last_uploaded: last&.to_s, newest_episode: newest&.to_s, stalled: stalled}
+        holes = upload_holes(eligible, tracked)
+        entry = {last_uploaded: last&.to_s, newest_episode: newest&.to_s, stalled: stalled, holes: holes.size}
+        unless holes.empty?
+          escalate.call("WARN", "#{platform}: #{holes.size} untracked episode(s) inside the uploaded range, " \
+            "oldest #{holes.first}")
+        end
         if platform == "youtube"
           recent = recent_youtube_uploads[config.name]
           entry.merge!(catching_up: stalled && recent.positive?, recent_uploads: recent,
@@ -445,6 +450,20 @@ module PodgenCLI
       end
       conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
       progress
+    end
+
+    # Mid-gap holes (P10-4): eligible episodes dated strictly between the
+    # oldest and newest tracked dates, untracked, older than UPLOAD_SINCE
+    # days; oldest first. A backlog after the newest tracked date is never one.
+    def upload_holes(eligible, tracked)
+      tracked_dates = tracked.filter_map { |b| EpisodeFiltering.parse_date(b) }
+      return [] if tracked_dates.empty?
+
+      oldest, newest = tracked_dates.minmax
+      (eligible - tracked).select do |base_name|
+        date = EpisodeFiltering.parse_date(base_name)
+        date && date > oldest && date < newest && (@today - date).to_i > UPLOAD_SINCE
+      end.sort_by { |b| [EpisodeFiltering.parse_date(b), b] }
     end
 
     # {pod => YouTube uploads} summed over the stdout blocks whose paired
