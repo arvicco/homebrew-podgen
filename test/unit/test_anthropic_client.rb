@@ -94,22 +94,41 @@ class TestAnthropicClient < Minitest::Test
   end
 
   # -- effort_params (P5-1): the effort parameter rides only when the registry sets one --
+  # P10-1 (Q-87): every call also carries the bounded request options, so the
+  # SDK's 600 s per-request default never applies.
+  BOUNDED = {timeout: AnthropicClient::REQUEST_TIMEOUT, max_retries: 1}.freeze
+
+  def test_effort_params_carry_the_bounded_request_options
+    assert_equal({timeout: 300, max_retries: 1}, AnthropicClient.effort_params(:script)[:request_options])
+  end
+
+  def test_effort_params_caller_request_options_merge_over_the_bound
+    params = AnthropicClient.effort_params(:reviewer, format: String, request_options: {max_retries: 0})
+    assert_equal({timeout: AnthropicClient::REQUEST_TIMEOUT, max_retries: 0}, params[:request_options])
+    assert_equal({format: String}, params[:output_config].slice(:format))
+  end
+
+  def test_effort_params_request_options_are_fresh_each_call
+    a = AnthropicClient.effort_params(:script)
+    b = AnthropicClient.effort_params(:script)
+    refute_same a[:request_options], b[:request_options]
+  end
 
   def test_effort_params_shape_for_a_lowered_role
     with_effort_env do
-      assert_equal({output_config: {effort: :low}}, AnthropicClient.effort_params(:description))
+      assert_equal({output_config: {effort: :low}, request_options: BOUNDED}, AnthropicClient.effort_params(:description))
     end
   end
 
   def test_effort_params_empty_for_a_default_role
     with_effort_env do
-      assert_equal({}, AnthropicClient.effort_params(:script))
+      assert_equal({request_options: BOUNDED}, AnthropicClient.effort_params(:script))
     end
   end
 
   def test_effort_params_follow_the_env_override
     with_effort_env("CLAUDE_EFFORT_SCRIPT" => "medium") do
-      assert_equal({output_config: {effort: :medium}}, AnthropicClient.effort_params(:script))
+      assert_equal({output_config: {effort: :medium}, request_options: BOUNDED}, AnthropicClient.effort_params(:script))
     end
   end
 
@@ -124,14 +143,14 @@ class TestAnthropicClient < Minitest::Test
   # P6-0: structured-output callers pass their format; effort merges beside it.
   def test_effort_params_merge_effort_beside_a_format
     with_effort_env("CLAUDE_EFFORT_SCRIPT" => "low") do
-      assert_equal({output_config: {format: String, effort: :low}},
+      assert_equal({output_config: {format: String, effort: :low}, request_options: BOUNDED},
         AnthropicClient.effort_params(:script, format: String))
     end
   end
 
   def test_effort_params_keep_the_format_when_effort_is_unset
     with_effort_env do
-      assert_equal({output_config: {format: String}}, AnthropicClient.effort_params(:script, format: String))
+      assert_equal({output_config: {format: String}, request_options: BOUNDED}, AnthropicClient.effort_params(:script, format: String))
     end
   end
 
@@ -152,7 +171,7 @@ class TestAnthropicClient < Minitest::Test
         h.send(:init_anthropic_client, role: :description)
       end
     end
-    assert_equal({output_config: {effort: :low}}, h.instance_variable_get(:@effort_params))
+    assert_equal({output_config: {effort: :low}, request_options: BOUNDED}, h.instance_variable_get(:@effort_params))
   end
 
   # -- text_of (P1-0 hazard H1): thinking-default models put a thinking block first --
