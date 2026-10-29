@@ -35,6 +35,9 @@ module PodgenCLI
     # Collected degradations; GenerateCommand reports them in RUN-OUTCOME.
     attr_reader :warnings
 
+    # Source candidates found gone (404/410) before a run gives up.
+    MAX_GONE_PICKS = 3
+
     def initialize(config:, options:, logger:, history:, today:)
       @config = config
       @options = options
@@ -253,6 +256,19 @@ module PodgenCLI
       return verdict if verdict
 
       nil
+    rescue HttpDownloader::Gone => e
+      # Q-100 (P11-1): a 404/410 source URL never comes back — exclude it,
+      # count a warning naming it, and pick the next candidate (at most
+      # MAX_GONE_PICKS picks per run, then fail with the last status).
+      logger.phase_end("Download Audio")
+      url = @episode[:audio_url]
+      @episode_source.exclude_url!(url)
+      warning = "Source episode gone (HTTP #{e.status}), excluded: #{url}"
+      @warnings << warning
+      logger.log("Warning: #{warning}")
+      @gone_picks = (@gone_picks || 0) + 1
+      raise if @gone_picks >= MAX_GONE_PICKS
+      retry
     end
 
     # Probes the downloaded audio duration and rejects episodes outside the

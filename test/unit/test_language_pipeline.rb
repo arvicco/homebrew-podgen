@@ -361,6 +361,37 @@ class TestLanguagePipeline < Minitest::Test
     assert_nil passed[:duplicate_prompt]
   end
 
+  # --- source episode gone (Q-100, P11-1) ---
+
+  def test_acquire_rss_gone_url_is_excluded_warned_and_next_candidate_picked
+    pipeline = build_pipeline
+    source = gone_source(gone: ["https://ex.com/a.mp3"],
+      candidates: ["https://ex.com/a.mp3", "https://ex.com/b.mp3"])
+    pipeline.instance_variable_set(:@episode_source, source)
+
+    result = AudioAssembler.stub(:probe_duration, 300.0) { pipeline.send(:acquire_rss) }
+
+    assert_nil result, "the run proceeds with the next candidate"
+    assert_equal ["https://ex.com/a.mp3"], source.excluded
+    assert_equal "https://ex.com/b.mp3", pipeline.instance_variable_get(:@episode)[:audio_url]
+    assert_equal 1, pipeline.warnings.length
+    assert_includes pipeline.warnings.first, "https://ex.com/a.mp3"
+    assert_includes pipeline.warnings.first, "404"
+  end
+
+  def test_acquire_rss_gives_up_after_three_gone_picks_with_last_status
+    pipeline = build_pipeline
+    urls = (1..4).map { |i| "https://ex.com/#{i}.mp3" }
+    source = gone_source(gone: urls, candidates: urls)
+    pipeline.instance_variable_set(:@episode_source, source)
+
+    err = assert_raises(HttpDownloader::Gone) { pipeline.send(:acquire_rss) }
+
+    assert_match(/HTTP 404/, err.message)
+    assert_equal urls.first(3), source.excluded
+    assert_equal 3, pipeline.warnings.length
+  end
+
   def test_enforce_length_with_ask_trim_continues_on_t
     pipeline = build_pipeline(options: { ask_trim: true })
     pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
@@ -1101,6 +1132,27 @@ class TestLanguagePipeline < Minitest::Test
     calls
   ensure
     saved.nil? ? ENV.delete("ANTHROPIC_API_KEY") : ENV["ANTHROPIC_API_KEY"] = saved
+  end
+
+  # A source double serving +candidates+ in order (minus excluded ones);
+  # downloading a URL listed in +gone+ raises HttpDownloader::Gone (404).
+  def gone_source(gone:, candidates:)
+    audio = File.join(@tmpdir, "source.mp3")
+    File.write(audio, "audio")
+    source = Object.new
+    excluded = []
+    source.define_singleton_method(:excluded) { excluded }
+    source.define_singleton_method(:fetch_next) do |**|
+      url = candidates.find { |u| !excluded.include?(u) }
+      url && { title: "Ep #{url}", audio_url: url }
+    end
+    source.define_singleton_method(:exclude_url!) { |url| excluded << url }
+    source.define_singleton_method(:length_check) { |_d| :ok }
+    source.define_singleton_method(:download_audio) do |ep|
+      raise HttpDownloader::Gone.new(404, ep[:audio_url]) if gone.include?(ep[:audio_url])
+      audio
+    end
+    source
   end
 
   def capture_fetch_next_kwargs(pipeline)

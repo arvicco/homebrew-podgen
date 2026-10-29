@@ -109,6 +109,7 @@ class EpisodeSource
   def exclude_url!(url)
     require_relative "atomic_writer"
     require_relative "yaml_loader"
+    excluded_this_run << url # the next pick in this run skips it, even under --force (Q-100)
     path = @config.respond_to?(:excluded_urls_path) ? @config.excluded_urls_path : nil
     return unless path
 
@@ -120,6 +121,10 @@ class EpisodeSource
   end
 
   private
+
+  def excluded_this_run
+    @excluded_this_run ||= Set.new
+  end
 
   # ffprobe format_name → correct extension mapping
   FORMAT_TO_EXT = {
@@ -186,7 +191,7 @@ class EpisodeSource
 
   def fetch_from_feeds(feeds, force: false, duplicate_prompt: nil)
     source = RSSSource.new(feeds: feeds, logger: @logger)
-    exclude = force ? Set.new : @history.all_urls
+    exclude = (force ? Set.new : @history.all_urls) | excluded_this_run
     episodes = source.fetch_episodes(exclude_urls: exclude)
 
     if episodes.empty?
@@ -213,7 +218,7 @@ class EpisodeSource
       return nil
     end
 
-    exclude = force ? Set.new : @history.all_urls
+    exclude = (force ? Set.new : @history.all_urls) | excluded_this_run
     log("Feed selection: #{mode} mode, #{pool.length} feed(s) in pool")
 
     while pool.any?
