@@ -586,6 +586,23 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal "Generated desc", episode[:description]
   end
 
+  # Q-106 (P12-1): an empty first generation never ships an empty
+  # description. The failure is counted once, by the agent's own warning,
+  # so the pipeline adds none of its own.
+  def test_clean_or_generate_description_empty_generation_falls_back_to_title
+    pipeline = build_pipeline
+    episode = { title: "Test", description: "" }
+
+    stub_agent = StubDescriptionAgent.new(clean_title: "Test", generate: nil)
+    DescriptionAgent.stub(:new, stub_agent) do
+      pipeline.send(:clean_or_generate_description, episode, "transcript text")
+    end
+
+    assert_equal "Test", episode[:description]
+    assert_empty pipeline.warnings
+    assert_includes @logger.messages, "No description could be generated — using the title"
+  end
+
   def test_clean_or_generate_description_cleans_title
     pipeline = build_pipeline
     episode = { title: "CATEGORY: Real Title", description: "Desc" }
