@@ -311,7 +311,7 @@ module PodgenCLI
       if @options[:ask_trim]
         result = listening_window("trim") { ask_trim_interactive }
         if result == :exclude
-          archive_rejection("listened", @listening_prompt)
+          archive_rejection(@trim_reject_reason, @listening_prompt)
           exclude_current_episode!
           return :excluded
         end
@@ -392,20 +392,40 @@ module PodgenCLI
       start_preview(@source_audio_path)
 
       @listening_prompt = "skip"
-      $stderr.print "Enter skip intro (seconds or min:sec), x to exclude, blank for none: "
-      skip_input = $stdin.gets&.strip
-      return :exclude if skip_input&.downcase == "x"
-      skip = skip_input.nil? || skip_input.empty? ? nil : TimeValue.parse(skip_input)
+      skip = ask_time_value("skip intro")
+      return trim_exclusion(skip) if skip.is_a?(Symbol)
 
       @listening_prompt = "cut"
-      $stderr.print "Enter cut outro (seconds or min:sec), x to exclude, blank for none: "
-      cut_input = $stdin.gets&.strip
-      return :exclude if cut_input&.downcase == "x"
-      cut = cut_input.nil? || cut_input.empty? ? nil : TimeValue.parse(cut_input)
+      cut = ask_time_value("cut outro")
+      return trim_exclusion(cut) if cut.is_a?(Symbol)
 
       [skip, cut]
     ensure
       stop_preview
+    end
+
+    TRIM_ATTEMPTS = 3
+
+    # One skip/cut answer: a TimeValue, nil (blank), :exclude (x), or
+    # :bad_input once a typo has been entered TRIM_ATTEMPTS times (P11-5:
+    # a typo used to abort the whole run after the download).
+    def ask_time_value(label)
+      TRIM_ATTEMPTS.times do
+        $stderr.print "Enter #{label} (seconds or min:sec), x to exclude, blank for none: "
+        input = $stdin.gets&.strip
+        return :exclude if input&.downcase == "x"
+        return nil if input.nil? || input.empty?
+        return TimeValue.parse(input)
+      rescue ArgumentError
+        $stderr.puts "Not a time value: #{input.inspect} (seconds like 30, or min:sec like 1:20)"
+      end
+      logger.log("No valid #{label} value after #{TRIM_ATTEMPTS} attempts; excluding the candidate")
+      :bad_input
+    end
+
+    def trim_exclusion(answer)
+      @trim_reject_reason = (answer == :bad_input) ? "bad_input" : "listened"
+      :exclude
     end
 
     # Listening archive (P11-0): the owner's interactive decisions kept as

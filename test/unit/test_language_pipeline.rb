@@ -1088,6 +1088,39 @@ class TestLanguagePipeline < Minitest::Test
     refute File.exist?(@config.excluded_urls_path), "an interrupt is not an exclusion"
   end
 
+  # --- trim prompt re-ask on a bad value (P11-5, Q-103) ---
+
+  def test_ask_trim_bad_value_reasks_then_accepts
+    pipeline, _source = build_listening_pipeline
+    pipeline.instance_variable_set(:@source_audio_path, "/fake/audio.mp3")
+
+    result, calls = run_ask_trim(pipeline, input: fake_gets_from(["e43\n", "30\n", "\n"]))
+
+    assert_equal [30.0, nil], result
+    assert_equal "osascript", calls[:system].last.first, "preview still closes after a re-ask"
+  end
+
+  def test_ask_trim_three_bad_values_take_the_rejected_path_with_bad_input
+    [[["e43\n", "x1\n", "1:2:3\n"], "skip"], [["10\n", "a\n", "b\n", "c\n"], "cut"]].each do |inputs, prompt|
+      FileUtils.rm_rf(archive_root)
+      FileUtils.rm_f(@config.excluded_urls_path)
+      pipeline, _source = build_listening_pipeline
+
+      result, seen = run_listening_trim(pipeline, inputs)
+
+      assert_equal :excluded, result
+      assert_nil seen[:skip], "the trimmer never runs"
+      rows = YAML.load_file(File.join(archive_root, "rejected.yml"))
+      assert_equal [["bad_input", prompt]], rows.map { [it["reason"], it["prompt"]] }
+      assert_includes YAML.load_file(@config.excluded_urls_path), LISTEN_URL
+    end
+  end
+
+  def fake_gets_from(inputs)
+    queue = inputs.dup
+    -> { queue.shift }
+  end
+
   def test_unattended_trim_writes_nothing_to_the_archive
     pipeline, _source = build_listening_pipeline(options: {}, config: build_config(skip: 10))
 
