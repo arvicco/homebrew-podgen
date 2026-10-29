@@ -1269,7 +1269,8 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
 - **OK (catching up)** - YouTube is behind by the rule above, but the
   batch uploaded videos for the podcast in the last 7 days (the sum of its
   `<pod>: yt-uploaded N` summary lines in `logs/uploads_stdout.log`, each
-  batch dated by its begin marker in `uploads_stderr.log`): the backlog is
+  batch dated by the begin marker `scripts/run_uploads.sh` writes before it;
+  older batches without one pair with the markers in `uploads_stderr.log`): the backlog is
   draining oldest first, so the line is a note, not a WARN —
   `youtube catching up: 10 uploaded in the last 7 d, 112 behind` (behind =
   eligible episodes not yet tracked). A quota stop in the latest batch joins
