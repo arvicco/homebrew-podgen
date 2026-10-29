@@ -219,6 +219,25 @@ class TestAudioTrimmer < Minitest::Test
     refute_equal paths[0], paths[1]
   end
 
+  # --- keep_segments (P11-0: the listening archive records the kept
+  # segments before the trimmer runs, from the same rule) ---
+
+  def test_keep_segments_skip_and_relative_cut
+    keeps = AudioTrimmer.keep_segments(100.0, skip: 10, cut: 20, snip: nil)
+    assert_equal [[10.0, 80.0]], keeps.map { [it.from, it.to] }
+  end
+
+  def test_keep_segments_absolute_cut_and_invalid_cut
+    assert_equal [[0.0, 30.0]], AudioTrimmer.keep_segments(100.0, skip: nil, cut: AbsoluteValue.new(30.0), snip: nil).map { [it.from, it.to] }
+    assert_equal [[0.0, 100.0]], AudioTrimmer.keep_segments(100.0, skip: nil, cut: 200, snip: nil).map { [it.from, it.to] }
+  end
+
+  def test_keep_segments_leaves_the_snip_option_untouched
+    snip = SnipInterval.parse("40-50")
+    AudioTrimmer.keep_segments(100.0, skip: 10, cut: 20, snip: snip)
+    assert_equal 1, snip.intervals.length, "the caller's snip must not gain skip/cut intervals"
+  end
+
   # --- trim_outro ---
 
   def test_trim_outro_with_matching_words
