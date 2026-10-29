@@ -211,6 +211,20 @@ class TestHNSource < Minitest::Test
     assert_equal ["[HNSource] HN query for '#{topic}': Bitcoin startup funding"], query_lines, lines.inspect
   end
 
+  # Q-101 (P11-4): a failed topic search is a counted warning.
+  def test_search_topic_failure_records_one_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_msg| nil }
+    logger.define_singleton_method(:warning) { |msg| warnings << msg }
+    source = HNSource.new(logger: logger, hn_queries: { "Ruby" => "Ruby" })
+    source.define_singleton_method(:request_with_retry) { |**_| raise "HTTP 503 from HN Algolia API" }
+
+    assert_equal [], source.send(:search_topic, "Ruby", Set.new)
+    assert_equal 1, warnings.size
+    assert_match(/\[HNSource\] Warning: Failed to search HN for 'Ruby': RuntimeError: HTTP 503/, warnings.first)
+  end
+
   def test_search_topic_skip_path_logs_only_skip_line
     lines = []
     logger = Object.new

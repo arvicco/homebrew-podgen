@@ -270,6 +270,20 @@ class TestLanguagePipeline < Minitest::Test
     end
   end
 
+  # Q-101 (P11-4): the unattended out-of-range abort joins the run's warnings.
+  def test_enforce_length_unattended_out_of_range_is_a_run_warning
+    pipeline = build_pipeline(options: {})
+    pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    fake_source = Object.new
+    fake_source.define_singleton_method(:length_check) { |_d| :too_long }
+    pipeline.instance_variable_set(:@episode_source, fake_source)
+    AudioAssembler.stub(:probe_duration, 700.0) { pipeline.send(:enforce_length_post_download) }
+
+    assert_equal 1, pipeline.warnings.size
+    assert_match(/11:40 is too long \(allowed range 2:00–9:30\)/, pipeline.warnings.first)
+  end
+
   def test_enforce_length_with_ask_trim_excludes_on_x
     # `x` is the project-wide exclude key (matches other prompts in this file
     # at lines ~321,326 — "x to exclude" — and scrap_command).
@@ -636,6 +650,22 @@ class TestLanguagePipeline < Minitest::Test
     end
 
     assert_equal "Opowieść o chłopcu i smoku.", episode[:description]
+  end
+
+  # Q-101 (P11-4): an empty regeneration must not wipe the description.
+  def test_wrong_language_description_empty_regeneration_keeps_existing_and_warns
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    original = "Audiobook fairy tales with stories and morals for children and families"
+    episode = { title: "Story Title", description: original }
+
+    stub_agent = StubDescriptionAgent.new(clean_title: "Story Title", clean: original, generate: nil)
+    DescriptionAgent.stub(:new, stub_agent) do
+      pipeline.send(:clean_or_generate_description, episode, "Dawno temu żył sobie chłopiec")
+    end
+
+    assert_equal original, episode[:description]
+    assert_equal 1, pipeline.warnings.size
+    assert_match(/description/i, pipeline.warnings.first)
   end
 
   def test_correct_language_description_not_regenerated
