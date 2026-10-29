@@ -12,6 +12,7 @@ require_relative File.join(root, "lib", "episode_scanner")
 require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "run_outcome")
 require_relative File.join(root, "lib", "served_feed")
+require_relative File.join(root, "lib", "youtube_consent")
 
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
@@ -23,7 +24,8 @@ module PodgenCLI
   #          publishes (shared launchd stderr), or Twitter announcements
   #          stalled behind the newest episode (P3-2), or YouTube/LingQ
   #          uploads stalled the same way or holed mid-range (P10-4), or the upload batch's stderr
-  #          names a not-authorized / quota condition (P7-1), or the served
+  #          names a not-authorized / quota condition (P7-1), or the YouTube
+  #          consent is 6+ days old (testing-status OAuth app), or the served
   #          base_url/feed.xml of a scheduled show lags the newest local
   #          episode, or cannot be fetched (P7-2; the one network read,
   #          skipped with --offline)
@@ -70,6 +72,7 @@ module PodgenCLI
     UPLOAD_LOG = File.join("logs", "uploads_stderr.log")
     UPLOAD_MARKER_RE = %r{\A(\d{4})/(\d{2})/(\d{2}) \d{2}:\d{2}:\d{2} podgen uploads \S* begin\b}
     QUOTA_CONDITION = "YouTube upload quota exceeded"
+    CONSENT_WARN_DAYS = 6 # a testing-status OAuth app's refresh token dies on day 7
     UPLOAD_CONDITIONS = {
       /not authorized/i => "YouTube not authorized",
       /uploadLimitExceeded|quotaExceeded/ => QUOTA_CONDITION
@@ -83,8 +86,9 @@ module PodgenCLI
     UPLOAD_COUNT_RE = /\A\s+(\S+): yt-uploaded (\d+)\b/
 
     def initialize(args, options, plist_dir: ScheduleCommand::LAUNCH_AGENTS_DIR, today: Date.today, publish_log: nil,
-      uploads_log: nil, served_feed: nil, uploads_stdout_log: nil)
+      uploads_log: nil, served_feed: nil, uploads_stdout_log: nil, youtube_token_file: YouTubeConsent::TOKEN_FILE)
       @options = options
+      @youtube_token_file = youtube_token_file
       @plist_dir = plist_dir
       @today = today
       @publish_log = publish_log || File.join(PodcastConfig.root, PUBLISH_LOG)
@@ -176,6 +180,8 @@ module PodgenCLI
       announcements = announcement_progress(config, escalate)
       inform = ->(reason) { reasons << reason } # an OK-level note, never escalates
       uploads = upload_progress(config, escalate, inform)
+      consent = youtube_consent_finding(config)
+      escalate.call("WARN", consent) if consent
       served_feed_findings(config, inform).each { |reason| escalate.call("WARN", reason) }
       if verdict == "OK" && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
@@ -461,6 +467,23 @@ module PodgenCLI
       conditions.delete(QUOTA_CONDITION) if recent_youtube_uploads.values.any?(&:positive?)
       conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
       progress
+    end
+
+    # Q-102 (P11-2): while the OAuth app is in Google's "Testing" status the
+    # refresh token dies 7 days after the consent; warn from day 6 so the
+    # owner re-consents before a batch fails. Silenced per podcast by
+    # `youtube_app_published: true`.
+    def youtube_consent_finding(config)
+      return nil unless config.youtube_config && !config.youtube_app_published?
+
+      consented = YouTubeConsent.time(@youtube_token_file)
+      return nil unless consented
+
+      age = (@today - consented.to_date).to_i
+      return nil if age < CONSENT_WARN_DAYS
+
+      "youtube consent #{age} d old — the token expires on day 7 while the OAuth app is in testing; " \
+        "re-consent from a terminal"
     end
 
     # The other pod with the most YouTube uploads in the batch log's window,
