@@ -369,11 +369,12 @@ module PodgenCLI
       @preview_started = false
     end
 
-    # Re-post guard (Q-88): an other-feed candidate whose title matches an
-    # earlier episode — asked before any download; blank/EOF/d = skip.
+    # Re-post guard (Q-88): a candidate whose title matches an earlier
+    # episode — asked before any download; anything but k = skip.
     def ask_duplicate_interactive(episode, match)
+      kind = match[:same_feed] ? "same feed — likely a re-post" : "other feed — possibly a different telling"
       $stderr.puts "\nCandidate \"#{episode[:title]}\" matches an earlier episode by title."
-      $stderr.print "[d]uplicate skip / [k]eep as a different telling (earlier: #{match[:basename]} \"#{match[:title]}\"): "
+      $stderr.print "[d]uplicate skip / [k]eep (#{kind}; earlier: #{match[:basename]} \"#{match[:title]}\"): "
       $stdin.gets&.strip
     end
 

@@ -333,11 +333,25 @@ class TestLanguagePipeline < Minitest::Test
     $stdin.stub :gets, "k\n" do
       _, err = capture_io do
         answer = prompt.call({ title: "Il lupo e il pastore. Esopo" },
-                             { basename: "fiabe-2026-04-28", date: "2026-04-28", title: "Il lupo e il pastore" })
+                             { basename: "fiabe-2026-04-28", date: "2026-04-28", title: "Il lupo e il pastore", same_feed: false })
       end
     end
     assert_equal "k", answer
-    assert_includes err, '[d]uplicate skip / [k]eep as a different telling (earlier: fiabe-2026-04-28 "Il lupo e il pastore")'
+    assert_includes err, '[d]uplicate skip / [k]eep (other feed — possibly a different telling; earlier: fiabe-2026-04-28 "Il lupo e il pastore")'
+  end
+
+  def test_duplicate_prompt_names_a_same_feed_match_as_a_likely_repost
+    pipeline = build_pipeline(options: { ask_trim: true })
+    prompt = capture_fetch_next_kwargs(pipeline)[:duplicate_prompt]
+
+    err = nil
+    $stdin.stub :gets, nil do
+      _, err = capture_io do
+        prompt.call({ title: "Il lupo e il pastore" },
+                    { basename: "fiabe-2026-04-28", date: "2026-04-28", title: "Il lupo e il pastore", same_feed: true })
+      end
+    end
+    assert_includes err, '[d]uplicate skip / [k]eep (same feed — likely a re-post; earlier: fiabe-2026-04-28 "Il lupo e il pastore")'
   end
 
   def test_acquire_rss_without_ask_trim_passes_no_duplicate_prompt
