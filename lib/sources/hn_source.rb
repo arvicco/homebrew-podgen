@@ -59,7 +59,7 @@ class HNSource < BaseSource
       }
     end
   rescue => e # skippable: one source down; the other sources still feed research
-    log("Failed to search HN for '#{topic}': #{e.class}: #{e.message}")
+    log_warning("Failed to search HN for '#{topic}': #{e.class}: #{e.message}")
     []
   end
 

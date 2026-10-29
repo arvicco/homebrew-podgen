@@ -31,18 +31,12 @@ class AudioTrimmer
     return audio_path unless (skip && skip > 0) || (cut && cut > 0) || snip
 
     total = @assembler.probe_duration(audio_path)
-    removal = snip ? snip.dup : SnipInterval.empty
 
-    if skip && skip > 0
-      skip_to = skip.to_f
-      removal.add(0, skip_to)
-      log("Skip: removing 0-#{format_timestamp(skip_to)}")
-    end
+    log("Skip: removing 0-#{format_timestamp(skip.to_f)}") if skip && skip > 0
 
     if cut && cut > 0
-      cut_point = cut.respond_to?(:absolute?) && cut.absolute? ? cut.to_f : total - cut.to_f
+      cut_point = self.class.cut_point(cut, total)
       if cut_point > 0 && cut_point < total
-        removal.add(cut_point, total)
         log("Cut: removing #{format_timestamp(cut_point)}-#{format_timestamp(total)}")
       else
         log("Warning: cut value results in invalid cut point (#{cut_point.round(1)}s of #{total.round(1)}s) — skipping cut")
@@ -51,7 +45,7 @@ class AudioTrimmer
 
     log("Snip: removing #{snip}") if snip
 
-    keeps = removal.keep_segments(total)
+    keeps = self.class.keep_segments(total, skip: skip, cut: cut, snip: snip)
     if keeps.any? && keeps != [SnipInterval::Interval.new(0.0, total)]
       trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}_#{SecureRandom.hex(4)}.mp3")
       @temp_files << trimmed_path
@@ -63,6 +57,25 @@ class AudioTrimmer
       log("No effective trimming needed after resolving skip/cut/snip")
       audio_path
     end
+  end
+
+  # Keep segments for skip/cut/snip over +total+ seconds — the one rule
+  # apply_trim cuts by, also recorded by the listening archive (P11-0)
+  # before the trimmer runs. Pure: the caller's snip is not modified.
+  def self.keep_segments(total, skip:, cut:, snip:)
+    removal = SnipInterval.empty
+    snip&.intervals&.each { |iv| removal.add(iv.from, iv.to) }
+    removal.add(0, skip.to_f) if skip && skip > 0
+    point = cut_point(cut, total)
+    removal.add(point, total) if point && point > 0 && point < total
+    removal.keep_segments(total)
+  end
+
+  # Absolute cut (min:sec) is the point itself; relative is from the end.
+  def self.cut_point(cut, total)
+    return nil unless cut && cut > 0
+
+    cut.respond_to?(:absolute?) && cut.absolute? ? cut.to_f : total - cut.to_f
   end
 
   # Trims outro by mapping reconciled text to Groq word timestamps.

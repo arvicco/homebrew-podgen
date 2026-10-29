@@ -109,6 +109,7 @@ class EpisodeSource
   def exclude_url!(url)
     require_relative "atomic_writer"
     require_relative "yaml_loader"
+    excluded_this_run << url # the next pick in this run skips it, even under --force (Q-100)
     path = @config.respond_to?(:excluded_urls_path) ? @config.excluded_urls_path : nil
     return unless path
 
@@ -119,7 +120,26 @@ class EpisodeSource
     end
   end
 
+  # Same-feed key (P10-0b): host + first path segment, plus the next
+  # segment when the first is a redirector (ends in .mp3 or is listed).
+  # Class-level so the listening archive (P11-0) labels with the same key.
+  def self.feed_key(url)
+    uri = URI.parse(url.to_s)
+    return nil unless uri.host
+
+    segments = uri.path.to_s.split("/").reject(&:empty?)
+    first = segments.first.to_s.downcase
+    take = (first.end_with?(".mp3") || REDIRECT_SEGMENTS.include?(first)) ? 2 : 1
+    [uri.host.downcase, *segments.first(take)].join("/")
+  rescue URI::InvalidURIError
+    nil
+  end
+
   private
+
+  def excluded_this_run
+    @excluded_this_run ||= Set.new
+  end
 
   # ffprobe format_name → correct extension mapping
   FORMAT_TO_EXT = {
@@ -186,7 +206,7 @@ class EpisodeSource
 
   def fetch_from_feeds(feeds, force: false, duplicate_prompt: nil)
     source = RSSSource.new(feeds: feeds, logger: @logger)
-    exclude = force ? Set.new : @history.all_urls
+    exclude = (force ? Set.new : @history.all_urls) | excluded_this_run
     episodes = source.fetch_episodes(exclude_urls: exclude)
 
     if episodes.empty?
@@ -213,7 +233,7 @@ class EpisodeSource
       return nil
     end
 
-    exclude = force ? Set.new : @history.all_urls
+    exclude = (force ? Set.new : @history.all_urls) | excluded_this_run
     log("Feed selection: #{mode} mode, #{pool.length} feed(s) in pool")
 
     while pool.any?
@@ -315,19 +335,8 @@ class EpisodeSource
   # `redirect.mp3/<real host>`, anchor.fm's `s/<show>`).
   REDIRECT_SEGMENTS = %w[redirect r track e p s].freeze
 
-  # Same-feed key (P10-0b): host + first path segment, plus the next
-  # segment when the first is a redirector (ends in .mp3 or is listed).
-  def feed_key(url)
-    uri = URI.parse(url.to_s)
-    return nil unless uri.host
-
-    segments = uri.path.to_s.split("/").reject(&:empty?)
-    first = segments.first.to_s.downcase
-    take = (first.end_with?(".mp3") || REDIRECT_SEGMENTS.include?(first)) ? 2 : 1
-    [uri.host.downcase, *segments.first(take)].join("/")
-  rescue URI::InvalidURIError
-    nil
-  end
+  # Same-feed key (P10-0b): see EpisodeSource.feed_key.
+  def feed_key(url) = self.class.feed_key(url)
 
   def feed_weight(feed, default)
     feed.is_a?(Hash) ? (feed[:weight] || default) : default

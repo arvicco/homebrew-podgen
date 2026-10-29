@@ -216,11 +216,16 @@ hardening). Gate 8 CLOSED 2026-10-28
 authority; phase clock 56m). Gate 9 CLOSED 2026-10-28 18:04 (PR #11,
 merge a177a33 — vocabulary didactics: ledger, key words, level bands,
 gloss cache, grouped section, vocab-health measurement, revocab ranges;
-phase clock 1h 42m). Phase 10 (resilience of the scheduled run + a
-truthful board: re-post guard at selection, the intended timeout on
-every Claude call, caffeinate + bounded preflight, upload progress read
-from the batch log, LingQ generate path, placeholder-key lint) AT GATE
-10 — adopted 2026-10-29 06:23, all packets landed, CRPR APPROVED
-(refs/cr/reviewed = 91ffbc3); gate PR open, the owner merges. R9-02,
-R10-01, R10-02 on the register (R9-01 withdrawn: the cause was sleep).
-Update this line at each gate.
+phase clock 1h 42m). Gate 10 CLOSED 2026-10-29 14:59 (PR #12, merge
+82e79e3 — resilience of the scheduled run and a truthful board: re-post
+guard at selection, the intended timeout on every Claude call,
+caffeinate + bounded preflight, upload progress read from the batch
+log, LingQ generate path, placeholder-key lint; phase clock 47m).
+Phase 11 (listening archive of untrimmed source audio and rejected
+candidates; 404 source URLs excluded in-run; YouTube token rejection
+logged and consent-age WARN; Exa network errors retried; uncounted
+content failures counted; trim-prompt re-ask) AT GATE 11 — adopted
+2026-10-29 15:40, all packets landed, CRPR APPROVED (refs/cr/reviewed =
+8e85c7f); gate PR open, the owner merges. R9-02, R10-01, R10-02 on the
+register; I-11 open (YouTube consent expires every 7 days while the
+OAuth app is in testing). Update this line at each gate.
