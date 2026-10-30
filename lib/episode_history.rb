@@ -51,17 +51,6 @@ class EpisodeHistory
     summary.empty? ? nil : summary
   end
 
-  # Remove the last entry and return it (or nil if empty).
-  # Uses atomic write (temp file + rename) to prevent corruption.
-  def remove_last!
-    entries = YamlLoader.load(@path, default: [], raise_on_error: true)
-    return nil if entries.empty?
-
-    removed = entries.pop
-    write_entries!(entries)
-    removed
-  end
-
   # Remove a specific entry by date and suffix index (0-based slot: "" → 0,
   # "a" → 1, ...). The slot resolves through the same mapping HistoryMaps
   # uses (explicit basename wins, else same-day position — P4-9, Q-44).

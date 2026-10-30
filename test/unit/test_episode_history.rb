@@ -80,27 +80,6 @@ class TestEpisodeHistory < Minitest::Test
     assert_nil history.recent_topics_summary
   end
 
-  def test_remove_last_pops_entry
-    @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
-    @history.record!(date: Date.today, title: "Ep 2", topics: ["Ruby"], urls: [])
-
-    removed = @history.remove_last!
-    assert_equal "Ep 2", removed["title"]
-
-    entries = YAML.load_file(@history_path)
-    assert_equal 1, entries.length
-    assert_equal "Ep 1", entries[0]["title"]
-  end
-
-  def test_remove_last_on_empty_returns_nil
-    assert_nil @history.remove_last!
-  end
-
-  def test_remove_last_on_nonexistent_file_returns_nil
-    history = EpisodeHistory.new(File.join(@tmpdir, "nonexistent.yml"))
-    assert_nil history.remove_last!
-  end
-
   def test_remove_by_date_removes_specific_entry
     @history.record!(date: "2026-03-01", title: "Ep 1", topics: ["a"], urls: [])
     @history.record!(date: "2026-03-02", title: "Ep 2", topics: ["b"], urls: [])

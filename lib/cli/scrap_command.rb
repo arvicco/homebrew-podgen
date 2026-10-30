@@ -120,11 +120,7 @@ module PodgenCLI
       end
 
       # Remove history entry (atomic write) — prefer basename match, fall back to positional
-      removed = if @episode_id
-        history.remove_by_basename!(target_base) || history.remove_by_date!(date, suffix_index)
-      else
-        history.remove_last!
-      end
+      removed = history.remove_by_basename!(target_base) || history.remove_by_date!(date, suffix_index)
 
       # Remove LingQ tracking entry for this episode
       remove_upload_tracking(config, target_base)
