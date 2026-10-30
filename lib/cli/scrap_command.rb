@@ -68,7 +68,7 @@ module PodgenCLI
 
       # Load history and find matching entry
       history = EpisodeHistory.new(config.history_path)
-      entries = YamlLoader.load(config.history_path, default: [])
+      entries = YamlLoader.load(config.history_path, default: [], raise_on_error: true) # fail before any file is deleted (Q-108)
       matching_entry = find_history_entry(entries, target_base) || find_history_entry_by_date(entries, date, suffix_index)
 
       # Display what will be removed
@@ -227,7 +227,7 @@ module PodgenCLI
 
     def exclude_episode_urls(config, urls)
       path = config.excluded_urls_path
-      current = YamlLoader.load(path, default: [])
+      current = YamlLoader.load(path, default: [], raise_on_error: true)
       added = urls.reject { |u| current.include?(u) }
       return if added.empty?
 

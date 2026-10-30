@@ -324,4 +324,31 @@ class TestEpisodeHistory < Minitest::Test
     refute entries[0].key?("duration")
     refute entries[0].key?("timestamp")
   end
+
+  # Q-108: a corrupt hand-edited history is never rewritten from an empty default.
+  CORRUPT_HISTORY = "- date: \"2026-01-01\"\n  title: x\n- date: [[[\n"
+
+  def test_record_corrupt_file_raises_and_leaves_bytes_unchanged
+    File.write(@history_path, CORRUPT_HISTORY)
+    assert_raises(RuntimeError) { @history.record!(date: Date.today, title: "Ep", topics: [], urls: []) }
+    assert_equal CORRUPT_HISTORY, File.read(@history_path)
+  end
+
+  def test_rename_corrupt_file_raises_and_leaves_bytes_unchanged
+    File.write(@history_path, CORRUPT_HISTORY)
+    assert_raises(RuntimeError) { @history.rename!("a", new_basename: "b", new_date: Date.today) }
+    assert_equal CORRUPT_HISTORY, File.read(@history_path)
+  end
+
+  def test_record_language_wrong_top_level_type_raises_and_leaves_bytes_unchanged
+    File.write(@history_path, "pod-2026-01-01: {}\n")
+    err = assert_raises(RuntimeError) { @history.record_language!(basename: "pod-2026-01-01", language_code: "en") }
+    assert_includes err.message, @history_path
+    assert_equal "pod-2026-01-01: {}\n", File.read(@history_path)
+  end
+
+  def test_all_episodes_corrupt_file_returns_default
+    File.write(@history_path, CORRUPT_HISTORY)
+    assert_equal [], @history.all_episodes
+  end
 end
