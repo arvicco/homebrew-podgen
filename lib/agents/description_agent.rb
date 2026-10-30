@@ -172,8 +172,8 @@ class DescriptionAgent
 
     log("Description generated: #{result.length} chars")
     result
-  rescue => e # skippable: the episode ships with an empty description
-    log("Warning: Description generation failed: #{e.class}: #{e.message} (non-fatal)")
+  rescue => e # skippable (non-fatal): callers keep or fall back (title, or the existing description); counted (Q-106)
+    log_warning("Description generation failed: #{e.class}: #{e.message}")
     ""
   end
 

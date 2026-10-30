@@ -15,6 +15,19 @@ class RSSSource
   MAX_RETRIES = 2
   MAX_REDIRECTS = 3
   LOOKBACK_HOURS = 48
+  # Statuses that will not change on a retry (Q-105, P12-0): one attempt.
+  PERMANENT_STATUSES = [404, 410].freeze
+
+  # The feed is gone for good (404/410); +status+ is the HTTP code.
+  class FeedGone < StandardError
+    attr_reader :status, :url
+
+    def initialize(status, url)
+      @status = status
+      @url = url
+      super("HTTP #{status} from #{url} — the feed is gone; not retried")
+    end
+  end
 
   def initialize(feeds: [], logger: nil, **_options)
     @feeds = feeds
@@ -122,10 +135,16 @@ class RSSSource
 
   def fetch_feed(feed_url, tag: nil)
     log("Fetching RSS#{tag ? " '#{tag}'" : ""}: #{feed_url}")
-    with_retries(max: MAX_RETRIES, label: "RSS") do
+    gone = nil
+    items = with_retries(max: MAX_RETRIES, label: "RSS") do
       body = http_get_with_redirects(feed_url)
       parse_feed(body)
+    rescue FeedGone => e
+      gone = e # permanent: leave the retry loop after one attempt
     end
+    raise gone if gone
+
+    items
   rescue => e # skippable: one feed down; the other feeds still feed research
     log_warning("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
     []
@@ -148,6 +167,7 @@ class RSSSource
       log("Following redirect → #{location}")
       http_get_with_redirects(location, redirects_left - 1)
     else
+      raise FeedGone.new(response.code.to_i, url) if PERMANENT_STATUSES.include?(response.code.to_i)
       raise "HTTP #{response.code} from #{url}"
     end
   end
@@ -187,10 +207,16 @@ class RSSSource
 
   def fetch_feed_episodes(feed_url, tag: nil)
     log("Fetching RSS#{tag ? " '#{tag}'" : ""} episodes: #{feed_url}")
-    with_retries(max: MAX_RETRIES, label: "RSS") do
+    gone = nil
+    items = with_retries(max: MAX_RETRIES, label: "RSS") do
       body = http_get_with_redirects(feed_url)
       parse_feed_episodes(body)
+    rescue FeedGone => e
+      gone = e # permanent: leave the retry loop after one attempt
     end
+    raise gone if gone
+
+    items
   rescue => e # skippable: an unreachable feed yields no episodes
     log_warning("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
     []

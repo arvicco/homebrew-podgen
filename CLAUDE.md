@@ -221,11 +221,14 @@ phase clock 1h 42m). Gate 10 CLOSED 2026-10-29 14:59 (PR #12, merge
 guard at selection, the intended timeout on every Claude call,
 caffeinate + bounded preflight, upload progress read from the batch
 log, LingQ generate path, placeholder-key lint; phase clock 47m).
-Phase 11 (listening archive of untrimmed source audio and rejected
-candidates; 404 source URLs excluded in-run; YouTube token rejection
-logged and consent-age WARN; Exa network errors retried; uncounted
-content failures counted; trim-prompt re-ask) AT GATE 11 — adopted
-2026-10-29 15:40, all packets landed, CRPR APPROVED (refs/cr/reviewed =
-8e85c7f); gate PR open, the owner merges. R9-02, R10-01, R10-02 on the
-register; I-11 open (YouTube consent expires every 7 days while the
-OAuth app is in testing). Update this line at each gate.
+Gate 11 CLOSED 2026-10-29 18:48 (PR #13, merge cc3a9d4 — listening
+archive of untrimmed source audio and rejected candidates, 404 source
+URLs excluded in-run, YouTube rejection reason + consent-age WARN, Exa
+network retries, uncounted content failures counted, trim-prompt
+re-ask; phase clock 1h 33m). Phase 12 (small truthfulness sweep: a
+dead feed costs one attempt, a failed first-generation description is
+counted, periodic dead-code review) AT GATE 12 — adopted 2026-10-29
+19:08, all packets landed, CRPR APPROVED (refs/cr/reviewed = 9b0cf20);
+gate PR open, the owner merges. R10-01 ruled (nothing owner-side); R9-02 deferred to 11-12,
+R10-02 to 11-26; I-11 open (YouTube consent expires every 7 days while
+the OAuth app is in testing). Update this line at each gate.
