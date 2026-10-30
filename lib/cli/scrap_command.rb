@@ -68,7 +68,7 @@ module PodgenCLI
 
       # Load history and find matching entry
       history = EpisodeHistory.new(config.history_path)
-      entries = YamlLoader.load(config.history_path, default: [])
+      entries = YamlLoader.load(config.history_path, default: [], raise_on_error: true) # fail before any file is deleted (Q-108)
       matching_entry = find_history_entry(entries, target_base) || find_history_entry_by_date(entries, date, suffix_index)
 
       # Display what will be removed
@@ -99,6 +99,10 @@ module PodgenCLI
         return 0
       end
 
+      # Fail before any file is deleted: the writers below load these strictly.
+      UploadTracker.for_config(config).load(strict: true)
+      YamlLoader.load(config.excluded_urls_path, default: [], raise_on_error: true) if can_exclude
+
       # Confirm — offer exclude option for language episodes
       if can_exclude
         $stdout.write "Proceed (x also excludes episode URL from future processing)? [y/N/x] "
@@ -120,11 +124,7 @@ module PodgenCLI
       end
 
       # Remove history entry (atomic write) — prefer basename match, fall back to positional
-      removed = if @episode_id
-        history.remove_by_basename!(target_base) || history.remove_by_date!(date, suffix_index)
-      else
-        history.remove_last!
-      end
+      removed = history.remove_by_basename!(target_base) || history.remove_by_date!(date, suffix_index)
 
       # Remove LingQ tracking entry for this episode
       remove_upload_tracking(config, target_base)
@@ -227,7 +227,7 @@ module PodgenCLI
 
     def exclude_episode_urls(config, urls)
       path = config.excluded_urls_path
-      current = YamlLoader.load(path, default: [])
+      current = YamlLoader.load(path, default: [], raise_on_error: true)
       added = urls.reject { |u| current.include?(u) }
       return if added.empty?
 

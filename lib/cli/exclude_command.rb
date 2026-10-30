@@ -188,7 +188,7 @@ module PodgenCLI
       end
 
       excluded_path = config.excluded_urls_path
-      current = YamlLoader.load(excluded_path, default: [])
+      current = YamlLoader.load(excluded_path, default: [], raise_on_error: true)
       current.concat(new_urls)
       AtomicWriter.write_yaml(excluded_path, current)
 

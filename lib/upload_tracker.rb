@@ -27,9 +27,11 @@ class UploadTracker
 
   # Load tracking data. Returns Hash of platform → group → { basename → id }.
   # Migrates from legacy lingq_uploads.yml on first load if needed.
-  def load
+  # strict: true (the writers) raises on a corrupt file instead of returning {}
+  # that would then be saved over it (Q-108); display reads keep the default.
+  def load(strict: false)
     migrate_legacy_file unless @migrated
-    data = YamlLoader.load(@path, default: {})
+    data = YamlLoader.load(@path, default: {}, raise_on_error: strict)
     normalize_keys(data)
   end
 
@@ -40,7 +42,7 @@ class UploadTracker
 
   # Record a new upload.
   def record(platform, group, base_name, upload_id)
-    tracking = load
+    tracking = load(strict: true)
     platform_key = platform.to_s
     group_key = group.to_s
     tracking[platform_key] ||= {}
@@ -52,7 +54,7 @@ class UploadTracker
   # Remove all entries for a basename across all platforms and groups.
   # Returns true if anything was removed.
   def remove(base_name)
-    tracking = load
+    tracking = load(strict: true)
     changed = false
     tracking.each_value do |groups|
       next unless groups.is_a?(Hash)
@@ -68,7 +70,7 @@ class UploadTracker
   # Rename all entries from old_base_name to new_base_name across all platforms
   # and groups. Used by `podgen move`. Returns true if anything was renamed.
   def rename(old_base_name, new_base_name)
-    tracking = load
+    tracking = load(strict: true)
     changed = false
     tracking.each_value do |groups|
       next unless groups.is_a?(Hash)

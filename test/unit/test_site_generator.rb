@@ -386,6 +386,51 @@ class TestSiteGenerator < Minitest::Test
 
     refute File.exist?(File.join(site_dir, "stale.html"))
     assert File.exist?(File.join(site_dir, "index.html"))
+    assert_equal ["site"], Dir.children(@podcast_dir).grep(/\Asite/), "no .tmp./.old. leftovers"
+  end
+
+  def test_generate_clean_failure_on_second_language_keeps_live_site
+    site_dir = File.join(@podcast_dir, "site")
+    FileUtils.mkdir_p(site_dir)
+    File.write(File.join(site_dir, "index.html"), "live")
+
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Test" }])
+
+    gen = build_generator(languages: [{ "code" => "en" }, { "code" => "es" }], clean: true)
+    real = gen.method(:generate_for_language)
+    failing = ->(code) { (code == "es") ? raise("render failed") : real.call(code) }
+    gen.stub :generate_for_language, failing do
+      assert_raises(RuntimeError) { gen.generate }
+    end
+
+    assert_equal "live", File.read(File.join(site_dir, "index.html"))
+    assert_equal ["site"], Dir.children(@podcast_dir).grep(/\Asite/), "the temp dir is removed"
+  end
+
+  # CRPR: live moved aside, then the swap-in rename fails -> live is restored.
+  def test_generate_clean_failed_swap_rename_restores_live_site
+    site_dir = File.join(@podcast_dir, "site")
+    FileUtils.mkdir_p(site_dir)
+    File.write(File.join(site_dir, "index.html"), "live")
+
+    create_mp3("mypod-2026-01-15.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Test" }])
+
+    gen = build_generator(clean: true)
+    real_rename = File.method(:rename)
+    calls = 0
+    failing = lambda do |src, dst|
+      calls += 1
+      raise Errno::EACCES, dst if calls == 2
+      real_rename.call(src, dst)
+    end
+    File.stub(:rename, failing) do
+      assert_raises(Errno::EACCES) { gen.generate }
+    end
+
+    assert_equal "live", File.read(File.join(site_dir, "index.html"))
+    assert_equal ["site"], Dir.children(@podcast_dir).grep(/\Asite/), "no .tmp./.old. leftovers"
   end
 
   # --- format_duration ---

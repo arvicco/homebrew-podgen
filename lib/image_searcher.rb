@@ -6,6 +6,7 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require_relative "loggable"
+require_relative "http_retryable"
 
 # Searches DuckDuckGo Images for a query, downloads candidates, filters by
 # minimum byte size, and returns metadata for survivors.
@@ -15,6 +16,7 @@ require_relative "loggable"
 # returned tmp file paths.
 class ImageSearcher
   include Loggable
+  include HttpRetryable
 
   USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 " \
                "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
@@ -50,8 +52,10 @@ class ImageSearcher
   def fetch_urls(query, count:)
     vqd = fetch_vqd(query) or return []
     q = URI.encode_www_form_component(query)
-    res = http_get("https://duckduckgo.com/i.js?l=us-en&o=json&q=#{q}&vqd=#{vqd}&f=,,,&p=-1",
-                   referer: "https://duckduckgo.com/")
+    res = with_http_retries("ImageSearcher", max: 2) do
+      http_get("https://duckduckgo.com/i.js?l=us-en&o=json&q=#{q}&vqd=#{vqd}&f=,,,&p=-1",
+               referer: "https://duckduckgo.com/")
+    end
     return [] unless res.is_a?(Net::HTTPSuccess)
     data = JSON.parse(res.body) rescue {} # skippable: silent fallback — {} (no results) for an unparseable body
     (data["results"] || []).first(count).map { |r| r["image"] }.compact
@@ -59,7 +63,7 @@ class ImageSearcher
 
   def fetch_vqd(query)
     q = URI.encode_www_form_component(query)
-    res = http_get("https://duckduckgo.com/?q=#{q}&iax=images&ia=images")
+    res = with_http_retries("ImageSearcher", max: 2) { http_get("https://duckduckgo.com/?q=#{q}&iax=images&ia=images") }
     return nil unless res.is_a?(Net::HTTPSuccess)
     m = res.body.match(/vqd=['"]([^'"]+)['"]/) || res.body.match(/vqd=([\d-]+)/)
     m && m[1]

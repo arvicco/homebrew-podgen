@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "video_generator"
+require "video_builder"
 
 class TestVideoGenerator < Minitest::Test
   def setup
@@ -59,6 +60,37 @@ class TestVideoGenerator < Minitest::Test
 
     assert File.exist?(output_path), "MP4 file should be created"
     assert File.size(output_path) > 0, "MP4 file should not be empty"
+  end
+
+  def test_generate_failed_ffmpeg_leaves_no_mp4
+    output_path = File.join(@tmpdir, "episode.mp4")
+    mp3_path = File.join(@tmpdir, "episode.mp3")
+    File.write(mp3_path, "audio")
+    failed = Struct.new(:success?, :exitstatus).new(false, 1)
+    partial_write = ->(*cmd) {
+      File.write(cmd.last, "partial")
+      ["", "Conversion failed!\n", failed]
+    }
+
+    Open3.stub :capture3, partial_write do
+      assert_raises(RuntimeError) { @generator.generate(mp3_path, "cover.jpg", output_path) }
+    end
+
+    refute File.exist?(output_path), "a failed render must not leave an mp4"
+    refute VideoBuilder.reusable?(mp3_path: mp3_path, video_path: output_path)
+    assert_equal ["episode.mp3"], Dir.children(@tmpdir), "no part leftovers"
+  end
+
+  def test_generate_success_leaves_only_the_mp4
+    skip "ffmpeg not available" unless ffmpeg_available?
+
+    audio_path = create_test_audio
+    image_path = create_test_image
+    output_path = File.join(@tmpdir, "episode.mp4")
+
+    @generator.generate(audio_path, image_path, output_path)
+
+    assert_equal ["episode.mp4", "test.jpg", "test.mp3"], Dir.children(@tmpdir).sort
   end
 
   private

@@ -95,6 +95,24 @@ class TestImageSearcher < Minitest::Test
     end
   end
 
+  def test_fetch_urls_retries_a_connection_reset_on_both_search_requests
+    searcher = ImageSearcher.new
+    ok = Struct.new(:body) { def is_a?(klass) = klass == Net::HTTPSuccess }
+    results = JSON.generate("results" => [{"image" => "https://a.com/x.jpg"}])
+    queue = [Errno::ECONNRESET.new, ok.new("vqd='3-1'"), Errno::ECONNRESET.new, ok.new(results)]
+    getter = ->(_url, referer: nil) {
+      item = queue.shift
+      raise item if item.is_a?(Exception)
+      item
+    }
+    searcher.stub :sleep, nil do
+      searcher.stub :http_get, getter do
+        assert_equal ["https://a.com/x.jpg"], searcher.send(:fetch_urls, "q", count: 1)
+      end
+    end
+    assert_empty queue
+  end
+
   private
 
   def cleanup_survivors

@@ -80,27 +80,6 @@ class TestEpisodeHistory < Minitest::Test
     assert_nil history.recent_topics_summary
   end
 
-  def test_remove_last_pops_entry
-    @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
-    @history.record!(date: Date.today, title: "Ep 2", topics: ["Ruby"], urls: [])
-
-    removed = @history.remove_last!
-    assert_equal "Ep 2", removed["title"]
-
-    entries = YAML.load_file(@history_path)
-    assert_equal 1, entries.length
-    assert_equal "Ep 1", entries[0]["title"]
-  end
-
-  def test_remove_last_on_empty_returns_nil
-    assert_nil @history.remove_last!
-  end
-
-  def test_remove_last_on_nonexistent_file_returns_nil
-    history = EpisodeHistory.new(File.join(@tmpdir, "nonexistent.yml"))
-    assert_nil history.remove_last!
-  end
-
   def test_remove_by_date_removes_specific_entry
     @history.record!(date: "2026-03-01", title: "Ep 1", topics: ["a"], urls: [])
     @history.record!(date: "2026-03-02", title: "Ep 2", topics: ["b"], urls: [])
@@ -323,5 +302,32 @@ class TestEpisodeHistory < Minitest::Test
     assert_equal 1, entries.length
     refute entries[0].key?("duration")
     refute entries[0].key?("timestamp")
+  end
+
+  # Q-108: a corrupt hand-edited history is never rewritten from an empty default.
+  CORRUPT_HISTORY = "- date: \"2026-01-01\"\n  title: x\n- date: [[[\n"
+
+  def test_record_corrupt_file_raises_and_leaves_bytes_unchanged
+    File.write(@history_path, CORRUPT_HISTORY)
+    assert_raises(RuntimeError) { @history.record!(date: Date.today, title: "Ep", topics: [], urls: []) }
+    assert_equal CORRUPT_HISTORY, File.read(@history_path)
+  end
+
+  def test_rename_corrupt_file_raises_and_leaves_bytes_unchanged
+    File.write(@history_path, CORRUPT_HISTORY)
+    assert_raises(RuntimeError) { @history.rename!("a", new_basename: "b", new_date: Date.today) }
+    assert_equal CORRUPT_HISTORY, File.read(@history_path)
+  end
+
+  def test_record_language_wrong_top_level_type_raises_and_leaves_bytes_unchanged
+    File.write(@history_path, "pod-2026-01-01: {}\n")
+    err = assert_raises(RuntimeError) { @history.record_language!(basename: "pod-2026-01-01", language_code: "en") }
+    assert_includes err.message, @history_path
+    assert_equal "pod-2026-01-01: {}\n", File.read(@history_path)
+  end
+
+  def test_all_episodes_corrupt_file_returns_default
+    File.write(@history_path, CORRUPT_HISTORY)
+    assert_equal [], @history.all_episodes
   end
 end

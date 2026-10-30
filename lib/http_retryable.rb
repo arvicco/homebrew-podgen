@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "net/http"
+require "openssl"
 require_relative "retryable"
 
 # Mixin for HTTP API clients that need retry logic with exponential backoff.
@@ -11,13 +13,15 @@ require_relative "retryable"
 #     include HttpRetryable
 #   end
 module HttpRetryable
-  RETRIABLE_CODES = [429, 503].freeze
+  RETRIABLE_CODES = [429, 500, 502, 503, 504].freeze
 
   class RetriableError < StandardError; end
 
   HTTP_EXCEPTIONS = [
     RetriableError, Net::OpenTimeout, Net::ReadTimeout,
-    Errno::ECONNRESET, Errno::EPIPE, Errno::ECONNREFUSED, SocketError
+    Errno::ECONNRESET, Errno::EPIPE, Errno::ECONNREFUSED, SocketError,
+    OpenSSL::SSL::SSLError, EOFError, Net::WriteTimeout, Errno::ETIMEDOUT,
+    Errno::EHOSTUNREACH, Errno::ENETUNREACH
   ].freeze
 
   # Parses an HTTP error response body, extracting a human-readable message.

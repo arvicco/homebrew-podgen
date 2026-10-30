@@ -45,6 +45,15 @@ class TestExcludeCommand < Minitest::Test
     refute File.exist?(@history_path)
   end
 
+  # Q-108: a corrupt hand-edited exclusion file is never rewritten from an empty default.
+  def test_exclude_corrupt_excluded_file_raises_and_leaves_bytes_unchanged
+    File.write(@excluded_path, "- https://old.com\n- [[[\n")
+    assert_raises(RuntimeError) do
+      capture_io { PodgenCLI::ExcludeCommand.new(["testpod", "https://example.com/new"], {}).run }
+    end
+    assert_equal "- https://old.com\n- [[[\n", File.read(@excluded_path)
+  end
+
   def test_exclude_appends_to_existing_excluded_file
     File.write(@excluded_path, ["https://old.com"].to_yaml)
 

@@ -75,6 +75,14 @@ class TestYamlLoader < Minitest::Test
     assert_includes err.message, "YAML syntax error in #{path}"
   end
 
+  def test_load_type_mismatch_raises_when_requested
+    path = write_yaml({ "a" => 1 })
+    err = assert_raises(RuntimeError) { YamlLoader.load(path, default: [], raise_on_error: true) }
+    assert_includes err.message, path
+    assert_includes err.message, "Hash"
+    assert_includes err.message, "Array"
+  end
+
   private
 
   def write_yaml(data)
