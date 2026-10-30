@@ -95,6 +95,34 @@ class TestScrapCommand < Minitest::Test
     ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-109: after a backfill the newest file and the last-appended row diverge;
+  # `scrap <pod>` must remove the row of the episode whose files it deletes.
+  def test_run_latest_after_backfill_removes_row_of_deleted_episode
+    ENV["PODGEN_ROOT"] = @tmpdir
+    pod_dir = File.join(@tmpdir, "podcasts", "scrappod")
+    FileUtils.mkdir_p(pod_dir)
+    File.write(File.join(pod_dir, "guidelines.md"), "## Podcast\n- name: scrappod\n")
+    require "podcast_config"
+    config = PodcastConfig.new("scrappod")
+    FileUtils.mkdir_p(config.episodes_dir)
+    %w[scrappod-2026-03-15.mp3 scrappod-2026-03-10.mp3].each { |f| File.write(File.join(config.episodes_dir, f), "x") }
+    File.write(config.history_path, [
+      { "date" => "2026-03-15", "title" => "D2", "basename" => "scrappod-2026-03-15" },
+      { "date" => "2026-03-10", "title" => "D1", "basename" => "scrappod-2026-03-10" }
+    ].to_yaml)
+
+    $stdin = StringIO.new("y\n")
+    code = nil
+    capture_io { code = PodgenCLI::ScrapCommand.new(["scrappod"], {}).run }
+
+    assert_equal 0, code
+    assert_equal ["scrappod-2026-03-10.mp3"], Dir.children(config.episodes_dir)
+    assert_equal ["D1"], YAML.load_file(config.history_path).map { |e| e["title"] }
+  ensure
+    $stdin = STDIN
+    ENV.delete("PODGEN_ROOT")
+  end
+
   # --- find_history_entry ---
 
   def test_find_history_entry_by_basename
