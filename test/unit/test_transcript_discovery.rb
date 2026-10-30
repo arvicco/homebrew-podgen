@@ -111,6 +111,15 @@ class TestTranscriptDiscovery < Minitest::Test
     end
   end
 
+  # P14-2 (Q-131): entities decode to their characters, not deleted
+  def test_strip_html_keeps_diacritics
+    html = "<p>Pe&#269;ica &scaron;e perch&eacute; &amp; &lt;x&gt;</p>"
+
+    text = TranscriptDiscovery.send(:strip_html, html)
+
+    assert_equal "Pečica še perché & <x>", text
+  end
+
   def test_no_sources_returns_nil
     result = TranscriptDiscovery.search
     assert_nil result

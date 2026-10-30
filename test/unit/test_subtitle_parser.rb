@@ -87,6 +87,44 @@ class TestSubtitleParser < Minitest::Test
     assert_equal :json, SubtitleParser.detect_format("anything", "application/json")
   end
 
+  # P14-2 (Q-131): inline cue tags and NOTE blocks are not spoken text
+  def test_parse_vtt_strips_cue_tags_and_note_blocks
+    vtt = <<~VTT
+      WEBVTT
+
+      NOTE This is a comment
+      spanning two lines
+
+      00:00:01.000 --> 00:00:03.000
+      <c.colorE5E5E5>Hello</c><00:00:01.500><c> world.</c>
+
+      00:00:04.000 --> 00:00:06.000
+      <v Speaker>Second line.</v>
+    VTT
+    assert_equal "Hello world. Second line.", SubtitleParser.parse_vtt(vtt)
+  end
+
+  def test_parse_vtt_mm_ss_timings_parse
+    vtt = "WEBVTT\n\n01:02.000 --> 01:04.500\nShort timing.\n"
+    assert_equal "Short timing.", SubtitleParser.parse_vtt(vtt)
+  end
+
+  def test_parse_srt_mm_ss_timings_parse
+    srt = "1\n01:02,000 --> 01:04,500\nShort timing.\n"
+    assert_equal "Short timing.", SubtitleParser.parse_srt(srt)
+  end
+
+  def test_parse_vtt_numeric_cue_text_survives
+    vtt = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n1945\n"
+    assert_equal "1945", SubtitleParser.parse_vtt(vtt)
+  end
+
+  def test_parse_bom_prefixed_vtt_detected
+    vtt = "﻿WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello.\n"
+    assert_equal :vtt, SubtitleParser.detect_format(vtt)
+    assert_equal "Hello.", SubtitleParser.parse(vtt)
+  end
+
   def test_parse_auto_detects_format
     srt = "1\n00:00:01,000 --> 00:00:03,000\nHello world."
     assert_equal "Hello world.", SubtitleParser.parse(srt)
