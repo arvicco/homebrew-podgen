@@ -19,7 +19,7 @@ module SubtitleGenerator
     entries = []
     segments.each do |seg|
       sub_segments = split_segment(seg)
-      entries.concat(sub_segments)
+      entries.concat(sub_segments.reject { |e| e[:text].empty? })
     end
 
     srt = entries.each_with_index.map do |entry, i|
@@ -72,7 +72,8 @@ module SubtitleGenerator
   def self.split_text(text)
     # Try sentence boundaries first
     sentences = text.scan(/[^.!?]+[.!?]+/).map(&:strip)
-    sentences << text.split(/[.!?]+/).last&.strip if sentences.join(" ").length < text.length
+    tail = text[/[^.!?]*\z/].strip
+    sentences << tail unless tail.empty?
 
     return recombine(sentences.compact.reject(&:empty?)) if sentences.length > 1
 

@@ -143,6 +143,26 @@ class TestSubtitleReconciler < Minitest::Test
     assert_match(/count mismatch/, err.message)
   end
 
+  # P14-2 (Q-131): nothing null may reach *_timestamps.json
+  def test_validate_missing_text_raises_reconciliation_error
+    original = [{ "start" => 0.0, "end" => 5.0, "text" => "A." }]
+    reconciled = [{ "start" => 0.0, "end" => 5.0 }]
+
+    err = assert_raises(SubtitleReconciler::ReconciliationError) do
+      SubtitleReconciler.validate!(reconciled, original)
+    end
+    assert_match(/text/, err.message)
+  end
+
+  def test_validate_null_text_raises_reconciliation_error
+    original = [{ "start" => 0.0, "end" => 5.0, "text" => "A." }]
+    reconciled = [{ "start" => 0.0, "end" => 5.0, "text" => nil }]
+
+    assert_raises(SubtitleReconciler::ReconciliationError) do
+      SubtitleReconciler.validate!(reconciled, original)
+    end
+  end
+
   # --- reconcile (stubbed API) ---
 
   # --- model resolution ---
