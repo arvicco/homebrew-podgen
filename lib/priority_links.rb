@@ -188,7 +188,7 @@ class PriorityLinks
     [title, summary]
   end
 
-  # retryable: network errors and 429/503 (HttpRetryable); the last error
+  # retryable: network errors and 429/5xx (HttpRetryable); the last error
   # propagates with its class on give-up.
   def http_get(uri)
     with_retries(max: 2, on: HTTP_EXCEPTIONS, label: "PriorityLinks", reraise: true) do

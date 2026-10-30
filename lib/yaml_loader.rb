@@ -17,7 +17,7 @@ module YamlLoader
     data = YAML.load_file(path)
     return default if data.nil?
     return data if default.nil? || data.is_a?(default.class)
-    raise "YAML in #{path} is a #{data.class}, expected a #{default.class}" if raise_on_error
+    raise "YAML in #{path}: expected #{default.class}, got #{data.class}" if raise_on_error
     default
   rescue Psych::SyntaxError => e
     raise "YAML syntax error in #{path}: #{e.message.sub(/\A\(.*?\):\s*/, '')}" if raise_on_error

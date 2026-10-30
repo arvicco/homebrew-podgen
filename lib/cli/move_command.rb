@@ -188,6 +188,9 @@ module PodgenCLI
     # full, permission, race) — surface them clearly and don't leave a
     # half-moved episode on disk.
     def perform_move(config, pairs, to_date, artifacts_per_base:)
+      # Fail before the first rename: the per-pair writers load these strictly.
+      YamlLoader.load(config.history_path, default: [], raise_on_error: true)
+      UploadTracker.for_config(config).load(strict: true)
       moved_files = 0
       completed_pairs = []
       pairs.each do |from_base, to_base|
