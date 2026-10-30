@@ -787,6 +787,13 @@ module PodgenCLI
       # Clean or generate description
       if episode[:description].to_s.strip.empty?
         episode[:description] = agent.generate(title: episode[:title], transcript: transcript)
+        if episode[:description].to_s.strip.empty?
+          # Q-106 (P12-1): never ship an empty description; a failure is
+          # already counted by the agent's own warning when it raised; a blank
+          # result without an error is only this log line (CRPR nit, Phase 12).
+          logger.log("No description could be generated — using the title")
+          episode[:description] = episode[:title]
+        end
       else
         episode[:description] = agent.clean(title: episode[:title], description: episode[:description])
 
