@@ -495,6 +495,42 @@ class TestAudioAssembler < Minitest::Test
     end
   end
 
+  def test_assemble_failed_loudnorm_apply_leaves_no_output_or_concat
+    skip_unless_command("ffmpeg")
+
+    Dir.mktmpdir("assembler_test") do |dir|
+      seg = File.join(dir, "segment.mp3")
+      output = File.join(dir, "output.mp3")
+      generate_tone(seg, duration: 1)
+
+      assembler = AudioAssembler.new
+      partial_write = ->(_input, out, _measurements, metadata:) {
+        File.write(out, "partial")
+        raise "ffmpeg loudnorm apply failed (exit 1)"
+      }
+      assembler.stub :loudnorm_apply, partial_write do
+        assert_raises(RuntimeError) { assembler.assemble([seg], output) }
+      end
+
+      refute File.exist?(output), "a failed apply must not leave an episode mp3"
+      assert_equal ["segment.mp3"], Dir.children(dir), "no _concat or part leftovers"
+    end
+  end
+
+  def test_assemble_success_leaves_only_the_output
+    skip_unless_command("ffmpeg")
+
+    Dir.mktmpdir("assembler_test") do |dir|
+      seg = File.join(dir, "segment.mp3")
+      output = File.join(dir, "output.mp3")
+      generate_tone(seg, duration: 1)
+
+      AudioAssembler.new.assemble([seg], output)
+
+      assert_equal ["output.mp3", "segment.mp3"], Dir.children(dir).sort
+    end
+  end
+
   def test_assemble_creates_output_directory
     skip_unless_command("ffmpeg")
 
