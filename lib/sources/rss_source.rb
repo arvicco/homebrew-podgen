@@ -8,6 +8,7 @@ require "time"
 require_relative "../loggable"
 require_relative "../retryable"
 require_relative "../cover_resolver"
+require_relative "../url_cleaner"
 
 class RSSSource
   include Loggable
@@ -70,6 +71,9 @@ class RSSSource
   # Sorted newest-first. Excludes URLs in exclude_urls set.
   def fetch_episodes(exclude_urls: Set.new)
     episodes = []
+    # Compared cleaned on both sides: tracking parameters on an enclosure
+    # never defeat an exclusion (Q-119); the episode keeps its raw URL.
+    excluded = exclude_urls.map { |u| UrlCleaner.clean(u) }.to_set
 
     @feeds.each do |feed_entry|
       # Support both plain URL strings and hashes with options
@@ -81,7 +85,7 @@ class RSSSource
 
       items = fetch_feed_episodes(feed_url, tag: feed_opts[:tag])
       items.each do |item|
-        next if exclude_urls.include?(item[:audio_url])
+        next if excluded.include?(UrlCleaner.clean(item[:audio_url]))
         item[:skip] = feed_opts[:skip] if feed_opts[:skip]
         item[:cut] = feed_opts[:cut] if feed_opts[:cut]
         item[:autotrim] = feed_opts[:autotrim] if feed_opts[:autotrim]

@@ -454,6 +454,23 @@ class TestEpisodeSource < Minitest::Test
     assert_equal nxt, with_rss { s.fetch_next(force: true) }
   end
 
+  # Q-119 (P14-4): the pipeline excludes the cleaned URL; a tracked
+  # enclosure (?src=rss) must still be skipped by the next pick.
+  def test_fetch_next_skips_tracked_enclosure_after_cleaned_exclusion
+    raw = "https://h.com/a.mp3?src=rss"
+    nxt = "https://h.com/b.mp3"
+    s, = guard_source(history: [], feeds: {}, rss_feeds: ["https://h.com/feed"])
+    s.exclude_url!("https://h.com/a.mp3") # what exclude_current_episode! stores
+
+    picked = with_real_rss([raw, nxt]) { s.fetch_next }
+    assert_equal nxt, picked[:audio_url]
+  end
+
+  def test_already_processed_known_cleaned_url_matches_tracked_enclosure
+    s = source(known_urls: ["http://example.com/ep.mp3"])
+    assert s.already_processed?({ audio_url: "http://example.com/ep.mp3?src=rss", title: "T" })
+  end
+
   def test_exclude_url_noop_without_path
     s = source(rss_feeds: ["https://a.com/feed"])
     # Should not raise
@@ -774,6 +791,24 @@ class TestEpisodeSource < Minitest::Test
   def with_rss(&block)
     by_feed = @fake_feeds
     RSSSource.stub(:new, ->(feeds:, **) { FakeRSS.new(by_feed, feeds) }, &block)
+  end
+
+  # A real RSSSource serving one feed whose items carry these enclosures.
+  def with_real_rss(urls, &block)
+    items = urls.each_with_index.map do |u, i|
+      "<item><title>Ep #{i}</title><link>https://h.com/#{i}</link><description>d</description>" \
+        "<pubDate>#{(Time.utc(2026, 1, 10) - (i * 86_400)).rfc2822}</pubDate>" \
+        "<enclosure url=\"#{u}\" type=\"audio/mpeg\" length=\"1000\"/></item>"
+    end
+    xml = "<?xml version=\"1.0\"?><rss version=\"2.0\"><channel><title>x</title><link>x</link>" \
+      "<description>x</description>#{items.join}</channel></rss>"
+    real = RSSSource.method(:new)
+    factory = lambda do |**kw|
+      src = real.call(**kw)
+      src.define_singleton_method(:http_get_with_redirects) { |_url, _redirects = nil| xml }
+      src
+    end
+    RSSSource.stub(:new, factory, &block)
   end
 
   def stub_status(success)

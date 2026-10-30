@@ -177,7 +177,38 @@ class TestRSSSource < Minitest::Test
     assert_match(/RuntimeError: RSS failed after 3 attempts: HTTP 500/, logger.warnings.first)
   end
 
+  # Q-119 (P14-4): exclusions compare cleaned on both sides, so tracking
+  # parameters on the enclosure never defeat an exclusion.
+  def test_fetch_episodes_cleaned_exclusion_excludes_tracked_enclosure
+    source = feed_source_with_enclosure("https://example.com/a.mp3?src=rss")
+    assert_empty source.fetch_episodes(exclude_urls: Set["https://example.com/a.mp3"])
+  end
+
+  def test_fetch_episodes_raw_exclusion_excludes_differently_tracked_enclosure
+    source = feed_source_with_enclosure("https://example.com/a.mp3?utm_source=x")
+    assert_empty source.fetch_episodes(exclude_urls: Set["https://example.com/a.mp3?src=rss"])
+  end
+
+  def test_fetch_episodes_tracked_enclosure_not_excluded_is_kept_raw
+    source = feed_source_with_enclosure("https://example.com/a.mp3?src=rss")
+    episodes = source.fetch_episodes(exclude_urls: Set["https://example.com/b.mp3"])
+    assert_equal ["https://example.com/a.mp3?src=rss"], episodes.map { |e| e[:audio_url] }
+  end
+
   private
+
+  def feed_source_with_enclosure(url)
+    xml = <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <rss version="2.0"><channel><title>x</title><link>x</link><description>x</description>
+        <item><title>Ep</title><link>https://example.com/ep</link><description>d</description>
+          <enclosure url="#{url}" type="audio/mpeg" length="1000"/></item>
+      </channel></rss>
+    XML
+    source = RSSSource.new(feeds: ["https://example.com/feed.xml"], logger: @logger)
+    source.define_singleton_method(:http_get_with_redirects) { |_url, _redirects = nil| xml }
+    source
+  end
 
   class WarningLogger < CapturingLogger
     attr_reader :warnings
