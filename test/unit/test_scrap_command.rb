@@ -187,13 +187,17 @@ class TestScrapCommand < Minitest::Test
     assert_equal original_mtime, File.mtime(tracking_path)
   end
 
-  def test_remove_upload_tracking_non_hash_file
-    File.write(File.join(@tmpdir, "uploads.yml"), "just a string")
+  # Q-108: a non-Hash uploads.yml is corruption — the write path names the
+  # file and leaves its bytes alone.
+  def test_remove_upload_tracking_non_hash_file_raises_and_leaves_bytes_unchanged
+    path = File.join(@tmpdir, "uploads.yml")
+    File.write(path, "just a string")
 
     config = stub_config
     cmd = build_command(config)
-    # Should not raise
-    cmd.send(:remove_upload_tracking, config, "ep-a")
+    err = assert_raises(RuntimeError) { cmd.send(:remove_upload_tracking, config, "ep-a") }
+    assert_includes err.message, path
+    assert_equal "just a string", File.read(path)
   end
 
   def test_remove_upload_tracking_removes_from_all_platforms

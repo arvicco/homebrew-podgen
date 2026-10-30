@@ -113,7 +113,7 @@ class EpisodeSource
     path = @config.respond_to?(:excluded_urls_path) ? @config.excluded_urls_path : nil
     return unless path
 
-    current = YamlLoader.load(path, default: [])
+    current = YamlLoader.load(path, default: [], raise_on_error: true)
     unless current.include?(url)
       current << url
       AtomicWriter.write_yaml(path, current)
