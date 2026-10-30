@@ -227,8 +227,12 @@ URLs excluded in-run, YouTube rejection reason + consent-age WARN, Exa
 network retries, uncounted content failures counted, trim-prompt
 re-ask; phase clock 1h 33m). Phase 12 (small truthfulness sweep: a
 dead feed costs one attempt, a failed first-generation description is
-counted, periodic dead-code review) AT GATE 12 — adopted 2026-10-29
-19:08, all packets landed, CRPR APPROVED (refs/cr/reviewed = 9b0cf20);
-gate PR open, the owner merges. R10-01 ruled (nothing owner-side); R9-02 deferred to 11-12,
-R10-02 to 11-26; I-11 open (YouTube consent expires every 7 days while
-the OAuth app is in testing). Update this line at each gate.
+counted, periodic dead-code review) CLOSED 2026-10-30 02:26 (PR #14,
+merge 146cca3; phase clock 17m). Refill read 2026-10-30: Q-108…Q-139
+and R12-01…R12-06 minted. Phase 13 (data safety: corrupt owner-data
+files never rewritten, scrap removes the right row, transient 5xx/TLS
+retried, failed site regen keeps the live site, ffmpeg outputs land
+only when complete) EXECUTING — adopted 2026-10-30 05:41. R12-01…06
+open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
+consent expires every 7 days while the OAuth app is in testing).
+Update this line at each gate.
