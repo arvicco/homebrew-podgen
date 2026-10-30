@@ -66,17 +66,24 @@ class AudioAssembler
 
     # Step 1: Concatenate all inputs with resampling and crossfades
     concat_path = output_path.sub(/\.mp3$/, "_concat.mp3")
-    log("Concatenating #{all_inputs.length} audio files...")
-    concatenate(all_inputs, concat_path, intro: intro_path, outro: outro_path,
-                segment_pause: segment_pause)
+    # The final pass writes a part file renamed only on success, so a failed
+    # run leaves no partial episode mp3. ".mp3.part" matches no *.mp3 glob.
+    part_path = "#{output_path}.part"
+    begin
+      log("Concatenating #{all_inputs.length} audio files...")
+      concatenate(all_inputs, concat_path, intro: intro_path, outro: outro_path,
+                  segment_pause: segment_pause)
 
-    # Step 2: Two-pass loudness normalization
-    log("Normalizing loudness to #{TARGET_LUFS} LUFS...")
-    measurements = loudnorm_analyze(concat_path)
-    loudnorm_apply(concat_path, output_path, measurements, metadata: metadata)
-
-    # Clean up intermediate file
-    File.delete(concat_path) if File.exist?(concat_path)
+      # Step 2: Two-pass loudness normalization
+      log("Normalizing loudness to #{TARGET_LUFS} LUFS...")
+      measurements = loudnorm_analyze(concat_path)
+      loudnorm_apply(concat_path, part_path, measurements, metadata: metadata)
+      File.rename(part_path, output_path)
+    ensure
+      # Clean up intermediate files (and the part file of a failed run)
+      File.delete(concat_path) if File.exist?(concat_path)
+      File.delete(part_path) if File.exist?(part_path)
+    end
 
     duration = probe_duration(output_path)
     size_mb = (File.size(output_path) / (1024.0 * 1024)).round(2)
@@ -265,7 +272,8 @@ class AudioAssembler
       "-map_metadata", "-1"
     ]
     metadata.each { |key, value| args.push("-metadata", "#{key}=#{value}") }
-    args.push("-y", output_path)
+    # -f: the output may be a ".part" file, whose extension names no format
+    args.push("-f", "mp3", "-y", output_path)
 
     run_ffmpeg(args, "loudnorm apply")
   end

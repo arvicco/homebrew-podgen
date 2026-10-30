@@ -57,6 +57,12 @@ class TestBaseEngine < Minitest::Test
     end
   end
 
+  def test_api_error_for_transient_5xx_is_retriable
+    [500, 502, 504].each do |code|
+      assert_kind_of Transcription::RetriableApiError, Transcription::ApiError.for(code, "bad gateway")
+    end
+  end
+
   def test_api_error_for_401_is_not_retriable
     err = Transcription::ApiError.for(401, "Unauthorized")
     assert_instance_of Transcription::ApiError, err
@@ -64,7 +70,8 @@ class TestBaseEngine < Minitest::Test
   end
 
   def test_retryable_errors_are_retriable_api_error_and_timeouts
-    assert_equal [Transcription::RetriableApiError, Net::OpenTimeout, Net::ReadTimeout, Errno::ETIMEDOUT],
+    assert_equal [Transcription::RetriableApiError, Net::OpenTimeout, Net::ReadTimeout, Errno::ETIMEDOUT,
+      OpenSSL::SSL::SSLError, EOFError, Net::WriteTimeout, Errno::EHOSTUNREACH, Errno::ENETUNREACH],
       Transcription::BaseEngine::RETRYABLE_ERRORS
   end
 

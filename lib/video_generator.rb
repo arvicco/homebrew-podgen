@@ -14,17 +14,23 @@ class VideoGenerator
 
   # Generate an MP4 video from an image and audio file.
   # Returns the output path.
+  # ffmpeg writes a part file renamed only on success, so a failed run
+  # leaves no partial mp4 for the next batch to reuse.
   def generate(audio_path, image_path, output_path)
-    cmd = ffmpeg_command(image_path, audio_path, output_path)
+    part_path = "#{output_path}.part.mp4"
+    cmd = ffmpeg_command(image_path, audio_path, part_path)
     log("Generating video: #{output_path}")
 
     _, stderr, status = Open3.capture3(*cmd)
     unless status.success?
       raise "ffmpeg video generation failed (exit #{status.exitstatus}): #{stderr.lines.last(3).join}"
     end
+    File.rename(part_path, output_path)
 
     log("Video created: #{output_path} (#{format_size(File.size(output_path))})")
     output_path
+  ensure
+    File.delete(part_path) if part_path && File.exist?(part_path)
   end
 
   private

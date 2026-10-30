@@ -7,6 +7,7 @@ require "yaml"
 require "fileutils"
 require "open3"
 require "digest"
+require "securerandom"
 require_relative "loggable"
 require_relative "format_helper"
 require_relative "language_names"
@@ -47,11 +48,11 @@ class SiteGenerator
     )
   end
 
+  # clean: builds into a sibling temp dir and swaps it in only on success,
+  # so a failed regeneration leaves the live site (and the R2 sync) intact.
   def generate
-    if @clean && Dir.exist?(@output_dir)
-      FileUtils.rm_rf(@output_dir)
-      log("Cleaned #{@output_dir}")
-    end
+    live = @output_dir
+    @output_dir = tmp = "#{live}.tmp.#{SecureRandom.hex(4)}" if @clean
 
     FileUtils.mkdir_p(@output_dir)
     install_css
@@ -61,8 +62,20 @@ class SiteGenerator
       generate_for_language(code)
     end
 
-    log("Site generated at #{@output_dir}")
-    @output_dir
+    if tmp
+      old = "#{live}.old.#{SecureRandom.hex(4)}"
+      File.rename(live, old) if Dir.exist?(live)
+      File.rename(tmp, live)
+      FileUtils.rm_rf(old)
+    end
+
+    log("Site generated at #{live}")
+    live
+  ensure
+    if tmp
+      @output_dir = live
+      FileUtils.rm_rf(tmp)
+    end
   end
 
   private
