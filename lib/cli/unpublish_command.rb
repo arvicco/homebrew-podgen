@@ -37,7 +37,7 @@ module PodgenCLI
     def unpublish_youtube
       load_config!
       tracker = UploadTracker.for_config(@config)
-      tracking = tracker.load
+      tracking = tracker.load(strict: true)
       youtube = tracking["youtube"]
 
       unless youtube.is_a?(Hash) && youtube.values.any? { |entries| entries.is_a?(Hash) && !entries.empty? }

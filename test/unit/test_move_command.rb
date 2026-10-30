@@ -283,6 +283,17 @@ class TestMoveCommand < Minitest::Test
     refute File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-20_transcript.md"))
   end
 
+  # CRPR: a corrupt uploads.yml fails the move before any file is renamed.
+  def test_corrupt_uploads_file_fails_before_any_rename
+    write_episode("mypod-2026-05-16")
+    File.write(File.join(File.dirname(@config.episodes_dir), "uploads.yml"), "- not a hash\n")
+
+    assert_raises(RuntimeError) { stub_rss { run_move("mypod", "2026-05-16", "2026-05-20") } }
+
+    assert File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-16.mp3"))
+    refute File.exist?(File.join(@config.episodes_dir, "mypod-2026-05-20.mp3"))
+  end
+
   # ───── RSS regeneration is invoked ─────────────────────────────────
 
   def test_rss_regen_is_invoked_on_success

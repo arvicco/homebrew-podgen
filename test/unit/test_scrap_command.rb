@@ -123,6 +123,31 @@ class TestScrapCommand < Minitest::Test
     ENV.delete("PODGEN_ROOT")
   end
 
+  # CRPR: a corrupt uploads.yml fails the scrap before any file or row is removed.
+  def test_run_corrupt_uploads_file_fails_before_deleting_anything
+    ENV["PODGEN_ROOT"] = @tmpdir
+    pod_dir = File.join(@tmpdir, "podcasts", "scrappod")
+    FileUtils.mkdir_p(pod_dir)
+    File.write(File.join(pod_dir, "guidelines.md"), "## Podcast\n- name: scrappod\n")
+    require "podcast_config"
+    config = PodcastConfig.new("scrappod")
+    FileUtils.mkdir_p(config.episodes_dir)
+    File.write(File.join(config.episodes_dir, "scrappod-2026-03-15.mp3"), "x")
+    File.write(config.history_path, [{ "date" => "2026-03-15", "title" => "D1", "basename" => "scrappod-2026-03-15" }].to_yaml)
+    File.write(File.join(File.dirname(config.episodes_dir), "uploads.yml"), "- not a hash\n")
+
+    $stdin = StringIO.new("y\n")
+    capture_io do
+      assert_raises(RuntimeError) { PodgenCLI::ScrapCommand.new(["scrappod", "2026-03-15"], {}).run }
+    end
+
+    assert_equal ["scrappod-2026-03-15.mp3"], Dir.children(config.episodes_dir)
+    assert_equal ["D1"], YAML.load_file(config.history_path).map { |e| e["title"] }
+  ensure
+    $stdin = STDIN
+    ENV.delete("PODGEN_ROOT")
+  end
+
   # --- find_history_entry ---
 
   def test_find_history_entry_by_basename

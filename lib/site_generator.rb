@@ -65,7 +65,12 @@ class SiteGenerator
     if tmp
       old = "#{live}.old.#{SecureRandom.hex(4)}"
       File.rename(live, old) if Dir.exist?(live)
-      File.rename(tmp, live)
+      begin
+        File.rename(tmp, live)
+      rescue StandardError # fatal: put the live site back, then re-raise
+        File.rename(old, live) if Dir.exist?(old) && !Dir.exist?(live)
+        raise
+      end
       FileUtils.rm_rf(old)
     end
 

@@ -99,6 +99,10 @@ module PodgenCLI
         return 0
       end
 
+      # Fail before any file is deleted: the writers below load these strictly.
+      UploadTracker.for_config(config).load(strict: true)
+      YamlLoader.load(config.excluded_urls_path, default: [], raise_on_error: true) if can_exclude
+
       # Confirm — offer exclude option for language episodes
       if can_exclude
         $stdout.write "Proceed (x also excludes episode URL from future processing)? [y/N/x] "
