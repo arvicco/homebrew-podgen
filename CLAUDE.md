@@ -232,8 +232,12 @@ merge 146cca3; phase clock 17m). Refill read 2026-10-30: Q-108…Q-139
 and R12-01…R12-06 minted. Phase 13 (data safety: corrupt owner-data
 files never rewritten, scrap removes the right row, transient 5xx/TLS
 retried, failed site regen keeps the live site, ffmpeg outputs land
-only when complete) AT GATE 13 — adopted 2026-10-30 05:41, all packets
-landed, CRPR APPROVED after two rounds (refs/cr/reviewed = 1d87fce);
-gate PR open, the owner merges. R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
+only when complete) CLOSED 2026-10-30 14:40 (PR #15, merge 345336b;
+phase clock 36m). Phase 14 (listener-visible correctness, news and
+YouTube: script-reviewer auto-fixes keep content and right weekdays,
+YouTube captions/playlist retried and caption-less uploads visible,
+subtitle input defects, exclusions compared cleaned, unattended
+length failures excluded in-run, counter-only re-post match)
+EXECUTING — adopted 2026-10-30 18:00. R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
 consent expires every 7 days while the OAuth app is in testing).
 Update this line at each gate.
