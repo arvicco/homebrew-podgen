@@ -10,6 +10,7 @@ require_relative File.join(root, "lib", "cli", "episode_selector")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "episode_artifacts")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "upload_tracker")
 
