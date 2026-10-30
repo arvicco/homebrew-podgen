@@ -34,14 +34,17 @@ module TitleMatch
 
   def key(title) = Key.new(stem: stem(title), digits: title.to_s.scan(/\p{Nd}+/).to_set)
 
-  # No match when the titles carry different digit runs; otherwise stems
+  # No match when both titles carry digit runs and the runs differ (a
+  # counter on one side only, "… 291", is a re-post; Q-122); otherwise stems
   # equal, or one a word-aligned prefix of the other with the shorter ≥
   # MIN_PREFIX_CHARS, or token-set Jaccard ≥ JACCARD_THRESHOLD over tokens
   # of ≥ MIN_TOKEN_LETTERS letters.
   def match?(a, b) = keys_match?(key(a), key(b))
 
   # match? over precomputed keys (the selection guard keys history once).
-  def keys_match?(ka, kb) = ka.digits == kb.digits && stems_match?(ka.stem, kb.stem)
+  def keys_match?(ka, kb) = !digits_conflict?(ka.digits, kb.digits) && stems_match?(ka.stem, kb.stem)
+
+  def digits_conflict?(da, db) = !da.empty? && !db.empty? && da != db
 
   def stems_match?(sa, sb)
     return false if sa.empty? || sb.empty?
