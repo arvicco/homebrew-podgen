@@ -129,6 +129,25 @@ class TestHttpRetryable < Minitest::Test
     assert_includes HttpRetryable::HTTP_EXCEPTIONS, SocketError
   end
 
+  def test_retriable_codes_include_transient_5xx_not_4xx
+    [500, 502, 504].each { |code| assert_includes HttpRetryable::RETRIABLE_CODES, code }
+    [400, 401, 403, 404].each { |code| refute_includes HttpRetryable::RETRIABLE_CODES, code }
+  end
+
+  def test_http_retries_retries_on_tls_and_network_transients
+    [OpenSSL::SSL::SSLError, EOFError, Net::WriteTimeout, Errno::ETIMEDOUT,
+      Errno::EHOSTUNREACH, Errno::ENETUNREACH].each do |klass|
+      attempts = 0
+      result = @host.send(:with_http_retries, "Test", max: 2) do
+        attempts += 1
+        raise klass if attempts < 2
+        "ok"
+      end
+      assert_equal "ok", result, klass.name
+      assert_equal 2, attempts, klass.name
+    end
+  end
+
   def test_http_retries_does_not_catch_unrelated_errors
     assert_raises(ArgumentError) do
       @host.send(:with_http_retries, "Test") do

@@ -10,6 +10,7 @@ require_relative File.join(root, "lib", "cli", "episode_selector")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "episode_artifacts")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "episode_naming")
 require_relative File.join(root, "lib", "upload_tracker")
 
@@ -188,6 +189,9 @@ module PodgenCLI
     # full, permission, race) — surface them clearly and don't leave a
     # half-moved episode on disk.
     def perform_move(config, pairs, to_date, artifacts_per_base:)
+      # Fail before the first rename: the per-pair writers load these strictly.
+      YamlLoader.load(config.history_path, default: [], raise_on_error: true)
+      UploadTracker.for_config(config).load(strict: true)
       moved_files = 0
       completed_pairs = []
       pairs.each do |from_base, to_base|

@@ -7,7 +7,7 @@ require_relative "../http_retryable"
 
 module Transcription
   # A non-2xx STT response; #status is the HTTP code (P8-3). Built through
-  # ApiError.for so 429/503 arrive as RetriableApiError and retry is decided
+  # ApiError.for so RETRIABLE_CODES arrive as RetriableApiError and retry is decided
   # by class, never by digits in the message text. The message carries the
   # status plus the body's identifier-shaped error type/code fields, never
   # the error text or raw body: it is logged, and OpenAI's 401 text echoes
@@ -33,7 +33,8 @@ module Transcription
     include Retryable
     MAX_RETRIES = 3
     TIMEOUT = 300 # 5 minutes
-    RETRYABLE_ERRORS = [RetriableApiError, Net::OpenTimeout, Net::ReadTimeout, Errno::ETIMEDOUT].freeze
+    RETRYABLE_ERRORS = [RetriableApiError, Net::OpenTimeout, Net::ReadTimeout, Errno::ETIMEDOUT,
+      OpenSSL::SSL::SSLError, EOFError, Net::WriteTimeout, Errno::EHOSTUNREACH, Errno::ENETUNREACH].freeze
 
     def initialize(language: "sl", logger: nil)
       @language = language

@@ -34,9 +34,23 @@ class TestUploadTracker < Minitest::Test
     assert data["lingq"]["collection"].key?("episode"), "Basename keys should be strings"
   end
 
+  # Q-108: a display read of a corrupt file still returns the default...
   def test_load_handles_corrupt_file
     File.write(@path, "not: valid: yaml: [[[")
     assert_equal({}, @tracker.load)
+  end
+
+  # ...but a write never rewrites it from that default.
+  def test_record_corrupt_file_raises_and_leaves_bytes_unchanged
+    File.write(@path, "not: valid: yaml: [[[")
+    assert_raises(RuntimeError) { @tracker.record(:youtube, "pl", "ep-2026-03-01", "vid") }
+    assert_equal "not: valid: yaml: [[[", File.read(@path)
+  end
+
+  def test_remove_wrong_top_level_type_raises_and_leaves_bytes_unchanged
+    File.write(@path, "- ep-2026-03-01\n")
+    assert_raises(RuntimeError) { @tracker.remove("ep-2026-03-01") }
+    assert_equal "- ep-2026-03-01\n", File.read(@path)
   end
 
   # --- save ---

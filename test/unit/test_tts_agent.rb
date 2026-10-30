@@ -73,6 +73,26 @@ class TestTTSAgent < Minitest::Test
     assert_equal ["a", "b"], captured["previous_request_ids"]
   end
 
+  # --- transient failures are retried (P13-2) ---
+
+  def test_synthesize_chunk_502_then_200_writes_chunk
+    synthesize_with_responses([status_response(502), fake_tts_response])
+    assert_equal 2, @posts
+  end
+
+  def test_synthesize_chunk_ssl_error_once_then_success_writes_chunk
+    synthesize_with_responses([OpenSSL::SSL::SSLError.new("SSL_read"), fake_tts_response])
+    assert_equal 2, @posts
+  end
+
+  def test_synthesize_chunk_400_fails_without_retry
+    err = assert_raises(RuntimeError) do
+      synthesize_with_responses([status_response(400), fake_tts_response])
+    end
+    assert_includes err.message, "TTS failed: HTTP 400"
+    assert_equal 1, @posts
+  end
+
   def test_unknown_model_falls_back_to_default_max_chars
     agent = TTSAgent.new(model_id_override: "eleven_future_model")
     splitter = agent.instance_variable_get(:@splitter)
@@ -334,6 +354,35 @@ class TestTTSAgent < Minitest::Test
     response.define_singleton_method(:code) { 200 }
     response.define_singleton_method(:body) { body }
     response.define_singleton_method(:headers) { { "request-id" => "test-rid" } }
+    response
+  end
+
+  # Posts one chunk through a fake HTTParty serving the queued responses
+  # (an exception in the queue is raised); @posts counts the POSTs.
+  def synthesize_with_responses(queue)
+    require "tempfile"
+    @posts = 0
+    agent = TTSAgent.new
+    poster = ->(_url, _opts) {
+      @posts += 1
+      item = queue.shift
+      raise item if item.is_a?(Exception)
+      item
+    }
+    agent.stub :sleep, nil do
+      HTTParty.stub :post, poster do
+        Tempfile.create(["t", ".mp3"]) do |f|
+          agent.send(:synthesize_chunk, text: "hi", path: f.path)
+        end
+      end
+    end
+  end
+
+  def status_response(code)
+    response = Object.new
+    response.define_singleton_method(:code) { code }
+    response.define_singleton_method(:body) { "{}" }
+    response.define_singleton_method(:headers) { {} }
     response
   end
 

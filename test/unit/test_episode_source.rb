@@ -460,6 +460,15 @@ class TestEpisodeSource < Minitest::Test
     s.send(:exclude_url!, "http://example.com/ep.mp3")
   end
 
+  # Q-108: a corrupt exclusion file is never rewritten from an empty default.
+  def test_exclude_url_corrupt_file_raises_and_leaves_bytes_unchanged
+    path = File.join(@tmpdir, "excluded_urls.yml")
+    File.write(path, "- http://a.com/x.mp3\n- [[[\n")
+    s = source_with_excluded(rss_feeds: ["https://a.com/feed"], excluded_path: path)
+    assert_raises(RuntimeError) { s.send(:exclude_url!, "http://example.com/ep.mp3") }
+    assert_equal "- http://a.com/x.mp3\n- [[[\n", File.read(path)
+  end
+
   # --- weighted_pick ---
 
   def test_weighted_pick_respects_weights
