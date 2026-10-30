@@ -46,19 +46,23 @@ class ScriptReviewer
 
   WEEKDAY_PATTERN = /\b(#{WEEKDAYS.join("|")})\b(,?\s+)(#{MONTHS.join("|")})\s+(\d{1,2})(st|nd|rd|th)?\b/i
 
+  # A phrase is a stage direction only when it is the whole sentence (at a
+  # line start or after . ! ?, ending in . ! ? or at the text end): "The
+  # Fed's long pause on rates" is content and stays (Q-113).
   STAGE_DIRECTION_PHRASES = [
-    /\s*\b\w+\s+seconds?\s+pause\s+here\.?\s*/i,
-    /\s*\b\d+\s+seconds?\s+pause\s+here\.?\s*/i,
-    /\s*\bpause\s+here\.?\s*/i,
-    /\s*\bbrief\s+pause\.?\s*/i,
-    /\s*\btake\s+a\s+breath\.?\s*/i,
-    /\s*\bsilence\s+here\.?\s*/i,
-    /\s*\blong\s+pause\.?\s*/i,
-    /\s*\bshort\s+pause\.?\s*/i
-  ].freeze
+    /\w+\s+seconds?\s+pause\s+here/,
+    /\d+\s+seconds?\s+pause\s+here/,
+    /pause\s+here/,
+    /brief\s+pause/,
+    /take\s+a\s+breath/,
+    /silence\s+here/,
+    /long\s+pause/,
+    /short\s+pause/
+  ].map { |core| /(?:^|(?<=[.!?]))\s*#{core.source}(?:[.!?]+|(?=\s*\z))(?=\s|\z)/i }.freeze
 
   STAGE_DIRECTION_BRACKETS = /\[([^\]]*\b(?:pause|beat|silence|breath|wait|sigh|laugh)\b[^\]]*)\]/i
-  STAGE_DIRECTION_PARENS = /\(([^)]*\b(?:pause|beat|silence|breath|wait|sigh|laugh)\b[^)]*)\)/i
+  # No beat/wait in parens: "(which beat estimates)" is content (Q-113).
+  STAGE_DIRECTION_PARENS = /\(([^)]*\b(?:pause|silence|breath|sigh|laugh)\b[^)]*)\)/i
 
   FORBIDDEN_PHRASES = [
     /\bin today'?s episode\b/i,
@@ -162,8 +166,19 @@ class ScriptReviewer
         month_num = MONTHS.index { |m| m.casecmp(month_name) == 0 }&.+(1)
         next match unless month_num
 
+        # A date near a year boundary ("Wednesday, December 31" said on
+        # January 2) belongs to the adjacent year: accept a weekday that
+        # fits year -1, 0 or +1; fix only to the nearest year (Q-113).
+        candidates = (-1..1).filter_map do |offset|
+          Date.new(@date.year + offset, month_num, day)
+        rescue Date::Error
+          nil
+        end
+        next match if candidates.empty?
+        next match if candidates.any? { |d| d.strftime("%A").casecmp?(stated_weekday) }
+
         begin
-          actual_date = Date.new(@date.year, month_num, day)
+          actual_date = candidates.min_by { |d| (d - @date).abs }
           correct_weekday = actual_date.strftime("%A")
 
           if stated_weekday.downcase != correct_weekday.downcase
