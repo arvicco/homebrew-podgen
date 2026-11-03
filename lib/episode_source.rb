@@ -122,6 +122,12 @@ class EpisodeSource
     end
   end
 
+  # The next pick in this run skips +url+ (even under --force); nothing is
+  # written to excluded_urls.yml (Q-120: an out-of-range length).
+  def exclude_for_run!(url)
+    excluded_this_run << url
+  end
+
   # Same-feed key (P10-0b): host + first path segment, plus the next
   # segment when the first is a redirector (ends in .mp3 or is listed).
   # Class-level so the listening archive (P11-0) labels with the same key.

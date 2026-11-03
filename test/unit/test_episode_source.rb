@@ -454,6 +454,20 @@ class TestEpisodeSource < Minitest::Test
     assert_equal nxt, with_rss { s.fetch_next(force: true) }
   end
 
+  # Q-120 (P14-5): a length miss skips the URL for the run only.
+  def test_exclude_for_run_skips_url_this_run_and_writes_nothing
+    path = File.join(@tmpdir, "excluded_urls.yml")
+    long = rss_ep("Long", "https://h.com/a.mp3")
+    nxt = rss_ep("Next", "https://h.com/b.mp3")
+    s, = guard_source(history: [], feeds: { "f" => [long, nxt] })
+    s.instance_variable_get(:@config).define_singleton_method(:excluded_urls_path) { path }
+    s.exclude_for_run!(long[:audio_url])
+
+    assert_equal nxt, with_rss { s.fetch_next }
+    assert_equal nxt, with_rss { s.fetch_next(force: true) }
+    refute File.exist?(path)
+  end
+
   # Q-119 (P14-4): the pipeline excludes the cleaned URL; a tracked
   # enclosure (?src=rss) must still be skipped by the next pick.
   def test_fetch_next_skips_tracked_enclosure_after_cleaned_exclusion
