@@ -62,10 +62,12 @@ class ScriptReviewer
 
   STAGE_DIRECTION_BRACKETS = /\[([^\]]*\b(?:pause|beat|silence|breath|wait|sigh|laugh)\b[^\]]*)\]/i
   # A parenthetical is a direction only when it is wholly one — up to two
-  # lead words and the cue, "(beat)", "(brief pause)", "(takes a breath)";
-  # "(which beat estimates)" and "(after a long pause in hikes)" are
-  # content and stay (Q-113, CRPR).
-  STAGE_DIRECTION_PARENS = /\(\s*(?:[a-z]+\s+){0,2}(?:pause|beat|silence|breath|wait|sigh|laugh)s?(?:\s+here)?\s*\)/i
+  # lead tokens ("two-second", "3", "takes a"), the cue, and at most one
+  # trailing "here" / "for effect" / adverb: "(beat)", "(brief pause)",
+  # "(3-second pause)", "(laughs softly)", "(pause for effect)". "(which
+  # beat estimates)" and "(after a long pause in hikes)" are content and
+  # stay (Q-113, CRPR).
+  STAGE_DIRECTION_PARENS = /\(\s*(?:[a-z0-9'-]+\s+){0,2}(?:pause|beat|silence|breath|wait|sigh|laugh)s?(?:\s+(?:here|for\s+effect|[a-z]+ly))?\.?\s*\)/i
 
   FORBIDDEN_PHRASES = [
     /\bin today'?s episode\b/i,
