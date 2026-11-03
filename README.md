@@ -611,7 +611,7 @@ Accepts the same formats as RSS `itunes_duration`: plain seconds (`120`), `MM:SS
 1. **Pre-download**: episodes whose `itunes_duration` falls outside `[min_length, max_length]` are dropped before download. A summary line logs how many were kept and why others were filtered (`Length filter [2:00–9:30]: 59/60 kept, 1 too long`).
 2. **Post-download**: the actual audio duration is probed (covers feeds without reliable `itunes_duration`). If outside range:
    - With `--ask-trim`: prompt `[t]rim manually / e[x]clude / [a]bort?` — `x` writes the URL to `excluded_urls.yml` so future runs skip it.
-   - Without `--ask-trim`: log warning and abort with exit 1.
+   - Without `--ask-trim`: log a warning, skip the episode for this run only (nothing is written to `excluded_urls.yml`) and pick the next candidate — at most three picks per run, counted together with gone (404/410) sources; exit 1 when no candidate in range remains.
 
 Episodes with missing or unparseable `itunes_duration` pass the pre-download filter and are validated post-download.
 
