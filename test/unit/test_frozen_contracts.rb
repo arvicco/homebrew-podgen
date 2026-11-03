@@ -71,6 +71,27 @@ class TestFrozenContracts < Minitest::Test
       raw, "uploads.yml is exactly platform → group → { basename → id }")
   end
 
+  # P14-1 (Q-116): the one additive key — post-upload steps still owed for
+  # a tracked video, as youtube_pending → group → { basename → [steps] }.
+  # The youtube rows keep their scalar video id; a file without the key
+  # reads as nothing pending, and the key goes once the steps are done.
+  def test_uploads_tracker_pending_marker_is_additive
+    path = File.join(@tmpdir, "uploads.yml")
+    tracker = UploadTracker.new(path)
+    tracker.record("youtube", "PLxyz", "pod-2026-01-15", "vid123")
+    assert_equal({}, tracker.pending_steps("youtube", "PLxyz"))
+
+    tracker.mark_pending("youtube", "PLxyz", "pod-2026-01-15", %w[captions playlist])
+
+    raw = YAML.safe_load_file(path)
+    assert_equal({"youtube" => {"PLxyz" => {"pod-2026-01-15" => "vid123"}},
+                  "youtube_pending" => {"PLxyz" => {"pod-2026-01-15" => %w[captions playlist]}}},
+      raw, "the pending marker is a sibling platform key; rows stay basename → id")
+
+    tracker.mark_pending("youtube", "PLxyz", "pod-2026-01-15", [])
+    assert_equal({"youtube" => {"PLxyz" => {"pod-2026-01-15" => "vid123"}}}, YAML.safe_load_file(path))
+  end
+
   # --- *_timestamps.json schema ---
 
   def test_timestamps_sidecar_schema_is_frozen

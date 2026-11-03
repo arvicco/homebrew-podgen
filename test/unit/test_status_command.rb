@@ -504,6 +504,22 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "https://"
   end
 
+  # P14-1 (Q-116): a video that went up without captions is named on the board
+  def test_run_uploads_stderr_without_subtitles_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ⚠ alpha-2026-10-10: retranscription failed (RuntimeError: x), uploading without subtitles"])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/uploads_stderr\.log: YouTube uploaded without captions/, out)
+  end
+
+  def test_run_uploads_stderr_captions_pending_reports_warn
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ⚠ alpha-2026-10-10: uploaded without captions (pending: captions), retried next batch"])
+    out, = run_status
+    assert_match(/uploads_stderr\.log: YouTube uploaded without captions/, out)
+  end
+
   def test_run_uploads_stderr_older_than_since_is_ignored
     make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
     write_uploads_log(["  ✗ alpha-2026-09-01 skipped: YouTube not authorized: x"], mtime: Time.new(2026, 9, 1, 12))

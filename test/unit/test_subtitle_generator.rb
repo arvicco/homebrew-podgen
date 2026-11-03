@@ -77,6 +77,37 @@ class TestSubtitleGenerator < Minitest::Test
     assert_equal "", File.read(srt_path).strip
   end
 
+  # P14-2 (Q-131): a blank segment writes no cue; numbering stays dense
+  def test_generate_srt_blank_segment_writes_no_cue
+    ts_path = write_timestamps([
+      { "start" => 0.0, "end" => 1.0, "text" => "First." },
+      { "start" => 1.0, "end" => 2.0, "text" => "   " },
+      { "start" => 2.0, "end" => 3.0, "text" => "Third." }
+    ])
+    srt_path = File.join(@tmpdir, "episode.srt")
+
+    SubtitleGenerator.generate_srt(ts_path, srt_path)
+
+    cues = File.read(srt_path).strip.split("\n\n")
+    assert_equal 2, cues.length
+    assert_equal "2", cues[1].lines.first.strip
+    assert_equal "Third.", cues[1].lines.last.strip
+  end
+
+  # P14-2 (Q-131): the tail remainder is not duplicated when the text
+  # ends on a sentence terminator but the joined length differs
+  def test_split_text_double_space_no_duplicate_tail
+    parts = SubtitleGenerator.send(:split_text, "A long one.  B long two.")
+
+    assert_equal 1, parts.join(" ").scan("B long two").length
+  end
+
+  def test_split_text_keeps_unterminated_tail
+    parts = SubtitleGenerator.send(:split_text, "A long one. B long two")
+
+    assert_equal "A long one. B long two", parts.join(" ")
+  end
+
   def test_generate_srt_splits_long_segments
     long_text = "This is a very long sentence that exceeds the maximum character limit " \
                 "and should be split into multiple subtitle entries for readability."

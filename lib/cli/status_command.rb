@@ -75,7 +75,8 @@ module PodgenCLI
     CONSENT_WARN_DAYS = 6 # a testing-status OAuth app's refresh token dies on day 7
     UPLOAD_CONDITIONS = {
       /not authorized/i => "YouTube not authorized",
-      /uploadLimitExceeded|quotaExceeded/ => QUOTA_CONDITION
+      /uploadLimitExceeded|quotaExceeded/ => QUOTA_CONDITION,
+      /uploading without subtitles|uploaded without captions/ => "YouTube uploaded without captions"
     }.freeze
     # Catching up (P10-3): in the batch's stdout (logs/uploads_stdout.log)
     # each batch opens one block ("uploads: <mode> mode across ...") whose

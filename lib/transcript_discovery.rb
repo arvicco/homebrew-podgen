@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "cgi/escape"
 require "net/http"
 require "uri"
 require_relative "subtitle_parser"
@@ -18,6 +19,14 @@ module TranscriptDiscovery
   MINIMUM_WORD_COUNT = 100
   FETCH_OPEN_TIMEOUT = 10
   FETCH_READ_TIMEOUT = 15
+
+  # Named HTML letter entities (&scaron;, &eacute;, ...) that CGI.unescapeHTML
+  # leaves alone: base letter + combining mark, NFC-composed.
+  ACCENT_MARKS = {
+    "acute" => "́", "grave" => "̀", "circ" => "̂", "uml" => "̈",
+    "tilde" => "̃", "caron" => "̌", "cedil" => "̧", "ring" => "̊"
+  }.freeze
+  ACCENTED_ENTITY = /&([A-Za-z])(#{ACCENT_MARKS.keys.join("|")});/
 
   # Search for existing transcripts across all available sources.
   #
@@ -133,10 +142,9 @@ module TranscriptDiscovery
         .gsub(/<\/p>/i, "\n\n")
         .gsub(/<[^>]+>/, "")
         .gsub(/&nbsp;/, " ")
-        .gsub(/&amp;/, "&")
-        .gsub(/&lt;/, "<")
-        .gsub(/&gt;/, ">")
-        .gsub(/&#?\w+;/, "")
+        .gsub(ACCENTED_ENTITY) { (::Regexp.last_match(1) + ACCENT_MARKS[::Regexp.last_match(2)]).unicode_normalize(:nfc) }
+        .gsub(/&(?!(?:amp|lt|gt|quot|apos);)[A-Za-z]+;/, "")
+        .then { |text| CGI.unescapeHTML(text) }
         .gsub(/\n{3,}/, "\n\n")
         .strip
     end
