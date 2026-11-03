@@ -61,8 +61,11 @@ class ScriptReviewer
   ].map { |core| /(?:^|(?<=[.!?]))\s*#{core.source}(?:[.!?]+|(?=\s*\z))(?=\s|\z)/i }.freeze
 
   STAGE_DIRECTION_BRACKETS = /\[([^\]]*\b(?:pause|beat|silence|breath|wait|sigh|laugh)\b[^\]]*)\]/i
-  # No beat/wait in parens: "(which beat estimates)" is content (Q-113).
-  STAGE_DIRECTION_PARENS = /\(([^)]*\b(?:pause|silence|breath|sigh|laugh)\b[^)]*)\)/i
+  # A parenthetical is a direction only when it is wholly one — up to two
+  # lead words and the cue, "(beat)", "(brief pause)", "(takes a breath)";
+  # "(which beat estimates)" and "(after a long pause in hikes)" are
+  # content and stay (Q-113, CRPR).
+  STAGE_DIRECTION_PARENS = /\(\s*(?:[a-z]+\s+){0,2}(?:pause|beat|silence|breath|wait|sigh|laugh)s?(?:\s+here)?\s*\)/i
 
   FORBIDDEN_PHRASES = [
     /\bin today'?s episode\b/i,
@@ -167,15 +170,16 @@ class ScriptReviewer
         next match unless month_num
 
         # A date near a year boundary ("Wednesday, December 31" said on
-        # January 2) belongs to the adjacent year: accept a weekday that
-        # fits year -1, 0 or +1; fix only to the nearest year (Q-113).
+        # January 2) belongs to the adjacent year: judge against the
+        # candidate nearest to the run date, never against any year that
+        # happens to fit — one year shifts a weekday by one, so "any of
+        # three years" would pass most off-by-one errors (Q-113, CRPR).
         candidates = (-1..1).filter_map do |offset|
           Date.new(@date.year + offset, month_num, day)
         rescue Date::Error
           nil
         end
         next match if candidates.empty?
-        next match if candidates.any? { |d| d.strftime("%A").casecmp?(stated_weekday) }
 
         begin
           actual_date = candidates.min_by { |d| (d - @date).abs }

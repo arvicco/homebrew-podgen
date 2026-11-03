@@ -6,6 +6,7 @@ require "cli/uploads_command"
 require "r2_publisher"
 require "lingq_publisher"
 require "youtube_publisher"
+require "upload_tracker"
 
 class TestUploadsCommand < Minitest::Test
   R2Result = R2Publisher::Result
@@ -229,6 +230,23 @@ class TestUploadsCommand < Minitest::Test
 
     assert_equal %w[pod_a pod_b], yt_calls, "rate limit must halt the whole YT phase"
     assert tick.rate_limited
+  end
+
+  def test_yt_pending_count_counts_a_tracked_video_with_owed_steps
+    episodes_dir = File.join(@tmpdir, "pod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    FileUtils.touch(File.join(episodes_dir, "ep-2026-01-16.mp3"))
+    FileUtils.touch(File.join(episodes_dir, "ep-2026-01-16_transcript.md"))
+    tracker = UploadTracker.new(File.join(@tmpdir, "pod", "uploads.yml"))
+    tracker.record(:youtube, "PL1", "ep-2026-01-16", "vid1")
+    cmd = stub_cmd(["pod"])
+
+    assert_equal 0, cmd.send(:yt_pending_count, tracker, "PL1", episodes_dir)
+
+    tracker.mark_pending(:youtube, "PL1", "ep-2026-01-16", ["captions"])
+
+    assert_equal 1, cmd.send(:yt_pending_count, tracker, "PL1", episodes_dir),
+      "a caught-up pod with an owed captions step must still be reached by the batch"
   end
 
   def test_round_robin_skips_pod_with_no_pending_without_yt_call

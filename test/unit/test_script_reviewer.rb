@@ -96,6 +96,18 @@ class TestScriptReviewer < Minitest::Test
     assert_includes corrected[:segments].first[:text], "Wednesday, December 31"
   end
 
+  def test_check_weekday_off_by_one_fitting_an_adjacent_year_still_fixed
+    # 2025-11-04 is a Tuesday and 2027-11-04 a Thursday; the run date's own
+    # year says Wednesday — an adjacent-year fit must not excuse the error.
+    script = make_script(opening: "Tuesday, November 4, and Bitcoin is up.")
+    reviewer = build_reviewer(date: Date.new(2026, 11, 3))
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_equal 1, issues.count { |i| i[:check] == "weekday" }
+    assert_includes corrected[:segments].first[:text], "Wednesday, November 4"
+  end
+
   def test_check_weekday_does_not_mutate_original
     script = make_script(opening: "Saturday, April 7th, and Bitcoin is up.")
     original_text = script[:segments].first[:text].dup
@@ -248,6 +260,29 @@ class TestScriptReviewer < Minitest::Test
     sd_issues = issues.select { |i| i[:check] == "stage_direction" }
     assert_equal 1, sd_issues.length
     assert_equal "Consider this. Moving on.", corrected[:segments].first[:text]
+  end
+
+  def test_check_stage_directions_bare_beat_in_parens_removed
+    script = make_script(segments: [
+      { name: "Segment 1", text: "Markets rose. (beat) Then they fell." }
+    ])
+    reviewer = build_reviewer
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_equal 1, issues.count { |i| i[:check] == "stage_direction" }
+    assert_equal "Markets rose. Then they fell.", corrected[:segments].first[:text]
+  end
+
+  def test_check_stage_directions_content_parenthetical_kept
+    text = "Rates held (after a long pause in hikes) this month."
+    script = make_script(segments: [{ name: "Segment 1", text: text }])
+    reviewer = build_reviewer
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_empty issues.select { |i| i[:check] == "stage_direction" }
+    assert_equal text, corrected[:segments].first[:text]
   end
 
   def test_check_stage_directions_phrase_inside_a_sentence_kept
