@@ -97,8 +97,10 @@ class YouTubePublisher
     pending = episodes.reject { |ep| uploaded_map.key?(ep[:base_name]) }
     pending = pending.first(@options[:max]) if @options[:max]
     # Tracked videos whose captions/playlist step failed after the upload:
-    # finished first, before anything new goes up.
-    owed = @options[:force] ? {} : tracker.pending_steps(:youtube, playlist)
+    # finished first, before anything new goes up. finish_owed: false skips
+    # them — the round-robin batch tries owed steps once per pod per tick,
+    # not once per round (each failed captions insert costs quota).
+    owed = (@options[:force] || @options[:finish_owed] == false) ? {} : tracker.pending_steps(:youtube, playlist)
     unfinished = episodes.filter_map do |ep|
       base = ep[:base_name]
       ep.merge(video_id: uploaded_map[base], owed: owed[base]) if owed[base] && uploaded_map[base]

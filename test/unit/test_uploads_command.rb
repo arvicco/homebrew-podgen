@@ -68,7 +68,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |pod| pod == "pod_a" ? bad : ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
     cmd.define_singleton_method(:pending_count_for) { |_| 1 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_invocations << pod
       yt_ok
     end
@@ -87,7 +87,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
     cmd.define_singleton_method(:pending_count_for) { |_| 1 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_invocations << pod
       yt_ok
     end
@@ -108,7 +108,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 1, errors: [{ type: :upload, message: "503" }]) }
     cmd.define_singleton_method(:pending_count_for) { |_| 1 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_invocations << pod
       yt_ok
     end
@@ -128,7 +128,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 5, attempted: 5, errors: []) }
     cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << [pod, max]
       pending[pod] -= 1
       YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
@@ -148,7 +148,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
     cmd.define_singleton_method(:pending_count_for) { |_| 1 }
-    cmd.define_singleton_method(:run_yt_for) do |_, max:|
+    cmd.define_singleton_method(:run_yt_for) do |_, max:, **|
       YTResult.new(uploaded: 0, attempted: 1, rate_limited: true, errors: [{ type: :rate_limit }])
     end
 
@@ -164,7 +164,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| bad }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
     cmd.define_singleton_method(:pending_count_for) { |_| 0 }
-    cmd.define_singleton_method(:run_yt_for) { |_, max:| YTResult.new(uploaded: 0, attempted: 0, rate_limited: false, errors: []) }
+    cmd.define_singleton_method(:run_yt_for) { |_, max:, **| YTResult.new(uploaded: 0, attempted: 0, rate_limited: false, errors: []) }
 
     capture_io { @code = cmd.run }
     assert_equal 1, @code
@@ -178,7 +178,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 1, errors: [{ type: :upload, message: "x" }]) }
     cmd.define_singleton_method(:pending_count_for) { |_| 0 }
-    cmd.define_singleton_method(:run_yt_for) { |_, max:| YTResult.new(uploaded: 0, attempted: 0, rate_limited: false, errors: []) }
+    cmd.define_singleton_method(:run_yt_for) { |_, max:, **| YTResult.new(uploaded: 0, attempted: 0, rate_limited: false, errors: []) }
 
     capture_io { @code = cmd.run }
     assert_equal 1, @code, "LingQ failure (non-rate-limit) should produce non-zero exit"
@@ -200,6 +200,23 @@ class TestUploadsCommand < Minitest::Test
     refute tick.rate_limited
   end
 
+  def test_round_robin_tries_owed_steps_once_per_pod_per_tick
+    finish_flags = Hash.new { |h, k| h[k] = [] }
+    pending = { "pod_a" => 2, "pod_b" => 1 }
+    cmd = stub_cmd(["pod_a,pod_b"])
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, finish_owed: true|
+      finish_flags[pod] << finish_owed
+      pending[pod] -= 1
+      YouTubePublisher::Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+    end
+
+    capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal [true, false], finish_flags["pod_a"], "owed steps are tried on the pod's first round only"
+    assert_equal [true], finish_flags["pod_b"]
+  end
+
   def test_round_robin_stops_when_max_reached
     yt_calls = []
     pending = { "pod_a" => 5, "pod_b" => 5 }
@@ -216,7 +233,7 @@ class TestUploadsCommand < Minitest::Test
     yt_calls = []
     cmd = stub_cmd(["pod_a,pod_b"])
     cmd.define_singleton_method(:pending_count_for) { |_| 5 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       if pod == "pod_b"
         YTResult.new(uploaded: 0, attempted: 1, rate_limited: true, errors: [{ type: :rate_limit }])
@@ -266,7 +283,7 @@ class TestUploadsCommand < Minitest::Test
     cmd = stub_cmd(["pod_a,pod_b"])
     pending = { "pod_a" => 5, "pod_b" => 1 }
     cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       if pod == "pod_a"
         # uploads nothing, only missing_cover errors — permanent skip
@@ -290,7 +307,7 @@ class TestUploadsCommand < Minitest::Test
     yt_calls = []
     cmd = stub_cmd(["pod_a,pod_b"])
     cmd.define_singleton_method(:pending_count_for) { |_| 2 } # never drains
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
     end
@@ -306,7 +323,7 @@ class TestUploadsCommand < Minitest::Test
     cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
     pending = { "pod_a" => 5, "pod_b" => 3 }
     cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       if pod == "pod_a"
         YTResult.new(uploaded: 0, attempted: 1, rate_limited: false, errors: [{ type: :missing_cover }])
       else
@@ -330,7 +347,7 @@ class TestUploadsCommand < Minitest::Test
     cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
     pending = { "pod_a" => 5, "pod_b" => 4 }
     cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       if pod == "pod_a"
         YTResult.new(uploaded: 0, attempted: 1, rate_limited: false,
@@ -360,7 +377,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:pending_count_for) { |_| 3 }
     # pod_a goes through the real crash path: no such podcast under a
     # PODGEN_ROOT of this test's own (never the real repo root).
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       pod == "pod_a" ? super(pod, max: max) : ok
     end
 
@@ -386,7 +403,7 @@ class TestUploadsCommand < Minitest::Test
     pending = { "pod_a" => 2, "pod_b" => 3 }
     failed_once = false
     cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       if pod == "pod_a" && !failed_once
         failed_once = true
@@ -410,7 +427,7 @@ class TestUploadsCommand < Minitest::Test
     yt_calls = []
     cmd = PodgenCLI::UploadsCommand.new(%w[pod_a,pod_b], { log: ->(m) { logs << m } })
     cmd.define_singleton_method(:pending_count_for) { |_| 2 } # never drains
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       if pod == "pod_a"
         type = yt_calls.count("pod_a").odd? ? :upload : :video
@@ -470,7 +487,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
     cmd.define_singleton_method(:pending_count_for) { |_| 1 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       na
     end
@@ -492,7 +509,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| ok }
     cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
     cmd.define_singleton_method(:pending_count_for) { |_| 2 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       na
     end
@@ -515,7 +532,7 @@ class TestUploadsCommand < Minitest::Test
   def round_robin_cmd(args, yt_calls, pending)
     cmd = stub_cmd(args)
     cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
-    cmd.define_singleton_method(:run_yt_for) do |pod, max:|
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
       yt_calls << pod
       pending[pod] -= 1
       YouTubePublisher::Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
@@ -533,7 +550,7 @@ class TestUploadsCommand < Minitest::Test
     cmd.define_singleton_method(:run_r2_for) { |_| r2 }
     cmd.define_singleton_method(:run_lingq_for) { |_| lq }
     cmd.define_singleton_method(:pending_count_for) { |_| 1 }
-    cmd.define_singleton_method(:run_yt_for) { |_, max:| yt }
+    cmd.define_singleton_method(:run_yt_for) { |_, max:, **| yt }
     cmd
   end
 

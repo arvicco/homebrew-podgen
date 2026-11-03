@@ -634,6 +634,22 @@ class TestYouTubePublisher < Minitest::Test
     assert_empty second.errors
   end
 
+  def test_finish_owed_false_leaves_owed_steps_for_a_later_run
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    File.write(File.join(@episodes_dir, "#{base}.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHi.\n")
+    config = stub_config(youtube_enabled: true)
+    tracker = UploadTracker.new(@uploads_path)
+    tracker.record(:youtube, "default", base, "vid_cap")
+    tracker.mark_pending(:youtube, "default", base, %w[captions])
+
+    healthy = stub_uploader
+    capture_io { build_publisher(config: config, uploader: healthy, options: { finish_owed: false }).run }
+
+    assert_empty healthy.captions_calls, "owed steps are skipped when the batch has already tried them this tick"
+    assert_equal({base => %w[captions]}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
+  end
+
   def test_playlist_failure_marks_pending_and_retry_runs_before_new_uploads
     seed_ep("ep-2026-01-15")
     config = stub_config(youtube_enabled: true, playlist: "PLx")

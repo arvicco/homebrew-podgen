@@ -274,6 +274,21 @@ class TestScriptReviewer < Minitest::Test
     assert_equal "Markets rose. Then they fell.", corrected[:segments].first[:text]
   end
 
+  def test_check_stage_directions_timed_and_adverb_parens_removed
+    [
+      "(two-second pause)", "(3-second pause)", "(3 second pause)",
+      "(laughs softly)", "(sighs heavily)", "(pause for effect)", "(Pause.)"
+    ].each do |direction|
+      script = make_script(segments: [
+        { name: "Segment 1", text: "Markets rose. #{direction} Then they fell." }
+      ])
+      corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+      assert_equal 1, issues.count { |i| i[:check] == "stage_direction" }, direction
+      assert_equal "Markets rose. Then they fell.", corrected[:segments].first[:text], direction
+    end
+  end
+
   def test_check_stage_directions_content_parenthetical_kept
     text = "Rates held (after a long pause in hikes) this month."
     script = make_script(segments: [{ name: "Segment 1", text: text }])
