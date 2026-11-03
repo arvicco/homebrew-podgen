@@ -259,14 +259,20 @@ module PodgenCLI
       return 0 unless config.youtube_enabled?
 
       playlist = config.youtube_config[:playlist] || "default"
-      tracker = UploadTracker.for_config(config)
-      uploaded = tracker.entries_for(:youtube, playlist)
-
-      episodes = mp3_basenames_with_transcripts(config.episodes_dir)
-      episodes.count { |b| !uploaded.key?(b) }
+      yt_pending_count(UploadTracker.for_config(config), playlist, config.episodes_dir)
     rescue => e # skippable: the pending count is informational
       $stderr.puts "uploads: skipping YT count for #{pod} (#{e.class}: #{e.message})"
       0
+    end
+
+    # Episodes not yet uploaded plus tracked videos that still owe a
+    # captions/playlist step — otherwise a caught-up pod whose last upload
+    # failed on captions is never reached by the batch again (CRPR, P14-1).
+    def yt_pending_count(tracker, playlist, episodes_dir)
+      uploaded = tracker.entries_for(:youtube, playlist)
+      episodes = mp3_basenames_with_transcripts(episodes_dir)
+      owed = tracker.pending_steps(:youtube, playlist).keys.count { |b| uploaded.key?(b) }
+      episodes.count { |b| !uploaded.key?(b) } + owed
     end
 
     def mp3_basenames_with_transcripts(episodes_dir)
