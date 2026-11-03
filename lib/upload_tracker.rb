@@ -14,7 +14,12 @@ require_relative "yaml_loader"
 #   youtube:
 #     <playlist_id>:
 #       <basename>: <video_id>
+#   youtube_pending:            # additive, present only while steps are owed
+#     <playlist_id>:
+#       <basename>: [captions, playlist]
 class UploadTracker
+  PENDING_SUFFIX = "_pending"
+
   def initialize(path)
     @path = path
   end
@@ -49,6 +54,34 @@ class UploadTracker
     tracking[platform_key][group_key] ||= {}
     tracking[platform_key][group_key][base_name] = upload_id
     save(tracking)
+  end
+
+  # Record the post-upload steps still owed for a tracked upload (e.g.
+  # captions after a live video); an empty list clears the marker. Writes
+  # only when something changes, so a clean upload never touches the file
+  # twice.
+  def mark_pending(platform, group, base_name, steps)
+    tracking = load(strict: true)
+    key = "#{platform}#{PENDING_SUFFIX}"
+    groups = tracking[key] ||= {}
+    entries = groups[group.to_s] ||= {}
+    return if entries[base_name] == (steps.empty? ? nil : steps)
+
+    if steps.empty?
+      entries.delete(base_name)
+    else
+      entries[base_name] = steps
+    end
+    groups.delete(group.to_s) if entries.empty?
+    tracking.delete(key) if groups.empty?
+    save(tracking)
+  end
+
+  # Steps still owed per basename: { basename → [step, ...] }. A file
+  # without the marker reads as nothing pending.
+  def pending_steps(platform, group)
+    entries = load.dig("#{platform}#{PENDING_SUFFIX}", group.to_s)
+    entries.is_a?(Hash) ? entries : {}
   end
 
   # Remove all entries for a basename across all platforms and groups.

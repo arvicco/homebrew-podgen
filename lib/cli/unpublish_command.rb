@@ -62,23 +62,30 @@ module PodgenCLI
 
       deleted = 0
       failed = 0
+      gone = []
       videos.each do |v|
         uploader.remove_from_playlist(v[:video_id], v[:playlist]) if v[:playlist] != "default"
-        if uploader.delete_video(v[:video_id])
+        if uploader.delete_video(v[:video_id]) # true, or :not_found (already gone)
           puts "  deleted: #{v[:base_name]} (#{v[:video_id]})"
           deleted += 1
+          gone << v
         else
           puts "  skipped: #{v[:base_name]} (#{v[:video_id]})"
           failed += 1
         end
       end
 
-      # Clear youtube entries from tracker
-      tracking["youtube"] = {}
+      # Untrack only what is gone from YouTube; a refused delete stays tracked.
+      %w[youtube youtube_pending].each do |key|
+        next unless tracking[key].is_a?(Hash)
+        gone.each { |v| tracking[key][v[:playlist]]&.delete(v[:base_name]) }
+        tracking[key].reject! { |_playlist, entries| entries.is_a?(Hash) && entries.empty? }
+      end
+      tracking.delete("youtube_pending") if tracking["youtube_pending"] == {}
       tracker.save(tracking)
 
       puts "Deleted #{deleted} video(s) from YouTube." if deleted > 0
-      puts "Skipped #{failed} video(s) (not found or forbidden)." if failed > 0
+      puts "Skipped #{failed} video(s) (forbidden; still tracked)." if failed > 0
       0
     end
 
