@@ -56,7 +56,8 @@ class YouTubePublisher
   end
 
   # Outcome of #upload_episode. status: :uploaded, :skipped (never reached
-  # upload_video), :failed, or :rate_limited (quota — callers stop a batch).
+  # upload_video), :failed, :rate_limited (quota — callers stop a batch), or
+  # :finished (an already-tracked video's owed captions/playlist steps done).
   # error is the typed {type:, base:, message:} entry; exception the cause
   # when one was raised. video_id is set once upload_video succeeded, even
   # if captions/playlist failed after it (the upload is already recorded).
@@ -95,15 +96,24 @@ class YouTubePublisher
     uploaded_map = @options[:force] ? {} : tracker.entries_for(:youtube, playlist)
     pending = episodes.reject { |ep| uploaded_map.key?(ep[:base_name]) }
     pending = pending.first(@options[:max]) if @options[:max]
+    # Tracked videos whose captions/playlist step failed after the upload:
+    # finished first, before anything new goes up.
+    owed = @options[:force] ? {} : tracker.pending_steps(:youtube, playlist)
+    unfinished = episodes.filter_map do |ep|
+      base = ep[:base_name]
+      ep.merge(video_id: uploaded_map[base], owed: owed[base]) if owed[base] && uploaded_map[base]
+    end
 
-    if pending.empty?
+    if pending.empty? && unfinished.empty?
       puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless quiet?
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false, errors: [])
     end
 
     puts "#{pending.length} episode(s) to upload to YouTube" unless quiet?
+    puts "#{unfinished.length} uploaded episode(s) with pending steps" unless quiet? || unfinished.empty?
 
     if @options[:dry_run]
+      unfinished.each { |ep| puts "  would finish: #{ep[:base_name]} (#{ep[:owed].join(", ")})" } unless quiet?
       pending.each { |ep| puts "  would upload: #{ep[:base_name]}" } unless quiet?
       puts "(dry run)" unless quiet?
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false, errors: [])
@@ -148,7 +158,7 @@ class YouTubePublisher
       end
     end
 
-    upload_loop(pending)
+    upload_loop(pending, unfinished)
   end
 
   # The one per-episode YouTube upload routine (P4-8), shared by publish /
@@ -220,14 +230,16 @@ class YouTubePublisher
 
     tracker.record(:youtube, yt_config[:playlist] || "default", base, video_id)
 
-    uploader.upload_captions(video_id, srt_path, language: language) if srt_path && File.exist?(srt_path)
-    uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
+    steps = []
+    steps << "captions" if srt_path && File.exist?(srt_path)
+    steps << "playlist" if yt_config[:playlist]
+    run_post_upload_steps(uploader, video_id, base, steps)
 
     say "  ✓ #{base} → https://youtu.be/#{video_id}"
     EpisodeResult.new(status: :uploaded, base: base, video_id: video_id, attempted: true)
-  rescue Google::Apis::ClientError => e
+  rescue Google::Apis::ClientError, Google::Apis::RateLimitError => e
     say_err "  ✗ #{base} failed: #{e.message}"
-    if e.message.include?("uploadLimitExceeded") || e.message.include?("quotaExceeded")
+    if rate_limit?(e)
       say_err "  YouTube quota exceeded — stopping batch. Retry after quota resets."
       return EpisodeResult.new(status: :rate_limited, base: base, video_id: video_id, attempted: attempted,
         exception: e, error: { type: :rate_limit, base: base, message: e.message })
@@ -247,14 +259,15 @@ class YouTubePublisher
 
   private
 
-  def upload_loop(pending)
+  def upload_loop(pending, unfinished = [])
     uploaded = 0
     attempted = 0
     rate_limited = false
     errors = []
 
-    pending.each do |ep|
-      result = upload_episode(ep)
+    jobs = unfinished.map { |ep| -> { finish_pending_steps(ep) } } + pending.map { |ep| -> { upload_episode(ep) } }
+    jobs.each do |job|
+      result = job.call
       attempted += 1 if result.attempted
       uploaded += 1 if result.status == :uploaded
       errors << result.error if result.error
@@ -266,6 +279,51 @@ class YouTubePublisher
     end
 
     Result.new(uploaded: uploaded, attempted: attempted, rate_limited: rate_limited, errors: errors)
+  end
+
+  # The steps after a live upload, in order. On a failure the failed step
+  # and every later one stay owed on the tracker (the video is already
+  # recorded), the next batch finishes them, and the error propagates.
+  def run_post_upload_steps(uploader, video_id, base, steps)
+    yt_config = @config.youtube_config
+    group = yt_config[:playlist] || "default"
+    steps.each_with_index do |step, i|
+      case step
+      when "captions"
+        srt_path = File.join(@config.episodes_dir, "#{base}.srt")
+        uploader.upload_captions(video_id, srt_path, language: @config.transcription_language || "en")
+      when "playlist"
+        uploader.add_to_playlist(video_id, yt_config[:playlist]) if yt_config[:playlist]
+      end
+    rescue => e # skippable: the video is live; the owed steps are recorded and the error re-raised to the per-episode rescue
+      owed = steps[i..]
+      tracker.mark_pending(:youtube, group, base, owed)
+      state = owed.include?("captions") ? "uploaded without captions" : "uploaded"
+      say_err "  ⚠ #{base}: #{state} (pending: #{owed.join(", ")}; #{e.class}), retried next batch"
+      raise
+    end
+    tracker.mark_pending(:youtube, group, base, [])
+  end
+
+  # Finish the owed steps of an already-tracked video; nothing is uploaded.
+  def finish_pending_steps(ep)
+    base = ep[:base_name]
+    say "  finishing: #{base} (#{ep[:owed].join(", ")})"
+    run_post_upload_steps(active_uploader, ep[:video_id], base, ep[:owed])
+    say "  ✓ #{base} → https://youtu.be/#{ep[:video_id]}"
+    EpisodeResult.new(status: :finished, base: base, video_id: ep[:video_id], attempted: false)
+  rescue => e # skippable per-episode: the steps stay owed; a quota stop still stops the batch
+    say_err "  ✗ #{base} pending steps failed: #{e.class}: #{e.message}"
+    limited = rate_limit?(e)
+    EpisodeResult.new(status: limited ? :rate_limited : :failed, base: base, video_id: ep[:video_id],
+      attempted: false, exception: e, error: { type: limited ? :rate_limit : :upload, base: base, message: e.message })
+  end
+
+  def rate_limit?(e)
+    return true if e.is_a?(Google::Apis::RateLimitError)
+
+    e.is_a?(Google::Apis::ClientError) &&
+      (e.message.include?("uploadLimitExceeded") || e.message.include?("quotaExceeded"))
   end
 
   def not_authorized_error(e, base: nil)
@@ -343,7 +401,7 @@ class YouTubePublisher
     when :reconciled
       puts "  reconciled subtitles: #{File.basename(ts_path)}" unless quiet?
     when :failed
-      $stderr.puts "  Warning: subtitle reconciliation failed: #{result.message} (using raw segments)"
+      say_err "  Warning: subtitle reconciliation failed: #{result.message} (using raw segments)"
     # :already_reconciled, :no_api_key, :no_transcript, :no_timestamps —
     # steady-state skips, intentionally silent to match pre-refactor behavior.
     end
@@ -386,7 +444,7 @@ class YouTubePublisher
       puts "  ⚠ #{base_name}: transcription returned no segments" unless quiet?
     end
   rescue => e # skippable: video uploads without subtitles; regen can add them later
-    $stderr.puts "  ⚠ #{base_name}: retranscription failed (#{e.class}: #{e.message}), uploading without subtitles"
+    say_err "  ⚠ #{base_name}: retranscription failed (#{e.class}: #{e.message}), uploading without subtitles"
   end
 
   def pick_timestamp_engine
