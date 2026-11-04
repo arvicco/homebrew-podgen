@@ -444,6 +444,29 @@ class TestYouTubePublisher < Minitest::Test
     assert data["youtube"]["default"]["ep-2026-01-15"]
   end
 
+  # Q-144: a corrupt uploads.yml used to read as {} — every episode looked
+  # untracked, upload_video ran, then the strict record raised: a duplicate
+  # video live and untracked, repeated every tick.
+  def test_run_corrupt_ledger_uploads_nothing_and_names_the_file
+    ["[not: a: map", "- a\n- b\n"].each do |corrupt|
+      File.write(@uploads_path, corrupt)
+      seed_ep("ep-2026-01-15")
+      config = stub_config(youtube_enabled: true)
+      uploader = stub_uploader { |b| b.upload_video_returns "vid_dup" }
+      publisher = build_publisher(config: config, uploader: uploader)
+
+      result = nil
+      _out, err = capture_io { result = publisher.run }
+
+      assert_empty uploader.uploads, "no video may go up against an unreadable ledger (#{corrupt.inspect})"
+      assert_includes err, "uploads ledger unreadable, uploading nothing"
+      assert_includes err, @uploads_path
+      assert_equal 0, result.uploaded
+      assert_equal :publisher_crash, result.errors.first[:type]
+      assert_equal corrupt, File.read(@uploads_path), "the corrupt ledger is never rewritten"
+    end
+  end
+
   # Regression: `publish --youtube --date X` used to upload every episode
   # because YouTubePublisher consumed its own scan_episodes which never
   # honored the date filter. Combined with --force, that re-uploaded the

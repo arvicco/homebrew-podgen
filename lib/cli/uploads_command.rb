@@ -33,6 +33,7 @@ module PodgenCLI
       @log = options[:log] || ->(msg) { $stderr.puts msg }
       @mode = :priority
       @max = nil
+      @warnings = [] # distinct warnings this tick, each logged once
 
       OptionParser.new do |opts|
         opts.banner = "Usage: podgen uploads <pod1,pod2,...> [--mode priority|round-robin] [--max N]"
@@ -273,11 +274,20 @@ module PodgenCLI
     # Episodes not yet uploaded plus tracked videos that still owe a
     # captions/playlist step — otherwise a caught-up pod whose last upload
     # failed on captions is never reached by the batch again (CRPR, P14-1).
+    # A corrupt ledger counts 0 (the publisher uploads nothing against it)
+    # with one warning naming the file.
     def yt_pending_count(tracker, playlist, episodes_dir)
-      uploaded = tracker.entries_for(:youtube, playlist)
+      uploaded = tracker.entries_for(:youtube, playlist, strict: true)
       episodes = mp3_basenames_with_transcripts(episodes_dir)
-      owed = tracker.pending_steps(:youtube, playlist).keys.count { |b| uploaded.key?(b) }
+      owed = tracker.pending_steps(:youtube, playlist, strict: true).keys.count { |b| uploaded.key?(b) }
       episodes.count { |b| !uploaded.key?(b) } + owed
+    rescue => e # skippable: the pod's YT phase is skipped; the status board names the corrupt file too
+      warning = "uploads: uploads ledger unreadable, counting 0 pending: #{e.message}"
+      unless @warnings.include?(warning)
+        @warnings << warning
+        @log.call warning
+      end
+      0
     end
 
     def mp3_basenames_with_transcripts(episodes_dir)
@@ -300,6 +310,7 @@ module PodgenCLI
       total = tick.per_pod.values.sum { |v| v[:uploaded] }
       puts "uploads: total YT uploaded #{total}#{tick.rate_limited ? ' — STOPPED on YouTube rate limit' : ''}"
       puts "uploads: YouTube NOT AUTHORIZED — #{tick.not_authorized}" if tick.not_authorized
+      puts "uploads: #{@warnings.length} warning(s): #{@warnings.join('; ')}" unless @warnings.empty?
       unless failures.empty?
         puts "uploads: #{failures.length} pod(s) had non-YT failures:"
         failures.each { |f| puts "  - #{f[:pod]}: #{f[:phase]} (#{f[:errors].first&.[](:message)})" }
