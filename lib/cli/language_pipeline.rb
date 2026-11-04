@@ -36,8 +36,13 @@ module PodgenCLI
     # Collected degradations; GenerateCommand reports them in RUN-OUTCOME.
     attr_reader :warnings
 
-    # Source candidates found gone (404/410) before a run gives up.
+    # Source candidates found gone (404/410) or, unattended, out of the
+    # length range before a run gives up (one count for both, Q-120).
     MAX_GONE_PICKS = 3
+
+    # Unattended: the downloaded candidate is outside min/max length; it is
+    # skipped for this run only and the next candidate is picked (Q-120).
+    class LengthOutOfRange < StandardError; end
 
     def initialize(config:, options:, logger:, history:, today:)
       @config = config
@@ -270,11 +275,23 @@ module PodgenCLI
       @gone_picks = (@gone_picks || 0) + 1
       raise if @gone_picks >= MAX_GONE_PICKS
       retry
+    rescue LengthOutOfRange => e
+      # Q-120 (P14-5): like Gone, but excluded for this run only — the
+      # length range may change, so excluded_urls.yml is not written.
+      @episode_source.exclude_for_run!(@episode[:audio_url])
+      @gone_picks = (@gone_picks || 0) + 1
+      if @gone_picks >= MAX_GONE_PICKS
+        logger.error("#{e.message}; aborting")
+        return 1
+      end
+      logger.log("Skipping #{@episode[:audio_url]} for this run; picking the next candidate")
+      retry
     end
 
     # Probes the downloaded audio duration and rejects episodes outside the
     # configured min_length/max_length range. Returns nil to continue, or an
-    # exit code to abort.
+    # exit code to abort; unattended, an out-of-range episode raises
+    # LengthOutOfRange (acquire_rss picks the next candidate).
     def enforce_length_post_download
       duration = AudioAssembler.probe_duration(@source_audio_path)
       @source_duration = duration
@@ -309,9 +326,9 @@ module PodgenCLI
         end
       end
 
-      @warnings << "Episode duration #{actual} is #{reason} (allowed range #{range})" # Q-101 (P11-4)
-      logger.error("Episode duration #{actual} outside allowed range #{range}; aborting")
-      1
+      warning = "Episode duration #{actual} is #{reason} (allowed range #{range})"
+      @warnings << warning # Q-101 (P11-4)
+      raise LengthOutOfRange, warning
     end
 
     def format_length(secs)

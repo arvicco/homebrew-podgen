@@ -137,6 +137,7 @@ module PodgenCLI
       per_pod = Hash.new { |h, k| h[k] = { uploaded: 0, errors: 0 } }
       rate_limited = false
       drained = {}
+      owed_tried = {} # pod => true once its owed captions/playlist steps were tried this tick
       not_authorized = nil
       last_failure = {} # pod => [label, message] of the previous round's failure (P3-3)
       # Runaway guard: every round that continues uploaded >= 1 item, so more
@@ -156,7 +157,11 @@ module PodgenCLI
               next
             end
 
-            result = run_yt_for(pod, max: 1)
+            # Owed captions/playlist steps are tried on the pod's first round
+            # only; a step that fails again would otherwise be retried every
+            # round and spend quota each time.
+            result = run_yt_for(pod, max: 1, finish_owed: !owed_tried[pod])
+            owed_tried[pod] = true
             per_pod[pod][:uploaded] += result.uploaded
             per_pod[pod][:errors] += result.errors.length
             remaining -= result.uploaded if remaining
@@ -242,11 +247,11 @@ module PodgenCLI
                                  errors: [{ type: :publisher_crash, message: e.message }])
     end
 
-    def run_yt_for(pod, max:)
+    def run_yt_for(pod, max:, finish_owed: true)
       config = PodcastConfig.new(pod)
       YouTubePublisher.new(
         config: config,
-        options: { max: max, verbosity: @options[:verbosity] }
+        options: { max: max, verbosity: @options[:verbosity], finish_owed: finish_owed }
       ).run
     rescue => e # skippable per-podcast: recorded as a publisher_crash error; other podcasts continue
       $stderr.puts "uploads: YT publisher crash for #{pod} (#{e.class}: #{e.message})"
@@ -259,14 +264,20 @@ module PodgenCLI
       return 0 unless config.youtube_enabled?
 
       playlist = config.youtube_config[:playlist] || "default"
-      tracker = UploadTracker.for_config(config)
-      uploaded = tracker.entries_for(:youtube, playlist)
-
-      episodes = mp3_basenames_with_transcripts(config.episodes_dir)
-      episodes.count { |b| !uploaded.key?(b) }
+      yt_pending_count(UploadTracker.for_config(config), playlist, config.episodes_dir)
     rescue => e # skippable: the pending count is informational
       $stderr.puts "uploads: skipping YT count for #{pod} (#{e.class}: #{e.message})"
       0
+    end
+
+    # Episodes not yet uploaded plus tracked videos that still owe a
+    # captions/playlist step — otherwise a caught-up pod whose last upload
+    # failed on captions is never reached by the batch again (CRPR, P14-1).
+    def yt_pending_count(tracker, playlist, episodes_dir)
+      uploaded = tracker.entries_for(:youtube, playlist)
+      episodes = mp3_basenames_with_transcripts(episodes_dir)
+      owed = tracker.pending_steps(:youtube, playlist).keys.count { |b| uploaded.key?(b) }
+      episodes.count { |b| !uploaded.key?(b) } + owed
     end
 
     def mp3_basenames_with_transcripts(episodes_dir)

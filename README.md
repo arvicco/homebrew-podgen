@@ -611,7 +611,7 @@ Accepts the same formats as RSS `itunes_duration`: plain seconds (`120`), `MM:SS
 1. **Pre-download**: episodes whose `itunes_duration` falls outside `[min_length, max_length]` are dropped before download. A summary line logs how many were kept and why others were filtered (`Length filter [2:00–9:30]: 59/60 kept, 1 too long`).
 2. **Post-download**: the actual audio duration is probed (covers feeds without reliable `itunes_duration`). If outside range:
    - With `--ask-trim`: prompt `[t]rim manually / e[x]clude / [a]bort?` — `x` writes the URL to `excluded_urls.yml` so future runs skip it.
-   - Without `--ask-trim`: log warning and abort with exit 1.
+   - Without `--ask-trim`: log a warning, skip the episode for this run only (nothing is written to `excluded_urls.yml`) and pick the next candidate — at most three picks per run, counted together with gone (404/410) sources; exit 1 when no candidate in range remains.
 
 Episodes with missing or unparseable `itunes_duration` pass the pre-download filter and are validated post-download.
 
@@ -775,7 +775,7 @@ Each episode produces:
 - `{basename}.srt` — SRT subtitles synchronized with the audio
 - `{basename}.mp4` — video (cover image + audio, 1920x1080)
 
-Subtitles are uploaded as captions in the episode's language. Upload tracking is shared with LingQ in `uploads.yml`.
+Subtitles are uploaded as captions in the episode's language. Upload tracking is shared with LingQ in `uploads.yml`. If the captions or playlist step fails after the video is live, the video stays tracked and the owed steps are kept under `youtube_pending:`; the next YouTube upload run finishes them before uploading anything new, and `podgen status` names "uploaded without captions" from the batch log. Removing videos untracks only those YouTube actually deleted (or already gone); a refused delete stays tracked.
 
 To remove all tracked YouTube videos for a podcast:
 

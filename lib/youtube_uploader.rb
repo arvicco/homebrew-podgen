@@ -275,6 +275,8 @@ class YouTubeUploader
   end
 
   # Delete a video. Non-fatal on 404 or 403 (not owned / restricted).
+  # Returns true when deleted, :not_found when already gone (404), false
+  # when refused (403) — the caller keeps tracking a refused video.
   def delete_video(video_id)
     ensure_authorized!
 
@@ -286,7 +288,7 @@ class YouTubeUploader
     case e.status_code
     when 404
       log("Video #{video_id} already deleted (404)")
-      false
+      :not_found
     when 403
       log("Video #{video_id} cannot be deleted — forbidden (403)")
       false

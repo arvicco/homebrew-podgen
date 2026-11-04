@@ -46,19 +46,28 @@ class ScriptReviewer
 
   WEEKDAY_PATTERN = /\b(#{WEEKDAYS.join("|")})\b(,?\s+)(#{MONTHS.join("|")})\s+(\d{1,2})(st|nd|rd|th)?\b/i
 
+  # A phrase is a stage direction only when it is the whole sentence (at a
+  # line start or after . ! ?, ending in . ! ? or at the text end): "The
+  # Fed's long pause on rates" is content and stays (Q-113).
   STAGE_DIRECTION_PHRASES = [
-    /\s*\b\w+\s+seconds?\s+pause\s+here\.?\s*/i,
-    /\s*\b\d+\s+seconds?\s+pause\s+here\.?\s*/i,
-    /\s*\bpause\s+here\.?\s*/i,
-    /\s*\bbrief\s+pause\.?\s*/i,
-    /\s*\btake\s+a\s+breath\.?\s*/i,
-    /\s*\bsilence\s+here\.?\s*/i,
-    /\s*\blong\s+pause\.?\s*/i,
-    /\s*\bshort\s+pause\.?\s*/i
-  ].freeze
+    /\w+\s+seconds?\s+pause\s+here/,
+    /\d+\s+seconds?\s+pause\s+here/,
+    /pause\s+here/,
+    /brief\s+pause/,
+    /take\s+a\s+breath/,
+    /silence\s+here/,
+    /long\s+pause/,
+    /short\s+pause/
+  ].map { |core| /(?:^|(?<=[.!?]))\s*#{core.source}(?:[.!?]+|(?=\s*\z))(?=\s|\z)/i }.freeze
 
   STAGE_DIRECTION_BRACKETS = /\[([^\]]*\b(?:pause|beat|silence|breath|wait|sigh|laugh)\b[^\]]*)\]/i
-  STAGE_DIRECTION_PARENS = /\(([^)]*\b(?:pause|beat|silence|breath|wait|sigh|laugh)\b[^)]*)\)/i
+  # A parenthetical is a direction only when it is wholly one — up to two
+  # lead tokens ("two-second", "3", "takes a"), the cue, and at most one
+  # trailing "here" / "for effect" / adverb: "(beat)", "(brief pause)",
+  # "(3-second pause)", "(laughs softly)", "(pause for effect)". "(which
+  # beat estimates)" and "(after a long pause in hikes)" are content and
+  # stay (Q-113, CRPR).
+  STAGE_DIRECTION_PARENS = /\(\s*(?:[a-z0-9'-]+\s+){0,2}(?:pause|beat|silence|breath|wait|sigh|laugh)s?(?:\s+(?:here|for\s+effect|[a-z]+ly))?\.?\s*\)/i
 
   FORBIDDEN_PHRASES = [
     /\bin today'?s episode\b/i,
@@ -162,8 +171,20 @@ class ScriptReviewer
         month_num = MONTHS.index { |m| m.casecmp(month_name) == 0 }&.+(1)
         next match unless month_num
 
+        # A date near a year boundary ("Wednesday, December 31" said on
+        # January 2) belongs to the adjacent year: judge against the
+        # candidate nearest to the run date, never against any year that
+        # happens to fit — one year shifts a weekday by one, so "any of
+        # three years" would pass most off-by-one errors (Q-113, CRPR).
+        candidates = (-1..1).filter_map do |offset|
+          Date.new(@date.year + offset, month_num, day)
+        rescue Date::Error
+          nil
+        end
+        next match if candidates.empty?
+
         begin
-          actual_date = Date.new(@date.year, month_num, day)
+          actual_date = candidates.min_by { |d| (d - @date).abs }
           correct_weekday = actual_date.strftime("%A")
 
           if stated_weekday.downcase != correct_weekday.downcase

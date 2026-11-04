@@ -449,7 +449,7 @@ class TestYouTubeUploader < Minitest::Test
     @uploader.instance_variable_set(:@service, mock_service)
 
     result = @uploader.delete_video("nonexistent")
-    refute result, "Should return false for 404"
+    assert_equal :not_found, result, "404: already gone, distinct from a refused delete"
     mock_service.verify
   end
 
