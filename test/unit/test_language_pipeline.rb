@@ -1139,7 +1139,7 @@ class TestLanguagePipeline < Minitest::Test
       AudioTrimmer.stub(:new, fake_trimmer) do
         pipeline.stub(:start_preview, nil) do
           $stdin.stub(:gets, fake_gets) do
-            capture_io { result = pipeline.send(:trim_source_audio) }
+            _, seen[:stderr] = capture_io { result = pipeline.send(:trim_source_audio) }
           end
         end
       end
@@ -1307,6 +1307,39 @@ class TestLanguagePipeline < Minitest::Test
     run_listening_trim(pipeline, [])
 
     refute Dir.exist?(archive_root), "unattended runs never write the archive"
+  end
+
+  # --- recorded trim reuse (the archive read back under --ask-trim) ---
+
+  def write_recorded_trim(audio_url:)
+    FileUtils.mkdir_p(archive_root)
+    File.write(File.join(archive_root, "test-2026-03-10.trim.yml"),
+      {"audio_url" => audio_url, "skip" => 29.0, "cut" => 277.0, "cut_absolute" => true,
+       "final_duration" => 248.0}.to_yaml)
+  end
+
+  def test_ask_trim_recorded_pair_reused_with_r_asks_once
+    pipeline, _source = build_listening_pipeline
+    write_recorded_trim(audio_url: LISTEN_URL)
+
+    _result, seen = run_listening_trim(pipeline, ["R\n", -> { flunk "the cut prompt must not be asked" }], duration: 302.0)
+
+    assert_includes seen[:stderr], "Recorded for this episode: skip 29.0, cut 277.0 — r to reuse both"
+    assert_in_delta 29.0, seen[:skip]
+    refute seen[:skip].absolute?
+    assert_in_delta 277.0, seen[:cut]
+    assert seen[:cut].absolute?
+  end
+
+  def test_ask_trim_record_for_another_url_is_not_offered
+    pipeline, _source = build_listening_pipeline
+    write_recorded_trim(audio_url: "https://cdn.ex.com/show/other.mp3")
+
+    _result, seen = run_listening_trim(pipeline, ["r\n", "29\n", "\n"], duration: 302.0)
+
+    refute_includes seen[:stderr], "Recorded for this episode"
+    assert_in_delta 29.0, seen[:skip], 0.001, "r is not a time value without a record: re-asked"
+    assert_nil seen[:cut]
   end
 
   def run_length_prompt(answer, verdict:, duration:)
