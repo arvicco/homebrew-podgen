@@ -173,4 +173,25 @@ class TestTimeValue < Minitest::Test
     # case/when (only 2 and 3 handled) and return nil.
     assert_nil TimeValue.parse_duration_seconds("1:02:03:04")
   end
+
+  # --- One timestamp grammar shared with SnipInterval ---
+
+  def test_parse_minsec_fraction_is_absolute
+    tv = TimeValue.parse("1:20.5")
+    assert_in_delta 80.5, tv
+    assert tv.absolute?
+  end
+
+  def test_parse_seconds_over_59_raises
+    assert_raises(ArgumentError) { TimeValue.parse("1:75") }
+  end
+
+  def test_parse_timestamp_minsec_fraction_returns_seconds
+    assert_in_delta 62.5, TimeValue.parse_timestamp("1:2.5")
+    assert_in_delta 30.0, TimeValue.parse_timestamp("30")
+  end
+
+  def test_parse_timestamp_seconds_over_59_raises
+    assert_raises(ArgumentError) { TimeValue.parse_timestamp("1:60") }
+  end
 end

@@ -25,7 +25,7 @@ class TimeValue < DelegateClass(Float)
   # Parses a value into a TimeValue.
   #   nil / empty string → nil
   #   TimeValue           → returned as-is
-  #   "1:20" / "11:20"   → minutes:seconds, absolute
+  #   "1:20" / "11:20.5" → minutes:seconds, absolute
   #   "30" / 30 / 30.0   → plain seconds, relative
   def self.parse(value)
     return nil if value.nil?
@@ -33,12 +33,24 @@ class TimeValue < DelegateClass(Float)
     return value if value.is_a?(TimeValue)
 
     str = value.to_s.strip
-    if str.match?(/\A\d+:\d{1,2}\z/)
-      mins, secs = str.split(":", 2).map(&:to_f)
-      new(mins * 60 + secs, absolute: true)
-    else
-      new(Float(str), absolute: false)
-    end
+    new(parse_timestamp(str), absolute: str.include?(":"))
+  end
+
+  MINSEC_RE = /\A(\d+):(\d{1,2})(\.\d+)?\z/
+
+  # The one timestamp grammar (also SnipInterval's): "m:ss" with ss 0..59
+  # and an optional ".fraction", or a plain number. Returns Float seconds;
+  # raises ArgumentError otherwise.
+  def self.parse_timestamp(str)
+    str = str.to_s.strip
+    return Float(str) unless str.include?(":")
+
+    m = str.match(MINSEC_RE)
+    raise ArgumentError, "invalid timestamp: #{str.inspect}" unless m
+    secs = m[2].to_i
+    raise ArgumentError, "seconds must be 0-59: #{str.inspect}" if secs > 59
+
+    m[1].to_i * 60 + secs + "0#{m[3]}".to_f
   end
 
   # Parses a duration string into Float seconds. Accepts:

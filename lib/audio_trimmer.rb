@@ -9,6 +9,10 @@ require_relative "snip_interval"
 class AudioTrimmer
   include Loggable
 
+  # Skip/cut/snip remove the whole file: shipping the untrimmed source
+  # instead would publish exactly what the trim meant to remove.
+  class NothingKept < ArgumentError; end
+
   MIN_OUTRO_SAVINGS = 5 # minimum seconds saved to bother trimming outro
   MIN_PREFIX = 3 # minimum chars for fuzzy word prefix matching
   # Max seconds the matched anchor may be before groq's last known word.
@@ -46,7 +50,12 @@ class AudioTrimmer
     log("Snip: removing #{snip}") if snip
 
     keeps = self.class.keep_segments(total, skip: skip, cut: cut, snip: snip)
-    if keeps.any? && keeps != [SnipInterval::Interval.new(0.0, total)]
+    if keeps.empty?
+      cut_text = (cut.respond_to?(:absolute?) && cut.absolute?) ? "cut at #{cut.to_f.round(1)}s" : "cut #{cut.to_f.round(1)}s"
+      snip_text = snip ? " + snip #{snip}" : ""
+      raise NothingKept, "skip #{skip.to_f.round(1)}s + #{cut_text}#{snip_text} leave nothing of #{total.round(1)}s"
+    end
+    if keeps != [SnipInterval::Interval.new(0.0, total)]
       trimmed_path = File.join(Dir.tmpdir, "podgen_trimmed_#{Process.pid}_#{SecureRandom.hex(4)}.mp3")
       @temp_files << trimmed_path
       @assembler.snip_segments(audio_path, trimmed_path, keeps)

@@ -369,24 +369,54 @@ module PodgenCLI
     # QuickTime Player preview (P00-7): frontmost + autoplay are native
     # AppleScript verbs — Quick Look could do neither from a spawned
     # process. Launch via `open -a` (avoids the tell-before-registered
-    # -600 race); still imports nothing into any library.
-    PREVIEW_PLAY_SCRIPT = <<~APPLESCRIPT
-      tell application "QuickTime Player"
-        repeat 25 times
-          if (count documents) > 0 then exit repeat
-          delay 0.2
-        end repeat
-        play front document
-      end tell
-    APPLESCRIPT
-
-    PREVIEW_CLOSE_SCRIPT = <<~APPLESCRIPT
-      if application "QuickTime Player" is running then
+    # -600 race); still imports nothing into any library. Both scripts act
+    # only on the document for our file — another open document is never
+    # played or closed. QuickTime documents expose `file` (no `whose`
+    # filter on it), and its POSIX path is the resolved one (/private/...).
+    def preview_play_script(path)
+      <<~APPLESCRIPT
         tell application "QuickTime Player"
-          if (count documents) > 0 then close front document saving no
+          repeat 25 times
+            repeat with d in documents
+              try
+                if POSIX path of ((file of d) as alias) is #{applescript_string(preview_document_path(path))} then
+                  play d
+                  return
+                end if
+              end try
+            end repeat
+            delay 0.2
+          end repeat
         end tell
-      end if
-    APPLESCRIPT
+      APPLESCRIPT
+    end
+
+    def preview_close_script(path)
+      <<~APPLESCRIPT
+        if application "QuickTime Player" is running then
+          tell application "QuickTime Player"
+            repeat with d in documents
+              try
+                if POSIX path of ((file of d) as alias) is #{applescript_string(preview_document_path(path))} then
+                  close d saving no
+                  exit repeat
+                end if
+              end try
+            end repeat
+          end tell
+        end if
+      APPLESCRIPT
+    end
+
+    def preview_document_path(path)
+      File.realpath(path)
+    rescue SystemCallError
+      path
+    end
+
+    def applescript_string(text)
+      %("#{text.gsub(/[\\"]/) { "\\#{it}" }}")
+    end
 
     def preview_open_command(path)
       ["open", "-a", "QuickTime Player", path]
@@ -395,9 +425,10 @@ module PodgenCLI
     def start_preview(path)
       return unless system(*preview_open_command(path))
       @preview_started = true
+      @preview_path = path
       # Autoplay waits for the document to load — background it so the
       # skip/cut prompts appear immediately.
-      pid = spawn("osascript", "-e", PREVIEW_PLAY_SCRIPT, [:out, :err] => "/dev/null")
+      pid = spawn("osascript", "-e", preview_play_script(path), [:out, :err] => "/dev/null")
       Process.detach(pid)
     rescue Errno::ENOENT
       @preview_started = false # no osascript/open — prompts still work
@@ -405,7 +436,7 @@ module PodgenCLI
 
     def stop_preview
       return unless @preview_started
-      system("osascript", "-e", PREVIEW_CLOSE_SCRIPT, [:out, :err] => "/dev/null")
+      system("osascript", "-e", preview_close_script(@preview_path), [:out, :err] => "/dev/null")
       @preview_started = false
     end
 
@@ -425,17 +456,30 @@ module PodgenCLI
       $stderr.puts "Opening QuickTime preview — auto-plays in front; scrub, read min:sec; prompt is ready now:"
       start_preview(@source_audio_path)
 
-      @listening_prompt = "skip"
-      skip = ask_time_value("skip intro")
-      return trim_exclusion(skip) if skip.is_a?(Symbol)
+      # A pair that removes everything is asked again (the trimmer would
+      # refuse it); TRIM_ATTEMPTS such pairs take the bad-input path.
+      TRIM_ATTEMPTS.times do
+        @listening_prompt = "skip"
+        skip = ask_time_value("skip intro")
+        return trim_exclusion(skip) if skip.is_a?(Symbol)
 
-      @listening_prompt = "cut"
-      cut = ask_time_value("cut outro")
-      return trim_exclusion(cut) if cut.is_a?(Symbol)
+        @listening_prompt = "cut"
+        cut = ask_time_value("cut outro")
+        return trim_exclusion(cut) if cut.is_a?(Symbol)
 
-      [skip, cut]
+        return [skip, cut] if AudioTrimmer.keep_segments(duration, skip: skip, cut: cut, snip: @options[:snip]).any?
+
+        $stderr.puts "#{trim_pair_text(skip, cut)} leave nothing of #{duration.round(1)}s — enter again"
+      end
+      logger.log("No skip/cut pair leaving any audio after #{TRIM_ATTEMPTS} attempts; excluding the candidate")
+      trim_exclusion(:bad_input)
     ensure
       stop_preview
+    end
+
+    def trim_pair_text(skip, cut)
+      cut_text = cut&.absolute? ? "at #{cut.to_f.round(1)}s" : "#{cut.to_f.round(1)}s"
+      "skip #{skip.to_f.round(1)}s + cut #{cut_text}"
     end
 
     TRIM_ATTEMPTS = 3
