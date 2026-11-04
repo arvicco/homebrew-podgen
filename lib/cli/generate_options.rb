@@ -18,9 +18,21 @@ module PodgenCLI
       opts.on("--url URL", "YouTube video URL (language pipeline)") { |u| options[:url] = u }
       opts.on("--rss URL", "RSS feed: URL or substring of configured feed") { |u| options[:rss] = u }
       opts.on("--title TEXT", "Episode title (with --file or --url)") { |t| options[:title] = t }
-      opts.on("--skip-intro N", "--skip N", String, "Seconds or min:sec to skip from start") { |n| options[:skip] = TimeValue.parse(n) }
-      opts.on("--cut-outro N", "--cut N", String, "Seconds or min:sec to cut from end (min:sec = absolute)") { |n| options[:cut] = TimeValue.parse(n) }
-      opts.on("--snip INTERVALS", String, "Remove interior segments (e.g. 1:20-2:30,3:40+33)") { |s| options[:snip] = SnipInterval.parse(s) }
+      opts.on("--skip-intro N", "--skip N", String, "Seconds or min:sec to skip from start") do |n|
+        options[:skip] = TimeValue.parse(n)
+      rescue ArgumentError
+        raise OptionParser::InvalidArgument, "--skip #{n} (seconds or min:sec)"
+      end
+      opts.on("--cut-outro N", "--cut N", String, "Seconds or min:sec to cut from end (min:sec = absolute)") do |n|
+        options[:cut] = TimeValue.parse(n)
+      rescue ArgumentError
+        raise OptionParser::InvalidArgument, "--cut #{n} (seconds or min:sec)"
+      end
+      opts.on("--snip INTERVALS", String, "Remove interior segments (e.g. 1:20-2:30,3:40+33)") do |s|
+        options[:snip] = SnipInterval.parse(s)
+      rescue ArgumentError
+        raise OptionParser::InvalidArgument, "--snip #{s} (intervals like 1:20-2:30, 3:40+33 or 5:00-end, comma-separated)"
+      end
       opts.on("--autotrim", "Enable outro auto-detection via word timestamps") { options[:autotrim] = true }
       opts.on("--no-autotrim", "Disable autotrim even if configured") { options[:no_autotrim] = true }
       opts.on("--no-skip", "Disable skip even if configured") { options[:no_skip] = true }
@@ -31,7 +43,12 @@ module PodgenCLI
       opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| options[:base_image] = p }
       opts.on("--lingq", "Enable LingQ upload during generation") { options[:lingq] = true }
       opts.on("--youtube", "Enable YouTube upload during generation") { options[:youtube] = true }
-      opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") { |d| options[:date] = Date.parse(d) }
+      opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") do |d|
+        options[:date] = Date.iso8601(d)
+      rescue Date::Error
+        # A ParseError reaches cli.rb's one-line "generate: ..." report
+        raise OptionParser::InvalidArgument, "--date #{d} (expected YYYY-MM-DD)"
+      end
       opts.on("--include WORDS", "Force-include vocabulary lemmas (comma-separated)") { |v| options[:include_words] = Set.new(v.split(",").map { |w| w.strip.downcase }) }
       opts.on("--from-script", "DEPRECATED: prefer 'podgen voice <pod> [--lang LANG]'. Resumes voicing from saved script JSON.") {
         options[:from_script] = true

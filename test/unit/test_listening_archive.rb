@@ -117,4 +117,27 @@ class TestListeningArchive < Minitest::Test
     assert_equal File.binread(@source), File.binread(File.join(@root, "fiabe-2026-10-29.source.m4a"))
     refute File.exist?(File.join(@root, "fiabe-2026-10-29.source.mp3"))
   end
+
+  # --- recorded: the kept pair read back for --ask-trim reuse ---
+
+  def test_recorded_same_url_returns_the_record
+    @archive.keep(@source, basename: "fiabe-2026-10-29",
+      record: {audio_url: "https://ex.com/a.m4a", skip: 29.0, cut: 277.0, cut_absolute: true})
+
+    rec = @archive.recorded("fiabe-2026-10-29", audio_url: "https://ex.com/a.m4a")
+
+    assert_equal 29.0, rec["skip"]
+    assert_equal 277.0, rec["cut"]
+    assert_equal true, rec["cut_absolute"]
+  end
+
+  def test_recorded_other_url_returns_nil
+    @archive.keep(@source, basename: "fiabe-2026-10-29", record: {audio_url: "https://ex.com/a.m4a", skip: 29.0})
+
+    assert_nil @archive.recorded("fiabe-2026-10-29", audio_url: "https://ex.com/other.m4a")
+  end
+
+  def test_recorded_no_file_returns_nil
+    assert_nil @archive.recorded("fiabe-2026-10-29", audio_url: "https://ex.com/a.m4a")
+  end
 end
