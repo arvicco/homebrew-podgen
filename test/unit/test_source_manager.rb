@@ -201,6 +201,17 @@ class TestSourceManager < Minitest::Test
     assert_equal keywords, hn.instance_variable_get(:@hn_queries)
   end
 
+  def test_research_total_source_failure_is_not_cached
+    manager = build_manager
+    cache = FakeCache.new
+    manager.instance_variable_set(:@cache, cache)
+    manager.define_singleton_method(:enabled_sources) { [["src1", MockSource.new([])]] }
+
+    manager.research(["AI", "Ruby"])
+
+    assert_empty cache.sets, "an empty result set (every feed failed) must not be cached for the day"
+  end
+
   private
 
   def build_manager(exclude_urls: Set.new)

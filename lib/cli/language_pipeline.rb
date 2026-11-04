@@ -458,8 +458,8 @@ module PodgenCLI
 
       # The same episode listened to before (a failed run, a regen): its
       # kept pair can be reused with one answer.
-      rec = listening_archive.recorded(@config.episode_basename(@today), audio_url: @episode[:audio_url])
-      $stderr.puts "Recorded for this episode: skip #{rec["skip"]}, cut #{rec["cut"]} — r to reuse both" if rec
+      rec = recorded_trim
+      $stderr.puts "Recorded for this episode: #{trim_pair_text(*recorded_pair(rec))} — r to reuse both" if rec
 
       # A pair that removes everything is asked again (the trimmer would
       # refuse it); TRIM_ATTEMPTS such pairs take the bad-input path.
@@ -488,7 +488,18 @@ module PodgenCLI
 
     def trim_pair_text(skip, cut)
       cut_text = cut&.absolute? ? "at #{cut.to_f.round(1)}s" : "#{cut.to_f.round(1)}s"
-      "skip #{skip.to_f.round(1)}s + cut #{cut_text}"
+      text = "skip #{skip.to_f.round(1)}s + cut #{cut_text}"
+      @options[:snip] ? "#{text} + snip #{@options[:snip]}" : text
+    end
+
+    # The archived pair for this episode, or nil; a sidecar that cannot be
+    # read is a counted warning, never a failed run (the archive is a side
+    # record, like its writes).
+    def recorded_trim
+      listening_archive.recorded(@config.episode_basename(@today), audio_url: @episode[:audio_url])
+    rescue => e # skippable: the archive is a side record; the prompts proceed as without one
+      archive_failed(e, action: "read")
+      nil
     end
 
     # The archived skip/cut as the answers they were (blank stays nil).
@@ -586,9 +597,9 @@ module PodgenCLI
       { audio_url: url, title: @episode[:title], feed_key: EpisodeSource.feed_key(url) }
     end
 
-    def archive_failed(error)
-      logger.log("Warning: listening archive write failed: #{error.class}: #{error.message}")
-      @warnings << "Listening archive write failed (#{error.class}: #{error.message})"
+    def archive_failed(error, action: "write")
+      logger.log("Warning: listening archive #{action} failed: #{error.class}: #{error.message}")
+      @warnings << "Listening archive #{action} failed (#{error.class}: #{error.message})"
     end
 
     def discover_transcript

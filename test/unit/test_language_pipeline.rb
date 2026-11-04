@@ -1311,10 +1311,10 @@ class TestLanguagePipeline < Minitest::Test
 
   # --- recorded trim reuse (the archive read back under --ask-trim) ---
 
-  def write_recorded_trim(audio_url:)
+  def write_recorded_trim(audio_url:, skip: 29.0, cut: 277.0)
     FileUtils.mkdir_p(archive_root)
     File.write(File.join(archive_root, "test-2026-03-10.trim.yml"),
-      {"audio_url" => audio_url, "skip" => 29.0, "cut" => 277.0, "cut_absolute" => true,
+      {"audio_url" => audio_url, "skip" => skip, "cut" => cut, "cut_absolute" => !cut.nil?,
        "final_duration" => 248.0}.to_yaml)
   end
 
@@ -1324,7 +1324,7 @@ class TestLanguagePipeline < Minitest::Test
 
     _result, seen = run_listening_trim(pipeline, ["R\n", -> { flunk "the cut prompt must not be asked" }], duration: 302.0)
 
-    assert_includes seen[:stderr], "Recorded for this episode: skip 29.0, cut 277.0 — r to reuse both"
+    assert_includes seen[:stderr], "Recorded for this episode: skip 29.0s + cut at 277.0s — r to reuse both"
     assert_in_delta 29.0, seen[:skip]
     refute seen[:skip].absolute?
     assert_in_delta 277.0, seen[:cut]
@@ -1468,6 +1468,61 @@ class TestLanguagePipeline < Minitest::Test
 
     pipeline.send(:cleanup_staging)
     refute Dir.exist?(staging)
+  end
+
+  # --- CRPR round 1 (Phase 15): nothing-kept through the pipeline, archive read guard ---
+
+  def test_unattended_nothing_kept_fails_the_run_and_writes_no_history
+    pipeline, _source = build_listening_pipeline(options: {}, config: build_config(skip: 700.0))
+    fake_assembler = Object.new
+    fake_assembler.define_singleton_method(:probe_duration) { |_p| 302.0 }
+    fake_assembler.define_singleton_method(:snip_segments) { |*_a| flunk "nothing to keep: ffmpeg must not run" }
+    code = nil
+    AudioAssembler.stub(:new, fake_assembler) do
+      pipeline.stub(:validate_image_options, nil) do
+        pipeline.stub(:acquire_episode, nil) do
+          pipeline.stub(:setup_staging, nil) do
+            capture_io { code = pipeline.run }
+          end
+        end
+      end
+    end
+
+    assert_equal 1, code
+    assert_includes @logger.errors.first, "AudioTrimmer::NothingKept"
+    refute File.exist?(File.join(@tmpdir, "history.yml")), "no history row for an episode that never shipped"
+  end
+
+  def test_ask_trim_recorded_pair_leaving_nothing_is_reasked
+    pipeline, _source = build_listening_pipeline
+    write_recorded_trim(audio_url: LISTEN_URL, skip: 400.0, cut: nil)
+
+    _result, seen = run_listening_trim(pipeline, ["r\n", "29\n", "\n"], duration: 302.0)
+
+    assert_includes seen[:stderr], "leave nothing of 302.0s"
+    assert_in_delta 29.0, seen[:skip], 0.001, "the recorded pair is re-asked when it leaves nothing"
+    assert_nil seen[:cut]
+  end
+
+  def test_ask_trim_unreadable_record_is_a_warning_not_a_crash
+    pipeline, _source = build_listening_pipeline
+    FileUtils.mkdir_p(archive_root)
+    File.write(File.join(archive_root, "test-2026-03-10.trim.yml"), "audio_url: !ruby/object:Date {}\nskip: 29.0\n")
+
+    _result, seen = run_listening_trim(pipeline, ["29\n", "\n"], duration: 302.0)
+
+    refute_includes seen[:stderr], "Recorded for this episode"
+    assert_in_delta 29.0, seen[:skip], 0.001, "the prompts behave as without a record"
+    assert pipeline.warnings.any? { |w| w.include?("Listening archive read failed") }, pipeline.warnings.inspect
+  end
+
+  def test_ask_trim_nothing_kept_message_names_the_snip
+    snip = SnipInterval.parse("0:00-end")
+    pipeline, _source = build_listening_pipeline(options: { ask_trim: true, snip: snip })
+
+    _result, seen = run_listening_trim(pipeline, ["\n", "\n", "\n", "\n", "\n", "\n"], duration: 302.0)
+
+    assert_includes seen[:stderr], "+ snip 0-end leave nothing"
   end
 
   private
