@@ -17,6 +17,15 @@ class NoTextBlockError < StandardError; end
 # Include in classes that call Claude API and call init_anthropic_client
 # in initialize to set @client and @model.
 module AnthropicClient
+  # Anthropic errors worth a retry: network/timeouts (APITimeoutError is an
+  # APIConnectionError), 429, and 5xx (the SDK maps 529 overloaded to
+  # InternalServerError). 400/401/403/404 never heal on a retry.
+  ANTHROPIC_RETRIABLE = [
+    Anthropic::Errors::APIConnectionError,
+    Anthropic::Errors::RateLimitError,
+    Anthropic::Errors::InternalServerError
+  ].freeze
+
   # First text block of a response. Thinking-default models put a thinking
   # block first, so `content.first.text` is unsafe (P1-0, hazard H1).
   # Fakes without a `type` but with `text` are accepted.

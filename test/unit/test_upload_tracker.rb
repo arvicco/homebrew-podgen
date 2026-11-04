@@ -47,6 +47,15 @@ class TestUploadTracker < Minitest::Test
     assert_equal "not: valid: yaml: [[[", File.read(@path)
   end
 
+  # Q-144: readers about to upload ask for the strict read; the default stays lenient.
+  def test_entries_for_and_pending_steps_strict_raise_on_corrupt_file
+    File.write(@path, "[not: a: map")
+    assert_equal({}, @tracker.entries_for(:youtube, "pl"))
+    assert_equal({}, @tracker.pending_steps(:youtube, "pl"))
+    assert_raises(RuntimeError) { @tracker.entries_for(:youtube, "pl", strict: true) }
+    assert_raises(RuntimeError) { @tracker.pending_steps(:youtube, "pl", strict: true) }
+  end
+
   def test_remove_wrong_top_level_type_raises_and_leaves_bytes_unchanged
     File.write(@path, "- ep-2026-03-01\n")
     assert_raises(RuntimeError) { @tracker.remove("ep-2026-03-01") }

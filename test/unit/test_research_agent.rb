@@ -85,6 +85,34 @@ class TestResearchAgent < Minitest::Test
     assert_equal 3, client.calls["A"]
   end
 
+  # Q-130: a dead Exa used to cost every topic 4 attempts (~134 s each).
+  def test_research_dead_network_later_topics_get_one_attempt
+    agent = build_agent
+    agent.define_singleton_method(:sleep) { |_| }
+    dead = -> { raise Faraday::TimeoutError, "read timeout" }
+    client = FlakyExaClient.new("A" => dead, "B" => dead, "C" => dead)
+    agent.instance_variable_set(:@client, client)
+
+    results = nil
+    with_run_logger { results = agent.research(%w[A B C]) }
+
+    assert(results.all? { |r| r[:findings].empty? })
+    assert_operator client.calls.values.sum, :<=, 6, client.calls.inspect
+    assert_equal ResearchAgent::MAX_RETRIES + 1, client.calls["A"]
+  end
+
+  def test_research_dead_network_flag_resets_on_next_call
+    agent = build_agent
+    agent.define_singleton_method(:sleep) { |_| }
+    client = FlakyExaClient.new("A" => -> { raise Faraday::ConnectionFailed, "getaddrinfo" })
+    agent.instance_variable_set(:@client, client)
+    with_run_logger { agent.research(["A"]) }
+
+    with_run_logger { agent.research(["A"]) }
+
+    assert_equal 2 * (ResearchAgent::MAX_RETRIES + 1), client.calls["A"]
+  end
+
   def test_research_rate_limit_exhausted_skips_topic_with_warning
     agent = build_agent
     agent.define_singleton_method(:sleep) { |_| }

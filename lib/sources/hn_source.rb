@@ -64,10 +64,6 @@ class HNSource < BaseSource
   end
 
   def request_with_retry(**params)
-    with_retries(max: MAX_RETRIES, label: source_name) do
-      response = HTTParty.get(API_BASE, query: params, timeout: 15)
-      raise "HTTP #{response.code} from HN Algolia API" unless response.success?
-      response.parsed_response
-    end
+    get_json(API_BASE, query: params)
   end
 end

@@ -14,6 +14,9 @@ class ResearchAgent
   # exa-ai raises its own classes only from HTTP responses; a timeout or a
   # failed connection arrives as Faraday's (Q-99). All four are transient.
   RETRIABLE_ERRORS = [Exa::TooManyRequests, Exa::ServerError, Faraday::TimeoutError, Faraday::ConnectionFailed].freeze
+  # Once one topic exhausts its retries on these, the network is taken as
+  # down for the rest of the call: later topics get one attempt each.
+  NETWORK_ERRORS = [Faraday::TimeoutError, Faraday::ConnectionFailed].freeze
 
   def initialize(results_per_topic: RESULTS_PER_TOPIC, exclude_urls: Set.new, category: "news", logger: nil)
     @results_per_topic = results_per_topic
@@ -33,6 +36,7 @@ class ResearchAgent
   # Output: array of { topic:, findings: [{ title:, url:, summary: }] }
   def research(topics, exclude_urls: nil)
     effective_excludes = exclude_urls ? (@exclude_urls | exclude_urls) : @exclude_urls
+    @network_down = false
     topics.map do |topic|
       log("Researching: #{topic}")
       start = Time.now
@@ -78,8 +82,11 @@ class ResearchAgent
   end
 
   def search_with_retry(query, **params)
-    with_http_retries("ResearchAgent", max: MAX_RETRIES, on: RETRIABLE_ERRORS, reraise: true) do
+    with_http_retries("ResearchAgent", max: @network_down ? 0 : MAX_RETRIES, on: RETRIABLE_ERRORS, reraise: true) do
       @client.search(query, **params)
     end
+  rescue *NETWORK_ERRORS
+    @network_down = true
+    raise
   end
 end

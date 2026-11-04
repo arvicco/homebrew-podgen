@@ -266,6 +266,24 @@ class TestUploadsCommand < Minitest::Test
       "a caught-up pod with an owed captions step must still be reached by the batch"
   end
 
+  def test_yt_pending_count_corrupt_ledger_counts_zero_with_one_warning
+    episodes_dir = File.join(@tmpdir, "pod", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    FileUtils.touch(File.join(episodes_dir, "ep-2026-01-16.mp3"))
+    FileUtils.touch(File.join(episodes_dir, "ep-2026-01-16_transcript.md"))
+    path = File.join(@tmpdir, "pod", "uploads.yml")
+    File.write(path, "[not: a: map")
+    tracker = UploadTracker.new(path)
+    logs = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod], { log: ->(m) { logs << m } })
+
+    assert_equal 0, cmd.send(:yt_pending_count, tracker, "PL1", episodes_dir)
+    assert_equal 0, cmd.send(:yt_pending_count, tracker, "PL1", episodes_dir)
+
+    assert_equal 1, logs.length, logs.inspect
+    assert_includes logs.first, path
+  end
+
   def test_round_robin_skips_pod_with_no_pending_without_yt_call
     yt_calls = []
     pending = { "pod_a" => 0, "pod_b" => 1 }

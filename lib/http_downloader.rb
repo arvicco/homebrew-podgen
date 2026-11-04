@@ -21,6 +21,9 @@ class HttpDownloader
   # Statuses that will not change on a retry (Q-100, P11-1): one attempt.
   PERMANENT_STATUSES = [404, 410].freeze
 
+  # A download that cannot succeed on a retry (size limit, redirect limit).
+  class Permanent < StandardError; end
+
   # The resource is gone for good (404/410); +status+ is the HTTP code.
   class Gone < StandardError
     attr_reader :status
@@ -43,7 +46,7 @@ class HttpDownloader
     log("Downloading: #{url}")
 
     gone = nil
-    with_retries(max: MAX_RETRIES, on: [StandardError], label: "Download") do
+    with_retries(max: MAX_RETRIES, on: [StandardError], label: "Download", except: [Permanent]) do
       uri = URI.parse(url)
       fetch(uri, path)
     rescue Gone => e
@@ -84,7 +87,7 @@ class HttpDownloader
       File.open(tmp, "wb") do |f|
         response.read_body do |chunk|
           bytes += chunk.bytesize
-          raise "Download exceeds #{@max_size / (1024 * 1024)} MB limit" if bytes > @max_size
+          raise Permanent, "Download exceeds #{@max_size / (1024 * 1024)} MB limit" if bytes > @max_size
           f.write(chunk)
         end
       end
@@ -96,7 +99,7 @@ class HttpDownloader
   end
 
   def follow_redirect(response, uri, path, redirects_left)
-    raise "Too many redirects" if redirects_left <= 0
+    raise Permanent, "Too many redirects" if redirects_left <= 0
     location = response["location"]
     location = URI.join(uri.to_s, location).to_s unless location.start_with?("http")
     log("Following redirect → #{location}")

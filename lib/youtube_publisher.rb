@@ -93,14 +93,24 @@ class YouTubePublisher
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false, errors: [])
     end
 
-    uploaded_map = @options[:force] ? {} : tracker.entries_for(:youtube, playlist)
+    # Strict reads, before anything goes up: a corrupt ledger read as {}
+    # would make every episode look untracked and upload duplicates that
+    # the (strict) record then fails to track (Q-144).
+    begin
+      uploaded_map = @options[:force] ? {} : tracker.entries_for(:youtube, playlist, strict: true)
+      owed_map = @options[:force] ? {} : tracker.pending_steps(:youtube, playlist, strict: true)
+    rescue => e # fatal for this run: uploading against an unreadable ledger duplicates videos
+      say_err "uploads ledger unreadable, uploading nothing: #{e.message}"
+      return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                        errors: [{ type: :publisher_crash, error_class: e.class.name, message: e.message }])
+    end
     pending = episodes.reject { |ep| uploaded_map.key?(ep[:base_name]) }
     pending = pending.first(@options[:max]) if @options[:max]
     # Tracked videos whose captions/playlist step failed after the upload:
     # finished first, before anything new goes up. finish_owed: false skips
     # them — the round-robin batch tries owed steps once per pod per tick,
     # not once per round (each failed captions insert costs quota).
-    owed = (@options[:force] || @options[:finish_owed] == false) ? {} : tracker.pending_steps(:youtube, playlist)
+    owed = (@options[:finish_owed] == false) ? {} : owed_map
     unfinished = episodes.filter_map do |ep|
       base = ep[:base_name]
       ep.merge(video_id: uploaded_map[base], owed: owed[base]) if owed[base] && uploaded_map[base]

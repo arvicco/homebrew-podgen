@@ -164,6 +164,33 @@ class TestSourceManager < Minitest::Test
     assert_equal "Kept", results.first[:findings].first[:title]
   end
 
+  # Q-130: a result set with an empty topic is never cached, so a same-day
+  # rerun asks the source again instead of reading "no findings".
+  def test_research_empty_topic_result_is_not_cached
+    manager = build_manager
+    cache = FakeCache.new
+    manager.instance_variable_set(:@cache, cache)
+    source = MockSource.new([{ topic: "AI", findings: [{ title: "A", url: "u1", summary: "s" }] },
+      { topic: "Ruby", findings: [] }])
+    manager.define_singleton_method(:enabled_sources) { [["src1", source]] }
+
+    manager.research(["AI", "Ruby"])
+
+    assert_empty cache.sets
+  end
+
+  def test_research_full_result_is_cached
+    manager = build_manager
+    cache = FakeCache.new
+    manager.instance_variable_set(:@cache, cache)
+    source = MockSource.new([{ topic: "AI", findings: [{ title: "A", url: "u1", summary: "s" }] }])
+    manager.define_singleton_method(:enabled_sources) { [["src1", source]] }
+
+    manager.research(["AI"])
+
+    assert_equal ["src1"], cache.sets
+  end
+
   # P3-1: the keyword map reaches the HN source only.
   def test_enabled_sources_passes_hn_queries_to_hackernews
     keywords = { "Long topic" => "kw" }
@@ -174,10 +201,30 @@ class TestSourceManager < Minitest::Test
     assert_equal keywords, hn.instance_variable_get(:@hn_queries)
   end
 
+  def test_research_total_source_failure_is_not_cached
+    manager = build_manager
+    cache = FakeCache.new
+    manager.instance_variable_set(:@cache, cache)
+    manager.define_singleton_method(:enabled_sources) { [["src1", MockSource.new([])]] }
+
+    manager.research(["AI", "Ruby"])
+
+    assert_empty cache.sets, "an empty result set (every feed failed) must not be cached for the day"
+  end
+
   private
 
   def build_manager(exclude_urls: Set.new)
     SourceManager.new(source_config: {}, exclude_urls: exclude_urls)
+  end
+
+  class FakeCache
+    attr_reader :sets
+
+    def initialize = @sets = []
+    def get(_name, _topics) = nil
+    def set(name, _topics, _results) = @sets << name
+    def prune! = nil
   end
 
   class MockSource
