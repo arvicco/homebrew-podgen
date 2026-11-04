@@ -276,6 +276,24 @@ class TestCLIOptions < Minitest::Test
     assert_includes lines.first, "2026-10-32"
   end
 
+  def test_generate_bad_trim_values_raise_invalid_argument_naming_value
+    [%w[--skip abc], %w[--skip-intro 1:75], %w[--cut abc], %w[--cut-outro 1:75], %w[--snip abc]].each do |flag, value|
+      error = assert_raises(OptionParser::InvalidArgument, "#{flag} #{value}") do
+        PodgenCLI::GenerateCommand.new(["test_pod", flag, value], {})
+      end
+      assert_includes error.message, value
+    end
+  end
+
+  def test_generate_bad_skip_exits_2_with_one_stderr_line
+    code, _, err = run_cli("generate", "test_pod", "--skip", "abc")
+    assert_equal 2, code
+    lines = err.lines
+    assert_equal 1, lines.size, err
+    assert lines.first.start_with?("generate:"), err
+    assert_includes lines.first, "abc"
+  end
+
   # ── Valid options should be accepted ─────────────────────────────
 
   def test_generate_accepts_dry_run
