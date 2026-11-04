@@ -35,10 +35,10 @@ class TranslationAgent
   MAX_RETRIES = 3
   MAX_OUTPUT_TOKENS = 16384
   SUPPORTED_BACKENDS = %w[claude openai].freeze
-  # Each backend retries only its own SDK's API errors.
+  # Each backend retries only its own SDK's transient API errors.
   BACKEND_API_ERRORS = {
-    "claude" => Anthropic::Errors::APIError,
-    "openai" => OpenAI::Errors::APIError
+    "claude" => ANTHROPIC_RETRIABLE,
+    "openai" => [OpenAI::Errors::APIConnectionError, OpenAI::Errors::RateLimitError, OpenAI::Errors::InternalServerError].freeze
   }.freeze
 
   def initialize(target_language:, backend: "claude", model_override: nil, glossary: nil, logger: nil)
@@ -70,7 +70,7 @@ class TranslationAgent
     system_prompt = build_system_prompt
     user_message = "Translate this podcast script to #{@language_name}:\n\n#{format_script_for_translation(script)}"
 
-    with_retries(max: MAX_RETRIES, on: [BACKEND_API_ERRORS.fetch(@backend), StructuredOutputError]) do
+    with_retries(max: MAX_RETRIES, on: [*BACKEND_API_ERRORS.fetch(@backend), StructuredOutputError]) do
       response, elapsed = measure_time { send(:"#{@backend}_request", system_prompt, user_message) }
 
       stop_reason, usage = send(:"#{@backend}_stop_and_usage", response)

@@ -73,13 +73,13 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
       @path = path
     end
 
-    def entries_for(_platform, _group) = {}
+    def entries_for(_platform, _group, strict: false) = {}
 
     def record(platform, group, base_name, upload_id)
       @calls << [:record, platform, group, base_name, upload_id]
     end
 
-    def pending_steps(_platform, _group) = {}
+    def pending_steps(_platform, _group, strict: false) = {}
 
     # P14-1: only a non-empty marker is a call worth pinning; the clearing
     # call after clean steps is a no-op on a real tracker.

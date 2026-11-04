@@ -101,15 +101,7 @@ class BlueskySource < BaseSource
   end
 
   def request_with_retry(**params)
-    with_retries(max: MAX_RETRIES, label: source_name) do
-      response = HTTParty.get(
-        "#{PDS_HOST}#{SEARCH_ENDPOINT}",
-        query: params,
-        headers: { "Authorization" => "Bearer #{@access_token}" },
-        timeout: 15
-      )
-      raise "HTTP #{response.code} from Bluesky API" unless response.success?
-      response.parsed_response
-    end
+    get_json("#{PDS_HOST}#{SEARCH_ENDPOINT}", query: params,
+      headers: { "Authorization" => "Bearer #{@access_token}" })
   end
 end

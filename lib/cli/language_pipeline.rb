@@ -369,24 +369,54 @@ module PodgenCLI
     # QuickTime Player preview (P00-7): frontmost + autoplay are native
     # AppleScript verbs — Quick Look could do neither from a spawned
     # process. Launch via `open -a` (avoids the tell-before-registered
-    # -600 race); still imports nothing into any library.
-    PREVIEW_PLAY_SCRIPT = <<~APPLESCRIPT
-      tell application "QuickTime Player"
-        repeat 25 times
-          if (count documents) > 0 then exit repeat
-          delay 0.2
-        end repeat
-        play front document
-      end tell
-    APPLESCRIPT
-
-    PREVIEW_CLOSE_SCRIPT = <<~APPLESCRIPT
-      if application "QuickTime Player" is running then
+    # -600 race); still imports nothing into any library. Both scripts act
+    # only on the document for our file — another open document is never
+    # played or closed. QuickTime documents expose `file` (no `whose`
+    # filter on it), and its POSIX path is the resolved one (/private/...).
+    def preview_play_script(path)
+      <<~APPLESCRIPT
         tell application "QuickTime Player"
-          if (count documents) > 0 then close front document saving no
+          repeat 25 times
+            repeat with d in documents
+              try
+                if POSIX path of ((file of d) as alias) is #{applescript_string(preview_document_path(path))} then
+                  play d
+                  return
+                end if
+              end try
+            end repeat
+            delay 0.2
+          end repeat
         end tell
-      end if
-    APPLESCRIPT
+      APPLESCRIPT
+    end
+
+    def preview_close_script(path)
+      <<~APPLESCRIPT
+        if application "QuickTime Player" is running then
+          tell application "QuickTime Player"
+            repeat with d in documents
+              try
+                if POSIX path of ((file of d) as alias) is #{applescript_string(preview_document_path(path))} then
+                  close d saving no
+                  exit repeat
+                end if
+              end try
+            end repeat
+          end tell
+        end if
+      APPLESCRIPT
+    end
+
+    def preview_document_path(path)
+      File.realpath(path)
+    rescue SystemCallError
+      path
+    end
+
+    def applescript_string(text)
+      %("#{text.gsub(/[\\"]/) { "\\#{it}" }}")
+    end
 
     def preview_open_command(path)
       ["open", "-a", "QuickTime Player", path]
@@ -395,9 +425,10 @@ module PodgenCLI
     def start_preview(path)
       return unless system(*preview_open_command(path))
       @preview_started = true
+      @preview_path = path
       # Autoplay waits for the document to load — background it so the
       # skip/cut prompts appear immediately.
-      pid = spawn("osascript", "-e", PREVIEW_PLAY_SCRIPT, [:out, :err] => "/dev/null")
+      pid = spawn("osascript", "-e", preview_play_script(path), [:out, :err] => "/dev/null")
       Process.detach(pid)
     rescue Errno::ENOENT
       @preview_started = false # no osascript/open — prompts still work
@@ -405,7 +436,7 @@ module PodgenCLI
 
     def stop_preview
       return unless @preview_started
-      system("osascript", "-e", PREVIEW_CLOSE_SCRIPT, [:out, :err] => "/dev/null")
+      system("osascript", "-e", preview_close_script(@preview_path), [:out, :err] => "/dev/null")
       @preview_started = false
     end
 
@@ -425,29 +456,71 @@ module PodgenCLI
       $stderr.puts "Opening QuickTime preview — auto-plays in front; scrub, read min:sec; prompt is ready now:"
       start_preview(@source_audio_path)
 
-      @listening_prompt = "skip"
-      skip = ask_time_value("skip intro")
-      return trim_exclusion(skip) if skip.is_a?(Symbol)
+      # The same episode listened to before (a failed run, a regen): its
+      # kept pair can be reused with one answer.
+      rec = recorded_trim
+      $stderr.puts "Recorded for this episode: #{trim_pair_text(*recorded_pair(rec))} — r to reuse both" if rec
 
-      @listening_prompt = "cut"
-      cut = ask_time_value("cut outro")
-      return trim_exclusion(cut) if cut.is_a?(Symbol)
+      # A pair that removes everything is asked again (the trimmer would
+      # refuse it); TRIM_ATTEMPTS such pairs take the bad-input path.
+      TRIM_ATTEMPTS.times do
+        @listening_prompt = "skip"
+        skip = ask_time_value("skip intro", reuse: !rec.nil?)
+        if skip == :reuse
+          skip, cut = recorded_pair(rec)
+        else
+          return trim_exclusion(skip) if skip.is_a?(Symbol)
 
-      [skip, cut]
+          @listening_prompt = "cut"
+          cut = ask_time_value("cut outro")
+          return trim_exclusion(cut) if cut.is_a?(Symbol)
+        end
+
+        return [skip, cut] if AudioTrimmer.keep_segments(duration, skip: skip, cut: cut, snip: @options[:snip]).any?
+
+        $stderr.puts "#{trim_pair_text(skip, cut)} leave nothing of #{duration.round(1)}s — enter again"
+      end
+      logger.log("No skip/cut pair leaving any audio after #{TRIM_ATTEMPTS} attempts; excluding the candidate")
+      trim_exclusion(:bad_input)
     ensure
       stop_preview
     end
 
+    def trim_pair_text(skip, cut)
+      cut_text = cut&.absolute? ? "at #{cut.to_f.round(1)}s" : "#{cut.to_f.round(1)}s"
+      text = "skip #{skip.to_f.round(1)}s + cut #{cut_text}"
+      @options[:snip] ? "#{text} + snip #{@options[:snip]}" : text
+    end
+
+    # The archived pair for this episode, or nil; a sidecar that cannot be
+    # read is a counted warning, never a failed run (the archive is a side
+    # record, like its writes).
+    def recorded_trim
+      listening_archive.recorded(@config.episode_basename(@today), audio_url: @episode[:audio_url])
+    rescue => e # skippable: the archive is a side record; the prompts proceed as without one
+      archive_failed(e, action: "read")
+      nil
+    end
+
+    # The archived skip/cut as the answers they were (blank stays nil).
+    def recorded_pair(rec)
+      skip = rec["skip"] && TimeValue.new(rec["skip"])
+      cut = rec["cut"] && TimeValue.new(rec["cut"], absolute: rec["cut_absolute"] == true)
+      [skip, cut]
+    end
+
     TRIM_ATTEMPTS = 3
 
-    # One skip/cut answer: a TimeValue, nil (blank), :exclude (x), or
-    # :bad_input once a typo has been entered TRIM_ATTEMPTS times (P11-5:
-    # a typo used to abort the whole run after the download).
-    def ask_time_value(label)
+    # One skip/cut answer: a TimeValue, nil (blank), :exclude (x), :reuse
+    # (r, only when +reuse+), or :bad_input once a typo has been entered
+    # TRIM_ATTEMPTS times (P11-5: a typo used to abort the whole run after
+    # the download).
+    def ask_time_value(label, reuse: false)
       TRIM_ATTEMPTS.times do
         $stderr.print "Enter #{label} (seconds or min:sec), x to exclude, blank for none: "
         input = $stdin.gets&.strip
         return :exclude if input&.downcase == "x"
+        return :reuse if reuse && input&.downcase == "r"
         return nil if input.nil? || input.empty?
         return TimeValue.parse(input)
       rescue ArgumentError
@@ -464,7 +537,7 @@ module PodgenCLI
 
     # Listening archive (P11-0): the owner's interactive decisions kept as
     # labelled examples under output/<pod>/archive/ — written only under
-    # --ask-trim, never read back by the pipeline.
+    # --ask-trim; read back only there, to offer a kept pair for reuse.
     def listening_archive
       @listening_archive ||= ListeningArchive.new(root: File.join(File.dirname(@config.episodes_dir), "archive"))
     end
@@ -524,9 +597,9 @@ module PodgenCLI
       { audio_url: url, title: @episode[:title], feed_key: EpisodeSource.feed_key(url) }
     end
 
-    def archive_failed(error)
-      logger.log("Warning: listening archive write failed: #{error.class}: #{error.message}")
-      @warnings << "Listening archive write failed (#{error.class}: #{error.message})"
+    def archive_failed(error, action: "write")
+      logger.log("Warning: listening archive #{action} failed: #{error.class}: #{error.message}")
+      @warnings << "Listening archive #{action} failed (#{error.class}: #{error.message})"
     end
 
     def discover_transcript

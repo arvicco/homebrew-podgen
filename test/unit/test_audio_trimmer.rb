@@ -206,6 +206,17 @@ class TestAudioTrimmer < Minitest::Test
     assert_empty @mock_assembler.snip_calls
   end
 
+  def test_apply_trim_removal_covering_everything_raises_nothing_kept
+    trimmer = AudioTrimmer.new(assembler: MockAssembler.new(duration: 600.0))
+
+    error = assert_raises(AudioTrimmer::NothingKept) do
+      trimmer.apply_trim("/input.mp3", skip: 90, cut: AbsoluteValue.new(60.0))
+    end
+    assert_kind_of ArgumentError, error
+    assert_match(/skip 90/, error.message)
+    assert_match(/600/, error.message)
+  end
+
   def test_apply_trim_tracks_temp_files
     trimmer.apply_trim("/input.mp3", skip: 10)
     assert_equal 1, trimmer.temp_files.length

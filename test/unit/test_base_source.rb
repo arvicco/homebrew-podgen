@@ -109,6 +109,55 @@ class TestBaseSource < Minitest::Test
     assert source.respond_to?(:with_retries, true)
   end
 
+  # --- get_json (Q-130): only 429/5xx and network timeouts are retried ---
+
+  FakeResponse = Struct.new(:code, :parsed_response) do
+    def success? = (200..299).cover?(code)
+  end
+
+  def test_get_json_401_one_request_runtime_error
+    source = ConcreteSource.new
+    source.define_singleton_method(:sleep) { |_| }
+    calls = 0
+    HTTParty.stub(:get, ->(*_a, **_k) { (calls += 1) && FakeResponse.new(401, nil) }) do
+      err = assert_raises(RuntimeError) { source.send(:get_json, "https://example.com/api", query: { q: "x" }) }
+      assert_equal "HTTP 401 from ConcreteSource", err.message
+    end
+    assert_equal 1, calls
+  end
+
+  def test_get_json_503_retried_then_succeeds
+    source = ConcreteSource.new
+    source.define_singleton_method(:sleep) { |_| }
+    responses = [FakeResponse.new(503, nil), FakeResponse.new(200, { "hits" => [] })]
+    sent = []
+    get = lambda do |url, **kw|
+      sent << [url, kw]
+      responses.shift
+    end
+    HTTParty.stub(:get, get) do
+      body = source.send(:get_json, "https://example.com/api", query: { q: "x" }, headers: { "A" => "b" })
+      assert_equal({ "hits" => [] }, body)
+    end
+    assert_equal 2, sent.length
+    assert_equal ["https://example.com/api", { query: { q: "x" }, headers: { "A" => "b" }, timeout: 15 }], sent.first
+  end
+
+  def test_get_json_connection_reset_retried_then_succeeds
+    source = ConcreteSource.new
+    source.define_singleton_method(:sleep) { |_| }
+    calls = 0
+    get = lambda do |*_a, **_k|
+      calls += 1
+      raise Errno::ECONNRESET if calls == 1
+      FakeResponse.new(200, { "ok" => true })
+    end
+    HTTParty.stub(:get, get) do
+      assert_equal({ "ok" => true }, source.send(:get_json, "https://example.com/api", query: {}))
+    end
+    assert_equal 2, calls
+  end
+
   # --- empty_results ---
 
   def test_empty_results_preserves_topics

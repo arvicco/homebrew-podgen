@@ -155,6 +155,65 @@ class TestAudioAssembler < Minitest::Test
     end
   end
 
+  # A real source's ID3 comment is dumped by ffmpeg into a 255-byte buffer
+  # that cuts a multibyte character in half: stderr is not valid UTF-8.
+  def test_loudnorm_analyze_truncated_multibyte_metadata_returns_measurements
+    comment = ("č" * 100).byteslice(0, 199)
+    stderr = "    comment         : #{comment}\n" + LOUDNORM_JSON
+    assembler = RecordingAssembler.new(stderr: stderr)
+
+    measurements = assembler.send(:loudnorm_analyze, "in.mp3")
+
+    assert_equal "-23.10", measurements["input_i"]
+    assert_equal "0.04", measurements["target_offset"]
+  end
+
+  def test_loudnorm_analyze_failure_with_truncated_multibyte_raises_runtime_error
+    comment = ("č" * 100).byteslice(0, 199)
+    assembler = RecordingAssembler.new(stderr: "comment : #{comment}\n", success: false)
+
+    error = assert_raises(RuntimeError) { assembler.send(:loudnorm_analyze, "in.mp3") }
+    assert_match(/Loudnorm analysis failed/, error.message)
+  end
+
+  def test_run_ffmpeg_failure_with_truncated_multibyte_raises_valid_utf8_message
+    comment = ("č" * 100).byteslice(0, 199)
+    assembler = RecordingAssembler.new(stderr: "    comment : #{comment}\nError opening output\n", success: false)
+
+    error = assert_raises(RuntimeError) { assembler.send(:run_ffmpeg, ["-i", "in.mp3"], "snip") }
+    assert error.message.valid_encoding?, "message must be valid UTF-8"
+    assert_match(/ffmpeg snip failed \(exit 1\)/, error.message)
+    assert_match(/Error opening output/, error.message)
+  end
+
+  def test_probe_duration_failure_with_truncated_multibyte_raises_valid_utf8_message
+    comment = ("č" * 100).byteslice(0, 199)
+    status = RecordingAssembler::Status.new(false, 1)
+    assembler = RecordingAssembler.new
+
+    error = Open3.stub(:capture3, ["", "comment : #{comment}\n", status]) do
+      assert_raises(RuntimeError) { assembler.probe_duration("/nonexistent/in.mp3") }
+    end
+    assert error.message.valid_encoding?, "message must be valid UTF-8"
+    assert_match(/ffprobe failed for/, error.message)
+  end
+
+  def test_snip_segments_drops_source_metadata
+    assembler = RecordingAssembler.new
+    assembler.snip_segments("in.mp3", "out.mp3", [MockSegment.new(0.0, 3.0)])
+
+    args = assembler.calls.last
+    assert_includes args.each_cons(2).to_a, ["-map_metadata", "-1"]
+  end
+
+  def test_concatenate_drops_source_metadata
+    assembler = RecordingAssembler.new
+    assembler.send(:concatenate, ["a.mp3", "b.mp3"], "out.mp3", intro: nil, outro: nil)
+
+    args = assembler.calls.last
+    assert_includes args.each_cons(2).to_a, ["-map_metadata", "-1"]
+  end
+
   # --- loudnorm_apply (private) ---
 
   def test_loudnorm_apply_creates_output
@@ -575,4 +634,46 @@ class TestAudioAssembler < Minitest::Test
   end
 
   MockSegment = Struct.new(:from, :to)
+
+  LOUDNORM_JSON = <<~JSON
+    [Parsed_loudnorm_0 @ 0x600001b0c000]
+    {
+    \t"input_i" : "-23.10",
+    \t"input_tp" : "-5.20",
+    \t"input_lra" : "6.30",
+    \t"input_thresh" : "-33.40",
+    \t"output_i" : "-16.04",
+    \t"output_tp" : "-1.50",
+    \t"output_lra" : "5.10",
+    \t"output_thresh" : "-26.30",
+    \t"normalization_type" : "dynamic",
+    \t"target_offset" : "0.04"
+    }
+  JSON
+
+  # Records ffmpeg argument lists instead of running ffmpeg.
+  class RecordingAssembler < AudioAssembler
+    Status = Struct.new(:success, :exitstatus) do
+      def success? = success
+    end
+
+    attr_reader :calls
+
+    def initialize(stderr: "", success: true)
+      @stderr = stderr
+      @success = success
+      @calls = []
+      super()
+    end
+
+    private
+
+    def verify_ffmpeg!
+    end
+
+    def run_ffmpeg_raw(args)
+      @calls << args
+      ["", @stderr, Status.new(@success, @success ? 0 : 1)]
+    end
+  end
 end

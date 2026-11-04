@@ -91,18 +91,9 @@ class XSource < BaseSource
   end
 
   def request_with_retry(**params)
-    with_retries(max: MAX_RETRIES, label: source_name) do
-      response = HTTParty.get(
-        API_BASE,
-        query: params,
-        headers: {
-          "Authorization" => "Bearer #{@api_key}",
-          "Accept" => "application/json"
-        },
-        timeout: 15
-      )
-      raise "HTTP #{response.code} from SocialData API" unless response.success?
-      response.parsed_response
-    end
+    get_json(API_BASE, query: params, headers: {
+      "Authorization" => "Bearer #{@api_key}",
+      "Accept" => "application/json"
+    })
   end
 end

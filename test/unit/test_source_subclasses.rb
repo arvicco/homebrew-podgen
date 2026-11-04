@@ -735,6 +735,19 @@ class TestXSource < Minitest::Test
     handles = source.instance_variable_get(:@priority_handles)
     assert_equal ["alice", "bob"], handles
   end
+
+  # Q-130: the request goes through BaseSource#get_json, bearer header kept.
+  def test_request_with_retry_uses_get_json_with_bearer_header
+    ENV["SOCIALDATA_API_KEY"] = "test-key"
+    source = XSource.new
+    sent = nil
+    source.define_singleton_method(:get_json) { |url, **kw| (sent = [url, kw]) && { "tweets" => [] } }
+
+    source.send(:request_with_retry, query: "q", type: "Latest")
+
+    headers = { "Authorization" => "Bearer test-key", "Accept" => "application/json" }
+    assert_equal [XSource::API_BASE, { query: { query: "q", type: "Latest" }, headers: headers }], sent
+  end
 end
 
 # ---------- ClaudeWebSource ----------
