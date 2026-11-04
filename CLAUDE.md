@@ -238,8 +238,12 @@ YouTube: script-reviewer auto-fixes keep content and right weekdays,
 YouTube captions/playlist retried and caption-less uploads visible,
 subtitle input defects, exclusions compared cleaned, unattended
 length failures excluded in-run, counter-only re-post match)
-AT GATE 14 — adopted 2026-10-30 18:00, all six
-packets landed, CRPR APPROVED after three rounds (refs/cr/reviewed =
-fb3e0df); gate PR open, the owner merges. R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
+CLOSED 2026-11-04 05:30 (PR #16, merge 23f8b2e; phase clock 3d 12h
+wall, ~1h 45m worked — API outage). Phase 15 (incident sweep: loudnorm
+analysis survives ffmpeg's truncated metadata echo, `--date` usage
+error, interactive trim flow defects, corrupt uploads.yml stops the
+YouTube batch before any upload, retry and spend hygiene, archived
+trim record replay) EXECUTING — adopted 2026-11-04 05:30 (option A
+of the Gate 14 slate, owner-reported Q-146/Q-147 first). R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
 consent expires every 7 days while the OAuth app is in testing).
 Update this line at each gate.
