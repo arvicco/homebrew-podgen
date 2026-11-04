@@ -78,9 +78,10 @@ class UploadTracker
   end
 
   # Steps still owed per basename: { basename → [step, ...] }. A file
-  # without the marker reads as nothing pending.
-  def pending_steps(platform, group)
-    entries = load.dig("#{platform}#{PENDING_SUFFIX}", group.to_s)
+  # without the marker reads as nothing pending. strict: true raises on a
+  # corrupt file (a caller about to upload must not read it as empty).
+  def pending_steps(platform, group, strict: false)
+    entries = load(strict: strict).dig("#{platform}#{PENDING_SUFFIX}", group.to_s)
     entries.is_a?(Hash) ? entries : {}
   end
 
@@ -124,8 +125,9 @@ class UploadTracker
   end
 
   # Return all entries for a platform/group. Returns Hash of { basename → id }.
-  def entries_for(platform, group)
-    tracking = load
+  # strict: true raises on a corrupt file instead of returning {}.
+  def entries_for(platform, group, strict: false)
+    tracking = load(strict: strict)
     tracking.dig(platform.to_s, group.to_s) || {}
   end
 
