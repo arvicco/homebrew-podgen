@@ -176,6 +176,28 @@ class TestAudioAssembler < Minitest::Test
     assert_match(/Loudnorm analysis failed/, error.message)
   end
 
+  def test_run_ffmpeg_failure_with_truncated_multibyte_raises_valid_utf8_message
+    comment = ("č" * 100).byteslice(0, 199)
+    assembler = RecordingAssembler.new(stderr: "    comment : #{comment}\nError opening output\n", success: false)
+
+    error = assert_raises(RuntimeError) { assembler.send(:run_ffmpeg, ["-i", "in.mp3"], "snip") }
+    assert error.message.valid_encoding?, "message must be valid UTF-8"
+    assert_match(/ffmpeg snip failed \(exit 1\)/, error.message)
+    assert_match(/Error opening output/, error.message)
+  end
+
+  def test_probe_duration_failure_with_truncated_multibyte_raises_valid_utf8_message
+    comment = ("č" * 100).byteslice(0, 199)
+    status = RecordingAssembler::Status.new(false, 1)
+    assembler = RecordingAssembler.new
+
+    error = Open3.stub(:capture3, ["", "comment : #{comment}\n", status]) do
+      assert_raises(RuntimeError) { assembler.probe_duration("/nonexistent/in.mp3") }
+    end
+    assert error.message.valid_encoding?, "message must be valid UTF-8"
+    assert_match(/ffprobe failed for/, error.message)
+  end
+
   def test_snip_segments_drops_source_metadata
     assembler = RecordingAssembler.new
     assembler.snip_segments("in.mp3", "out.mp3", [MockSegment.new(0.0, 3.0)])

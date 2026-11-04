@@ -163,7 +163,8 @@ class AudioAssembler
     )
 
     unless status.success?
-      raise "ffprobe failed for #{path}: #{stderr}"
+      text = stderr.scrub # truncated multibyte tags (see loudnorm_analyze)
+      raise "ffprobe failed for #{path}: #{text}"
     end
 
     @duration_cache[key] = stdout.strip.to_f
@@ -286,7 +287,8 @@ class AudioAssembler
   def run_ffmpeg(args, step_name)
     _stdout, stderr, status = run_ffmpeg_raw(args)
     unless status.success?
-      raise "ffmpeg #{step_name} failed (exit #{status.exitstatus}): #{stderr.split("\n").last(5).join("\n")}"
+      text = stderr.scrub # truncated multibyte tags (see loudnorm_analyze)
+      raise "ffmpeg #{step_name} failed (exit #{status.exitstatus}): #{text.split("\n").last(5).join("\n")}"
     end
   end
 
