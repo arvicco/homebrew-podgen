@@ -456,16 +456,25 @@ module PodgenCLI
       $stderr.puts "Opening QuickTime preview — auto-plays in front; scrub, read min:sec; prompt is ready now:"
       start_preview(@source_audio_path)
 
+      # The same episode listened to before (a failed run, a regen): its
+      # kept pair can be reused with one answer.
+      rec = listening_archive.recorded(@config.episode_basename(@today), audio_url: @episode[:audio_url])
+      $stderr.puts "Recorded for this episode: skip #{rec["skip"]}, cut #{rec["cut"]} — r to reuse both" if rec
+
       # A pair that removes everything is asked again (the trimmer would
       # refuse it); TRIM_ATTEMPTS such pairs take the bad-input path.
       TRIM_ATTEMPTS.times do
         @listening_prompt = "skip"
-        skip = ask_time_value("skip intro")
-        return trim_exclusion(skip) if skip.is_a?(Symbol)
+        skip = ask_time_value("skip intro", reuse: !rec.nil?)
+        if skip == :reuse
+          skip, cut = recorded_pair(rec)
+        else
+          return trim_exclusion(skip) if skip.is_a?(Symbol)
 
-        @listening_prompt = "cut"
-        cut = ask_time_value("cut outro")
-        return trim_exclusion(cut) if cut.is_a?(Symbol)
+          @listening_prompt = "cut"
+          cut = ask_time_value("cut outro")
+          return trim_exclusion(cut) if cut.is_a?(Symbol)
+        end
 
         return [skip, cut] if AudioTrimmer.keep_segments(duration, skip: skip, cut: cut, snip: @options[:snip]).any?
 
@@ -482,16 +491,25 @@ module PodgenCLI
       "skip #{skip.to_f.round(1)}s + cut #{cut_text}"
     end
 
+    # The archived skip/cut as the answers they were (blank stays nil).
+    def recorded_pair(rec)
+      skip = rec["skip"] && TimeValue.new(rec["skip"])
+      cut = rec["cut"] && TimeValue.new(rec["cut"], absolute: rec["cut_absolute"] == true)
+      [skip, cut]
+    end
+
     TRIM_ATTEMPTS = 3
 
-    # One skip/cut answer: a TimeValue, nil (blank), :exclude (x), or
-    # :bad_input once a typo has been entered TRIM_ATTEMPTS times (P11-5:
-    # a typo used to abort the whole run after the download).
-    def ask_time_value(label)
+    # One skip/cut answer: a TimeValue, nil (blank), :exclude (x), :reuse
+    # (r, only when +reuse+), or :bad_input once a typo has been entered
+    # TRIM_ATTEMPTS times (P11-5: a typo used to abort the whole run after
+    # the download).
+    def ask_time_value(label, reuse: false)
       TRIM_ATTEMPTS.times do
         $stderr.print "Enter #{label} (seconds or min:sec), x to exclude, blank for none: "
         input = $stdin.gets&.strip
         return :exclude if input&.downcase == "x"
+        return :reuse if reuse && input&.downcase == "r"
         return nil if input.nil? || input.empty?
         return TimeValue.parse(input)
       rescue ArgumentError
@@ -508,7 +526,7 @@ module PodgenCLI
 
     # Listening archive (P11-0): the owner's interactive decisions kept as
     # labelled examples under output/<pod>/archive/ — written only under
-    # --ask-trim, never read back by the pipeline.
+    # --ask-trim; read back only there, to offer a kept pair for reuse.
     def listening_archive
       @listening_archive ||= ListeningArchive.new(root: File.join(File.dirname(@config.episodes_dir), "archive"))
     end
