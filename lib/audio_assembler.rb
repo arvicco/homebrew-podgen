@@ -133,6 +133,7 @@ class AudioAssembler
       "-i", input_path,
       "-filter_complex", filter_complex,
       "-map", "[out]",
+      "-map_metadata", "-1",
       "-c:a", "libmp3lame", "-b:a", BITRATE,
       "-ar", SAMPLE_RATE.to_s,
       "-y", output_path
@@ -223,6 +224,7 @@ class AudioAssembler
     args += [
       "-filter_complex", filter_complex,
       "-map", "[out]",
+      "-map_metadata", "-1",
       "-c:a", "libmp3lame", "-b:a", BITRATE,
       "-ar", SAMPLE_RATE.to_s,
       "-y", output_path
@@ -239,12 +241,15 @@ class AudioAssembler
     ]
 
     _stdout, stderr, status = run_ffmpeg_raw(args)
+    # ffmpeg's metadata dump cuts tag values at 255 bytes, splitting
+    # multibyte UTF-8 characters: stderr can be invalid UTF-8.
+    text = stderr.scrub
     unless status.success?
-      raise "Loudnorm analysis failed: #{stderr}"
+      raise "Loudnorm analysis failed: #{text}"
     end
 
     # Extract JSON from ffmpeg stderr (it's printed at the end)
-    json_match = stderr.match(/\{[^}]*"input_i"[^}]*\}/m)
+    json_match = text.match(/\{[^}]*"input_i"[^}]*\}/m)
     raise "Could not parse loudnorm measurements from ffmpeg output" unless json_match
 
     JSON.parse(json_match[0])
