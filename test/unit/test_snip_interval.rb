@@ -285,6 +285,17 @@ class TestSnipInterval < Minitest::Test
     assert_raises(ArgumentError) { empty_si.send(:parse_timestamp, "1:200") }
   end
 
+  def test_parse_timestamp_seconds_over_59_raises
+    assert_raises(ArgumentError) { empty_si.send(:parse_timestamp, "1:75") }
+    assert_raises(ArgumentError) { SnipInterval.parse("1:75-2:00") }
+  end
+
+  def test_parse_minsec_fraction_range_still_parses
+    iv = SnipInterval.parse("1:20.5-2:00").intervals.first
+    assert_in_delta 80.5, iv.from
+    assert_in_delta 120.0, iv.to
+  end
+
   # --- merge_intervals (characterization, private; caller pre-sorts) ---
 
   def test_merge_intervals_overlapping_merged

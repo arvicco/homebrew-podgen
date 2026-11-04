@@ -9,9 +9,11 @@ require_relative "yaml_loader"
 # listening decided, as labelled examples for later automation.
 #   kept:     <root>/<basename>.source<ext> + <root>/<basename>.trim.yml
 #   rejected: <root>/rejected/<date>-<slug><ext> + a row in <root>/rejected.yml
-# Write-only owner data: nothing in the pipeline, feed, site, status or
-# stats reads it. Files are copied, never moved — the caller's file (a temp
-# download or the owner's own local file) stays where it was.
+# Owner data: the only reader is --ask-trim, which offers a kept pair's
+# skip/cut for reuse when the same episode comes round again; nothing in
+# the feed, site, status or stats reads it. Files are copied, never moved
+# — the caller's file (a temp download or the owner's own local file)
+# stays where it was.
 class ListeningArchive
   def initialize(root:, clock: -> { Time.now })
     @root = root
@@ -27,6 +29,13 @@ class ListeningArchive
     Dir.glob(File.join(@root, "#{basename}.source.*")).each { |f| File.delete(f) unless File.extname(f) == ext }
     FileUtils.cp(source_path, File.join(@root, "#{basename}.source#{File.extname(source_path)}"))
     AtomicWriter.write_yaml(File.join(@root, "#{basename}.trim.yml"), stamp(record))
+  end
+
+  # The kept pair's sidecar (string keys) when one exists for +basename+
+  # and was recorded for +audio_url+; nil otherwise.
+  def recorded(basename, audio_url:)
+    record = YamlLoader.load(File.join(@root, "#{basename}.trim.yml"), default: {})
+    record if record["audio_url"] && record["audio_url"] == audio_url
   end
 
   # Copies the rejected download (when there is one) and appends a row.

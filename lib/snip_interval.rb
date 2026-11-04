@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "time_value"
+
 # Represents a collection of intervals to remove from an audio file.
 # Used to unify skip (remove from start), cut (remove from end), and
 # snip (remove interior segments) into a single trimming pass.
@@ -105,12 +107,7 @@ class SnipInterval
   end
 
   def parse_timestamp(str)
-    if str.match?(/\A\d+:\d{1,2}(?:\.\d+)?\z/)
-      mins, secs = str.split(":", 2).map(&:to_f)
-      mins * 60 + secs
-    else
-      Float(str)
-    end
+    TimeValue.parse_timestamp(str)
   end
 
   def merge_intervals(sorted)
