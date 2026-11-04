@@ -9,6 +9,7 @@ require_relative "sources/rss_source"
 require_relative "http_downloader"
 require_relative "time_value"
 require_relative "title_match"
+require_relative "url_cleaner"
 
 class EpisodeSource
   include Loggable
@@ -72,7 +73,8 @@ class EpisodeSource
 
   def already_processed?(episode, force: false, dry_run: false)
     return false if force || dry_run
-    return false unless @history.all_urls.include?(episode[:audio_url])
+    known = @history.all_urls.map { |u| UrlCleaner.clean(u) }.to_set # cleaned on both sides (Q-119)
+    return false unless known.include?(UrlCleaner.clean(episode[:audio_url]))
 
     log("Warning: Already processed: #{episode[:audio_url]}")
     $stderr.puts "Already processed: \"#{episode[:title]}\" — use --force to re-process"
@@ -118,6 +120,12 @@ class EpisodeSource
       current << url
       AtomicWriter.write_yaml(path, current)
     end
+  end
+
+  # The next pick in this run skips +url+ (even under --force); nothing is
+  # written to excluded_urls.yml (Q-120: an out-of-range length).
+  def exclude_for_run!(url)
+    excluded_this_run << url
   end
 
   # Same-feed key (P10-0b): host + first path segment, plus the next

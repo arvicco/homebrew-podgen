@@ -105,6 +105,9 @@ module SubtitleReconciler
     end
 
     reconciled.each_with_index do |seg, i|
+      unless seg.is_a?(Hash) && seg["text"].is_a?(String)
+        raise ReconciliationError, "Segment #{i} has no text string"
+      end
       orig = original[i]
       unless close_enough?(seg["start"], orig["start"]) && close_enough?(seg["end"], orig["end"])
         raise ReconciliationError, "Timestamp mismatch at segment #{i}: " \

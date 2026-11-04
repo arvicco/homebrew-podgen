@@ -101,6 +101,34 @@ class TestUnpublishCommand < Minitest::Test
     assert_empty youtube_entries
   end
 
+  # P14-1 (Q-116): only a confirmed delete (or an already-gone 404) leaves
+  # the tracker; a refused delete (403, quota) keeps the entry.
+  def test_unpublish_youtube_refused_delete_keeps_tracker_entry
+    output_dir = File.join(@tmpdir, "output", "testpod")
+    FileUtils.mkdir_p(File.join(output_dir, "episodes"))
+    tracker_path = File.join(output_dir, "uploads.yml")
+    File.write(tracker_path, {
+      "youtube" => {
+        "PLtest123" => {"ep-2026-01-15" => "vid_ok", "ep-2026-01-16" => "vid_403", "ep-2026-01-17" => "vid_404"}
+      },
+      "youtube_pending" => {"PLtest123" => {"ep-2026-01-15" => ["captions"], "ep-2026-01-16" => ["captions"]}}
+    }.to_yaml)
+
+    cmd = PodgenCLI::UnpublishCommand.new(["testpod"], youtube: true)
+    replies = {"vid_ok" => true, "vid_403" => false, "vid_404" => :not_found}
+    stub_uploader = Object.new
+    stub_uploader.define_singleton_method(:authorize!) { nil }
+    stub_uploader.define_singleton_method(:delete_video) { |id| replies.fetch(id) }
+    stub_uploader.define_singleton_method(:remove_from_playlist) { |*| true }
+    cmd.define_singleton_method(:build_youtube_uploader) { stub_uploader }
+
+    capture_io { assert_equal 0, cmd.run }
+
+    data = YAML.load_file(tracker_path)
+    assert_equal({"ep-2026-01-16" => "vid_403"}, data.dig("youtube", "PLtest123"))
+    assert_equal({"ep-2026-01-16" => ["captions"]}, data.dig("youtube_pending", "PLtest123"))
+  end
+
   def test_unpublish_youtube_dry_run_does_not_delete
     output_dir = File.join(@tmpdir, "output", "testpod")
     episodes_dir = File.join(output_dir, "episodes")

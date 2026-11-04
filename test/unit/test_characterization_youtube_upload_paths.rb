@@ -78,6 +78,14 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     def record(platform, group, base_name, upload_id)
       @calls << [:record, platform, group, base_name, upload_id]
     end
+
+    def pending_steps(_platform, _group) = {}
+
+    # P14-1: only a non-empty marker is a call worth pinning; the clearing
+    # call after clean steps is a no-op on a real tracker.
+    def mark_pending(platform, group, base_name, steps)
+      @calls << [:mark_pending, platform, group, base_name, steps] unless steps.empty?
+    end
   end
 
   class FakeVideoGenerator
@@ -334,6 +342,8 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
     assert_includes kinds, :upload_video
     refute_includes kinds, :add_to_playlist
     assert_includes calls, [:record, :youtube, "PLx", BASE, "vid_c"]
+    # P14-1 (Q-116): the failed step and the later playlist step stay owed
+    assert_includes calls, [:mark_pending, :youtube, "PLx", BASE, %w[captions playlist]]
     assert_equal ["YouTube upload failed (RuntimeError: upload_captions boom)"], uploads.warnings
   end
 

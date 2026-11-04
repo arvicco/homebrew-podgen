@@ -257,17 +257,50 @@ class TestLanguagePipeline < Minitest::Test
     end
   end
 
+  # Q-120 (P14-5): unattended, an out-of-range candidate is skipped for the
+  # run; the run aborts only when no further candidate is in range.
   def test_enforce_length_aborts_on_too_long_without_ask_trim
     pipeline = build_pipeline(options: {})
-    pipeline.instance_variable_set(:@source_audio_path, "/tmp/x.mp3")
     pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
-    fake_source = Object.new
-    fake_source.define_singleton_method(:length_check) { |_d| :too_long }
-    pipeline.instance_variable_set(:@episode_source, fake_source)
-    AudioAssembler.stub :probe_duration, 700.0 do
-      result = pipeline.send(:enforce_length_post_download)
-      assert_equal 1, result
-    end
+    source = length_source(too_long: %w[a b], candidates: %w[a b])
+    pipeline.instance_variable_set(:@episode_source, source)
+
+    result = with_length_probe { pipeline.send(:acquire_rss) }
+
+    assert_equal 1, result
+    assert_equal %w[a b].map { "https://ex.com/#{it}.mp3" }, source.run_excluded
+    assert_empty source.excluded, "a length miss is never a permanent exclusion"
+  end
+
+  def test_acquire_rss_unattended_too_long_candidate_skipped_and_next_processed
+    pipeline = build_pipeline(options: {})
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    source = length_source(too_long: %w[a], candidates: %w[a b])
+    pipeline.instance_variable_set(:@episode_source, source)
+
+    result = with_length_probe { pipeline.send(:acquire_rss) }
+
+    assert_nil result, "the run proceeds with the next candidate"
+    assert_equal "https://ex.com/b.mp3", pipeline.instance_variable_get(:@episode)[:audio_url]
+    assert_equal ["https://ex.com/a.mp3"], source.run_excluded
+    assert_empty source.excluded
+    refute File.exist?(File.join(@tmpdir, "excluded_urls.yml"))
+    assert_equal 1, pipeline.warnings.length
+    assert_match(/11:40 is too long/, pipeline.warnings.first)
+  end
+
+  def test_acquire_rss_unattended_length_misses_stop_after_three_picks
+    pipeline = build_pipeline(options: {})
+    pipeline.instance_variable_set(:@config, build_config_with_length(min: 120, max: 570))
+    names = %w[a b c d]
+    source = length_source(too_long: names, candidates: names)
+    pipeline.instance_variable_set(:@episode_source, source)
+
+    result = with_length_probe { pipeline.send(:acquire_rss) }
+
+    assert_equal 1, result
+    assert_equal 3, source.run_excluded.length
+    assert_equal 3, pipeline.warnings.length
   end
 
   # Q-101 (P11-4): the unattended out-of-range abort joins the run's warnings.
@@ -278,7 +311,11 @@ class TestLanguagePipeline < Minitest::Test
     fake_source = Object.new
     fake_source.define_singleton_method(:length_check) { |_d| :too_long }
     pipeline.instance_variable_set(:@episode_source, fake_source)
-    AudioAssembler.stub(:probe_duration, 700.0) { pipeline.send(:enforce_length_post_download) }
+    AudioAssembler.stub(:probe_duration, 700.0) do
+      assert_raises(PodgenCLI::LanguagePipeline.const_get(:LengthOutOfRange)) do
+        pipeline.send(:enforce_length_post_download)
+      end
+    end
 
     assert_equal 1, pipeline.warnings.size
     assert_match(/11:40 is too long \(allowed range 2:00–9:30\)/, pipeline.warnings.first)
@@ -1431,6 +1468,37 @@ class TestLanguagePipeline < Minitest::Test
     calls
   ensure
     saved.nil? ? ENV.delete("ANTHROPIC_API_KEY") : ENV["ANTHROPIC_API_KEY"] = saved
+  end
+
+  # A source double serving https://ex.com/<name>.mp3 candidates in order,
+  # minus run- and permanently-excluded ones; names in +too_long+ download
+  # to a file with_length_probe reports as 11:40.
+  def length_source(too_long:, candidates:)
+    urls = candidates.map { "https://ex.com/#{it}.mp3" }
+    long = too_long.map { "https://ex.com/#{it}.mp3" }
+    tmpdir = @tmpdir
+    excluded = []
+    run_excluded = []
+    source = Object.new
+    source.define_singleton_method(:excluded) { excluded }
+    source.define_singleton_method(:run_excluded) { run_excluded }
+    source.define_singleton_method(:fetch_next) do |**|
+      url = urls.find { |u| !excluded.include?(u) && !run_excluded.include?(u) }
+      url && { title: "Ep #{url}", audio_url: url }
+    end
+    source.define_singleton_method(:exclude_url!) { |url| excluded << url }
+    source.define_singleton_method(:exclude_for_run!) { |url| run_excluded << url }
+    source.define_singleton_method(:length_check) { |d| (d > 570) ? :too_long : :ok }
+    source.define_singleton_method(:download_audio) do |ep|
+      path = File.join(tmpdir, long.include?(ep[:audio_url]) ? "long.mp3" : "fits.mp3")
+      File.write(path, "audio")
+      path
+    end
+    source
+  end
+
+  def with_length_probe(&block)
+    AudioAssembler.stub(:probe_duration, ->(path) { path.end_with?("long.mp3") ? 700.0 : 300.0 }, &block)
   end
 
   # A source double serving +candidates+ in order (minus excluded ones);

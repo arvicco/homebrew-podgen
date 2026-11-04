@@ -604,7 +604,131 @@ class TestYouTubePublisher < Minitest::Test
     assert_equal :uploaded, result.status
   end
 
+  # --- P14-1 (Q-116): batch truthfulness ---
+
+  def test_captions_failure_marks_pending_and_next_run_retries_captions
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    File.write(File.join(@episodes_dir, "#{base}.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHi.\n")
+    config = stub_config(youtube_enabled: true)
+    failing = stub_uploader do |b|
+      b.upload_video_returns "vid_cap"
+      b.upload_captions_with { |*| raise StandardError, "captions 500" }
+    end
+
+    first = nil
+    capture_io { first = build_publisher(config: config, uploader: failing).run }
+
+    tracker = UploadTracker.new(@uploads_path)
+    assert_equal "vid_cap", tracker.entries_for(:youtube, "default")[base], "the live video stays tracked"
+    assert_equal({base => %w[captions]}, tracker.pending_steps(:youtube, "default"))
+    refute_empty first.errors
+
+    healthy = stub_uploader
+    second = nil
+    capture_io { second = build_publisher(config: config, uploader: healthy).run }
+
+    assert_equal [["vid_cap", File.join(@episodes_dir, "#{base}.srt")]], healthy.captions_calls
+    assert_empty healthy.uploads, "a tracked video is never uploaded again"
+    assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
+    assert_empty second.errors
+  end
+
+  def test_finish_owed_false_leaves_owed_steps_for_a_later_run
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    File.write(File.join(@episodes_dir, "#{base}.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHi.\n")
+    config = stub_config(youtube_enabled: true)
+    tracker = UploadTracker.new(@uploads_path)
+    tracker.record(:youtube, "default", base, "vid_cap")
+    tracker.mark_pending(:youtube, "default", base, %w[captions])
+
+    healthy = stub_uploader
+    capture_io { build_publisher(config: config, uploader: healthy, options: { finish_owed: false }).run }
+
+    assert_empty healthy.captions_calls, "owed steps are skipped when the batch has already tried them this tick"
+    assert_equal({base => %w[captions]}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
+  end
+
+  def test_playlist_failure_marks_pending_and_retry_runs_before_new_uploads
+    seed_ep("ep-2026-01-15")
+    config = stub_config(youtube_enabled: true, playlist: "PLx")
+    failing = stub_uploader do |b|
+      b.upload_video_returns "vid_old"
+      b.add_to_playlist_with { |*| raise StandardError, "playlist 500" }
+    end
+    capture_io { build_publisher(config: config, uploader: failing).run }
+    assert_equal({"ep-2026-01-15" => %w[playlist]}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "PLx"))
+
+    seed_ep("ep-2026-01-16")
+    healthy = stub_uploader { |b| b.upload_video_returns "vid_new" }
+    order = []
+    healthy.add_to_playlist_with { |vid, _pl| order << vid }
+    capture_io { build_publisher(config: config, uploader: healthy).run }
+
+    assert_equal %w[vid_old vid_new], order, "pending steps run before any new upload"
+    assert_equal 1, healthy.uploads.length
+    assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "PLx"))
+  end
+
+  def test_rate_limit_error_sets_rate_limited_and_stops_the_loop
+    seed_ep("ep-2026-01-15")
+    seed_ep("ep-2026-01-16")
+    config = stub_config(youtube_enabled: true)
+    uploader = stub_uploader { |b| b.upload_video_raises Google::Apis::RateLimitError.new("Rate limit exceeded") }
+
+    result = nil
+    capture_io { result = build_publisher(config: config, uploader: uploader).run }
+
+    assert result.rate_limited
+    assert_equal 1, uploader.uploads.length, "the batch stops at the first rate limit"
+    assert_equal :rate_limit, result.errors.first[:type]
+  end
+
+  def test_retranscription_failure_line_reaches_the_logger
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    config = stub_config(youtube_enabled: true)
+    config.transcription_engines = %w[groq]
+    logger = RecordingLogger.new
+    publisher = YouTubePublisher.new(config: config, uploader: stub_uploader, tracker_path: @uploads_path, logger: logger)
+
+    _, err = capture_io do
+      Transcription::EngineManager.stub(:new, ->(**) { raise "engine down" }) do
+        publisher.upload_episode(ep_hash(base))
+      end
+    end
+
+    assert(logger.lines.any? { |l| l.include?("uploading without subtitles") }, logger.lines.inspect)
+    refute_includes err, "uploading without subtitles"
+  end
+
+  def test_reconciliation_failure_line_reaches_the_logger
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    File.write(File.join(@episodes_dir, "#{base}_timestamps.json"),
+      JSON.generate({"version" => 1, "engine" => "groq", "intro_duration" => 0.0, "segments" => []}))
+    config = stub_config(youtube_enabled: true)
+    logger = RecordingLogger.new
+    publisher = YouTubePublisher.new(config: config, uploader: stub_uploader, tracker_path: @uploads_path, logger: logger)
+    failed = Struct.new(:status, :message).new(:failed, "bad reply")
+
+    _, err = capture_io do
+      SubtitleReconciliationRunner.stub(:run, ->(**) { failed }) { publisher.upload_episode(ep_hash(base)) }
+    end
+
+    assert(logger.lines.any? { |l| l.include?("subtitle reconciliation failed") }, logger.lines.inspect)
+    refute_includes err, "subtitle reconciliation failed"
+  end
+
   private
+
+  class RecordingLogger
+    attr_reader :lines
+
+    def initialize = @lines = []
+    def log(msg) = @lines << msg
+  end
 
   def ep_hash(base)
     {base_name: base, mp3_path: File.join(@episodes_dir, "#{base}.mp3"),
@@ -712,9 +836,25 @@ class TestYouTubePublisher < Minitest::Test
       @uploads << [args, kw]
       @upload_video_block.call(*args, **kw)
     end
-    def upload_captions(*_a, **_kw) = nil
+    def captions_calls = (@captions_calls ||= [])
+
+    def upload_captions_with(&blk)
+      @captions_block = blk
+    end
+
+    def add_to_playlist_with(&blk)
+      @playlist_block = blk
+    end
+
+    def upload_captions(*args, **kw)
+      captions_calls << args
+      @captions_block&.call(*args, **kw)
+      nil
+    end
+
     def add_to_playlist(*args)
       @playlist_calls << args
+      @playlist_block&.call(*args)
       nil
     end
   end

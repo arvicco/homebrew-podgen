@@ -51,6 +51,15 @@ class TestTitleMatch < Minitest::Test
     refute TitleMatch.match?("Pinocchio. Capitolo 1", "Pinocchio. Capitolo 2")
   end
 
+  def test_match_counter_on_one_side_only_matches
+    assert TitleMatch.match?("Il lupo e il pastore", "Il lupo e il pastore 291")
+    assert TitleMatch.match?("Il lupo e il pastore 291", "Il lupo e il pastore")
+  end
+
+  def test_match_part_numbers_on_both_sides_still_distinct
+    refute TitleMatch.match?("Part 1", "Part 2")
+  end
+
   def test_match_same_number_tokens_still_match
     assert TitleMatch.match?("Planeta Przyjaźni 2", "Planeta Przyjaźni 2 — bajka")
   end

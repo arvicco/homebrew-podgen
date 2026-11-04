@@ -46,7 +46,7 @@ class TestScriptReviewer < Minitest::Test
   end
 
   def test_check_weekday_without_suffix
-    script = make_script(opening: "Monday, April 7 and Bitcoin is up.")
+    script = make_script(opening: "Friday, April 7 and Bitcoin is up.")
     reviewer = build_reviewer
 
     corrected, issues = reviewer.run_deterministic_checks(script)
@@ -74,6 +74,38 @@ class TestScriptReviewer < Minitest::Test
 
     weekday_issues = issues.select { |i| i[:check] == "weekday" }
     assert_empty weekday_issues
+  end
+
+  def test_check_weekday_matching_adjacent_year_no_issue
+    script = make_script(opening: "Wednesday, December 31, and Bitcoin closed the year.")
+    reviewer = build_reviewer(date: Date.new(2026, 1, 2))
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_empty issues.select { |i| i[:check] == "weekday" }
+    assert_equal script[:segments].first[:text], corrected[:segments].first[:text]
+  end
+
+  def test_check_weekday_wrong_in_every_nearby_year_fixed_to_nearest_year
+    script = make_script(opening: "Monday, December 31, and Bitcoin closed the year.")
+    reviewer = build_reviewer(date: Date.new(2026, 1, 2))
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_equal 1, issues.count { |i| i[:check] == "weekday" }
+    assert_includes corrected[:segments].first[:text], "Wednesday, December 31"
+  end
+
+  def test_check_weekday_off_by_one_fitting_an_adjacent_year_still_fixed
+    # 2025-11-04 is a Tuesday and 2027-11-04 a Thursday; the run date's own
+    # year says Wednesday — an adjacent-year fit must not excuse the error.
+    script = make_script(opening: "Tuesday, November 4, and Bitcoin is up.")
+    reviewer = build_reviewer(date: Date.new(2026, 11, 3))
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_equal 1, issues.count { |i| i[:check] == "weekday" }
+    assert_includes corrected[:segments].first[:text], "Wednesday, November 4"
   end
 
   def test_check_weekday_does_not_mutate_original
@@ -228,6 +260,77 @@ class TestScriptReviewer < Minitest::Test
     sd_issues = issues.select { |i| i[:check] == "stage_direction" }
     assert_equal 1, sd_issues.length
     assert_equal "Consider this. Moving on.", corrected[:segments].first[:text]
+  end
+
+  def test_check_stage_directions_bare_beat_in_parens_removed
+    script = make_script(segments: [
+      { name: "Segment 1", text: "Markets rose. (beat) Then they fell." }
+    ])
+    reviewer = build_reviewer
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_equal 1, issues.count { |i| i[:check] == "stage_direction" }
+    assert_equal "Markets rose. Then they fell.", corrected[:segments].first[:text]
+  end
+
+  def test_check_stage_directions_timed_and_adverb_parens_removed
+    [
+      "(two-second pause)", "(3-second pause)", "(3 second pause)",
+      "(laughs softly)", "(sighs heavily)", "(pause for effect)", "(Pause.)"
+    ].each do |direction|
+      script = make_script(segments: [
+        { name: "Segment 1", text: "Markets rose. #{direction} Then they fell." }
+      ])
+      corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+      assert_equal 1, issues.count { |i| i[:check] == "stage_direction" }, direction
+      assert_equal "Markets rose. Then they fell.", corrected[:segments].first[:text], direction
+    end
+  end
+
+  def test_check_stage_directions_content_parenthetical_kept
+    text = "Rates held (after a long pause in hikes) this month."
+    script = make_script(segments: [{ name: "Segment 1", text: text }])
+    reviewer = build_reviewer
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_empty issues.select { |i| i[:check] == "stage_direction" }
+    assert_equal text, corrected[:segments].first[:text]
+  end
+
+  def test_check_stage_directions_phrase_inside_a_sentence_kept
+    text = "The Fed's long pause on rates ended. Revenue hit $5B (which beat estimates) this quarter."
+    script = make_script(segments: [{ name: "Opening", text: text }])
+    reviewer = build_reviewer
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_empty issues.select { |i| i[:check] == "stage_direction" }
+    assert_equal text, corrected[:segments].first[:text]
+  end
+
+  def test_check_stage_directions_standalone_phrase_sentence_removed
+    script = make_script(segments: [
+      { name: "Opening", text: "Rates held steady. Long pause. Then the market moved." }
+    ])
+    reviewer = build_reviewer
+
+    corrected, _ = reviewer.run_deterministic_checks(script)
+
+    assert_equal "Rates held steady. Then the market moved.", corrected[:segments].first[:text]
+  end
+
+  def test_check_stage_directions_bracketed_phrase_removed
+    script = make_script(segments: [
+      { name: "Opening", text: "Rates held steady. [long pause] Then the market moved." }
+    ])
+    reviewer = build_reviewer
+
+    corrected, _ = reviewer.run_deterministic_checks(script)
+
+    assert_equal "Rates held steady. Then the market moved.", corrected[:segments].first[:text]
   end
 
   def test_check_stage_directions_clean_text_no_issue
@@ -740,9 +843,9 @@ class TestScriptReviewer < Minitest::Test
     }
   end
 
-  def build_reviewer(priority_urls: [])
+  def build_reviewer(priority_urls: [], date: @date)
     ScriptReviewer.new(
-      date: @date,
+      date: date,
       research_data: @research_data,
       priority_urls: priority_urls,
       guidelines: "Test guidelines",
