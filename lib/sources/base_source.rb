@@ -12,10 +12,6 @@ class BaseSource
   include HttpRetryable
 
   MAX_RETRIES = 2
-  # Transient failures of a JSON GET; every other error (a 401 from a
-  # revoked key, a 400) fails on the first attempt.
-  GET_JSON_RETRIABLE = [HttpRetryable::RetriableError, Net::OpenTimeout, Net::ReadTimeout, SocketError].freeze
-
   def initialize(logger: nil, **_options)
     @logger = logger
   end
@@ -41,10 +37,12 @@ class BaseSource
     self.class.name
   end
 
-  # GET +url+ and return the parsed body; 429/5xx and network timeouts are
-  # retried, any other non-success raises "HTTP <code> from <source>".
+  # GET +url+ and return the parsed body; 429/5xx and the shared transient
+  # network errors (HTTP_EXCEPTIONS) are retried, any other non-success
+  # (a 401 from a revoked key, a 400) raises "HTTP <code> from <source>"
+  # on the first attempt.
   def get_json(url, query:, timeout: 15, headers: {})
-    with_http_retries(source_name, max: MAX_RETRIES, on: GET_JSON_RETRIABLE) do
+    with_http_retries(source_name, max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
       response = HTTParty.get(url, query: query, headers: headers, timeout: timeout)
       unless response.success?
         message = "HTTP #{response.code} from #{source_name}"
