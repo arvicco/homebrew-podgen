@@ -80,6 +80,22 @@ class TestTopicAgent < Minitest::Test
     assert_includes err.message, "No parsed output"
   end
 
+  # Q-130: a 401 never heals on a retry — one call, the SDK class intact.
+  def test_generate_authentication_error_not_retried_class_kept
+    agent = build_agent("Guidelines")
+    agent.define_singleton_method(:sleep) { |_| }
+    calls = 0
+    error = Anthropic::Errors::AuthenticationError.new(url: URI("https://api.anthropic.com/v1/messages"),
+      status: 401, headers: {}, body: nil, request: nil, response: nil, message: "invalid x-api-key")
+    client = Object.new
+    client.define_singleton_method(:messages) { self }
+    client.define_singleton_method(:create) { |**| (calls += 1) && raise(error) }
+    agent.instance_variable_set(:@client, client)
+
+    assert_raises(Anthropic::Errors::AuthenticationError) { agent.generate }
+    assert_equal 1, calls
+  end
+
   def test_uses_model_from_env
     agent = build_agent("Guidelines")
     client = stub_client(agent, ["q1"])

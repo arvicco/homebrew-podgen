@@ -380,7 +380,7 @@ class ScriptReviewer
   end
 
   def request_ai_review(script, max_tokens, retries: 2, request_options: nil)
-    with_retries(max: retries, on: [Anthropic::Errors::APIError, StructuredOutputError]) do
+    with_retries(max: retries, on: [*ANTHROPIC_RETRIABLE, StructuredOutputError], reraise: true) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,

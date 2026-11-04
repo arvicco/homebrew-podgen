@@ -12,6 +12,10 @@
 #       end
 #     end
 #   end
+#
+# except: names classes that are never retried even when `on` matches them
+# (e.g. a permanent subclass of StandardError): re-raised at once, class
+# intact.
 module Retryable
   private
 
@@ -24,12 +28,15 @@ module Retryable
   # @param label [String] Name for error messages (e.g. "TTSAgent")
   # @param reraise [Boolean] On give-up, re-raise the original error (its
   #   class intact) instead of the RuntimeError summary (P8-3).
-  def with_retries(max: 3, on: [StandardError], label: self.class.name&.split("::")&.last, reraise: false)
+  # @param except [Array<Class>] Exception classes re-raised immediately,
+  #   never retried, even when `on` also matches them.
+  def with_retries(max: 3, on: [StandardError], label: self.class.name&.split("::")&.last, reraise: false, except: [])
     retries = 0
     begin
       retries += 1
       yield
     rescue *on => e
+      raise if except.any? { |klass| e.is_a?(klass) }
       if retries <= max
         sleep_time = 2**retries
         retry_log("#{label} error (attempt #{retries}/#{max}): #{e.message}. Retrying in #{sleep_time}s...")

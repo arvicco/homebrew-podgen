@@ -368,7 +368,39 @@ class TestScriptAgent < Minitest::Test
     assert_equal 1, client.calls.length, "a max_tokens truncation is deterministic; must not be retried"
   end
 
+  # Q-130: a 401 never heals on a retry — one call, the SDK class intact.
+  def test_generate_authentication_error_not_retried_class_kept
+    agent = build_agent
+    client = RaisingClient.new(anthropic_status_error(Anthropic::Errors::AuthenticationError, 401))
+    agent.instance_variable_set(:@client, client)
+
+    assert_raises(Anthropic::Errors::AuthenticationError) { agent.generate(valid_research_data) }
+    assert_equal 1, client.calls
+  end
+
+  def test_generate_overloaded_529_is_retried
+    agent = build_agent
+    client = RaisingClient.new(anthropic_status_error(Anthropic::Errors::InternalServerError, 529))
+    agent.instance_variable_set(:@client, client)
+
+    assert_raises(RuntimeError) { agent.generate(valid_research_data) }
+    assert_equal ScriptAgent::MAX_RETRIES + 1, client.calls
+  end
+
   private
+
+  def anthropic_status_error(klass, status)
+    klass.new(url: URI("https://api.anthropic.com/v1/messages"), status: status, headers: {},
+      body: nil, request: nil, response: nil, message: "status #{status}")
+  end
+
+  class RaisingClient
+    attr_reader :calls
+
+    def initialize(error) = (@error = error; @calls = 0)
+    def messages = self
+    def create(**) = (@calls += 1; raise @error)
+  end
 
   def valid_research_data
     [{

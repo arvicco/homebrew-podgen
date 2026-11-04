@@ -27,6 +27,23 @@ class RetryableTestHost
 end
 
 class TestRetryable < Minitest::Test
+  class Permanent < StandardError; end
+
+  # Q-130: except: re-raises at once, class intact, even when on: matches.
+  def test_with_retries_except_reraises_without_retry
+    host = RetryableTestHost.new
+    yields = 0
+
+    assert_raises(Permanent) do
+      host.call_with_retries(max: 3, on: [StandardError], except: [Permanent]) do
+        yields += 1
+        raise Permanent, "too big"
+      end
+    end
+    assert_equal 1, yields
+    assert_empty host.log_messages
+  end
+
   def setup
     @host = RetryableTestHost.new
   end
