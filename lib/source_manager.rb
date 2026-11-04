@@ -66,8 +66,9 @@ class SourceManager
           log("Source '#{src_name}' returned #{finding_count} findings (#{elapsed}s)")
 
           # Cache only a complete result set: a topic that came back empty
-          # (a transient failure, most often) is asked again on a rerun.
-          @cache&.set(src_name, topics, results) if results.all? { |r| r[:findings].any? }
+          # (a transient failure, most often) is asked again on a rerun; so
+          # is a source that returned nothing at all (every feed failed).
+          @cache&.set(src_name, topics, results) if results.any? && results.all? { |r| r[:findings].any? }
 
           lock.synchronize { results_by_source[src_name] = results }
         rescue => e # skippable: one source down; the other sources still feed research

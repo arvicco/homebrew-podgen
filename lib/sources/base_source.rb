@@ -12,6 +12,7 @@ class BaseSource
   include HttpRetryable
 
   MAX_RETRIES = 2
+
   def initialize(logger: nil, **_options)
     @logger = logger
   end
