@@ -255,6 +255,27 @@ class TestCLIOptions < Minitest::Test
     refute_equal 1, code, "language variants must not trigger the bare-slot collision check"
   end
 
+  def test_generate_date_invalid_raises_invalid_argument_naming_value
+    error = assert_raises(OptionParser::InvalidArgument) do
+      PodgenCLI::GenerateCommand.new(%w[test_pod --date 2026-10-32], {})
+    end
+    assert_includes error.message, "2026-10-32"
+  end
+
+  def test_generate_date_valid_parses_to_date
+    cmd = PodgenCLI::GenerateCommand.new(%w[test_pod --date 2026-10-05], {dry_run: true})
+    assert_equal Date.new(2026, 10, 5), cmd.instance_variable_get(:@options)[:date]
+  end
+
+  def test_generate_date_invalid_exits_2_with_one_stderr_line
+    code, _, err = run_cli("generate", "test_pod", "--date", "2026-10-32")
+    assert_equal 2, code
+    lines = err.lines
+    assert_equal 1, lines.size, err
+    assert lines.first.start_with?("generate:"), err
+    assert_includes lines.first, "2026-10-32"
+  end
+
   # ── Valid options should be accepted ─────────────────────────────
 
   def test_generate_accepts_dry_run

@@ -31,7 +31,12 @@ module PodgenCLI
       opts.on("--base-image PATH", "Base image for cover generation (with --file or --url)") { |p| options[:base_image] = p }
       opts.on("--lingq", "Enable LingQ upload during generation") { options[:lingq] = true }
       opts.on("--youtube", "Enable YouTube upload during generation") { options[:youtube] = true }
-      opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") { |d| options[:date] = Date.parse(d) }
+      opts.on("--date DATE", "Episode date (YYYY-MM-DD, default: today)") do |d|
+        options[:date] = Date.iso8601(d)
+      rescue Date::Error
+        # A ParseError reaches cli.rb's one-line "generate: ..." report
+        raise OptionParser::InvalidArgument, "--date #{d} (expected YYYY-MM-DD)"
+      end
       opts.on("--include WORDS", "Force-include vocabulary lemmas (comma-separated)") { |v| options[:include_words] = Set.new(v.split(",").map { |w| w.strip.downcase }) }
       opts.on("--from-script", "DEPRECATED: prefer 'podgen voice <pod> [--lang LANG]'. Resumes voicing from saved script JSON.") {
         options[:from_script] = true
