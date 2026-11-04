@@ -65,8 +65,9 @@ class SourceManager
           finding_count = results.sum { |r| r[:findings].length }
           log("Source '#{src_name}' returned #{finding_count} findings (#{elapsed}s)")
 
-          # Cache results
-          @cache&.set(src_name, topics, results)
+          # Cache only a complete result set: a topic that came back empty
+          # (a transient failure, most often) is asked again on a rerun.
+          @cache&.set(src_name, topics, results) if results.all? { |r| r[:findings].any? }
 
           lock.synchronize { results_by_source[src_name] = results }
         rescue => e # skippable: one source down; the other sources still feed research

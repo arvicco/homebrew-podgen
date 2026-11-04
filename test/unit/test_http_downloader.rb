@@ -30,7 +30,7 @@ class TestHttpDownloader < Minitest::Test
     response = Object.new
     response.define_singleton_method(:read_body) { |&block| block.call("x" * 20) }
 
-    err = assert_raises(RuntimeError) do
+    err = assert_raises(HttpDownloader::Permanent) do
       downloader.send(:write_body, response, @dest, URI.parse("http://example.com/big"))
     end
     assert_match(/MB limit/, err.message)
@@ -41,7 +41,7 @@ class TestHttpDownloader < Minitest::Test
     response = Object.new
     response.define_singleton_method(:read_body) { |&block| 2.times { block.call("x" * 6) } }
 
-    assert_raises(RuntimeError) do
+    assert_raises(HttpDownloader::Permanent) do
       downloader.send(:write_body, response, @dest, URI.parse("http://example.com/big"))
     end
 
@@ -53,7 +53,7 @@ class TestHttpDownloader < Minitest::Test
     response = Object.new
     response.define_singleton_method(:[]) { |_key| "http://example.com/next" }
 
-    err = assert_raises(RuntimeError) do
+    err = assert_raises(HttpDownloader::Permanent) do
       @downloader.send(:follow_redirect, response, URI.parse("http://example.com/a"), @dest, 0)
     end
     assert_match(/Too many redirects/, err.message)
@@ -127,6 +127,37 @@ class TestHttpDownloader < Minitest::Test
 
     err = assert_raises(RuntimeError) { downloader.download("http://example.com/fail", @dest) }
     assert_match(/failed after/, err.message)
+  end
+
+  # Q-130: an oversized body or a redirect loop will not change on a retry.
+  def test_download_oversized_makes_one_fetch_and_raises_permanent
+    downloader = HttpDownloader.new(max_size: 10)
+    downloader.define_singleton_method(:sleep) { |_| }
+    fetches = 0
+    downloader.define_singleton_method(:fetch) do |uri, path, _r = nil|
+      fetches += 1
+      response = Object.new
+      response.define_singleton_method(:read_body) { |&block| block.call("x" * 20) }
+      send(:write_body, response, path, uri)
+    end
+
+    assert_raises(HttpDownloader::Permanent) { downloader.download("http://example.com/big.mp3", @dest) }
+    assert_equal 1, fetches
+  end
+
+  def test_download_redirect_limit_makes_one_fetch_and_raises_permanent
+    downloader = build_downloader
+    fetches = 0
+    downloader.define_singleton_method(:fetch) do |uri, path, _r = nil|
+      fetches += 1
+      response = Object.new
+      response.define_singleton_method(:[]) { |_key| "http://example.com/next" }
+      send(:follow_redirect, response, uri, path, 0)
+    end
+
+    err = assert_raises(HttpDownloader::Permanent) { downloader.download("http://example.com/loop.mp3", @dest) }
+    assert_match(/Too many redirects/, err.message)
+    assert_equal 1, fetches
   end
 
   # Q-100 (P11-1): a 404/410 is permanent — one attempt, a typed error

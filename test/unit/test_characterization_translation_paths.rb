@@ -114,12 +114,16 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     [agent, client, sleeps]
   end
 
+  # The classes the SDKs raise for these statuses (529 maps to
+  # InternalServerError); only transient API errors are retried (Q-130).
   def anthropic_api_error(msg = "overloaded")
-    Anthropic::Errors::APIError.new(url: URI("https://api.anthropic.com"), status: 529, message: msg)
+    Anthropic::Errors::InternalServerError.new(url: URI("https://api.anthropic.com"), status: 529, headers: {},
+      body: nil, request: nil, response: nil, message: msg)
   end
 
   def openai_api_error(msg = "rate limited")
-    OpenAI::Errors::APIError.new(url: URI("https://api.openai.com"), status: 429, message: msg)
+    OpenAI::Errors::RateLimitError.new(url: URI("https://api.openai.com"), status: 429, headers: {},
+      body: nil, request: nil, response: nil, message: msg)
   end
 
   # --- prompt composition ---

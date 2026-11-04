@@ -1,16 +1,20 @@
 # frozen_string_literal: true
 
 require "set"
+require "httparty"
 require_relative "../loggable"
-require_relative "../retryable"
+require_relative "../http_retryable"
 
 # Template base class for topic-based research sources.
 # Subclasses implement search_topic and optionally override available?.
 class BaseSource
   include Loggable
-  include Retryable
+  include HttpRetryable
 
   MAX_RETRIES = 2
+  # Transient failures of a JSON GET; every other error (a 401 from a
+  # revoked key, a 400) fails on the first attempt.
+  GET_JSON_RETRIABLE = [HttpRetryable::RetriableError, Net::OpenTimeout, Net::ReadTimeout, SocketError].freeze
 
   def initialize(logger: nil, **_options)
     @logger = logger
@@ -35,6 +39,20 @@ class BaseSource
 
   def source_name
     self.class.name
+  end
+
+  # GET +url+ and return the parsed body; 429/5xx and network timeouts are
+  # retried, any other non-success raises "HTTP <code> from <source>".
+  def get_json(url, query:, timeout: 15, headers: {})
+    with_http_retries(source_name, max: MAX_RETRIES, on: GET_JSON_RETRIABLE) do
+      response = HTTParty.get(url, query: query, headers: headers, timeout: timeout)
+      unless response.success?
+        message = "HTTP #{response.code} from #{source_name}"
+        raise RetriableError, message if RETRIABLE_CODES.include?(response.code)
+        raise message
+      end
+      response.parsed_response
+    end
   end
 
   def available?
