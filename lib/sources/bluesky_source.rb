@@ -20,7 +20,12 @@ class BlueskySource < BaseSource
   def research(topics, exclude_urls: Set.new)
     return empty_results(topics) unless available?
 
-    authenticate!
+    begin
+      authenticate!
+    rescue => e # skippable: one source down; the other sources still feed research
+      log_warning("Bluesky authentication failed: #{e.class}: #{e.message}")
+      return empty_results(topics)
+    end
     super
   end
 
@@ -31,19 +36,13 @@ class BlueskySource < BaseSource
   end
 
   def authenticate!
-    response = HTTParty.post(
+    session = post_json(
       "#{PDS_HOST}#{SESSION_ENDPOINT}",
       headers: { "Content-Type" => "application/json" },
-      body: { identifier: @handle, password: @app_password }.to_json,
-      timeout: 15
+      body: { identifier: @handle, password: @app_password }.to_json
     )
 
-    unless response.success?
-      error = response.parsed_response
-      raise "Bluesky auth failed: #{error['message'] || response.code}"
-    end
-
-    @access_token = response.parsed_response["accessJwt"]
+    @access_token = session["accessJwt"]
     log("Authenticated as #{@handle}")
   end
 

@@ -311,6 +311,63 @@ class TestBlueskySource < Minitest::Test
     assert_equal [], results[1][:findings]
   end
 
+  BskyResponse = Struct.new(:code, :parsed_response) do
+    def success? = (200..299).cover?(code)
+  end
+
+  # P16-4: a transient 5xx on the session create is retried; the source
+  # then searches with the token.
+  def test_research_session_503_retried_then_searches
+    ENV["BLUESKY_HANDLE"] = "user.bsky.social"
+    ENV["BLUESKY_APP_PASSWORD"] = "secret"
+    source = BlueskySource.new
+    source.define_singleton_method(:sleep) { |_| }
+    sessions = [BskyResponse.new(503, nil), BskyResponse.new(200, { "accessJwt" => "jwt" })]
+    posts = 0
+    gets = []
+    post = ->(*_a, **_k) { (posts += 1) && sessions.shift }
+    get = ->(_url, **kw) { (gets << kw) && BskyResponse.new(200, { "posts" => [] }) }
+
+    HTTParty.stub(:post, post) do
+      HTTParty.stub(:get, get) do
+        source.research(["AI"])
+      end
+    end
+
+    assert_equal 2, posts
+    assert_equal 1, gets.length
+    assert_equal "Bearer jwt", gets.first[:headers]["Authorization"]
+  end
+
+  # P16-4: a refused login is not retried; it is a counted warning and the
+  # source returns empty results without searching.
+  def test_research_session_401_counted_warning_no_search
+    ENV["BLUESKY_HANDLE"] = "user.bsky.social"
+    ENV["BLUESKY_APP_PASSWORD"] = "secret"
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_msg| nil }
+    logger.define_singleton_method(:warning) { |msg| warnings << msg }
+    source = BlueskySource.new(logger: logger)
+    source.define_singleton_method(:sleep) { |_| }
+    posts = 0
+    gets = 0
+    post = ->(*_a, **_k) { (posts += 1) && BskyResponse.new(401, { "message" => "Invalid identifier or password" }) }
+    get = ->(*_a, **_k) { (gets += 1) && BskyResponse.new(200, { "posts" => [] }) }
+
+    results = HTTParty.stub(:post, post) do
+      HTTParty.stub(:get, get) do
+        source.research(["AI", "Ruby"])
+      end
+    end
+
+    assert_equal 1, posts
+    assert_equal 0, gets
+    assert_equal [{ topic: "AI", findings: [] }, { topic: "Ruby", findings: [] }], results
+    assert_equal 1, warnings.size
+    assert_match(/\[BlueskySource\] Warning: Bluesky authentication failed: RuntimeError: HTTP 401/, warnings.first)
+  end
+
   def test_at_uri_to_url_with_post_uri
     ENV["BLUESKY_HANDLE"] = "user.bsky.social"
     ENV["BLUESKY_APP_PASSWORD"] = "secret"

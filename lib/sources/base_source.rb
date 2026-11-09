@@ -44,14 +44,25 @@ class BaseSource
   # on the first attempt.
   def get_json(url, query:, timeout: 15, headers: {})
     with_http_retries(source_name, max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
-      response = HTTParty.get(url, query: query, headers: headers, timeout: timeout)
-      unless response.success?
-        message = "HTTP #{response.code} from #{source_name}"
-        raise RetriableError, message if RETRIABLE_CODES.include?(response.code)
-        raise message
-      end
-      response.parsed_response
+      parsed_body(HTTParty.get(url, query: query, headers: headers, timeout: timeout))
     end
+  end
+
+  # POST +body+ to +url+ and return the parsed body, with get_json's retry
+  # and error contract.
+  def post_json(url, body:, timeout: 15, headers: {})
+    with_http_retries(source_name, max: MAX_RETRIES, on: HTTP_EXCEPTIONS) do
+      parsed_body(HTTParty.post(url, body: body, headers: headers, timeout: timeout))
+    end
+  end
+
+  def parsed_body(response)
+    unless response.success?
+      message = "HTTP #{response.code} from #{source_name}"
+      raise RetriableError, message if RETRIABLE_CODES.include?(response.code)
+      raise message
+    end
+    response.parsed_response
   end
 
   def available?
