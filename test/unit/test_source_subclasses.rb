@@ -1004,4 +1004,46 @@ class TestClaudeWebSource < Minitest::Test
     assert_includes log, "Input: 900 tokens | Output: 300 tokens"
     assert_includes log, "web searches: 2"
   end
+
+  # A 401 never heals on a retry: one call, the SDK class named in the
+  # skip line (P16-3).
+  def test_call_api_authentication_error_not_retried_class_logged
+    @source.define_singleton_method(:sleep) { |_| }
+    error = Anthropic::Errors::AuthenticationError.new(url: URI("https://api.anthropic.com/v1/messages"),
+      status: 401, headers: {}, body: nil, request: nil, response: nil, message: "invalid x-api-key")
+    calls = 0
+    fake = Object.new
+    fake.define_singleton_method(:messages) { self }
+    fake.define_singleton_method(:create) { |**| (calls += 1) && raise(error) }
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| lines << m }
+    @source.instance_variable_set(:@client, fake)
+    @source.instance_variable_set(:@logger, logger)
+
+    assert_nil @source.send(:call_api, "topic")
+
+    assert_equal 1, calls
+    assert_includes lines.join("\n"), "Anthropic::Errors::AuthenticationError"
+  end
+
+  def test_call_api_overloaded_given_up_logs_class
+    @source.define_singleton_method(:sleep) { |_| }
+    error = Anthropic::Errors::InternalServerError.new(url: URI("https://api.anthropic.com/v1/messages"),
+      status: 529, headers: {}, body: nil, request: nil, response: nil, message: "overloaded")
+    calls = 0
+    fake = Object.new
+    fake.define_singleton_method(:messages) { self }
+    fake.define_singleton_method(:create) { |**| (calls += 1) && raise(error) }
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| lines << m }
+    @source.instance_variable_set(:@client, fake)
+    @source.instance_variable_set(:@logger, logger)
+
+    assert_nil @source.send(:call_api, "topic")
+
+    assert_equal 4, calls
+    assert_includes lines.last, "(Anthropic::Errors::InternalServerError)"
+  end
 end
