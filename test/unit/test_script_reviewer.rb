@@ -294,7 +294,8 @@ class TestScriptReviewer < Minitest::Test
   def test_check_stage_directions_timed_and_adverb_parens_removed
     [
       "(two-second pause)", "(3-second pause)", "(3 second pause)",
-      "(laughs softly)", "(sighs heavily)", "(pause for effect)", "(Pause.)"
+      "(laughs softly)", "(sighs heavily)", "(pause for effect)", "(Pause.)",
+      "(laughs warmly)", "(soft laugh)", "(quiet laugh)", "(pregnant pause)", "(momentary pause)"
     ].each do |direction|
       script = make_script(segments: [
         { name: "Segment 1", text: "Markets rose. #{direction} Then they fell." }
@@ -367,6 +368,17 @@ class TestScriptReviewer < Minitest::Test
       assert_equal 1, issues.count { |i| i[:check] == "stage_direction" }, text
       assert_equal expected, corrected[:segments].first[:text]
     end
+  end
+
+  # CRPR round 1 (P16-5): a direction phrase that opens a dash clause is
+  # content; the quote anchor never reaches past it.
+  def test_check_stage_directions_phrase_after_quote_then_dash_kept
+    text = %(The chair said "we wait." Long pause — the Fed's sixth — ended.)
+    script = make_script(segments: [{ name: "Opening", text: text }])
+    corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+    assert_empty issues.select { |i| i[:check] == "stage_direction" }
+    assert_equal text, corrected[:segments].first[:text]
   end
 
   # P16-5: a parenthetical is a direction only when every token is a cue,

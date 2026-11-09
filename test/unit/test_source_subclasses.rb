@@ -339,6 +339,62 @@ class TestBlueskySource < Minitest::Test
     assert_equal "Bearer jwt", gets.first[:headers]["Authorization"]
   end
 
+  # CRPR round 1 (P16-4): a 200 session reply without a usable token is a
+  # failed login — a JSON body without accessJwt, or an HTML maintenance page
+  # parsed to a String — never a search with an empty bearer token.
+  def test_research_session_without_token_is_a_counted_warning_no_search
+    [{}, "<html>maintenance</html>"].each do |body|
+      ENV["BLUESKY_HANDLE"] = "user.bsky.social"
+      ENV["BLUESKY_APP_PASSWORD"] = "secret"
+      warnings = []
+      logger = Object.new
+      logger.define_singleton_method(:log) { |_msg| nil }
+      logger.define_singleton_method(:warning) { |msg| warnings << msg }
+      source = BlueskySource.new(logger: logger)
+      source.define_singleton_method(:sleep) { |_| }
+      posts = 0
+      gets = 0
+      post = ->(*_a, **_k) { (posts += 1) && BskyResponse.new(200, body) }
+      get = ->(*_a, **_k) { (gets += 1) && BskyResponse.new(200, { "posts" => [] }) }
+
+      results = HTTParty.stub(:post, post) do
+        HTTParty.stub(:get, get) do
+          source.research(["AI"])
+        end
+      end
+
+      assert_equal 1, posts, body.inspect
+      assert_equal 0, gets, "no search with an empty token (#{body.inspect})"
+      assert_equal [{ topic: "AI", findings: [] }], results
+      assert_equal 1, warnings.size, body.inspect
+      assert_match(/Bluesky authentication failed: .*no accessJwt/, warnings.first)
+    end
+  end
+
+  # CRPR round 1 (P16-4): a failed topic search is a counted warning.
+  def test_search_topic_failure_is_a_counted_warning
+    ENV["BLUESKY_HANDLE"] = "user.bsky.social"
+    ENV["BLUESKY_APP_PASSWORD"] = "secret"
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_msg| nil }
+    logger.define_singleton_method(:warning) { |msg| warnings << msg }
+    source = BlueskySource.new(logger: logger)
+    source.define_singleton_method(:sleep) { |_| }
+    post = ->(*_a, **_k) { BskyResponse.new(200, { "accessJwt" => "jwt" }) }
+    get = ->(*_a, **_k) { raise Errno::ECONNRESET }
+
+    results = HTTParty.stub(:post, post) do
+      HTTParty.stub(:get, get) do
+        source.research(["AI"])
+      end
+    end
+
+    assert_equal [{ topic: "AI", findings: [] }], results
+    assert_equal 1, warnings.size
+    assert_match(/Failed to search Bluesky for 'AI'/, warnings.first)
+  end
+
   # P16-4: a refused login is not retried; it is a counted warning and the
   # source returns empty results without searching.
   def test_research_session_401_counted_warning_no_search

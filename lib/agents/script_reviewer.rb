@@ -75,8 +75,8 @@ class ScriptReviewer
   # "(rate pause)", "(the long wait)" and "(pause likely)" are content and
   # stay (Q-113, CRPR, P16-5).
   STAGE_DIRECTION_COUNT = /\d+|one|two|three|four|five|six|seven|eight|nine|ten/
-  STAGE_DIRECTION_LEAD = /(?:#{STAGE_DIRECTION_COUNT.source})(?:-seconds?)?|seconds?|a|takes?|brief|long|short|slight|quick|dramatic|deep|nervous|awkward/
-  STAGE_DIRECTION_ADVERBS = /softly|heavily|quietly|nervously|briefly/
+  STAGE_DIRECTION_LEAD = /(?:#{STAGE_DIRECTION_COUNT.source})(?:-seconds?)?|seconds?|a|takes?|brief|long|short|slight|quick|dramatic|deep|nervous|awkward|soft|quiet|pregnant|momentary/
+  STAGE_DIRECTION_ADVERBS = /softly|heavily|quietly|nervously|briefly|warmly|gently/
   STAGE_DIRECTION_PARENS = /\(\s*(?:(?:#{STAGE_DIRECTION_LEAD.source})\s+){0,2}(?:pause|beat|silence|breath|wait|sigh|laugh)s?(?:\s+(?:here|for\s+effect|#{STAGE_DIRECTION_ADVERBS.source}))?\.?\s*\)/i
 
   FORBIDDEN_PHRASES = [

@@ -657,6 +657,33 @@ class TestYouTubePublisher < Minitest::Test
     assert_empty second.errors
   end
 
+  # CRPR round 1 (P16-1): with nothing owed, finish_owed: false still prints
+  # the (true) all-done line.
+  def test_finish_owed_false_with_nothing_owed_reports_all_done
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    tracker = UploadTracker.new(@uploads_path)
+    tracker.record(:youtube, "default", base, "vid_done")
+
+    out, _err = capture_io { build_publisher(config: stub_config(youtube_enabled: true), uploader: stub_uploader, options: { finish_owed: false }).run }
+
+    assert_includes out, "All episodes already uploaded to YouTube"
+  end
+
+  # CRPR round 1 (P16-1): a 404 on the playlist step names the step; the
+  # marker is cleared like a missing video.
+  def test_finish_owed_playlist_404_names_the_step_and_clears_the_marker
+    base = seed_owed("ep-2026-01-15", "vid_pl", %w[playlist], group: "PL1")
+    gone = stub_uploader do |b|
+      b.add_to_playlist_with { |*| raise Google::Apis::ClientError.new("notFound", status_code: 404) }
+    end
+
+    _out, err = capture_io { build_publisher(config: stub_config(youtube_enabled: true, playlist: "PL1"), uploader: gone).run }
+
+    assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "PL1"))
+    assert_includes err, "#{base}: playlist step: video vid_pl or its target not found on YouTube"
+  end
+
   def test_finish_owed_false_leaves_owed_steps_for_a_later_run
     base = "ep-2026-01-15"
     seed_ep(base)
@@ -687,7 +714,7 @@ class TestYouTubePublisher < Minitest::Test
     _out, err = capture_io { result = build_publisher(config: stub_config(youtube_enabled: true), uploader: gone).run }
 
     assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
-    assert_includes err, "#{base}: video vid_gone not found on YouTube"
+    assert_includes err, "#{base}: captions step: video vid_gone not found on YouTube"
     assert_empty result.errors
     refute_includes File.read(@uploads_path), "youtube_pending"
 
