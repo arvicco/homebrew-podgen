@@ -775,7 +775,7 @@ Each episode produces:
 - `{basename}.srt` — SRT subtitles synchronized with the audio
 - `{basename}.mp4` — video (cover image + audio, 1920x1080)
 
-Subtitles are uploaded as captions in the episode's language. Upload tracking is shared with LingQ in `uploads.yml`. If the captions or playlist step fails after the video is live, the video stays tracked and the owed steps are kept under `youtube_pending:`; the next YouTube upload run finishes them before uploading anything new, and `podgen status` names "uploaded without captions" from the batch log. Removing videos untracks only those YouTube actually deleted (or already gone); a refused delete stays tracked.
+Subtitles are uploaded as captions in the episode's language. Upload tracking is shared with LingQ in `uploads.yml`. If the captions or playlist step fails after the video is live, the video stays tracked and the owed steps are kept under `youtube_pending:`; the next YouTube upload run finishes them before uploading anything new (a step that can never succeed — the video removed from YouTube, the `.srt` deleted, captions already present — is logged once and dropped), and `podgen status` names "uploaded without captions" from the batch log. Removing videos untracks only those YouTube actually deleted (or already gone); a refused delete stays tracked.
 
 To remove all tracked YouTube videos for a podcast:
 

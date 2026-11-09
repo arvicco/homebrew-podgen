@@ -162,7 +162,7 @@ module PodgenCLI
             # only; a step that fails again would otherwise be retried every
             # round and spend quota each time.
             result = run_yt_for(pod, max: 1, finish_owed: !owed_tried[pod])
-            owed_tried[pod] = true
+            owed_tried[pod] = true unless result.errors.any? { |e| e[:type] == :publisher_crash } # a crash tried nothing
             per_pod[pod][:uploaded] += result.uploaded
             per_pod[pod][:errors] += result.errors.length
             remaining -= result.uploaded if remaining
