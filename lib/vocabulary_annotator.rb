@@ -175,7 +175,7 @@ class VocabularyAnnotator
   end
 
   def classify_single(text, language, cutoff, filters = {}, key_terms = [])
-    with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
+    with_retries(max: 3, on: AnthropicClient::ANTHROPIC_RETRIABLE, reraise: true) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
@@ -556,7 +556,7 @@ class VocabularyAnnotator
     lemmas = entries.map { |e| e[:lemma] }.uniq
     prompt = enrich_prompt(language, target_language, filters)
 
-    with_retries(max: 3, on: [Anthropic::Errors::APIError]) do
+    with_retries(max: 3, on: AnthropicClient::ANTHROPIC_RETRIABLE, reraise: true) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
