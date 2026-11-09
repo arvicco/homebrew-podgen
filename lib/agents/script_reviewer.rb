@@ -44,11 +44,16 @@ class ScriptReviewer
   WEEKDAYS = %w[Monday Tuesday Wednesday Thursday Friday Saturday Sunday].freeze
   MONTHS = %w[January February March April May June July August September October November December].freeze
 
+  # A weekday is auto-fixed only when the nearest candidate date lies within
+  # this many days of the run date; beyond it the mismatch is reported.
+  WEEKDAY_FIX_MAX_DAYS = 120
+
   WEEKDAY_PATTERN = /\b(#{WEEKDAYS.join("|")})\b(,?\s+)(#{MONTHS.join("|")})\s+(\d{1,2})(st|nd|rd|th)?\b/i
 
   # A phrase is a stage direction only when it is the whole sentence (at a
-  # line start or after . ! ?, ending in . ! ? or at the text end): "The
-  # Fed's long pause on rates" is content and stays (Q-113).
+  # line start, after . ! ? or an ellipsis, or after a closing quote that
+  # ends a sentence; ending in . ! ? or at the text end): "The Fed's long
+  # pause on rates" is content and stays (Q-113, P16-5).
   STAGE_DIRECTION_PHRASES = [
     /\w+\s+seconds?\s+pause\s+here/,
     /\d+\s+seconds?\s+pause\s+here/,
@@ -58,16 +63,21 @@ class ScriptReviewer
     /silence\s+here/,
     /long\s+pause/,
     /short\s+pause/
-  ].map { |core| /(?:^|(?<=[.!?]))\s*#{core.source}(?:[.!?]+|(?=\s*\z))(?=\s|\z)/i }.freeze
+  ].map { |core| /(?:^|(?<=[.!?…]|[.!?]["”]))\s*#{core.source}(?:[.!?]+|(?=\s*\z))(?=\s|\z)/i }.freeze
 
   STAGE_DIRECTION_BRACKETS = /\[([^\]]*\b(?:pause|beat|silence|breath|wait|sigh|laugh)\b[^\]]*)\]/i
-  # A parenthetical is a direction only when it is wholly one — up to two
-  # lead tokens ("two-second", "3", "takes a"), the cue, and at most one
-  # trailing "here" / "for effect" / adverb: "(beat)", "(brief pause)",
-  # "(3-second pause)", "(laughs softly)", "(pause for effect)". "(which
-  # beat estimates)" and "(after a long pause in hikes)" are content and
-  # stay (Q-113, CRPR).
-  STAGE_DIRECTION_PARENS = /\(\s*(?:[a-z0-9'-]+\s+){0,2}(?:pause|beat|silence|breath|wait|sigh|laugh)s?(?:\s+(?:here|for\s+effect|[a-z]+ly))?\.?\s*\)/i
+  # A parenthetical is a direction only when every token is a direction
+  # token — up to two lead tokens (a duration "two-second" / "3 second", a
+  # modifier "brief" / "long", "takes a"), the cue, and at most one
+  # trailing "here" / "for effect" / listed adverb: "(beat)", "(brief
+  # pause)", "(3-second pause)", "(laughs softly)", "(pause for effect)".
+  # "(which beat estimates)", "(after a long pause in hikes)", "(Q3 beat)",
+  # "(rate pause)", "(the long wait)" and "(pause likely)" are content and
+  # stay (Q-113, CRPR, P16-5).
+  STAGE_DIRECTION_COUNT = /\d+|one|two|three|four|five|six|seven|eight|nine|ten/
+  STAGE_DIRECTION_LEAD = /(?:#{STAGE_DIRECTION_COUNT.source})(?:-seconds?)?|seconds?|a|takes?|brief|long|short|slight|quick|dramatic|deep|nervous|awkward/
+  STAGE_DIRECTION_ADVERBS = /softly|heavily|quietly|nervously|briefly/
+  STAGE_DIRECTION_PARENS = /\(\s*(?:(?:#{STAGE_DIRECTION_LEAD.source})\s+){0,2}(?:pause|beat|silence|breath|wait|sigh|laugh)s?(?:\s+(?:here|for\s+effect|#{STAGE_DIRECTION_ADVERBS.source}))?\.?\s*\)/i
 
   FORBIDDEN_PHRASES = [
     /\bin today'?s episode\b/i,
@@ -187,15 +197,26 @@ class ScriptReviewer
           actual_date = candidates.min_by { |d| (d - @date).abs }
           correct_weekday = actual_date.strftime("%A")
 
-          if stated_weekday.downcase != correct_weekday.downcase
+          if stated_weekday.downcase == correct_weekday.downcase
+            match
+          elsif (actual_date - @date).abs > WEEKDAY_FIX_MAX_DAYS
+            # About six months out either year may be meant ("Friday,
+            # January 1" read on July 1): reported, not rewritten, and not
+            # a blocker — a regenerated script would say the same (P16-5).
+            issues << {
+              severity: WARNING, check: "weekday", segment: seg[:name],
+              message: "Weekday unverified: '#{stated_weekday}, #{month_name} #{day}' is a #{correct_weekday} in #{actual_date.year}, " \
+                       "#{(actual_date - @date).abs.to_i} days from the run date (not auto-fixed)",
+              auto_fixed: false
+            }
+            match
+          else
             issues << {
               severity: BLOCKER, check: "weekday", segment: seg[:name],
               message: "Wrong weekday: '#{stated_weekday}, #{month_name} #{day}' should be '#{correct_weekday}, #{month_name} #{day}'",
               auto_fixed: true
             }
             "#{correct_weekday}#{separator}#{month_name} #{day}#{suffix}"
-          else
-            match
           end
         rescue Date::Error
           match
