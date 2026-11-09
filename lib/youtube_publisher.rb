@@ -57,7 +57,8 @@ class YouTubePublisher
 
   # Outcome of #upload_episode. status: :uploaded, :skipped (never reached
   # upload_video), :failed, :rate_limited (quota — callers stop a batch), or
-  # :finished (an already-tracked video's owed captions/playlist steps done).
+  # :finished (an already-tracked video's owed captions/playlist steps done),
+  # :video_gone (that video is no longer on YouTube; its owed steps dropped).
   # error is the typed {type:, base:, message:} entry; exception the cause
   # when one was raised. video_id is set once upload_video succeeded, even
   # if captions/playlist failed after it (the upload is already recorded).
@@ -117,7 +118,8 @@ class YouTubePublisher
     end
 
     if pending.empty? && unfinished.empty?
-      puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless quiet?
+      # finish_owed: false skipped any owed steps, so "all done" may be untrue.
+      puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless quiet? || @options[:finish_owed] == false
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false, errors: [])
     end
 
@@ -245,6 +247,7 @@ class YouTubePublisher
     steps = []
     steps << "captions" if srt_path && File.exist?(srt_path)
     steps << "playlist" if yt_config[:playlist]
+    say_err "  ⚠ #{base}: uploaded without captions (no subtitles)" unless steps.include?("captions")
     run_post_upload_steps(uploader, video_id, base, steps)
 
     say "  ✓ #{base} → https://youtu.be/#{video_id}"
@@ -296,7 +299,12 @@ class YouTubePublisher
   # The steps after a live upload, in order. On a failure the failed step
   # and every later one stay owed on the tracker (the video is already
   # recorded), the next batch finishes them, and the error propagates.
-  def run_post_upload_steps(uploader, video_id, base, steps)
+  #
+  # finishing: true (owed steps of an earlier upload) settles the failures
+  # a retry can never fix instead of owing them forever: the video gone
+  # (404) drops every owed step and returns :video_gone; a missing srt
+  # (ENOENT) or a step already done (409) drops that step and goes on.
+  def run_post_upload_steps(uploader, video_id, base, steps, finishing: false)
     yt_config = @config.youtube_config
     group = yt_config[:playlist] || "default"
     steps.each_with_index do |step, i|
@@ -309,6 +317,15 @@ class YouTubePublisher
       end
     rescue => e # skippable: the video is live; the owed steps are recorded and the error re-raised to the per-episode rescue
       owed = steps[i..]
+      case finishing && settled_step_failure(e)
+      when :video_gone
+        tracker.mark_pending(:youtube, group, base, [])
+        say_err "  ⚠ #{base}: video #{video_id} not found on YouTube (#{e.class}); owed steps dropped (#{owed.join(", ")}), not retried"
+        return :video_gone
+      when :settled
+        say_err "  ⚠ #{base}: #{step} step dropped (#{e.class}: #{e.message}), not retried"
+        next
+      end
       tracker.mark_pending(:youtube, group, base, owed)
       state = owed.include?("captions") ? "uploaded without captions" : "uploaded"
       say_err "  ⚠ #{base}: #{state} (pending: #{owed.join(", ")}; #{e.class}), retried next batch"
@@ -321,7 +338,9 @@ class YouTubePublisher
   def finish_pending_steps(ep)
     base = ep[:base_name]
     say "  finishing: #{base} (#{ep[:owed].join(", ")})"
-    run_post_upload_steps(active_uploader, ep[:video_id], base, ep[:owed])
+    if run_post_upload_steps(active_uploader, ep[:video_id], base, ep[:owed], finishing: true) == :video_gone
+      return EpisodeResult.new(status: :video_gone, base: base, video_id: ep[:video_id], attempted: false)
+    end
     say "  ✓ #{base} → https://youtu.be/#{ep[:video_id]}"
     EpisodeResult.new(status: :finished, base: base, video_id: ep[:video_id], attempted: false)
   rescue => e # skippable per-episode: the steps stay owed; a quota stop still stops the batch
@@ -329,6 +348,18 @@ class YouTubePublisher
     limited = rate_limit?(e)
     EpisodeResult.new(status: limited ? :rate_limited : :failed, base: base, video_id: ep[:video_id],
       attempted: false, exception: e, error: { type: limited ? :rate_limit : :upload, base: base, message: e.message })
+  end
+
+  # An owed step's failure no retry can fix: :video_gone (404), :settled
+  # (srt missing, or 409 — the step is already done); nil otherwise.
+  def settled_step_failure(e)
+    return :settled if e.is_a?(Errno::ENOENT)
+    return unless e.is_a?(Google::Apis::ClientError)
+
+    case e.status_code
+    when 404 then :video_gone
+    when 409 then :settled
+    end
   end
 
   def rate_limit?(e)

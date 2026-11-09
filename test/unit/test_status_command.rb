@@ -507,10 +507,21 @@ class TestStatusCommand < Minitest::Test
   # P14-1 (Q-116): a video that went up without captions is named on the board
   def test_run_uploads_stderr_without_subtitles_reports_warn
     make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
-    write_uploads_log(["  ⚠ alpha-2026-10-10: retranscription failed (RuntimeError: x), uploading without subtitles"])
+    write_uploads_log(["  ⚠ alpha-2026-10-10: retranscription failed (RuntimeError: x), uploading without subtitles",
+      "  ⚠ alpha-2026-10-10: uploaded without captions (no subtitles)"])
     out, code = run_status
     assert_equal 1, code
     assert_match(/uploads_stderr\.log: YouTube uploaded without captions/, out)
+  end
+
+  # The pre-upload "uploading without subtitles" line alone is no upload:
+  # when upload_video then fails, nothing went up without captions.
+  def test_run_uploads_stderr_failed_upload_is_not_labelled_without_captions
+    make_pod("alpha", dates: fresh_dates, sections: YOUTUBE)
+    write_uploads_log(["  ⚠ alpha-2026-10-10: retranscription failed (RuntimeError: x), uploading without subtitles",
+      "  ✗ alpha-2026-10-10 failed: RuntimeError: upload broke"])
+    out, = run_status
+    refute_includes out, "uploaded without captions"
   end
 
   def test_run_uploads_stderr_captions_pending_reports_warn

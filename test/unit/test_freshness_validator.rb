@@ -36,6 +36,19 @@ class TestFreshnessValidator < Minitest::Test
     end
   end
 
+  # Date.parse read "2026/10/5" as a date (and anything date-like with
+  # it); history dates are YYYY-MM-DD, others are named on one line.
+  def test_check_non_iso_history_date_is_ignored_with_one_line_warning
+    with_history(%w[2026-08-23 2026-08-24 2026/08/25 garbage]) do |config|
+      result = validate(config, Date.new(2026, 8, 25))
+      bad = result[:warnings].select { |w| w.include?("not YYYY-MM-DD") }
+      assert_equal 1, bad.length, result.inspect
+      assert_includes bad.first, "2026/08/25"
+      assert_includes bad.first, "garbage"
+      assert(result[:passes].any? { |p| p.include?("newest 2026-08-24") }, result.inspect)
+    end
+  end
+
   def test_check_stale_daily_podcast_trips_old_flag
     with_history(%w[2026-08-01 2026-08-02 2026-08-03 2026-08-04 2026-08-05]) do |config|
       result = validate(config, Date.new(2026, 8, 25))

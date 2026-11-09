@@ -106,6 +106,30 @@ class TestR2Publisher < Minitest::Test
     assert_equal 1, tweets.length, "should tweet the one new ep"
   end
 
+  # A corrupt uploads.yml used to read as {}: every recent episode looked
+  # untweeted, the tweet went out, then the strict record raised — a
+  # duplicate tweet live and untracked, repeated every publish.
+  def test_tweets_corrupt_ledger_posts_nothing_and_names_the_file
+    ["[not: a: map", "- a\n- b\n"].each do |corrupt|
+      File.write(@uploads_path, corrupt)
+      seed_ep("ep-#{recent_date(1)}")
+      tweets = []
+      publisher = build_publisher(
+        config: stub_config(twitter_enabled: true),
+        runner: ->(*) { true },
+        twitter_agent: stub_twitter_agent(tweets)
+      )
+
+      result = nil
+      _out, err = capture_io { result = publisher.run }
+
+      assert_empty tweets, "no tweet may go out against an unreadable ledger (#{corrupt.inspect})"
+      assert_includes err, @uploads_path
+      assert_equal 0, result.tweets_posted
+      assert_equal corrupt, File.read(@uploads_path), "the corrupt ledger is never rewritten"
+    end
+  end
+
   def test_does_not_tweet_when_twitter_disabled
     seed_ep("ep-#{recent_date(1)}")
     config = stub_config(twitter_enabled: false)

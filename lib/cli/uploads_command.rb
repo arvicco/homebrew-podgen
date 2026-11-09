@@ -162,7 +162,7 @@ module PodgenCLI
             # only; a step that fails again would otherwise be retried every
             # round and spend quota each time.
             result = run_yt_for(pod, max: 1, finish_owed: !owed_tried[pod])
-            owed_tried[pod] = true
+            owed_tried[pod] = true unless result.errors.any? { |e| e[:type] == :publisher_crash } # a crash tried nothing
             per_pod[pod][:uploaded] += result.uploaded
             per_pod[pod][:errors] += result.errors.length
             remaining -= result.uploaded if remaining
@@ -281,7 +281,7 @@ module PodgenCLI
       episodes = mp3_basenames_with_transcripts(episodes_dir)
       owed = tracker.pending_steps(:youtube, playlist, strict: true).keys.count { |b| uploaded.key?(b) }
       episodes.count { |b| !uploaded.key?(b) } + owed
-    rescue => e # skippable: the pod's YT phase is skipped; the status board names the corrupt file too
+    rescue RuntimeError => e # skippable (YamlLoader's strict-read error only): the pod's YT phase is skipped; the status board names the corrupt file too
       warning = "uploads: uploads ledger unreadable, counting 0 pending: #{e.message}"
       unless @warnings.include?(warning)
         @warnings << warning

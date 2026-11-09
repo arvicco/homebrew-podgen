@@ -97,6 +97,7 @@ class UploadTracker
         changed = true if entries.delete(base_name)
       end
     end
+    prune_empty_pending(tracking)
     save(tracking) if changed
     changed
   end
@@ -114,6 +115,7 @@ class UploadTracker
         changed = true
       end
     end
+    prune_empty_pending(tracking)
     save(tracking) if changed
     changed
   end
@@ -143,6 +145,17 @@ class UploadTracker
   end
 
   private
+
+  # A *_pending key goes once nothing is owed (as mark_pending leaves it):
+  # drop emptied groups, then the key itself.
+  def prune_empty_pending(tracking)
+    tracking.each_key.select { |k| k.end_with?(PENDING_SUFFIX) }.each do |key|
+      groups = tracking[key]
+      next unless groups.is_a?(Hash)
+      groups.delete_if { |_group, entries| entries.is_a?(Hash) && entries.empty? }
+      tracking.delete(key) if groups.empty?
+    end
+  end
 
   def normalize_keys(data)
     data.transform_keys(&:to_s).transform_values do |groups|
