@@ -56,6 +56,17 @@ class TestTitleMatch < Minitest::Test
     assert TitleMatch.match?("Il lupo e il pastore 291", "Il lupo e il pastore")
   end
 
+  # P16-6: a one-sided number is a counter only as the title's final token
+  # within the compared stem; a chapter number past the stem is a part.
+  def test_match_chapter_number_past_the_stem_does_not_match_unnumbered
+    refute TitleMatch.match?("Pinocchio. Introduzione", "Pinocchio. Capitolo 1")
+    refute TitleMatch.match?("Pinocchio. Capitolo 1", "Pinocchio. Introduzione")
+  end
+
+  def test_match_one_sided_number_not_final_does_not_match
+    refute TitleMatch.match?("Il lupo e il pastore", "Il lupo e il pastore 2 e la volpe")
+  end
+
   def test_match_part_numbers_on_both_sides_still_distinct
     refute TitleMatch.match?("Part 1", "Part 2")
   end

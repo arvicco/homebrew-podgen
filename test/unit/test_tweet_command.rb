@@ -120,6 +120,30 @@ class TestTweetCommand < Minitest::Test
     assert_includes err, "Already tweeted"
   end
 
+  # A corrupt uploads.yml used to read as {}: the episode looked untweeted,
+  # the tweet went out, then the strict record raised — a duplicate tweet
+  # live and untracked.
+  def test_corrupt_ledger_posts_nothing_and_names_the_file
+    require "agents/twitter_agent"
+    create_episode("twpod-2026-03-15")
+    tracker_path = File.join(@tmpdir, "output", "twpod", "uploads.yml")
+    File.write(tracker_path, "[not: a: map")
+    posts = []
+    fake = Object.new
+    fake.define_singleton_method(:expand_template) { |*_, **_| "text" }
+    fake.define_singleton_method(:post_episode) do |**kw|
+      posts << kw
+      "tw_dup"
+    end
+
+    code, _, err = TwitterAgent.stub(:new, fake) { run_cli("tweet", "twpod", "2026-03-15") }
+
+    assert_empty posts, "no tweet may go out against an unreadable ledger"
+    assert_equal 1, code
+    assert_includes err, tracker_path
+    assert_equal "[not: a: map", File.read(tracker_path), "the corrupt ledger is never rewritten"
+  end
+
   private
 
   def create_episode(base_name)

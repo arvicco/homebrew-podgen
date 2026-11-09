@@ -42,7 +42,7 @@ module Transcription
     private
 
     def call_api(system, user_content)
-      with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError]) do
+      with_retries(max: MAX_RETRIES, on: ANTHROPIC_RETRIABLE, reraise: true) do
         message, elapsed = measure_time do
           @client.messages.create(
             model: @model,

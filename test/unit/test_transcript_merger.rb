@@ -87,7 +87,36 @@ class TestTranscriptMerger < Minitest::Test
     assert_raises(RuntimeError) { reconciler.cleanup("some text") }
   end
 
+  # A 401 never heals on a retry: one call, the SDK class intact for the
+  # caller that logs class + message (P16-3).
+  def test_cleanup_authentication_error_not_retried_class_kept
+    reconciler = build_reconciler
+    error = Anthropic::Errors::AuthenticationError.new(url: URI("https://api.anthropic.com/v1/messages"),
+      status: 401, headers: {}, body: nil, request: nil, response: nil, message: "invalid x-api-key")
+    calls = fail_client(reconciler, error)
+
+    assert_raises(Anthropic::Errors::AuthenticationError) { reconciler.cleanup("some text") }
+    assert_equal 1, calls.call
+  end
+
+  def test_cleanup_connection_error_given_up_keeps_class
+    reconciler = build_reconciler
+    calls = fail_client(reconciler, Anthropic::Errors::APIConnectionError.new(url: nil, request: nil))
+
+    assert_raises(Anthropic::Errors::APIConnectionError) { reconciler.cleanup("some text") }
+    assert_equal 4, calls.call
+  end
+
   private
+
+  def fail_client(reconciler, error)
+    calls = 0
+    client = Object.new
+    client.define_singleton_method(:messages) { self }
+    client.define_singleton_method(:create) { |**| (calls += 1) && raise(error) }
+    reconciler.instance_variable_set(:@client, client)
+    -> { calls }
+  end
 
   def build_reconciler(language: "Slovenian")
     reconciler = Transcription::TranscriptMerger.new(language: language)

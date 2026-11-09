@@ -108,6 +108,23 @@ class TestScriptReviewer < Minitest::Test
     assert_includes corrected[:segments].first[:text], "Wednesday, November 4"
   end
 
+  # P16-5: a date about six months from the run date may be meant for
+  # either year — reported, never rewritten.
+  def test_check_weekday_far_from_run_date_reported_not_auto_fixed
+    text = "Friday, January 1, and the new rules take effect."
+    script = make_script(opening: text)
+    reviewer = build_reviewer(date: Date.new(2026, 7, 1))
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    weekday_issues = issues.select { |i| i[:check] == "weekday" }
+    assert_equal 1, weekday_issues.length
+    refute weekday_issues.first[:auto_fixed]
+    assert_equal ScriptReviewer::WARNING, weekday_issues.first[:severity]
+    assert_includes weekday_issues.first[:message], "Friday, January 1"
+    assert_equal text, corrected[:segments].first[:text]
+  end
+
   def test_check_weekday_does_not_mutate_original
     script = make_script(opening: "Saturday, April 7th, and Bitcoin is up.")
     original_text = script[:segments].first[:text].dup
@@ -277,7 +294,8 @@ class TestScriptReviewer < Minitest::Test
   def test_check_stage_directions_timed_and_adverb_parens_removed
     [
       "(two-second pause)", "(3-second pause)", "(3 second pause)",
-      "(laughs softly)", "(sighs heavily)", "(pause for effect)", "(Pause.)"
+      "(laughs softly)", "(sighs heavily)", "(pause for effect)", "(Pause.)",
+      "(laughs warmly)", "(soft laugh)", "(quiet laugh)", "(pregnant pause)", "(momentary pause)"
     ].each do |direction|
       script = make_script(segments: [
         { name: "Segment 1", text: "Markets rose. #{direction} Then they fell." }
@@ -331,6 +349,63 @@ class TestScriptReviewer < Minitest::Test
     corrected, _ = reviewer.run_deterministic_checks(script)
 
     assert_equal "Rates held steady. Then the market moved.", corrected[:segments].first[:text]
+  end
+
+  # P16-5: a standalone direction after a sentence-ending closing quote or
+  # an ellipsis is a sentence start too.
+  def test_check_stage_directions_phrase_after_quote_or_ellipsis_removed
+    {
+      %(The chair said "we wait." Long pause. Then the market moved.) =>
+        %(The chair said "we wait." Then the market moved.),
+      "The chair said \u201cwe wait.\u201d Long pause. Then the market moved." =>
+        "The chair said \u201cwe wait.\u201d Then the market moved.",
+      "Rates held\u2026 Long pause. Then the market moved." =>
+        "Rates held\u2026 Then the market moved."
+    }.each do |text, expected|
+      script = make_script(segments: [{ name: "Opening", text: text }])
+      corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+      assert_equal 1, issues.count { |i| i[:check] == "stage_direction" }, text
+      assert_equal expected, corrected[:segments].first[:text]
+    end
+  end
+
+  # CRPR round 1 (P16-5): a direction phrase that opens a dash clause is
+  # content; the quote anchor never reaches past it.
+  def test_check_stage_directions_phrase_after_quote_then_dash_kept
+    text = %(The chair said "we wait." Long pause — the Fed's sixth — ended.)
+    script = make_script(segments: [{ name: "Opening", text: text }])
+    corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+    assert_empty issues.select { |i| i[:check] == "stage_direction" }
+    assert_equal text, corrected[:segments].first[:text]
+  end
+
+  # P16-5: a parenthetical is a direction only when every token is a cue,
+  # a duration/modifier or a listed adverb; content holding a cue word stays.
+  def test_check_stage_directions_content_parentheticals_with_cue_word_kept
+    [
+      "(pause likely)", "(Q3 beat)", "(EPS beat)", "(rate pause)",
+      "(the long wait)", "(beat weekly)"
+    ].each do |paren|
+      text = "Markets rose #{paren} this quarter."
+      script = make_script(segments: [{ name: "Segment 1", text: text }])
+      corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+      assert_empty issues.select { |i| i[:check] == "stage_direction" }, paren
+      assert_equal text, corrected[:segments].first[:text], paren
+    end
+  end
+
+  def test_check_stage_directions_listed_adverb_parens_removed
+    %w[softly heavily quietly nervously briefly].each do |adverb|
+      script = make_script(segments: [
+        { name: "Segment 1", text: "Markets rose. (laughs #{adverb}) Then they fell." }
+      ])
+      corrected, _ = build_reviewer.run_deterministic_checks(script)
+
+      assert_equal "Markets rose. Then they fell.", corrected[:segments].first[:text], adverb
+    end
   end
 
   def test_check_stage_directions_clean_text_no_issue

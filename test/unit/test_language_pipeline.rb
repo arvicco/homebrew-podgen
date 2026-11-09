@@ -1296,6 +1296,49 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal ["bad_input"], rows.map { it["reason"] }
   end
 
+  # A --snip that removes everything can never be satisfied at the
+  # skip/cut prompt: it used to take three rounds, then exclude the URL
+  # for what was a CLI typo. Now it fails the run before asking.
+  def test_ask_trim_snip_covering_everything_fails_before_asking_and_excludes_nothing
+    pipeline, _source = build_listening_pipeline(options: { ask_trim: true, snip: SnipInterval.parse("0-end") })
+
+    error = assert_raises(AudioTrimmer::NothingKept) do
+      run_listening_trim(pipeline, [-> { flunk "no prompt may be asked" }], duration: 302.0)
+    end
+
+    assert_includes error.message, "snip"
+    refute File.exist?(@config.excluded_urls_path), "a CLI typo excludes nothing"
+    refute File.exist?(File.join(archive_root, "rejected.yml")), "nothing was listened to and rejected"
+  end
+
+  # A hand-edited sidecar value used to raise outside recorded_trim's
+  # rescue and fail the run; it is a counted warning, prompts as without.
+  def test_ask_trim_unreadable_recorded_value_warns_and_prompts_as_without_a_record
+    pipeline, _source = build_listening_pipeline
+    write_recorded_trim(audio_url: LISTEN_URL, skip: "abc")
+
+    _result, seen = run_listening_trim(pipeline, ["r\n", "29\n", "\n"], duration: 302.0)
+
+    refute_includes seen[:stderr], "Recorded for this episode"
+    assert_in_delta 29.0, seen[:skip], 0.001, "r is not offered: re-asked"
+    assert_nil seen[:cut]
+  end
+
+  # The hint is the record's own values: not the current run's snip, and a
+  # blank cut prints no cut (it used to read "cut 0.0s").
+  def test_ask_trim_recorded_hint_shows_only_the_records_values
+    pipeline, _source = build_listening_pipeline(options: { ask_trim: true, snip: SnipInterval.parse("1:00-1:10") })
+    write_recorded_trim(audio_url: LISTEN_URL, skip: 29.0, cut: nil)
+
+    _result, seen = run_listening_trim(pipeline, ["29\n", "\n"], duration: 302.0)
+
+    hint = seen[:stderr].lines.find { it.include?("Recorded for this episode") }
+    refute_nil hint, seen[:stderr]
+    assert_includes hint, "skip 29.0s"
+    refute_includes hint, "cut"
+    refute_includes hint, "snip"
+  end
+
   def fake_gets_from(inputs)
     queue = inputs.dup
     -> { queue.shift }
@@ -1517,12 +1560,12 @@ class TestLanguagePipeline < Minitest::Test
   end
 
   def test_ask_trim_nothing_kept_message_names_the_snip
-    snip = SnipInterval.parse("0:00-end")
+    snip = SnipInterval.parse("0:00-1:00")
     pipeline, _source = build_listening_pipeline(options: { ask_trim: true, snip: snip })
 
-    _result, seen = run_listening_trim(pipeline, ["\n", "\n", "\n", "\n", "\n", "\n"], duration: 302.0)
+    _result, seen = run_listening_trim(pipeline, ["700\n", "\n"] * 3, duration: 302.0)
 
-    assert_includes seen[:stderr], "+ snip 0-end leave nothing"
+    assert_includes seen[:stderr], "+ snip 0-1:00 leave nothing"
   end
 
   private

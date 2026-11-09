@@ -158,6 +158,36 @@ class TestBaseSource < Minitest::Test
     assert_equal 2, calls
   end
 
+  # --- post_json (P16-4): the POST sibling with the same transient retries ---
+
+  def test_post_json_503_retried_then_succeeds
+    source = ConcreteSource.new
+    source.define_singleton_method(:sleep) { |_| }
+    responses = [FakeResponse.new(503, nil), FakeResponse.new(200, { "ok" => true })]
+    sent = []
+    post = lambda do |url, **kw|
+      sent << [url, kw]
+      responses.shift
+    end
+    HTTParty.stub(:post, post) do
+      body = source.send(:post_json, "https://example.com/api", body: "{}", headers: { "A" => "b" })
+      assert_equal({ "ok" => true }, body)
+    end
+    assert_equal 2, sent.length
+    assert_equal ["https://example.com/api", { body: "{}", headers: { "A" => "b" }, timeout: 15 }], sent.first
+  end
+
+  def test_post_json_401_one_request_runtime_error
+    source = ConcreteSource.new
+    source.define_singleton_method(:sleep) { |_| }
+    calls = 0
+    HTTParty.stub(:post, ->(*_a, **_k) { (calls += 1) && FakeResponse.new(401, nil) }) do
+      err = assert_raises(RuntimeError) { source.send(:post_json, "https://example.com/api", body: "{}") }
+      assert_equal "HTTP 401 from ConcreteSource", err.message
+    end
+    assert_equal 1, calls
+  end
+
   # --- empty_results ---
 
   def test_empty_results_preserves_topics

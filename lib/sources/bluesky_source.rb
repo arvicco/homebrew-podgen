@@ -20,7 +20,12 @@ class BlueskySource < BaseSource
   def research(topics, exclude_urls: Set.new)
     return empty_results(topics) unless available?
 
-    authenticate!
+    begin
+      authenticate!
+    rescue => e # skippable: one source down; the other sources still feed research
+      log_warning("Bluesky authentication failed: #{e.class}: #{e.message}")
+      return empty_results(topics)
+    end
     super
   end
 
@@ -31,19 +36,18 @@ class BlueskySource < BaseSource
   end
 
   def authenticate!
-    response = HTTParty.post(
+    session = post_json(
       "#{PDS_HOST}#{SESSION_ENDPOINT}",
       headers: { "Content-Type" => "application/json" },
-      body: { identifier: @handle, password: @app_password }.to_json,
-      timeout: 15
+      body: { identifier: @handle, password: @app_password }.to_json
     )
 
-    unless response.success?
-      error = response.parsed_response
-      raise "Bluesky auth failed: #{error['message'] || response.code}"
-    end
+    # A 200 without a usable token (a JSON body missing accessJwt, or an
+    # HTML page parsed to a String) is a failed login, not a session.
+    token = session["accessJwt"] if session.is_a?(Hash)
+    raise "no accessJwt in the Bluesky session response" unless token.is_a?(String) && !token.empty?
 
-    @access_token = response.parsed_response["accessJwt"]
+    @access_token = token
     log("Authenticated as #{@handle}")
   end
 
@@ -86,7 +90,7 @@ class BlueskySource < BaseSource
       }
     end.first(RESULTS_PER_TOPIC)
   rescue => e # skippable: one source down; the other sources still feed research
-    log("Failed to search Bluesky for '#{topic}': #{e.class}: #{e.message}")
+    log_warning("Failed to search Bluesky for '#{topic}': #{e.class}: #{e.message}")
     []
   end
 

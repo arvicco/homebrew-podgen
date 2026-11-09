@@ -453,13 +453,20 @@ module PodgenCLI
       duration = AudioAssembler.new(logger: logger).probe_duration(@source_audio_path)
       $stderr.puts "\nAudio downloaded: #{duration.round(1)}s (#{(duration / 60).to_i}:#{format('%04.1f', duration % 60)})"
       @source_duration = duration
+      # A --snip that removes everything leaves no skip/cut answer that
+      # could work: a CLI typo fails the run, the candidate is not excluded.
+      if @options[:snip] && AudioTrimmer.keep_segments(duration, skip: nil, cut: nil, snip: @options[:snip]).empty?
+        message = "snip #{@options[:snip]} leaves nothing of #{duration.round(1)}s"
+        $stderr.puts "#{message} — fix --snip and run again"
+        raise AudioTrimmer::NothingKept, message
+      end
       $stderr.puts "Opening QuickTime preview — auto-plays in front; scrub, read min:sec; prompt is ready now:"
       start_preview(@source_audio_path)
 
       # The same episode listened to before (a failed run, a regen): its
       # kept pair can be reused with one answer.
       rec = recorded_trim
-      $stderr.puts "Recorded for this episode: #{trim_pair_text(*recorded_pair(rec))} — r to reuse both" if rec
+      $stderr.puts "Recorded for this episode: #{recorded_hint(*rec)} — r to reuse both" if rec
 
       # A pair that removes everything is asked again (the trimmer would
       # refuse it); TRIM_ATTEMPTS such pairs take the bad-input path.
@@ -467,7 +474,7 @@ module PodgenCLI
         @listening_prompt = "skip"
         skip = ask_time_value("skip intro", reuse: !rec.nil?)
         if skip == :reuse
-          skip, cut = recorded_pair(rec)
+          skip, cut = rec
         else
           return trim_exclusion(skip) if skip.is_a?(Symbol)
 
@@ -492,11 +499,22 @@ module PodgenCLI
       @options[:snip] ? "#{text} + snip #{@options[:snip]}" : text
     end
 
-    # The archived pair for this episode, or nil; a sidecar that cannot be
-    # read is a counted warning, never a failed run (the archive is a side
-    # record, like its writes).
+    # The record's own pair, without this run's snip; a blank value prints
+    # nothing (a blank cut is no cut, not "cut 0.0s").
+    def recorded_hint(skip, cut)
+      parts = []
+      parts << "skip #{skip.to_f.round(1)}s" if skip
+      parts << "cut #{cut.absolute? ? "at " : ""}#{cut.to_f.round(1)}s" if cut
+      parts.empty? ? "no skip, no cut" : parts.join(" + ")
+    end
+
+    # The archived [skip, cut] pair for this episode, or nil; a sidecar that
+    # cannot be read (or holds a value that is no time) is a counted
+    # warning, never a failed run (the archive is a side record, like its
+    # writes).
     def recorded_trim
-      listening_archive.recorded(@config.episode_basename(@today), audio_url: @episode[:audio_url])
+      rec = listening_archive.recorded(@config.episode_basename(@today), audio_url: @episode[:audio_url])
+      rec && recorded_pair(rec)
     rescue => e # skippable: the archive is a side record; the prompts proceed as without one
       archive_failed(e, action: "read")
       nil

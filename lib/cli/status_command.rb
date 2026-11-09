@@ -76,7 +76,7 @@ module PodgenCLI
     UPLOAD_CONDITIONS = {
       /not authorized/i => "YouTube not authorized",
       /uploadLimitExceeded|quotaExceeded/ => QUOTA_CONDITION,
-      /uploading without subtitles|uploaded without captions/ => "YouTube uploaded without captions"
+      /uploaded without captions/ => "YouTube uploaded without captions" # printed only once the video is up
     }.freeze
     # Catching up (P10-3): in the batch's stdout (logs/uploads_stdout.log)
     # each batch opens one block ("uploads: <mode> mode across ...") whose

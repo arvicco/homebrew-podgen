@@ -123,6 +123,38 @@ class TestUploadTracker < Minitest::Test
     assert_equal 200, data["lingq"]["12345"]["ep-2026-03-02"]
   end
 
+  # The pending marker's key goes once nothing is owed; remove used to
+  # leave an empty group behind (youtube_pending: {PLabc: {}}).
+  def test_remove_last_owed_base_drops_the_pending_key
+    @tracker.record(:youtube, "PLabc", "ep-2026-03-01", "vid123")
+    @tracker.mark_pending(:youtube, "PLabc", "ep-2026-03-01", %w[captions])
+
+    @tracker.remove("ep-2026-03-01")
+
+    raw = YAML.safe_load_file(@path)
+    refute raw.key?("youtube_pending"), "no empty pending group is left: #{raw.inspect}"
+  end
+
+  def test_remove_keeps_other_owed_bases
+    @tracker.record(:youtube, "PLabc", "ep-2026-03-01", "vid1")
+    @tracker.record(:youtube, "PLabc", "ep-2026-03-02", "vid2")
+    @tracker.mark_pending(:youtube, "PLabc", "ep-2026-03-01", %w[captions])
+    @tracker.mark_pending(:youtube, "PLabc", "ep-2026-03-02", %w[playlist])
+
+    @tracker.remove("ep-2026-03-01")
+
+    assert_equal({"ep-2026-03-02" => %w[playlist]}, @tracker.pending_steps(:youtube, "PLabc"))
+  end
+
+  def test_rename_prunes_an_empty_pending_group
+    File.write(@path, YAML.dump("youtube" => {"PLabc" => {"ep-2026-03-01" => "vid1"}},
+      "youtube_pending" => {"PLabc" => {}}))
+
+    @tracker.rename("ep-2026-03-01", "ep-2026-03-05")
+
+    refute YAML.safe_load_file(@path).key?("youtube_pending")
+  end
+
   def test_remove_nonexistent_returns_false
     @tracker.record(:lingq, "12345", "ep-2026-03-01", 100)
     result = @tracker.remove("ep-9999-99-99")
