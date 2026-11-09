@@ -64,7 +64,9 @@ module PodgenCLI
       end
 
       tracker = UploadTracker.for_config(@config)
-      already = tracker.entries_for(:twitter, "posts")
+      # Strict read before posting: a corrupt ledger read as {} would re-tweet
+      # and the (strict) record would then fail to track it. --force skips it.
+      already = @options[:force] ? {} : tracker.entries_for(:twitter, "posts", strict: true)
       if already.key?(episode[:base_name]) && !@options[:force]
         $stderr.puts "Already tweeted: \"#{title}\" — use --force to re-tweet"
         return 1

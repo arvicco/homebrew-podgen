@@ -46,6 +46,8 @@ class TestEpisodeNaming < Minitest::Test
     end
     assert_nil EpisodeNaming.parse_date("pod-2026-02-30.mp3")
     assert_nil EpisodeNaming.parse_date("pod.mp3")
+    assert_nil EpisodeNaming.parse_date("pod-2026/10/5.mp3")
+    assert_nil EpisodeNaming.parse_date("pod-2026-13-45.mp3")
   end
 
   def test_matches_language_configured_table_matches_exactly_one_language

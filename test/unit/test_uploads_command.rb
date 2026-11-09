@@ -217,6 +217,29 @@ class TestUploadsCommand < Minitest::Test
     assert_equal [true], finish_flags["pod_b"]
   end
 
+  # A publisher crash tried nothing, so the owed steps are still untried.
+  def test_round_robin_publisher_crash_does_not_count_as_owed_steps_tried
+    finish_flags = Hash.new { |h, k| h[k] = [] }
+    pending = { "pod_a" => 1, "pod_b" => 2 }
+    crashed = false
+    cmd = stub_cmd(["pod_a,pod_b"])
+    cmd.define_singleton_method(:pending_count_for) { |pod| pending[pod] || 0 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, finish_owed: true|
+      finish_flags[pod] << finish_owed
+      if pod == "pod_a" && !crashed
+        crashed = true
+        next YouTubePublisher::Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+          errors: [{ type: :publisher_crash, error_class: "RuntimeError", message: "boom" }])
+      end
+      pending[pod] -= 1
+      YouTubePublisher::Result.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+    end
+
+    capture_io { cmd.send(:run_round_robin, %w[pod_a pod_b]) }
+
+    assert_equal [true, true], finish_flags["pod_a"], "a crashed round has not tried the owed steps"
+  end
+
   def test_round_robin_stops_when_max_reached
     yt_calls = []
     pending = { "pod_a" => 5, "pod_b" => 5 }
@@ -282,6 +305,18 @@ class TestUploadsCommand < Minitest::Test
 
     assert_equal 1, logs.length, logs.inspect
     assert_includes logs.first, path
+  end
+
+  # Only the strict ledger read's error means "ledger unreadable"; any
+  # other failure is not relabelled as one.
+  def test_yt_pending_count_non_loader_error_propagates
+    tracker = Object.new
+    tracker.define_singleton_method(:entries_for) { |*_a, **_kw| raise TypeError, "not a ledger problem" }
+    logs = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod], { log: ->(m) { logs << m } })
+
+    assert_raises(TypeError) { cmd.send(:yt_pending_count, tracker, "PL1", @tmpdir) }
+    assert_empty logs
   end
 
   def test_round_robin_skips_pod_with_no_pending_without_yt_call

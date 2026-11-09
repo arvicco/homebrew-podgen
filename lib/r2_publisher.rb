@@ -169,7 +169,7 @@ class R2Publisher
 
   def scan_eligible_episodes(cutoff, allowed_langs)
     episodes = scan_episodes
-    tweeted = tracker.entries_for(:twitter, "posts")
+    tweeted = tracker.entries_for(:twitter, "posts", strict: true) # a corrupt ledger read as {} would re-tweet everything
     episodes = episodes.reject { |ep| tweeted.key?(ep[:base_name]) }
 
     episodes.select! do |ep|
