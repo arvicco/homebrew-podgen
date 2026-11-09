@@ -40,7 +40,11 @@ module Validators
       return unless File.exist?(@config.history_path.to_s)
 
       entries = YamlLoader.load(@config.history_path, default: [])
+      @bad_dates = []
       dates = entries.filter_map { |e| parse_date(e["date"]) if e.is_a?(Hash) }.uniq.sort
+      unless @bad_dates.empty?
+        @warnings << "Freshness: history date(s) not YYYY-MM-DD, ignored: #{@bad_dates.uniq.first(3).join(", ")}"
+      end
       @newest = dates.last
       @age_days = (@today - @newest).to_i if @newest
       configured = @config.cadence_days
@@ -76,9 +80,15 @@ module Validators
       end
     end
 
+    # Strict YYYY-MM-DD (Date.parse also read "2026/10/5" and the like);
+    # a bad value is collected for the one-line warning in #check.
     def parse_date(value)
-      value && Date.parse(value.to_s)
+      return nil unless value
+      return value.to_date if value.respond_to?(:to_date)
+
+      Date.iso8601(value.to_s)
     rescue Date::Error
+      @bad_dates << value.to_s
       nil
     end
 
