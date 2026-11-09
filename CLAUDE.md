@@ -243,9 +243,12 @@ wall, ~1h 45m worked — API outage). Phase 15 (incident sweep: loudnorm
 analysis survives ffmpeg's truncated metadata echo, `--date` usage
 error, interactive trim flow defects, corrupt uploads.yml stops the
 YouTube batch before any upload, retry and spend hygiene, archived
-trim record replay) AT GATE 15 — adopted 2026-11-04 05:30 (option A
-of the Gate 14 slate, owner-reported Q-146/Q-147 first), all six
-packets landed, CRPR APPROVED after two rounds (refs/cr/reviewed =
-d471965); gate PR open, the owner merges. R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
+trim record replay) CLOSED 2026-11-09 15:35 CST (PR #17, merge 518f4bd;
+phase clock 48m). Phase 16 (residue sweep: Anthropic 4xx retries at
+the remaining four sites, strict ledger pre-read at the LingQ, R2 and
+tweet publishers, Bluesky authentication retry, YouTube owed-step
+residues, re-post counter rule, stage-direction residues, Phase 15
+small residues) EXECUTING since 2026-11-09 15:45 CST (option C of the
+Gate 15 slate). R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
 consent expires every 7 days while the OAuth app is in testing).
 Update this line at each gate.
