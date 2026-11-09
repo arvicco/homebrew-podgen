@@ -28,23 +28,38 @@ module TitleMatch
     (stem.length < MIN_STEM_CHARS) ? normalize(raw) : stem
   end
 
-  # A title's comparison key: its stem and the set of digit runs in the
-  # whole title (P10-0b: "Planeta Przyjaźni 1" and "… 2" are two parts).
-  Key = Data.define(:stem, :digits)
+  # A title's comparison key: its stem, the set of digit runs in the whole
+  # title (P10-0b: "Planeta Przyjaźni 1" and "… 2" are two parts), and
+  # whether those digits are a counter: one run that is the title's final
+  # token and the stem's ("Il lupo e il pastore 291"; not "Pinocchio.
+  # Capitolo 1", whose number lies past the stem, P16-6).
+  Key = Data.define(:stem, :digits, :counter)
 
-  def key(title) = Key.new(stem: stem(title), digits: title.to_s.scan(/\p{Nd}+/).to_set)
+  def key(title)
+    runs = title.to_s.scan(/\p{Nd}+/)
+    stem = stem(title)
+    last = normalize(runs.last) if runs.length == 1
+    counter = !last.nil? && normalize(title).split.last == last && stem.split.last == last
+    Key.new(stem: stem, digits: runs.to_set, counter: counter)
+  end
 
-  # No match when both titles carry digit runs and the runs differ (a
-  # counter on one side only, "… 291", is a re-post; Q-122); otherwise stems
-  # equal, or one a word-aligned prefix of the other with the shorter ≥
-  # MIN_PREFIX_CHARS, or token-set Jaccard ≥ JACCARD_THRESHOLD over tokens
-  # of ≥ MIN_TOKEN_LETTERS letters.
+  # No match when both titles carry digit runs and the runs differ, or when
+  # only one does and its digits are not a counter (a counter on one side
+  # only, "… 291", is a re-post; Q-122); otherwise stems equal, or one a
+  # word-aligned prefix of the other with the shorter ≥ MIN_PREFIX_CHARS,
+  # or token-set Jaccard ≥ JACCARD_THRESHOLD over tokens of ≥
+  # MIN_TOKEN_LETTERS letters.
   def match?(a, b) = keys_match?(key(a), key(b))
 
   # match? over precomputed keys (the selection guard keys history once).
-  def keys_match?(ka, kb) = !digits_conflict?(ka.digits, kb.digits) && stems_match?(ka.stem, kb.stem)
+  def keys_match?(ka, kb) = !digits_conflict?(ka, kb) && stems_match?(ka.stem, kb.stem)
 
-  def digits_conflict?(da, db) = !da.empty? && !db.empty? && da != db
+  def digits_conflict?(ka, kb)
+    return ka.digits != kb.digits unless ka.digits.empty? || kb.digits.empty?
+
+    numbered = ka.digits.empty? ? kb : ka
+    !numbered.digits.empty? && !numbered.counter
+  end
 
   def stems_match?(sa, sb)
     return false if sa.empty? || sb.empty?

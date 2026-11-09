@@ -119,7 +119,7 @@ module EpisodeNaming
     match = File.basename(filename).match(DATE_RE)
     return nil unless match
 
-    Date.parse(match[1])
+    Date.iso8601(match[1])
   rescue Date::Error
     nil
   end

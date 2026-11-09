@@ -56,7 +56,16 @@ class LingQPublisher
       return Result.new(uploaded: 0, attempted: 0, errors: [])
     end
 
-    uploaded_map = @options[:force] ? {} : tracker.entries_for(:lingq, collection)
+    # Strict read, before anything goes up: a corrupt ledger read as {}
+    # would make every episode look unuploaded and duplicate lessons that
+    # the (strict) record then fails to track.
+    begin
+      uploaded_map = @options[:force] ? {} : tracker.entries_for(:lingq, collection, strict: true)
+    rescue => e # fatal for this run: uploading against an unreadable ledger duplicates lessons
+      $stderr.puts "uploads ledger unreadable, uploading nothing: #{e.message}"
+      return Result.new(uploaded: 0, attempted: 0,
+                        errors: [{ type: :publisher_crash, error_class: e.class.name, message: e.message }])
+    end
     pending = episodes.reject { |ep| uploaded_map.key?(ep[:base_name]) }
 
     if pending.empty?

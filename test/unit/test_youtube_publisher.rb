@@ -657,6 +657,33 @@ class TestYouTubePublisher < Minitest::Test
     assert_empty second.errors
   end
 
+  # CRPR round 1 (P16-1): with nothing owed, finish_owed: false still prints
+  # the (true) all-done line.
+  def test_finish_owed_false_with_nothing_owed_reports_all_done
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    tracker = UploadTracker.new(@uploads_path)
+    tracker.record(:youtube, "default", base, "vid_done")
+
+    out, _err = capture_io { build_publisher(config: stub_config(youtube_enabled: true), uploader: stub_uploader, options: { finish_owed: false }).run }
+
+    assert_includes out, "All episodes already uploaded to YouTube"
+  end
+
+  # CRPR round 1 (P16-1): a 404 on the playlist step names the step; the
+  # marker is cleared like a missing video.
+  def test_finish_owed_playlist_404_names_the_step_and_clears_the_marker
+    base = seed_owed("ep-2026-01-15", "vid_pl", %w[playlist], group: "PL1")
+    gone = stub_uploader do |b|
+      b.add_to_playlist_with { |*| raise Google::Apis::ClientError.new("notFound", status_code: 404) }
+    end
+
+    _out, err = capture_io { build_publisher(config: stub_config(youtube_enabled: true, playlist: "PL1"), uploader: gone).run }
+
+    assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "PL1"))
+    assert_includes err, "#{base}: playlist step: video vid_pl or its target not found on YouTube"
+  end
+
   def test_finish_owed_false_leaves_owed_steps_for_a_later_run
     base = "ep-2026-01-15"
     seed_ep(base)
@@ -667,10 +694,71 @@ class TestYouTubePublisher < Minitest::Test
     tracker.mark_pending(:youtube, "default", base, %w[captions])
 
     healthy = stub_uploader
-    capture_io { build_publisher(config: config, uploader: healthy, options: { finish_owed: false }).run }
+    out, _err = capture_io { build_publisher(config: config, uploader: healthy, options: { finish_owed: false }).run }
 
     assert_empty healthy.captions_calls, "owed steps are skipped when the batch has already tried them this tick"
+    refute_includes out, "already uploaded", "a skipped owed step is not reported as all done"
     assert_equal({base => %w[captions]}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
+  end
+
+  # An owed step that can never succeed used to be retried every tick
+  # forever: the video removed by hand (404), the srt deleted (ENOENT),
+  # captions already on the video (409).
+  def test_finish_owed_video_gone_404_clears_the_marker_and_logs_once
+    base = seed_owed("ep-2026-01-15", "vid_gone", %w[captions])
+    gone = stub_uploader do |b|
+      b.upload_captions_with { |*| raise Google::Apis::ClientError.new("videoNotFound", status_code: 404) }
+    end
+
+    result = nil
+    _out, err = capture_io { result = build_publisher(config: stub_config(youtube_enabled: true), uploader: gone).run }
+
+    assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
+    assert_includes err, "#{base}: captions step: video vid_gone not found on YouTube"
+    assert_empty result.errors
+    refute_includes File.read(@uploads_path), "youtube_pending"
+
+    again = stub_uploader
+    capture_io { build_publisher(config: stub_config(youtube_enabled: true), uploader: again).run }
+    assert_empty again.captions_calls, "a cleared step is not retried"
+  end
+
+  def test_finish_owed_srt_missing_drops_captions_and_finishes_playlist
+    base = seed_owed("ep-2026-01-15", "vid_x", %w[captions playlist], group: "PLx")
+    uploader = stub_uploader do |b|
+      b.upload_captions_with { |_vid, path, **| raise Errno::ENOENT, path }
+    end
+
+    _out, err = capture_io { build_publisher(config: stub_config(youtube_enabled: true, playlist: "PLx"), uploader: uploader).run }
+
+    assert_equal [%w[vid_x PLx]], uploader.playlist_calls, "the later owed step still runs"
+    assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "PLx"))
+    assert_includes err, "#{base}: captions step dropped"
+  end
+
+  def test_finish_owed_captions_conflict_409_clears_the_marker
+    base = seed_owed("ep-2026-01-15", "vid_x", %w[captions])
+    uploader = stub_uploader do |b|
+      b.upload_captions_with { |*| raise Google::Apis::ClientError.new("captionExists", status_code: 409) }
+    end
+
+    _out, err = capture_io { build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader).run }
+
+    assert_equal({}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
+    assert_includes err, "#{base}: captions step dropped"
+  end
+
+  def test_finish_owed_transient_failure_keeps_the_marker
+    base = seed_owed("ep-2026-01-15", "vid_x", %w[captions])
+    uploader = stub_uploader do |b|
+      b.upload_captions_with { |*| raise Google::Apis::ServerError.new("backendError", status_code: 500) }
+    end
+
+    result = nil
+    capture_io { result = build_publisher(config: stub_config(youtube_enabled: true), uploader: uploader).run }
+
+    assert_equal({base => %w[captions]}, UploadTracker.new(@uploads_path).pending_steps(:youtube, "default"))
+    refute_empty result.errors
   end
 
   def test_playlist_failure_marks_pending_and_retry_runs_before_new_uploads
@@ -724,6 +812,31 @@ class TestYouTubePublisher < Minitest::Test
 
     assert(logger.lines.any? { |l| l.include?("uploading without subtitles") }, logger.lines.inspect)
     refute_includes err, "uploading without subtitles"
+  end
+
+  # The board keys "uploaded without captions" on a line printed only once
+  # the video is up; a failed upload prints none.
+  def test_upload_episode_without_srt_says_uploaded_without_captions_only_after_upload
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    config = stub_config(youtube_enabled: true)
+    config.transcription_engines = %w[groq]
+    failing = stub_uploader { |b| b.upload_video_raises RuntimeError.new("upload broke") }
+    ok = stub_uploader { |b| b.upload_video_returns "vid_nocap" }
+
+    _, failed_err = capture_io do
+      Transcription::EngineManager.stub(:new, ->(**) { raise "engine down" }) do
+        YouTubePublisher.new(config: config, uploader: failing, tracker_path: @uploads_path).upload_episode(ep_hash(base))
+      end
+    end
+    _, ok_err = capture_io do
+      Transcription::EngineManager.stub(:new, ->(**) { raise "engine down" }) do
+        YouTubePublisher.new(config: config, uploader: ok, tracker_path: @uploads_path).upload_episode(ep_hash(base))
+      end
+    end
+
+    refute_includes failed_err, "uploaded without captions"
+    assert_includes ok_err, "#{base}: uploaded without captions"
   end
 
   def test_reconciliation_failure_line_reaches_the_logger
@@ -815,6 +928,15 @@ class TestYouTubePublisher < Minitest::Test
       tracker_path: @uploads_path,
       episode_id: episode_id
     )
+  end
+
+  def seed_owed(base, video_id, steps, group: "default")
+    seed_ep(base)
+    File.write(File.join(@episodes_dir, "#{base}.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHi.\n")
+    tracker = UploadTracker.new(@uploads_path)
+    tracker.record(:youtube, group, base, video_id)
+    tracker.mark_pending(:youtube, group, base, steps)
+    base
   end
 
   def stub_uploader
