@@ -1312,7 +1312,56 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # A 401/400 never heals on a retry: one call, the SDK class intact for
+  # the caller that logs class + message (P16-3).
+  def test_classify_single_authentication_error_not_retried_class_kept
+    calls = fail_client(@annotator, anthropic_auth_error)
+
+    assert_raises(Anthropic::Errors::AuthenticationError) do
+      @annotator.send(:classify_single, "Ana je doma.", "Slovenian", "B1")
+    end
+    assert_equal 1, calls.call
+  end
+
+  def test_call_enrich_api_authentication_error_not_retried_class_kept
+    calls = fail_client(@annotator, anthropic_auth_error)
+
+    assert_raises(Anthropic::Errors::AuthenticationError) do
+      @annotator.send(:call_enrich_api, [{lemma: "dom"}], language: "Slovenian",
+        target_language: "English", filters: {})
+    end
+    assert_equal 1, calls.call
+  end
+
+  def test_classify_single_overloaded_given_up_keeps_class
+    error = Anthropic::Errors::InternalServerError.new(url: URI("https://api.anthropic.com/v1/messages"),
+      status: 529, headers: {}, body: nil, request: nil, response: nil, message: "overloaded")
+    calls = fail_client(@annotator, error)
+
+    assert_raises(Anthropic::Errors::InternalServerError) do
+      @annotator.send(:classify_single, "Ana je doma.", "Slovenian", "B1")
+    end
+    assert_equal 4, calls.call
+  end
+
   private
+
+  def anthropic_auth_error
+    Anthropic::Errors::AuthenticationError.new(url: URI("https://api.anthropic.com/v1/messages"),
+      status: 401, headers: {}, body: nil, request: nil, response: nil, message: "invalid x-api-key")
+  end
+
+  # Fake client raising +error+ on every create; sleeps stubbed. Returns a
+  # lambda reading the call count.
+  def fail_client(target, error)
+    target.define_singleton_method(:sleep) { |_| }
+    calls = 0
+    client = Object.new
+    client.define_singleton_method(:messages) { self }
+    client.define_singleton_method(:create) { |**| (calls += 1) && raise(error) }
+    target.instance_variable_set(:@client, client)
+    -> { calls }
+  end
 
   def stub_classify_empty(&block)
     stub_classify([], &block)

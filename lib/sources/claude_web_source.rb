@@ -32,7 +32,7 @@ class ClaudeWebSource < BaseSource
   end
 
   def call_api(topic)
-    with_retries(max: MAX_RETRIES, on: [Anthropic::Errors::APIError], label: source_name) do
+    with_retries(max: MAX_RETRIES, on: ANTHROPIC_RETRIABLE, label: source_name, reraise: true) do
       message, elapsed = measure_time do
         @client.messages.create(
           model: @model,
