@@ -118,8 +118,9 @@ class YouTubePublisher
     end
 
     if pending.empty? && unfinished.empty?
-      # finish_owed: false skipped any owed steps, so "all done" may be untrue.
-      puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless quiet? || @options[:finish_owed] == false
+      # finish_owed: false skipped owed steps of uploaded videos, so "all done" is untrue when any are owed.
+      owed_skipped = @options[:finish_owed] == false && owed_map.any? { |b, _| uploaded_map.key?(b) }
+      puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless quiet? || owed_skipped
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false, errors: [])
     end
 
@@ -320,7 +321,8 @@ class YouTubePublisher
       case finishing && settled_step_failure(e)
       when :video_gone
         tracker.mark_pending(:youtube, group, base, [])
-        say_err "  ⚠ #{base}: video #{video_id} not found on YouTube (#{e.class}); owed steps dropped (#{owed.join(", ")}), not retried"
+        what = (step == "playlist") ? "video #{video_id} or its target" : "video #{video_id}"
+        say_err "  ⚠ #{base}: #{step} step: #{what} not found on YouTube (#{e.class}); owed steps dropped (#{owed.join(", ")}), not retried"
         return :video_gone
       when :settled
         say_err "  ⚠ #{base}: #{step} step dropped (#{e.class}: #{e.message}), not retried"

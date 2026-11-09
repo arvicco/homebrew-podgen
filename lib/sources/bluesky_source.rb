@@ -42,7 +42,12 @@ class BlueskySource < BaseSource
       body: { identifier: @handle, password: @app_password }.to_json
     )
 
-    @access_token = session["accessJwt"]
+    # A 200 without a usable token (a JSON body missing accessJwt, or an
+    # HTML page parsed to a String) is a failed login, not a session.
+    token = session["accessJwt"] if session.is_a?(Hash)
+    raise "no accessJwt in the Bluesky session response" unless token.is_a?(String) && !token.empty?
+
+    @access_token = token
     log("Authenticated as #{@handle}")
   end
 
@@ -85,7 +90,7 @@ class BlueskySource < BaseSource
       }
     end.first(RESULTS_PER_TOPIC)
   rescue => e # skippable: one source down; the other sources still feed research
-    log("Failed to search Bluesky for '#{topic}': #{e.class}: #{e.message}")
+    log_warning("Failed to search Bluesky for '#{topic}': #{e.class}: #{e.message}")
     []
   end
 
