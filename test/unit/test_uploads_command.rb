@@ -307,6 +307,18 @@ class TestUploadsCommand < Minitest::Test
     assert_includes logs.first, path
   end
 
+  # Only the strict ledger read's error means "ledger unreadable"; any
+  # other failure is not relabelled as one.
+  def test_yt_pending_count_non_loader_error_propagates
+    tracker = Object.new
+    tracker.define_singleton_method(:entries_for) { |*_a, **_kw| raise TypeError, "not a ledger problem" }
+    logs = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod], { log: ->(m) { logs << m } })
+
+    assert_raises(TypeError) { cmd.send(:yt_pending_count, tracker, "PL1", @tmpdir) }
+    assert_empty logs
+  end
+
   def test_round_robin_skips_pod_with_no_pending_without_yt_call
     yt_calls = []
     pending = { "pod_a" => 0, "pod_b" => 1 }
