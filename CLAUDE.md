@@ -248,7 +248,8 @@ phase clock 48m). Phase 16 (residue sweep: Anthropic 4xx retries at
 the remaining four sites, strict ledger pre-read at the LingQ, R2 and
 tweet publishers, Bluesky authentication retry, YouTube owed-step
 residues, re-post counter rule, stage-direction residues, Phase 15
-small residues) EXECUTING since 2026-11-09 15:45 CST (option C of the
-Gate 15 slate). R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
+small residues) AT GATE 16 — adopted 2026-11-09 15:45 CST (option C of
+the Gate 15 slate), all seven packets landed, CRPR APPROVED after two
+rounds (refs/cr/reviewed = a446821); gate PR open, the owner merges. R12-01…06 open; R9-02 deferred to 11-12, R10-02 to 11-26; I-11 open (YouTube
 consent expires every 7 days while the OAuth app is in testing).
 Update this line at each gate.
