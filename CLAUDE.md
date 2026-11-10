@@ -252,12 +252,16 @@ small residues) CLOSED 2026-11-09 17:20 CST (PR #18, merge 9b02476;
 phase clock 39m). R12-01…06 ruled or withdrawn 2026-11-10 (0 open
 rulings; R9-02 returns 11-12, R10-02 11-26). Phase 17 (didactics:
 vocabulary section correctness and lemma identity, selection
-calibration, feed guid never reused with `isPermaLink="false"`,
-subtitle reconciler output cap and retries, rendering nits)
-AT GATE 17 — adopted 2026-11-09 18:30 CST (option B of the Gate 16
-slate), all six packets landed (P17-6 part (a) measured and
-contradicted, no change), CRPR APPROVED in one round (refs/cr/reviewed
-= ea7a467); gate PR open, the owner merges. I-11 open (YouTube consent expires every 7 days while the
-OAuth app is in testing); I-12 open (bajke-2026-11-06 raw subtitles,
-regen after this phase merges).
+calibration measured first, feed guid never reused with
+`isPermaLink="false"`, subtitle reconciler output cap and retries,
+rendering nits) CLOSED 2026-11-09 19:25 CST (PR #19, merge 19526df;
+phase clock 39m; I-12 closed by the post-merge regen). Phase 18
+(latent defects and the small sweep: sources/research defects,
+translate/voice drift, publish selection and exit code, translation
+request timeout, yield for the uploads batch, hygiene batch, Tell
+nits, Phase 17 residues, blocker-recall measurement, DRY packets)
+EXECUTING — adopted 2026-11-09 19:24 CST (options C+D of the Gate 17
+slate). 0 open rulings; R9-02 returns 11-12, R10-02 11-26. I-11:
+owner re-consented 2026-11-09 15:39 (expires ≈ 11-16 while the OAuth
+app is in testing).
 Update this line at each gate.
