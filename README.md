@@ -268,7 +268,8 @@ podgen publish lahko_noc --lingq --dry-run
 podgen publish lahko_noc --all
 podgen publish lahko_noc 2026-05-30 --all --force        # specific episode, force re-upload everywhere
 # The episode accepts the same date forms as voice/translate (YYYY-MM-DD[a-z],
-# YYYYMMDD, MM-DD, MMDD, DD = this month); it names exactly one day slot.
+# YYYYMMDD, MM-DD, MMDD, DD = this month) or a full basename (lahko_noc-2026-05-30a);
+# it names exactly one episode, and an id matching none fails the run (exit 1).
 
 # Run a component test
 podgen test hn
