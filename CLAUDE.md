@@ -37,8 +37,9 @@ in the public repo; git history + plan docs are the record.
    `phase-N` branches is allowed. Owner-only commands are enforced
    twice: settings.json denies and the dispatcher's `CLAUDECODE=1`
    refusal (owner override from the `!` prompt: `PODGEN_OWNER=1`).
-   While a production generate holds a run lock (or during the
-   16:25–17:10 launchd window) the loop YIELDS: no edits under lib/
+   While a production generate holds a run lock, the 10:30 batch
+   holds output/uploads.lock (P18-5), or during the 16:25–17:10 launchd
+   window, the loop YIELDS: no edits under lib/
    bin/ scripts/, no branch switches or merges — enforced by
    scripts/prod_guard.sh (P2-0).
 4. **Never change the frozen domain silently:** RSS/site output
@@ -260,8 +261,11 @@ phase clock 39m; I-12 closed by the post-merge regen). Phase 18
 translate/voice drift, publish selection and exit code, translation
 request timeout, yield for the uploads batch, hygiene batch, Tell
 nits, Phase 17 residues, blocker-recall measurement, DRY packets)
-EXECUTING — adopted 2026-11-09 19:24 CST (options C+D of the Gate 17
-slate). 0 open rulings; R9-02 returns 11-12, R10-02 11-26. I-11:
+AT GATE 18 — adopted 2026-11-09 19:24 CST (options C+D of the Gate 17
+slate), all ten packets landed (P18-9 tool only — no input to measure;
+P18-10 two candidates stopped), CRPR APPROVED after two rounds
+(refs/cr/reviewed = 7ed8ab9); gate PR open, the owner merges. R18-01
+open (retired guid after `move`). 0 open rulings; R9-02 returns 11-12, R10-02 11-26. I-11:
 owner re-consented 2026-11-09 15:39 (expires ≈ 11-16 while the OAuth
 app is in testing).
 Update this line at each gate.
