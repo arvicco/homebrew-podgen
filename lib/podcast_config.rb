@@ -69,6 +69,17 @@ class PodcastConfig
     @type ||= parser.podcast_section[:type] || parser.extract_heading("Type") || "news"
   end
 
+  PIPELINE_TYPES = %w[news language].freeze
+
+  # nil for a known pipeline type; else the message `podgen validate`
+  # reports as an error and generate refuses on — an unknown type must
+  # never run the (paid) news pipeline (Q-133).
+  def self.type_error(type)
+    return nil if PIPELINE_TYPES.include?(type)
+
+    "unknown type '#{type}' (known: #{PIPELINE_TYPES.join(", ")})"
+  end
+
   def description
     @description ||= parser.podcast_section[:description]
   end
@@ -213,7 +224,7 @@ class PodcastConfig
     parser.podcast_section[:freshness].to_s.strip.downcase != "off"
   end
 
-  DEFAULT_FRESHNESS_LEAD_DAYS = 3
+  DEFAULT_FRESHNESS_LEAD_DAYS = GuidelinesParser::DEFAULT_FRESHNESS_LEAD_DAYS
 
   # `- freshness_lead_days: N` in ## Podcast: episodes pre-generated up to N
   # days ahead of today are scheduled, not suspicious (default 3).

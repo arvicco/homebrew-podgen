@@ -282,6 +282,41 @@ class TestGenerateCommand < Minitest::Test
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-133 (P19-6): an unknown `type:` is an error in validate and generate
+  # refuses — never silently the paid news pipeline (today: `langauge` or
+  # `Language` runs news, no warning anywhere).
+  def test_unknown_type_is_a_validate_error_and_generate_refuses
+    require "podcast_validator"
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "typod")
+    FileUtils.mkdir_p(podcast_dir)
+    require "podcast_config"
+
+    %w[langauge Language].each do |type|
+      File.write(File.join(podcast_dir, "guidelines.md"), "## Podcast\n- type: #{type}\n## Format\nf\n## Tone\nt\n")
+      config = PodcastConfig.new("typod")
+
+      result = PodcastValidator.validate(config)
+      type_errors = result.errors.grep(/unknown type/)
+      assert_equal ["Guidelines: unknown type '#{type}' (known: news, language)"], type_errors, type
+      refute(result.passes.any? { it.start_with?("News:") }, "#{type}: news checks ran: #{result.passes.inspect}")
+
+      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :quiet})
+      cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil } # no network/tools if the refusal regresses
+      cmd.define_singleton_method(:preflight_network!) { |_| nil }
+      cmd.define_singleton_method(:run_language_pipeline) { raise "language pipeline ran for type #{type}" }
+      cmd.define_singleton_method(:generate_topics) { raise "news pipeline ran for type #{type}" }
+      code = nil
+      _, err = capture_io { code = cmd.run }
+
+      assert_equal 1, code, type
+      assert_includes err, "Error: guidelines.md: unknown type '#{type}' (known: news, language)"
+    end
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success

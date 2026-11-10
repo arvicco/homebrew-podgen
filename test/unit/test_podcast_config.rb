@@ -1109,6 +1109,29 @@ class TestPodcastConfig < Minitest::Test
     end
   end
 
+  # Q-133 (P19-6): a present-but-invalid value is a counted warning naming
+  # the key and the fallback (today: silent).
+  def test_parser_warnings_invalid_freshness_lead_days_names_key_and_default
+    write_guidelines("## Podcast\n- name: X\n- freshness_lead_days: soon\n")
+    assert_equal ["Podcast: freshness_lead_days 'soon' is not a whole number of days (0 or more); using the default 3"],
+      PodcastConfig.new("myshow").parser_warnings
+  end
+
+  def test_parser_warnings_invalid_cadence_days_names_key_and_fallback
+    %w[two 0 -3 2.5].each do |value|
+      write_guidelines("## Podcast\n- name: X\n- cadence_days: #{value}\n")
+      assert_equal ["Podcast: cadence_days '#{value}' is not a positive whole number of days; ignored, cadence is inferred from history"],
+        PodcastConfig.new("myshow").parser_warnings, value
+    end
+  end
+
+  def test_parser_warnings_valid_or_absent_freshness_and_cadence_are_silent
+    ["", "- freshness_lead_days: 0\n- cadence_days: 7\n"].each do |lines|
+      write_guidelines("## Podcast\n- name: X\n#{lines}")
+      assert_empty PodcastConfig.new("myshow").parser_warnings, lines
+    end
+  end
+
   def test_site_config_defaults_when_section_missing
     write_guidelines(<<~MD)
       ## Format

@@ -5,6 +5,8 @@ require_relative "time_value"
 # Parses guidelines.md sections into structured config hashes.
 # Extracted from PodcastConfig to isolate parsing logic.
 class GuidelinesParser
+  DEFAULT_FRESHNESS_LEAD_DAYS = 3 # PodcastConfig#freshness_lead_days
+
   def initialize(text, podcast_dir:)
     @text = text.gsub(/<!--.*?-->/m, "")
     @podcast_dir = podcast_dir
@@ -125,7 +127,7 @@ class GuidelinesParser
 
   # Extracts the body text under a ## heading, up to the next heading or EOF.
   def extract_section(heading)
-    match = @text.match(/^## #{Regexp.escape(heading)}\s*\n(.*?)(?=^## |\z)/m)
+    match = @text.match(/^## #{Regexp.escape(heading)}\s*(?:\n|\z)(.*?)(?=^## |\z)/m) # a heading at EOF needs no newline (Q-133)
     match ? match[1] : nil
   end
 
@@ -246,7 +248,21 @@ class GuidelinesParser
       end
     end
 
+    warn_invalid_day_counts(config)
     config
+  end
+
+  # PodcastConfig#freshness_lead_days falls back to the default and
+  # #cadence_days to nil on a present-but-invalid value; say so (Q-133).
+  def warn_invalid_day_counts(config)
+    if (lead = config[:freshness_lead_days]) && !Integer(lead.strip, 10, exception: false)&.>=(0)
+      @warnings << "Podcast: freshness_lead_days '#{lead}' is not a whole number of days (0 or more); " \
+        "using the default #{DEFAULT_FRESHNESS_LEAD_DAYS}"
+    end
+    if (cadence = config[:cadence_days]) && !Integer(cadence.strip, 10, exception: false)&.positive?
+      @warnings << "Podcast: cadence_days '#{cadence}' is not a positive whole number of days; " \
+        "ignored, cadence is inferred from history"
+    end
   end
 
   def parse_audio_section

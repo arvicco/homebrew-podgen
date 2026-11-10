@@ -33,6 +33,9 @@ module Validators
         end
       end
 
+      type_error = PodcastConfig.type_error(@config.type)
+      @errors << "Guidelines: #{type_error}" if type_error
+
       @config.parser_warnings.each { |w| @warnings << "Guidelines: #{w}" }
 
       if @config.type == "news" && File.exist?(@config.queue_path)

@@ -110,6 +110,11 @@ module PodgenCLI
       return code if code
 
       @config = load_config!
+      type_error = PodcastConfig.type_error(@config.type)
+      if type_error # never the paid news pipeline by default (Q-133)
+        $stderr.puts "Error: guidelines.md: #{type_error}"
+        return 1
+      end
       @config.ensure_directories!
       surface_guidelines_warnings(@config)
 
