@@ -86,7 +86,7 @@ class TestTellIcuPhonetic < Minitest::Test
   end
 
   def test_ukrainian_simple_strips_diacritics
-    scholarly = Tell::IcuPhonetic.transliterate("Привіт", lang: "uk", system: "scholarly")
+    _scholarly = Tell::IcuPhonetic.transliterate("Привіт", lang: "uk", system: "scholarly")
     simple = Tell::IcuPhonetic.transliterate("Привіт", lang: "uk", system: "simple")
     # Simple should be ASCII-only
     assert simple.bytes.all? { |b| b < 128 }, "Expected ASCII-only, got: #{simple}"

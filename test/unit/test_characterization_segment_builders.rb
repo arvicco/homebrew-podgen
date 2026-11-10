@@ -137,8 +137,8 @@ class TestCharacterizationSegmentBuilders < Minitest::Test
         [w("ビットコイン.", 0.0, 1.0), w("次", 1.0, 1.5)],
         [{start: 0.0, end: 1.0, text: "ビットコイン."}, {start: 1.0, end: 1.5, text: "次"}]
       ],
-      # Words are joined with a space even when the language does not use them.
-      # Language-aware joining is deferred (P4-3).
+      # Without a language code, words are joined with a space even when the
+      # language does not use them; ja/zh joining is pinned below (P18-6).
       non_latin_cjk_words_joined_with_space: [
         [w("日本", 0.0, 0.5), w("語", 0.5, 0.8)],
         [{start: 0.0, end: 0.8, text: "日本 語"}]
@@ -178,6 +178,26 @@ class TestCharacterizationSegmentBuilders < Minitest::Test
   end
 
   # --- DIVERGENT: the two implementations differ; both outputs pinned ---
+
+  # P18-6 (Q-137): language-aware joining behind the language code — ja/zh
+  # words join without spaces; every other language (and no language, the
+  # shared rows above) keeps the single space.
+  def test_build_segments_from_words_ja_zh_joined_without_spaces
+    words = [w("日本", 0.0, 0.5), w("語", 0.5, 0.8)]
+
+    assert_equal "日本語", TimestampPersister.build_segments_from_words(words, language: "ja").first[:text]
+    assert_equal "日本語", TimestampPersister.build_segments_from_words(words, language: "zh-CN").first[:text]
+    assert_equal "日本 語", TimestampPersister.build_segments_from_words(words, language: "sl").first[:text]
+    assert_equal "日本語", Transcription::ElevenlabsEngine.new(language: "ja").send(:build_segments_from_words, words).first[:text]
+  end
+
+  def test_extract_segments_words_fallback_passes_language
+    result = {words: [w("日本", 0.0, 0.5), w("語", 0.5, 0.8)]}
+
+    segments, _engine = TimestampPersister.extract_segments(result, engine_codes: ["elab"], language: "ja")
+
+    assert_equal "日本語", segments.first[:text]
+  end
 
   # D1: output shape. ELAB adds three whisper-style quality fields; TP does not.
   def test_build_segments_from_words_output_keys_divergent_between_implementations

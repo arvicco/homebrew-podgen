@@ -102,6 +102,43 @@ class TestYouTubeDownloader < Minitest::Test
     end
   end
 
+  # --- P18-6 (Q-137): temp names carry a random suffix, not the pid alone ---
+
+  YtStatus = Struct.new(:success?)
+
+  # Fake yt-dlp: writes the file its -o template names, with the given ext.
+  def fake_yt_dlp(ext, written)
+    ->(*args) {
+      path = args[args.index("-o") + 1].sub("%(ext)s", ext)
+      File.write(path, "x")
+      written << path
+      ["", "", YtStatus.new(true)]
+    }
+  end
+
+  def test_download_audio_two_calls_get_distinct_random_suffixed_paths
+    written = []
+    paths = Open3.stub(:capture3, fake_yt_dlp("mp3", written)) do
+      [build_downloader.download_audio("https://youtu.be/a"), build_downloader.download_audio("https://youtu.be/b")]
+    end
+
+    paths.each { |p| assert_match(/podgen_yt_#{Process.pid}_\h{8}\.mp3\z/, p) }
+    refute_equal paths[0], paths[1]
+  ensure
+    written&.each { |p| FileUtils.rm_f(p) }
+  end
+
+  def test_download_thumbnail_random_suffixed_path_found
+    written = []
+    path = Open3.stub(:capture3, fake_yt_dlp("jpg", written)) do
+      build_downloader.download_thumbnail("https://youtu.be/a")
+    end
+
+    assert_match(/podgen_thumb_#{Process.pid}_\h{8}\.jpg\z/, path)
+  ensure
+    written&.each { |p| FileUtils.rm_f(p) }
+  end
+
   private
 
   def build_downloader

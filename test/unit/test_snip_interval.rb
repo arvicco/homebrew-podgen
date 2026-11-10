@@ -296,7 +296,7 @@ class TestSnipInterval < Minitest::Test
     assert_in_delta 120.0, iv.to
   end
 
-  # --- merge_intervals (characterization, private; caller pre-sorts) ---
+  # --- merge_intervals (characterization, private; sorts its own input) ---
 
   def test_merge_intervals_overlapping_merged
     merged = empty_si.send(:merge_intervals, [iv(0, 10), iv(5, 15)])
@@ -323,15 +323,15 @@ class TestSnipInterval < Minitest::Test
     assert_equal [], empty_si.send(:merge_intervals, [])
   end
 
-  def test_merge_intervals_unsorted_input_swallows_earlier_interval
-    # Characterization: merge_intervals assumes sorted input (keep_segments
-    # sorts before calling). Given unsorted input, the second interval's
-    # from (0) is <= the first's to (15), so it is merged away entirely —
-    # the earlier [0,5] interval is silently lost.
+  def test_merge_intervals_unsorted_input_keeps_earlier_interval
+    # P18-6 (Q-137): merge_intervals sorts its own input. Unsorted, the
+    # earlier [0,5] interval used to be merged away into [10,15] and lost.
     merged = empty_si.send(:merge_intervals, [iv(10, 15), iv(0, 5)])
-    assert_equal 1, merged.length
-    assert_in_delta 10.0, merged[0].from
-    assert_in_delta 15.0, merged[0].to
+    assert_equal 2, merged.length
+    assert_in_delta 0.0, merged[0].from
+    assert_in_delta 5.0, merged[0].to
+    assert_in_delta 10.0, merged[1].from
+    assert_in_delta 15.0, merged[1].to
   end
 
   private

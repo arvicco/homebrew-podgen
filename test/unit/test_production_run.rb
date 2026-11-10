@@ -104,6 +104,33 @@ class TestProductionRun < Minitest::Test
       ProductionRun.yield_reason(output_root: @root, now: at("12:00"))
   end
 
+  # P18-5 (Q-128): the 10:30 uploads batch holds output/uploads.lock for its
+  # lifetime and loads YouTube code lazily — the yield covers it too.
+  def uploads_lock_path
+    path = File.join(@root, ProductionRun::UPLOADS_LOCK)
+    File.write(path, "") unless File.exist?(path)
+    path
+  end
+
+  def test_yield_reason_uploads_batch_held_names_batch
+    hold_lock(uploads_lock_path)
+
+    assert_equal "uploads batch active",
+      ProductionRun.yield_reason(output_root: @root, now: at("10:40"))
+  end
+
+  def test_yield_reason_uploads_lock_free_is_nil
+    uploads_lock_path
+
+    assert_nil ProductionRun.yield_reason(output_root: @root, now: at("10:40"))
+  end
+
+  def test_running_ignores_uploads_lock
+    hold_lock(uploads_lock_path)
+
+    assert_equal [], ProductionRun.running(output_root: @root)
+  end
+
   def test_yield_reason_inside_window_names_window
     assert_equal "launchd window 16:25–17:10",
       ProductionRun.yield_reason(output_root: @root, now: at("16:40"))

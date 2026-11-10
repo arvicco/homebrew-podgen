@@ -3,10 +3,13 @@
 require "json"
 require "time"
 require "fileutils"
+require "open3"
+require "tmpdir"
 require_relative "sources/bluesky_source"
 require_relative "sources/hn_source"
 require_relative "sources/x_source"
 require_relative "sources/claude_web_source"
+require_relative "transcription/elevenlabs_engine"
 
 # Records trimmed real responses of the network sources as test fixtures
 # (P1-10). NETWORK + OWNER-RUN only, via `rake fixtures:record`; never in the
@@ -16,7 +19,7 @@ class FixtureRecorder
   # printed verbatim (fetch errors may carry URLs or tokens — rule 8).
   class UnusableBody < StandardError; end
 
-  FIXTURE_DIR = File.join(__dir__, "..", "test", "fixtures", "sources")
+  FIXTURE_DIR = File.join(__dir__, "..", "test", "fixtures")
   README = File.join(__dir__, "..", "test", "fixtures", "README.md")
   KEEP = 3
   # A fixture needs real SHAPE, not recency: the live 48 h window returned
@@ -25,11 +28,15 @@ class FixtureRecorder
 
   # source => [fixture path relative to FIXTURE_DIR, env keys required]
   TARGETS = {
-    "hn" => ["hn/search_by_date.json", []],
-    "bluesky" => ["bluesky/search_posts.json", %w[BLUESKY_HANDLE BLUESKY_APP_PASSWORD]],
-    "x" => ["x/search.json", %w[SOCIALDATA_API_KEY]],
-    "claude_web" => ["claude_web/message.json", %w[ANTHROPIC_API_KEY]]
+    "hn" => ["sources/hn/search_by_date.json", []],
+    "bluesky" => ["sources/bluesky/search_posts.json", %w[BLUESKY_HANDLE BLUESKY_APP_PASSWORD]],
+    "x" => ["sources/x/search.json", %w[SOCIALDATA_API_KEY]],
+    "claude_web" => ["sources/claude_web/message.json", %w[ANTHROPIC_API_KEY]],
+    "elevenlabs_scribe" => ["transcription/elevenlabs_scribe_words.json", %w[ELEVENLABS_API_KEY]]
   }.freeze
+
+  # The P5-2b recording's clip: a short macOS `say` sentence (P18-6).
+  SCRIBE_CLIP_TEXT = "Hello there. This is a short test of the transcription service."
 
   def self.trim_hn(body)
     hits = Array(body["hits"]).first(KEEP).map { |h| h.reject { |k, _| k.start_with?("_") } }
@@ -73,8 +80,15 @@ class FixtureRecorder
     {"role" => body["role"], "stop_reason" => body["stop_reason"], "content" => content}
   end
 
+  # body: the Scribe speech-to-text response (word timestamps).
+  def self.trim_elevenlabs_scribe(body)
+    words = Array(body["words"]).map { |w| w.slice("text", "start", "end", "type", "logprob") }
+    body.slice("language_code", "language_probability", "text").merge("words" => words)
+  end
+
   # True when a trimmed body could not exercise the parse path: no items, or
-  # (claude_web) a truncated answer / no text block with citations.
+  # (claude_web) a truncated answer / no text block with citations, or
+  # (elevenlabs_scribe) no spoken word.
   def self.unusable?(name, trimmed)
     case name
     when "hn" then Array(trimmed["hits"]).empty?
@@ -83,14 +97,15 @@ class FixtureRecorder
     when "claude_web"
       trimmed["stop_reason"] != "end_turn" ||
         Array(trimmed["content"]).none? { |b| b["type"] == "text" && Array(b["citations"]).any? }
+    when "elevenlabs_scribe" then Array(trimmed["words"]).none? { |w| w["type"] == "word" }
     else false
     end
   end
 
-  # Replaces the recorded-at cell of the README row that registering `sources/<path>`.
+  # Replaces the recorded-at cell of the README row registering `<path>`.
   def self.stamp_readme(text, path, stamp)
     text.lines.map do |line|
-      next line unless line.start_with?("|") && line.include?("`sources/#{path}`")
+      next line unless line.start_with?("|") && line.include?("`#{path}`")
       cells = line.chomp.split("|", -1)
       cells[4] = " #{stamp} "
       "#{cells.join("|")}\n"
@@ -151,6 +166,18 @@ class FixtureRecorder
     message = src.send(:call_api, "Bitcoin ETF latest news")
     raise "no response" unless message
     self.class.trim_claude_web(JSON.parse(JSON.generate(message.to_h)))
+  end
+
+  # A macOS `say` clip of SCRIBE_CLIP_TEXT, transcribed in English through
+  # the engine's own request path (the fixture was an ad-hoc call before).
+  def fetch_elevenlabs_scribe
+    Dir.mktmpdir("scribe_fixture") do |dir|
+      clip = File.join(dir, "clip.m4a")
+      _out, _err, status = Open3.capture3("say", "-o", clip, "--data-format=aac", SCRIBE_CLIP_TEXT)
+      raise "say failed" unless status.success?
+      body = Transcription::ElevenlabsEngine.new(language: "en").send(:request_words, clip)
+      self.class.trim_elevenlabs_scribe(body)
+    end
   end
 
   private

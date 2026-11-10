@@ -86,7 +86,7 @@ class TestTellEngine < Minitest::Test
     glossers = { "claude-opus-4-6" => glosser_opus, "claude-sonnet-4-6" => glosser_sonnet }
     engine = Tell::Engine.new(@config, translator: @translator, glossers: glossers)
 
-    result = engine.run_gloss(:gloss, "dober dan", from: "sl", to: "en")
+    _result = engine.run_gloss(:gloss, "dober dan", from: "sl", to: "en")
 
     assert_equal [[:gloss, "dober dan"]], glosser_opus.calls
     assert_equal [[:gloss, "dober dan"]], glosser_sonnet.calls

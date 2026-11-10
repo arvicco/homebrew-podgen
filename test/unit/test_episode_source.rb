@@ -622,6 +622,24 @@ class TestEpisodeSource < Minitest::Test
     assert_equal ".flac", s.send(:audio_extension_for, { audio_url: "https://x.com/ep.flac", content_type: "audio/x-flac" })
   end
 
+  # P18-6 (Q-137): the downloaded source's temp name carries a random suffix,
+  # not the pid alone.
+  def test_download_audio_temp_path_random_suffixed
+    paths = []
+    fake = Object.new
+    fake.define_singleton_method(:download) { |_url, path| paths << path }
+    s = source(rss_feeds: ["https://example.com/feed"])
+
+    HttpDownloader.stub(:new, fake) do
+      Open3.stub(:capture3, ["", "", stub_status(false)]) do
+        2.times { s.send(:download_audio, {audio_url: "https://example.com/ep.mp3", content_type: "audio/mpeg"}) }
+      end
+    end
+
+    paths.each { |p| assert_match(/podgen_source_#{Process.pid}_\h{8}\.mp3\z/, p) }
+    refute_equal paths[0], paths[1]
+  end
+
   # --- probe_and_fix_extension ---
 
   def test_probe_and_fix_extension_renames_when_wrong

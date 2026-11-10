@@ -175,8 +175,11 @@ class AudioTrimmer
     word.downcase.gsub(/[^\p{L}\p{N}]/, "")
   end
 
-  # Fuzzy sequence match: all word pairs must match.
+  # Fuzzy sequence match: all word pairs must match. A candidate shorter
+  # than the target is no match (P18-6).
   def words_match?(target, candidate)
+    return false if candidate.size < target.size
+
     target.zip(candidate).all? { |a, b| word_match?(a, b) }
   end
 
