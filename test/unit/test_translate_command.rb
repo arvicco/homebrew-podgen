@@ -200,7 +200,6 @@ class TestTranslateCommand < Minitest::Test
   end
 
   def test_save_script_writes_markdown
-    cmd = build_command
     script = {
       title: "Translated Title",
       segments: [
@@ -209,7 +208,7 @@ class TestTranslateCommand < Minitest::Test
       ]
     }
     path = File.join(@episodes_dir, "output_script.md")
-    cmd.send(:save_script, script, path)
+    ScriptArtifact.save(path, script)
 
     content = File.read(path)
     assert_includes content, "# Translated Title"
@@ -221,7 +220,6 @@ class TestTranslateCommand < Minitest::Test
     # Regression: translate command was rendering markdown without links_config,
     # producing markdown inconsistent with generate command. Sources existed in
     # the JSON artifact but never made it into the rendered _script.md.
-    cmd = build_command
     script = {
       title: "T",
       segments: [
@@ -232,7 +230,7 @@ class TestTranslateCommand < Minitest::Test
     }
     path = File.join(@episodes_dir, "ep_script.md")
     links_config = { show: true, position: "inline", title: "Links", max: 5 }
-    cmd.send(:save_script, script, path, links_config: links_config)
+    ScriptArtifact.save(path, script, links_config: links_config)
 
     content = File.read(path)
     assert_includes content, "https://example.com/a", "expected source URL when links_config given"
@@ -240,7 +238,6 @@ class TestTranslateCommand < Minitest::Test
   end
 
   def test_save_script_omits_links_when_config_nil
-    cmd = build_command
     script = {
       title: "T",
       segments: [
@@ -250,13 +247,12 @@ class TestTranslateCommand < Minitest::Test
       sources: []
     }
     path = File.join(@episodes_dir, "ep2_script.md")
-    cmd.send(:save_script, script, path, links_config: nil)
+    ScriptArtifact.save(path, script, links_config: nil)
 
     refute_includes File.read(path), "https://example.com/a"
   end
 
   def test_save_script_creates_parent_directory
-    cmd = build_command
     script = {
       title: "Test Title",
       segments: [{ name: "Intro", text: "Hello." }]
@@ -264,10 +260,27 @@ class TestTranslateCommand < Minitest::Test
     nested = File.join(@tmpdir, "new_subdir", "deep")
     path = File.join(nested, "output_script.md")
 
-    cmd.send(:save_script, script, path)
+    ScriptArtifact.save(path, script)
 
     assert File.exist?(path)
     assert_includes File.read(path), "# Test Title"
+  end
+
+  # P18-10 pin: the saved pair is exactly the renderer's markdown (with the
+  # links config) and the artifact's pretty JSON.
+  def test_save_script_pair_bytes_pinned
+    script = {
+      title: "T",
+      segments: [{ name: "Open", text: "Hello.", sources: [{ url: "https://example.com/a", title: "A" }] }],
+      sources: []
+    }
+    links = { show: true, position: "inline" }
+    path = File.join(@tmpdir, "pin", "ep_script.md")
+    ScriptArtifact.save(path, script, links_config: links)
+
+    assert_equal ScriptRenderer.render(script, links_config: links), File.read(path)
+    assert_equal JSON.pretty_generate(ScriptArtifact.serialize(script)),
+      File.read(ScriptArtifact.json_path_for(path))
   end
 
   def test_parse_save_roundtrip
@@ -281,7 +294,7 @@ class TestTranslateCommand < Minitest::Test
 
     path = File.join(@episodes_dir, "roundtrip.md")
     cmd = build_command
-    cmd.send(:save_script, original, path)
+    ScriptArtifact.save(path, original)
     parsed = cmd.send(:parse_script, path)
 
     assert_equal original[:title], parsed[:title]

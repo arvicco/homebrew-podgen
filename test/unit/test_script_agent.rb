@@ -131,6 +131,19 @@ class TestScriptAgent < Minitest::Test
     assert_includes content, "Welcome"
   end
 
+  # P18-10 pin: the saved markdown + JSON pair is exactly the renderer's
+  # markdown and the artifact's pretty JSON.
+  def test_generate_saved_script_pair_bytes_pinned
+    agent = build_agent
+    stub_client(agent, title: "Episode 1", segments: [{ name: "Intro", text: "Welcome" }],
+                sources: [{ title: "S", url: "https://example.com/s" }])
+
+    result = agent.generate(valid_research_data)
+    assert_equal ScriptRenderer.render(result), File.read(@script_path)
+    assert_equal JSON.pretty_generate(ScriptArtifact.serialize(result)),
+                 File.read(ScriptArtifact.json_path_for(@script_path))
+  end
+
   def test_generate_raises_on_nil_parsed_output
     agent = build_agent
     stub_client(agent, nil_output: true)
