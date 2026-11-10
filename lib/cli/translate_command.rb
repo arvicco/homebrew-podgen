@@ -12,7 +12,8 @@ require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "voicer")
-require_relative File.join(root, "lib", "rss_generator")
+require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "script_artifact")
 require_relative File.join(root, "lib", "script_renderer")
 require_relative File.join(root, "lib", "legacy_script_parser")
@@ -99,10 +100,12 @@ module PodgenCLI
       intro_path = File.join(config.podcast_dir, "intro.mp3")
       outro_path = File.join(config.podcast_dir, "outro.mp3")
 
+      history = EpisodeHistory.new(config.history_path, excluded_urls_path: config.excluded_urls_path)
+
       pending.each_with_index do |item, idx|
         logger.phase_start("Translate #{item[:basename]} → #{item[:lang_code]}")
         begin
-          translate_episode(
+          output_path = translate_episode(
             script_path: item[:script_path],
             basename: item[:basename],
             lang_code: item[:lang_code],
@@ -115,10 +118,12 @@ module PodgenCLI
             outro_path: outro_path,
             podcast_title: config.title,
             author: config.author,
+            tts_model_id: config.tts_model_id,
             pronunciation_pls_path: config.pronunciation_pls_path,
             links_config: config.links_enabled? ? config.links_config : nil,
             logger: logger
           )
+          record_language_duration(history, item, output_path, logger)
           translated += 1
           logger.phase_end("Translate #{item[:basename]} → #{item[:lang_code]}")
           logger.log("Done (#{idx + 1}/#{pending.length})")
@@ -188,7 +193,20 @@ module PodgenCLI
       pending
     end
 
-    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, translator: nil, translation_model: nil, glossary: nil, pronunciation_pls_path: nil, links_config: nil, logger: nil)
+    # The translated mp3's own length, as `voice` records it (Q-123): the
+    # feed otherwise serves the primary duration for <base>-<code>.mp3.
+    def record_language_duration(history, item, output_path, logger)
+      history.record_language!(
+        basename: item[:basename],
+        language_code: item[:lang_code],
+        duration: AudioAssembler.probe_duration(output_path),
+        voiced_at: Time.now.iso8601
+      )
+    rescue => e # skippable: the audio is voiced; only the history entry is missing
+      logger.log("Note: history not updated (#{e.class}: #{e.message})")
+    end
+
+    def translate_episode(script_path:, basename:, lang_code:, voice_id:, episodes_dir:, intro_path:, outro_path:, podcast_title:, author:, translator: nil, translation_model: nil, glossary: nil, tts_model_id: nil, pronunciation_pls_path: nil, links_config: nil, logger: nil)
       script = parse_script(script_path)
 
       # Translate
@@ -212,11 +230,13 @@ module PodgenCLI
         voice_id: voice_id,
         title: lang_script[:title],
         author: author,
+        tts_model_id: tts_model_id,
         pronunciation_pls_path: pronunciation_pls_path,
         intro_path: intro_path,
         outro_path: outro_path,
         lang_code: lang_code
       )
+      output_path
     end
 
     def parse_script(path)
@@ -233,32 +253,7 @@ module PodgenCLI
     def regenerate_rss(config, logger)
       logger.log("Regenerating RSS feeds...")
 
-      # Convert markdown transcripts to HTML for podcast apps
-      RssGenerator.convert_transcripts(config.episodes_dir)
-
-      base_url = config.base_url
-      feed_paths = []
-
-      config.languages.each do |lang|
-        lang_code = lang["code"]
-        feed_path = File.join(File.dirname(config.feed_path), config.feed_file_name(lang_code))
-
-        generator = RssGenerator.new(
-          episodes_dir: config.episodes_dir,
-          feed_path: feed_path,
-          title: config.title,
-          description: config.description,
-          author: config.author,
-          language: lang_code,
-          languages: config.language_codes,
-          base_url: base_url,
-          image: config.image,
-          history_path: config.history_path,
-          logger: logger
-        )
-        generator.generate
-        feed_paths << feed_path
-      end
+      feed_paths = RssCommand.generate_feeds(config, base_url: config.base_url, logger: logger)
 
       feed_paths.each { |fp| logger.log("Feed: #{fp}") }
     end

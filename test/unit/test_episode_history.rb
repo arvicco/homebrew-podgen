@@ -288,6 +288,39 @@ class TestEpisodeHistory < Minitest::Test
     assert_equal 100.0, entry["languages"]["en"]["duration"]
   end
 
+  # Q-123 (P18-2): the feed reads the top-level duration for the primary
+  # mp3, so re-voicing the primary refreshes it too.
+  def test_record_language_primary_updates_top_level_duration
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: [], duration: 300.0, basename: "pod-2026-04-26",
+                     languages: { "en" => { "duration" => 300.0 } })
+
+    @history.record_language!(basename: "pod-2026-04-26", language_code: "en", duration: 250.0, primary: true)
+
+    entry = YAML.load_file(@history_path).first
+    assert_equal 250.0, entry["duration"]
+    assert_equal 250.0, entry["languages"]["en"]["duration"]
+    assert_equal %w[date title topics urls duration basename languages], entry.keys
+  end
+
+  def test_record_language_non_primary_leaves_top_level_duration
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: [], duration: 300.0, basename: "pod-2026-04-26")
+
+    @history.record_language!(basename: "pod-2026-04-26", language_code: "it", duration: 250.0)
+
+    assert_equal 300.0, YAML.load_file(@history_path).first["duration"]
+  end
+
+  # Key order is the frozen contract: a missing top-level duration is not
+  # appended after "languages".
+  def test_record_language_primary_without_top_level_duration_adds_no_key
+    @history.record!(date: Date.today, title: "Ep", topics: [], urls: [], basename: "pod-2026-04-26")
+
+    @history.record_language!(basename: "pod-2026-04-26", language_code: "en", duration: 250.0, primary: true)
+
+    entry = YAML.load_file(@history_path).first
+    assert_equal %w[date title topics urls basename languages], entry.keys
+  end
+
   def test_record_language_raises_when_basename_missing
     err = assert_raises(RuntimeError) {
       @history.record_language!(basename: "nonexistent", language_code: "jp")
