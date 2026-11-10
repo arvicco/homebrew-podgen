@@ -141,9 +141,12 @@ module Tell
       # Stem many words in one `hunspell -s` call: { word => [roots] }
       # (a word hunspell does not know has no entry).
       def stems_of(words, dict)
-        stdout, _, status = Open3.capture3("hunspell", "-d", dict, "-s",
-                                           stdin_data: words.join("\n"))
-        return {} unless status.success?
+        stdout, stderr, status = Open3.capture3("hunspell", "-d", dict, "-s",
+                                                stdin_data: words.join("\n"))
+        unless status.success?
+          $stderr.puts "warn: hunspell -s failed (#{dict}): #{stderr.to_s.lines.first.to_s.strip} — verb forms kept to the lemma"
+          return {}
+        end
 
         stdout.lines.each_with_object(Hash.new { |h, k| h[k] = [] }) do |line, map|
           word, root = line.strip.split(/\s+/, 2)
