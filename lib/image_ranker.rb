@@ -75,6 +75,16 @@ class ImageRanker
     end
   end
 
+  # Q-159 (1): public so AutoCoverResolver names the persisted file from the
+  # same reading. Returns "image/<type>" or nil.
+  def self.sniff_media_type(bytes)
+    if bytes.start_with?("\xFF\xD8\xFF".b) then "image/jpeg"
+    elsif bytes.start_with?("\x89PNG\r\n\x1A\n".b) then "image/png"
+    elsif bytes.start_with?("GIF87a", "GIF89a") then "image/gif"
+    elsif bytes.byteslice(0, 4) == "RIFF" && bytes.byteslice(8, 4) == "WEBP" then "image/webp"
+    end
+  end
+
   private
 
   # Q-134: the media type is read from the file's magic bytes (the URL's
@@ -84,19 +94,11 @@ class ImageRanker
   def image_candidates(candidates)
     candidates.filter_map do |c|
       bytes = File.binread(c[:path])
-      media_type = sniff_media_type(bytes)
+      media_type = self.class.sniff_media_type(bytes)
       next [c, bytes, media_type] if media_type
 
       log("dropped non-image candidate #{c[:url]}")
       nil
-    end
-  end
-
-  def sniff_media_type(bytes)
-    if bytes.start_with?("\xFF\xD8\xFF".b) then "image/jpeg"
-    elsif bytes.start_with?("\x89PNG\r\n\x1A\n".b) then "image/png"
-    elsif bytes.start_with?("GIF87a", "GIF89a") then "image/gif"
-    elsif bytes.byteslice(0, 4) == "RIFF" && bytes.byteslice(8, 4) == "WEBP" then "image/webp"
     end
   end
 

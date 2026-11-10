@@ -35,7 +35,8 @@ module PodgenCLI
       @podcast_name = args.shift
       @episode_id ||= args.shift # optional: e.g. "2026-03-31" or "2026-03-31b"
       reject_leftover_args!(args)
-      @episode_id = normalize_episode_id(@episode_id) if @episode_id
+      # Q-159 (13): without a podcast, run's missing-podcast usage is the error.
+      @episode_id = normalize_episode_id(@episode_id) if @episode_id && @podcast_name
     end
 
     def run

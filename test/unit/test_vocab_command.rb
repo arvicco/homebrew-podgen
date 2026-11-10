@@ -179,6 +179,23 @@ class TestVocabCommand < Minitest::Test
     assert_match(/bati\s+3\s+testpod-2026-01-03/, out)
   end
 
+  # Q-159 (10): the known-vocabulary filter compares through the ledger's
+  # own key, so a known "bati se" hides the ledger's "bati" row.
+  def test_review_sl_show_known_reflexive_form_excludes_stripped_row
+    eps = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(eps)
+    %w[2026-01-01 2026-01-02 2026-01-03].each do |date|
+      File.write(File.join(eps, "testpod-#{date}_transcript.md"),
+        "# T\n\n## Transcript\n\nText.\n\n## Vocabulary\n\n- **bati se** (B1 verb) — gloss\n")
+    end
+    capture_io { build_command("add", "testpod", "bati se").run }
+
+    out, = capture_io { build_command("review", "testpod").run }
+
+    refute_match(/^\s+bati\s+3/, out)
+    assert_includes out, "No lemmas explained 3+ times outside known vocabulary"
+  end
+
   def test_review_missing_podcast_is_usage_error
     code = nil
     capture_io { code = build_command("review").run }

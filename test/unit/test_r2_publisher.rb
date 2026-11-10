@@ -184,6 +184,30 @@ class TestR2Publisher < Minitest::Test
     assert_match(/ep-#{target_date}/, tweets.first)
   end
 
+  # Q-159 (2): the sync stays show-wide by design, so an episode id must not
+  # read as a scoped upload — the run says what the id scopes.
+  def test_run_with_episode_id_says_sync_is_show_wide
+    seed_ep("ep-2026-01-15")
+    calls = []
+    runner = lambda do |env:, args:|
+      calls << args
+      true
+    end
+    publisher = build_publisher(config: stub_config, runner: runner, episode_id: "2026-01-15")
+
+    out, = capture_io { publisher.run }
+
+    assert_match(/R2 sync is show-wide .*2026-01-15 scopes the tweets only/, out)
+    assert_includes calls.first, "episodes/*.mp3"
+  end
+
+  def test_run_without_episode_id_prints_no_scope_line
+    seed_ep("ep-2026-01-15")
+    out, = capture_io { build_publisher(config: stub_config, runner: ->(*) { true }).run }
+
+    refute_match(/show-wide/, out)
+  end
+
   def test_calls_regen_cache_once_per_pod
     seed_ep("ep-2026-01-15")
     config = stub_config
