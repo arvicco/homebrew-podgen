@@ -985,7 +985,7 @@ Every news script is reviewed before it is voiced. Deterministic checks run firs
 - A WARNING or NIT is logged (the indented `WARNING: [...]` / `NIT: [...]` lines in the run log) and the script is kept as written.
 - Beyond the three mechanical fixes above, the reviewer never rewrites content. Titles in particular are never truncated: the writer is asked for about 40 characters, and a longer title is warned about and kept whole.
 
-The raw script responses are kept under `output/<podcast>/debug/` for inspection.
+When the first review finds an unfixed BLOCKER, its input is kept as `output/<podcast>/debug/<basename>_review_attempt1.json` (script, research, priority links and the review's findings) — the bundle `podgen test reviewer_recall` reads. A clean first review writes nothing. The raw script response (`<basename>_script_raw.json`) is written only when `PODGEN_DEBUG_RAW_SCRIPT` is set.
 
 ### Priority Links
 
@@ -1719,7 +1719,7 @@ podgen/
 │   ├── priority_links.yml    # Queued priority links
 │   ├── excluded_urls.yml     # URLs excluded from future episodes
 │   ├── research_cache/       # Cached source results (24h)
-│   ├── debug/                # Raw script responses
+│   ├── debug/                # First-attempt review bundles (BLOCKER runs); raw script responses (opt-in)
 │   ├── run.lock              # Held while a generate runs
 │   └── uploads.lock          # Held while the 10:30 batch runs (output/ level, one per install)
 └── logs/

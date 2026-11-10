@@ -290,7 +290,21 @@ class TestScriptAgent < Minitest::Test
     assert_includes prompt_text, "3 source links per segment"
   end
 
+  # Q-158 (P19-8): the overdue TODO(2026-06-15) diagnostic is opt-in.
+  def test_generate_without_debug_env_writes_no_raw_artifact
+    pod_dir = File.join(@tmpdir, "fulgur_news")
+    FileUtils.mkdir_p(File.join(pod_dir, "episodes"))
+    agent = ScriptAgent.new(guidelines: "Test", script_path: File.join(pod_dir, "episodes", "fulgur_news-2026-05-08_script.md"))
+    agent.define_singleton_method(:sleep) { |_| }
+    agent.instance_variable_set(:@client, MockClient.new(MockScript.new("Title", [MockSegment.new("S", "x", nil)], [])))
+
+    agent.generate(valid_research_data)
+
+    refute File.exist?(File.join(pod_dir, "debug")), "no raw debug artifact unless #{ScriptAgent::RAW_DEBUG_ENV} is set"
+  end
+
   def test_generate_writes_raw_debug_artifact_capturing_sources_state
+    ENV[ScriptAgent::RAW_DEBUG_ENV] = "1"
     # Place script_path under <tmp>/podcast/episodes/<basename>_script.md so that
     # ScriptAgent can derive <tmp>/podcast/debug/<basename>_script_raw.json.
     pod_dir = File.join(@tmpdir, "fulgur_news")
@@ -355,10 +369,12 @@ class TestScriptAgent < Minitest::Test
   def setup
     @tmpdir = Dir.mktmpdir("podgen_test")
     @script_path = File.join(@tmpdir, "script.md")
+    @saved_raw_debug = ENV.delete("PODGEN_DEBUG_RAW_SCRIPT")
   end
 
   def teardown
     FileUtils.rm_rf(@tmpdir)
+    @saved_raw_debug ? ENV["PODGEN_DEBUG_RAW_SCRIPT"] = @saved_raw_debug : ENV.delete("PODGEN_DEBUG_RAW_SCRIPT")
   end
 
   # --- P1-11: output cap + truncation (incident 2026-10-09) ---
