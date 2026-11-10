@@ -99,6 +99,25 @@ class TestEpisodeScanner < Minitest::Test
     assert_empty EpisodeScanner.scan(@dir, episode_id: "2099-01-01")
   end
 
+  # Q-132 (P18-3): a bare "17" suffix-matched every month's 17th; an id
+  # that is not a full YYYY-MM-DD[a-z] is refused, never suffix-matched.
+  def test_scan_partial_episode_id_raises_instead_of_matching_every_month
+    %w[pod-2026-05-17 pod-2026-06-17].each do |b|
+      touch("#{b}.mp3")
+      touch("#{b}_transcript.md")
+    end
+    assert_raises(ArgumentError) { EpisodeScanner.scan(@dir, episode_id: "17") }
+    assert_raises(ArgumentError) { EpisodeScanner.scan(@dir, episode_id: "05-17") }
+  end
+
+  def test_scan_full_date_matches_only_that_date
+    %w[pod-2026-05-17 pod-2026-06-17 pod-2025-05-17].each do |b|
+      touch("#{b}.mp3")
+      touch("#{b}_transcript.md")
+    end
+    assert_equal ["pod-2026-05-17"], EpisodeScanner.scan(@dir, episode_id: "2026-05-17").map { |e| e[:base_name] }
+  end
+
   def test_scan_with_nil_episode_id_same_as_omitted
     touch("pod-2026-05-16.mp3")
     touch("pod-2026-05-16_transcript.md")

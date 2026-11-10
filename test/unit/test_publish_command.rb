@@ -221,6 +221,22 @@ class TestPublishCommand < Minitest::Test
     assert_equal "2026-03-10", cmd.instance_variable_get(:@episode_id)
   end
 
+  # Q-132 (P18-3): the id is normalised through DateParser like every other
+  # episode command, so a short form names one date, not a suffix.
+  def test_positional_short_day_is_normalised_to_a_full_date
+    cmd = PodgenCLI::PublishCommand.new(["testpod", "17"], {})
+    assert_equal "#{Date.today.strftime('%Y-%m')}-17", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_date_flag_keeps_the_slot_suffix
+    cmd = PodgenCLI::PublishCommand.new(["testpod", "--date", "20260310b"], {})
+    assert_equal "2026-03-10b", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_unparseable_episode_id_is_a_usage_error
+    assert_raises(OptionParser::ParseError) { PodgenCLI::PublishCommand.new(["testpod", "--date", "soon"], {}) }
+  end
+
   def test_date_flag_with_positional_date_is_rejected
     # Passing both is ambiguous — fail loud rather than silently dropping one.
     err = assert_raises(OptionParser::ParseError) do
@@ -287,11 +303,42 @@ class TestPublishCommand < Minitest::Test
     # YouTube fails with playlist_verification (exit 1). Worst = 1.
     results = {
       r2:      mk_result(errors: []),
-      lingq:   mk_result(errors: [{ type: :upload_failed, message: "boom" }]),  # → exit 0 from publish_to_lingq (it only maps :not_configured/:no_language)
+      lingq:   mk_result(errors: [{ type: :upload_failed, message: "boom" }]),  # → exit 1: any error that is not "not configured" (Q-132)
       youtube: mk_result(errors: [{ type: :playlist_verification, message: "playlist not found" }])
     }
     _, _, code = capture_all_run(@episodes_dir, options: { all: true }, results: results)
     assert_equal 1, code
+  end
+
+  # Q-132 (P18-3): per-episode failures reach the exit code (launchd saw
+  # success when every upload failed).
+  def test_publish_to_youtube_returns_1_when_episode_uploads_fail
+    %i[upload video rate_limit missing_cover publisher_crash].each do |type|
+      code = youtube_code_for(errors: [{ type: type, base: "ep-2026-01-15", message: "boom" }])
+      assert_equal 1, code, "error type #{type}"
+    end
+  end
+
+  def test_publish_to_youtube_returns_0_without_errors
+    assert_equal 0, youtube_code_for(errors: [])
+  end
+
+  def test_publish_to_lingq_returns_1_when_episode_uploads_fail
+    %i[upload publisher_crash].each do |type|
+      code = nil
+      with_publisher_stubs(results: { lingq: mk_result(errors: [{ type: type, message: "boom" }]) }) do
+        capture_io { code = build_command.send(:publish_to_lingq) }
+      end
+      assert_equal 1, code, "error type #{type}"
+    end
+  end
+
+  def test_publish_to_lingq_unconfigured_alone_still_returns_2
+    code = nil
+    with_publisher_stubs(results: { lingq: mk_result(errors: [{ type: :not_configured, message: "off" }]) }) do
+      capture_io { code = build_command.send(:publish_to_lingq) }
+    end
+    assert_equal 2, code
   end
 
   def test_all_continues_after_target_failure
@@ -394,6 +441,16 @@ class TestPublishCommand < Minitest::Test
     cmd.instance_variable_set(:@options, {})
     cmd.instance_variable_set(:@episode_id, episode_id)
     cmd
+  end
+
+  def youtube_code_for(errors:)
+    code = nil
+    with_publisher_stubs(results: { youtube: mk_result(errors: errors) }) do
+      cmd = build_command(youtube_config: { privacy: "unlisted", category: "27", tags: [] })
+      cmd.define_singleton_method(:build_youtube_uploader) { Object.new }
+      capture_io { code = cmd.send(:publish_to_youtube) }
+    end
+    code
   end
 
   # Builds a fake Result struct that quacks like each publisher's own.

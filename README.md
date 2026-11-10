@@ -263,9 +263,12 @@ podgen publish lahko_noc --lingq --dry-run
 
 # Publish to every configured target (R2 + LingQ + YouTube) in one shot.
 # Unconfigured targets are skipped silently with a one-line note; failures
-# in one target don't halt the others. Exit code is the worst per-target code.
+# in one target don't halt the others. Exit code is the worst per-target code;
+# any failed episode upload makes a target's code 1.
 podgen publish lahko_noc --all
 podgen publish lahko_noc 2026-05-30 --all --force        # specific episode, force re-upload everywhere
+# The episode accepts the same date forms as voice/translate (YYYY-MM-DD[a-z],
+# YYYYMMDD, MM-DD, MMDD, DD = this month); it names exactly one day slot.
 
 # Run a component test
 podgen test hn
