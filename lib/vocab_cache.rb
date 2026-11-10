@@ -11,7 +11,12 @@ require_relative "yaml_loader"
 #
 #   { "<lemma>" => { "translations" => { Lang => str }, "definitions" => { Lang => str },
 #                    "pronunciation" => str|nil, "similar_translations" => { Lang => str }|nil,
-#                    "first_seen" => "<basename>"|nil } }
+#                    "first_seen" => "<basename>"|nil, "pos" => str|nil } }
+#
+# "pos" (P17-4, additive) is the part of speech the gloss was paid for: a
+# fetch for another part of speech is a miss, and storing one replaces the
+# entry (one gloss per lemma). An entry without "pos" (written before it
+# existed) matches any part of speech and takes the first one stored.
 class VocabCache
   attr_reader :path
 
@@ -26,15 +31,20 @@ class VocabCache
     @dirty = false
   end
 
-  # The cached hash for lemma (string keys), or nil.
-  def fetch(lemma)
-    @data[key(lemma)]
+  # The cached hash for lemma (string keys), or nil — also nil when pos is
+  # given and the entry holds a different part of speech.
+  def fetch(lemma, pos: nil)
+    entry = @data[key(lemma)]
+    entry unless pos_conflict?(entry, pos)
   end
 
   # Merges the given languages into the lemma's entry; first_seen and the
-  # language-independent fields are kept once set.
-  def store(lemma, translations: {}, definitions: {}, pronunciation: nil, similar_translations: nil, first_seen: nil)
+  # language-independent fields are kept once set. A different part of
+  # speech replaces the entry.
+  def store(lemma, pos: nil, translations: {}, definitions: {}, pronunciation: nil, similar_translations: nil, first_seen: nil)
+    @data.delete(key(lemma)) if pos_conflict?(@data[key(lemma)], pos)
     entry = slot(lemma)
+    entry["pos"] ||= normalize_pos(pos)
     entry["translations"].merge!(stringify(translations))
     entry["definitions"].merge!(stringify(definitions))
     entry["pronunciation"] ||= pronunciation
@@ -79,6 +89,17 @@ class VocabCache
       "translations" => {}, "definitions" => {}, "pronunciation" => nil,
       "similar_translations" => nil, "first_seen" => nil
     }
+  end
+
+  def pos_conflict?(entry, pos)
+    cached = entry && entry["pos"]
+    wanted = normalize_pos(pos)
+    !cached.nil? && !wanted.nil? && cached != wanted
+  end
+
+  def normalize_pos(pos)
+    value = pos.to_s.downcase.strip
+    value.empty? ? nil : value
   end
 
   def stringify(hash)
