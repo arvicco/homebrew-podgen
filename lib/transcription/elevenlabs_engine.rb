@@ -25,34 +25,9 @@ module Transcription
 
       with_engine_retries do
         start = Time.now
-
-        audio_file = File.open(audio_path, "rb")
-        body = {
-          file: audio_file,
-          model_id: @model,
-          language_code: @language,
-          timestamps_granularity: "word"
-        }
-
-        response = begin
-          HTTParty.post(
-            ENDPOINT,
-            headers: { "xi-api-key" => @api_key },
-            multipart: true,
-            body: body,
-            timeout: TIMEOUT
-          )
-        ensure
-          audio_file.close
-        end
-
+        result = request_words(audio_path)
         elapsed = (Time.now - start).round(2)
 
-        unless response.success?
-          raise api_error("ElevenLabs Scribe API error", response)
-        end
-
-        result = JSON.parse(response.body)
         transcript = result["text"] || ""
         segments = build_segments_from_words(result["words"] || [])
         speech_start, speech_end = speech_boundaries(segments)
@@ -64,6 +39,36 @@ module Transcription
     end
 
     private
+
+    # One Scribe request: the parsed response body (word timestamps). Also
+    # the fixture recorder's path to the exact body this engine parses (P18-6).
+    def request_words(audio_path)
+      audio_file = File.open(audio_path, "rb")
+      body = {
+        file: audio_file,
+        model_id: @model,
+        language_code: @language,
+        timestamps_granularity: "word"
+      }
+
+      response = begin
+        HTTParty.post(
+          ENDPOINT,
+          headers: { "xi-api-key" => @api_key },
+          multipart: true,
+          body: body,
+          timeout: TIMEOUT
+        )
+      ensure
+        audio_file.close
+      end
+
+      unless response.success?
+        raise api_error("ElevenLabs Scribe API error", response)
+      end
+
+      JSON.parse(response.body)
+    end
 
     # Engine segment contract: start/end/text plus the whisper-style quality
     # fields every engine returns (see BaseEngine#parse_segments). Scribe has
