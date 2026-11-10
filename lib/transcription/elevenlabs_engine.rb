@@ -78,7 +78,7 @@ module Transcription
     # Aggregates word-level timestamps into sentence-level segments via the
     # shared TimestampPersister builder (P4-3), then adds QUALITY_DEFAULTS.
     def build_segments_from_words(words)
-      TimestampPersister.build_segments_from_words(words).map { |seg| seg.merge(QUALITY_DEFAULTS) }
+      TimestampPersister.build_segments_from_words(words, language: @language).map { |seg| seg.merge(QUALITY_DEFAULTS) }
     end
   end
 end
