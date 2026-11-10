@@ -571,7 +571,7 @@ Set `type: language` in `## Podcast` and configure `## Audio` in `podcasts/<name
 - target_language: Slovenian
 ```
 
-- `type: language` in `## Podcast` activates this pipeline
+- `type: language` in `## Podcast` activates this pipeline (absent means `news`; any other value is a `podgen validate` error and generate refuses to run)
 - `language` in `## Audio` is an ISO-639-1 code passed to the transcription engine
 - `engine` in `## Audio` selects transcription engines (`open`, `elab`, `groq`); multiple = comparison mode
 - RSS feeds support per-feed `skip:` and `cut:` options in seconds or min:sec format (see below)
@@ -1084,7 +1084,7 @@ podgen vocab add lahko_noc beseda          # add a word (language from config)
 podgen vocab add lahko_noc sprechen --lang de  # explicit language
 podgen vocab remove lahko_noc beseda       # remove a word
 podgen vocab list lahko_noc                # show all known words
-podgen vocab review fiabe [--min 3]        # lemmas explained 3+ times (count, last episode), known ones excluded
+podgen vocab review fiabe [--min 3]        # lemmas explained 3+ times (count, last episode), known ones excluded; --min must be at least 1
 podgen vocab review fiabe --promote        # add every listed lemma to known vocabulary
 podgen vocab edit fiabe accorgersi --lang English --translation "to notice" [--definition "..."]  # fix a cached gloss for future episodes
 ```
@@ -1211,7 +1211,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `podgen validate` freshness check; `- freshness: off` in `## Podcast` reports OK).
   The cadence is the median gap between recent episode dates, or
   `- cadence_days: N` in `## Podcast` when set (a positive integer; anything
-  else is ignored); the threshold is twice the cadence, at least 2 days:
+  else is ignored with a guidelines warning); the threshold is twice the cadence, at least 2 days:
   `newest episode 2026-10-01 is 10 days old (cadence 2d configured, threshold 4d)`.
   With no cadence (episodes on a single date and no `cadence_days`) there is no
   threshold: the show stays OK, and once its newest episode is more than 30
