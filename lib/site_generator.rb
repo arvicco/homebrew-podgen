@@ -290,9 +290,9 @@ class SiteGenerator
 
   # Override: site links open in new tab
   def linkify_markdown(text)
-    parts = text.split(/(\[[^\]]+\]\([^)]+\))/)
+    parts = text.split(MARKDOWN_LINK_SPLIT)
     parts.map do |part|
-      if part =~ /\A\[([^\]]+)\]\(([^)]+)\)\z/
+      if part =~ MARKDOWN_LINK_EXACT
         title = escape_html(Regexp.last_match(1))
         url = escape_html(Regexp.last_match(2))
         "<a href=\"#{url}\" target=\"_blank\" rel=\"noopener\">#{title}</a>"

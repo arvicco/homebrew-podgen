@@ -317,6 +317,145 @@ class TestSubtitleReconciler < Minitest::Test
     assert_includes log, "Input: 900 tokens | Output: 300 tokens"
   end
 
+  # --- P17-2 (Q-156, I-12): cap sized from content, bounded retries ---
+
+  # 65 segments of 93 Slovenian/Polish characters: the I-12 shape.
+  def i12_segments
+    text = ("Mačka je šla čez cesto, pogledala levo in desno ter rekla: žaba, čaj. " * 2)[0, 93]
+    Array.new(65) { |i| {"start" => i * 2.0, "end" => i * 2.0 + 2.0, "text" => text} }
+  end
+
+  # Fake client answering a scripted list of [text, stop_reason]; records calls.
+  class ScriptedClient
+    attr_reader :calls
+
+    def initialize(*replies)
+      @replies = replies
+      @calls = []
+    end
+
+    def messages = self
+
+    def create(**kw)
+      @calls << kw
+      text, stop = @replies.fetch(@calls.length - 1)
+      FakeMsg.new([Struct.new(:text).new(text)], stop)
+    end
+  end
+
+  def run_scripted(segments, transcript, client)
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |m| lines << m }
+    result = PodcastAgent.with_logger(logger) do
+      Anthropic::Client.stub(:new, client) do
+        SubtitleReconciler.reconcile(segments, transcript, api_key: "k", model: "m")
+      end
+    end
+    [result, lines]
+  end
+
+  def reply_for(segments)
+    JSON.generate(segments.each_with_index.map { |s, i| s.merge("text" => "Clean #{i}.") })
+  end
+
+  def test_reconcile_i12_segments_cap_covers_content_need
+    segs = i12_segments
+    transcript = segs.map { |s| s["text"] }.join(" ")
+    client = ScriptedClient.new([reply_for(segs), "end_turn"])
+
+    run_scripted(segs, transcript, client)
+
+    chars = segs.sum { |s| s["text"].length } + transcript.length
+    need = segs.length * 40 + chars * 0.8
+    cap = client.calls.first[:max_tokens]
+    assert_operator cap, :>=, need, "cap must cover segments x 40 + chars x 0.8"
+    assert_operator cap, :>, [4096, segs.length * 80].max, "the I-12 cap (segments x 80) was too small"
+    assert_operator cap, :<=, SubtitleReconciler::MAX_TOKENS_CEILING
+  end
+
+  def test_token_cap_short_input_keeps_floor_and_huge_input_is_ceiled
+    assert_equal 4096, SubtitleReconciler.token_cap([{"start" => 0, "end" => 1, "text" => "x"}], "x")
+    huge = Array.new(2000) { |i| {"start" => i, "end" => i + 1, "text" => "ż" * 100} }
+    assert_equal SubtitleReconciler::MAX_TOKENS_CEILING, SubtitleReconciler.token_cap(huge, "ż" * 200_000)
+  end
+
+  def test_reconcile_max_tokens_stop_retries_once_with_doubled_cap_without_parsing
+    segs = i12_segments
+    truncated = reply_for(segs)[0, 500] # cut mid-string: unparseable
+    client = ScriptedClient.new([truncated, "max_tokens"], [reply_for(segs), "end_turn"])
+
+    result, lines = run_scripted(segs, "t", client)
+
+    assert_equal 2, client.calls.length
+    first, second = client.calls.map { |c| c[:max_tokens] }
+    assert_equal [first * 2, SubtitleReconciler::MAX_TOKENS_CEILING].min, second
+    assert_operator second, :>, first
+    assert_equal "Clean 0.", result.first["text"], "the truncated first body was never parsed"
+    assert_equal 1, lines.count { |l| l.include?("Retrying") }, "one retry line"
+    assert lines.any? { |l| l.include?("(max_tokens)") }, "the stop reason is still logged"
+  end
+
+  def test_reconcile_max_tokens_twice_raises_naming_cap_and_segment_count
+    segs = i12_segments
+    client = ScriptedClient.new(["[{", "max_tokens"], ["[{", "max_tokens"])
+
+    err = assert_raises(SubtitleReconciler::ReconciliationError) { run_scripted(segs, "t", client) }
+
+    assert_equal 2, client.calls.length
+    assert_includes err.message, client.calls.last[:max_tokens].to_s
+    assert_includes err.message, "65 segments"
+  end
+
+  def test_reconcile_count_mismatch_retries_once_naming_the_mismatch
+    segs = i12_segments
+    client = ScriptedClient.new([reply_for(segs.first(64)), "end_turn"], [reply_for(segs), "end_turn"])
+
+    result, lines = run_scripted(segs, "t", client)
+
+    assert_equal 2, client.calls.length
+    assert_equal 65, result.length
+    retry_prompt = client.calls.last[:messages].first[:content]
+    assert_match(/expected 65, got 64/, retry_prompt)
+    refute_match(/expected 65, got 64/, client.calls.first[:messages].first[:content])
+    assert_equal 1, lines.count { |l| l.include?("Retrying") }
+  end
+
+  def test_reconcile_count_mismatch_twice_raises
+    segs = i12_segments
+    short = reply_for(segs.first(64))
+    client = ScriptedClient.new([short, "end_turn"], [short, "end_turn"])
+
+    err = assert_raises(SubtitleReconciler::ReconciliationError) { run_scripted(segs, "t", client) }
+    assert_equal 2, client.calls.length
+    assert_match(/count mismatch/, err.message)
+  end
+
+  def test_build_prompt_requests_compact_one_line_json
+    prompt = SubtitleReconciler.build_prompt([{"start" => 0.0, "end" => 1.0, "text" => "x"}], "x")
+    assert_match(/compact.*one line/i, prompt)
+  end
+
+  def test_parse_response_unescaped_quote_inside_value_is_repaired
+    text = '[{"start":0.0,"end":1.0,"text":"powiedział.""},' \
+      '{"start":1.0,"end":2.0,"text":""Morala bi," je rekel."}]'
+    result = SubtitleReconciler.parse_response(text)
+    assert_equal 'powiedział."', result[0]["text"]
+    assert_equal '"Morala bi," je rekel.', result[1]["text"]
+  end
+
+  def test_repair_json_leaves_valid_json_unchanged
+    valid = [
+      JSON.generate([{"start" => 0.0, "end" => 1.0, "text" => %(He said "hi", then: [ok] {x}.)}]),
+      JSON.pretty_generate([{"start" => 0.0, "end" => 1.0, "text" => %(a \\ "b" \n)}, {"text" => ""}]),
+      '[ { "text" : "x" } , { "text":"y" } ]'
+    ]
+    valid.each do |v|
+      JSON.parse(v) # the fixture itself is valid
+      assert_equal v, SubtitleReconciler.repair_json(v)
+    end
+  end
+
   private
 
   def stub_reconcile_reply(reply, &)

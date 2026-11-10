@@ -64,6 +64,17 @@ class TestTranscriptRenderer < Minitest::Test
     refute_includes result, "<b>"
   end
 
+  # P17-3 (Q-135): balanced parens in the URL, brackets in the title.
+  def test_linkify_markdown_url_with_parens_keeps_whole_url
+    result = @r.linkify_markdown("[Ruby](https://en.wikipedia.org/wiki/Ruby_(programming_language)) rocks")
+    assert_equal '<a href="https://en.wikipedia.org/wiki/Ruby_(programming_language)">Ruby</a> rocks', result
+  end
+
+  def test_linkify_markdown_bracketed_title_is_linked
+    result = @r.linkify_markdown("[[Video] Rails 8](https://example.com/r8)")
+    assert_equal '<a href="https://example.com/r8">[Video] Rails 8</a>', result
+  end
+
   def test_linkify_markdown_no_links
     assert_equal "plain text", @r.linkify_markdown("plain text")
   end

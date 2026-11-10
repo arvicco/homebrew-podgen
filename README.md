@@ -194,6 +194,9 @@ podgen move bajke 2026-05-16d 2026-05-18c                # explicit target suffi
 podgen move bajke '2026-05-16+' 2026-05-18
 
 # Scrap last episode (delete files + remove from history)
+# The feed on disk is not rewritten by scrap; while it still lists the
+# scrapped episode's <guid>, a same-day regenerate takes the next suffix
+# (2026-03-15 -> 2026-03-15a), so podcast apps never see one guid with new audio.
 podgen scrap ruby_world
 
 # Scrap a specific episode by date (with optional suffix for multi-episode days)
@@ -1047,7 +1050,7 @@ A band that has fewer words than its share passes the unused slots to the next b
 
 #### Cross-episode memory: ledger and cache
 
-- **Ledger** — derived on every run from the show's own transcripts (nothing stored): a lemma already explained in an earlier episode is not explained again until enough episodes have passed — the 2nd explanation at least 8 episodes after the 1st, the 3rd at least 20 after the 2nd, the 4th at least 50 after the 3rd; after 4 explanations it is not explained again (a candidate for known vocabulary). Re-exposed lemmas may fill at most a quarter of `max` (rounded up); when more qualify, the ones explained longest ago are kept. Re-exposed lemmas are named in the run log. `--include` words and key words bypass the ledger; known words always win. `revocab` sees only the episodes before the one it re-annotates.
+- **Ledger** — derived on every run from the show's own transcripts (nothing stored): a lemma already explained in an earlier episode is not explained again until enough episodes have passed — the 2nd explanation at least 8 episodes after the 1st, the 3rd at least 20 after the 2nd, the 4th at least 50 after the 3rd; after 4 explanations it is not explained again (a candidate for known vocabulary). Re-exposed lemmas may fill at most a quarter (rounded up) of the entries the section actually lists; when more qualify, the ones explained longest ago are kept and the freed places go to new words — with no new words left, the section is shorter. Re-exposed lemmas are named in the run log. `--include` words and key words bypass the ledger; known words always win. `revocab` sees only the episodes before the one it re-annotates.
 - **Cache** — `output/<podcast>/vocab_cache.yml` stores each lemma's translations and definitions per target language (plus IPA and similar-language translations) after it is first enriched, so a repeated lemma costs no API call and keeps the same gloss in every episode. A lemma missing one target language is enriched for that language only. The file is derived and can be deleted to start fresh.
 
 In **RSS transcript HTML** (for podcast apps), the vocabulary section is stripped and bold markers are removed, producing clean readable text. This is because podcast apps (Pocket Casts, Apple Podcasts, etc.) do not render HTML formatting or links in transcripts.

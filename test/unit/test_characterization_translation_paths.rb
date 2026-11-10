@@ -91,7 +91,7 @@ class TestCharacterizationTranslationPaths < Minitest::Test
     "Title: Episode 1\n\n--- Opening ---\nHello everyone!\n\n--- Wrap-Up ---\nThanks for listening.\n"
   end
 
-  def translation(title = "T", segs = [["Uvod", "Živjo"]])
+  def translation(title = "T", segs = [["Uvod", "Živjo"], ["Konec", "Hvala"]])
     Translation.new(title, segs.map { |n, t| Segment.new(n, t) })
   end
 
@@ -425,14 +425,14 @@ class TestCharacterizationTranslationPaths < Minitest::Test
       c_logger.lines[0]
     assert_match(/\A\[TranslationAgent\] Translation generated in [\d.]+s \(end_turn\)\z/, c_logger.lines[1])
     assert_equal "[TranslationAgent]   Input: 500 tokens | Output: 400 tokens", c_logger.lines[2]
-    assert_equal "[TranslationAgent] Translation complete: 1 segments", c_logger.lines[3]
+    assert_equal "[TranslationAgent] Translation complete: 2 segments", c_logger.lines[3]
 
     model = o_agent.instance_variable_get(:@openai_model)
     assert_equal 4, o_logger.lines.length
     assert_equal "[TranslationAgent] Translating script to Slovenian (sl) with #{model} (openai)", o_logger.lines[0]
     assert_match(/\A\[TranslationAgent\] Translation generated in [\d.]+s \(completed\)\z/, o_logger.lines[1])
     assert_equal "[TranslationAgent]   Input: 500 tokens | Output: 400 tokens", o_logger.lines[2]
-    assert_equal "[TranslationAgent] Translation complete: 1 segments", o_logger.lines[3]
+    assert_equal "[TranslationAgent] Translation complete: 2 segments", o_logger.lines[3]
   end
 
   # When the backend reports no usage the usage line is omitted (3 lines).

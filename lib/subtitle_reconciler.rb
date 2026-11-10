@@ -16,6 +16,18 @@ module SubtitleReconciler
   # Seconds of tolerated drift between original and LLM-returned timestamps.
   TIMESTAMP_EPSILON = 0.01
 
+  # Output cap (P17-2, I-12): the answer repeats every segment's start/end
+  # plus the reconciled text, and diacritic-heavy languages tokenise at ~2
+  # chars/token, so the cap is sized from the content: ~40 tokens of
+  # structure per segment + 0.8 tokens per char of segment and transcript
+  # text, floored at MIN_TOKENS. MAX_TOKENS_CEILING keeps every request
+  # (including the doubled retry) inside what the model can emit within
+  # AnthropicClient::REQUEST_TIMEOUT (300 s): a 20k-token answer is the
+  # most a non-streaming call completes in that window. The I-12 episode
+  # (65 segments, 6043 chars) needs ~12k; its doubled retry still fits.
+  MIN_TOKENS = 4096
+  MAX_TOKENS_CEILING = 20_000
+
   # Usage logging (P8-2) through the ambient logger; private singletons, so
   # the module's public surface is unchanged.
   class << self
@@ -37,10 +49,48 @@ module SubtitleReconciler
   # sidecar schema is frozen.
   def self.reconcile(segments, reconciled_text, api_key:, model: nil)
     model ||= ClaudeModels.for(:subtitle_reconciler)
-    prompt = build_prompt(segments, reconciled_text)
-
     client = Anthropic::Client.new(api_key: api_key, timeout: AnthropicClient::REQUEST_TIMEOUT)
-    tokens = [4096, segments.length * 80].max
+    tokens = token_cap(segments, reconciled_text)
+    mismatch = nil
+    retried_truncation = false
+
+    # Bounded (P17-2): one retry with the cap doubled after a max_tokens
+    # stop (a truncated body is never parsed), one retry naming the count
+    # mismatch; a repeat of either raises.
+    loop do
+      response = request(client, model, build_prompt(segments, reconciled_text, mismatch: mismatch), tokens)
+
+      if response.stop_reason.to_s == "max_tokens"
+        doubled = [tokens * 2, MAX_TOKENS_CEILING].min
+        if retried_truncation || doubled <= tokens
+          raise ReconciliationError, "Reconciliation output stopped at max_tokens (cap #{tokens}) " \
+            "for #{segments.length} segments"
+        end
+        log("Retrying: output stopped at max_tokens (cap #{tokens}); retrying once with cap #{doubled}")
+        retried_truncation = true
+        tokens = doubled
+        next
+      end
+
+      result = parse_response(AnthropicClient.text_of(response))
+      if result.is_a?(Array) && result.length != segments.length && mismatch.nil?
+        mismatch = "Segment count mismatch: expected #{segments.length}, got #{result.length}"
+        log("Retrying: #{mismatch}; retrying once with the mismatch named")
+        next
+      end
+
+      validate!(result, segments)
+      return segments.each_with_index.map { |orig, i| orig.merge("text" => result[i]["text"]) }
+    end
+  end
+
+  # Output token cap sized from the content (see MIN_TOKENS).
+  def self.token_cap(segments, reconciled_text)
+    chars = segments.sum { |s| s["text"].to_s.length } + reconciled_text.to_s.length
+    (segments.length * 40 + chars * 0.8).ceil.clamp(MIN_TOKENS, MAX_TOKENS_CEILING)
+  end
+
+  def self.request(client, model, prompt, tokens)
     response, elapsed = measure_time do
       client.messages.create(
         model: model,
@@ -50,20 +100,18 @@ module SubtitleReconciler
       )
     end
     log_api_usage("Subtitles reconciled", response, elapsed)
-
-    text = AnthropicClient.text_of(response)
-    result = parse_response(text)
-    validate!(result, segments)
-    segments.each_with_index.map { |orig, i| orig.merge("text" => result[i]["text"]) }
+    response
   end
+  private_class_method :request
 
-  # Build the prompt for Claude. Exposed for testing.
-  def self.build_prompt(segments, reconciled_text)
+  # Build the prompt for Claude. Exposed for testing. `mismatch` names the
+  # previous answer's segment-count error on the one retry.
+  def self.build_prompt(segments, reconciled_text, mismatch: nil)
     segments_json = JSON.pretty_generate(segments.map { |s|
       { "start" => s["start"], "end" => s["end"], "text" => s["text"] }
     })
 
-    <<~PROMPT
+    prompt = <<~PROMPT
       You are given raw STT segments (with timestamps) and a reconciled transcript (the correct text). Your task: produce corrected text for each segment, preserving the exact segment boundaries (same number of segments, same start/end times).
 
       Rules:
@@ -73,6 +121,7 @@ module SubtitleReconciler
       - Distribute the reconciled text across segments to match what was said in each time range
       - Do not merge or split segments
       - No markdown code fences, just raw JSON
+      - Output compact JSON on one line: no indentation, no line breaks, no spaces between tokens
       - Escape every double-quote character that appears inside a "text" value as \\" — never break out of the string. Dialogue passages in the transcript may contain literal " marks; those MUST be escaped.
 
       Raw segments:
@@ -81,15 +130,57 @@ module SubtitleReconciler
       Reconciled transcript:
       #{reconciled_text}
     PROMPT
+    return prompt unless mismatch
+
+    prompt + "\nYour previous answer was rejected: #{mismatch}. " \
+      "Return exactly #{segments.length} objects, one per raw segment, in order.\n"
   end
 
   # Parse Claude's response into a segments array.
   def self.parse_response(text)
     # Strip markdown code fences if present
     cleaned = text.strip.sub(/\A```(?:json)?\s*/, "").sub(/\s*```\z/, "").strip
-    JSON.parse(cleaned)
-  rescue JSON::ParserError => e
-    raise ReconciliationError, "Failed to parse reconciled segments: #{e.message}"
+    begin
+      JSON.parse(cleaned)
+    rescue JSON::ParserError => e
+      begin
+        JSON.parse(repair_json(cleaned))
+      rescue JSON::ParserError
+        raise ReconciliationError, "Failed to parse reconciled segments: #{e.message}"
+      end
+    end
+  end
+
+  # One repair pass for a model that left a literal `"` unescaped inside a
+  # string value (P17-2, seen as `got: 'powiedział."'`): inside a string, a
+  # `"` whose next non-space character is not structural (`,` `:` `}` `]`
+  # or the end) cannot be the closing quote, so it is escaped. In valid
+  # JSON every unescaped in-string `"` closes the string and is followed by
+  # a structural character, so valid JSON passes through unchanged.
+  def self.repair_json(text)
+    out = +""
+    in_string = false
+    i = 0
+    while i < text.length
+      c = text[i]
+      if in_string && c == "\\"
+        out << c << text[i + 1].to_s
+        i += 2
+        next
+      end
+      if c == '"'
+        if !in_string
+          in_string = true
+        elsif text[(i + 1)..].match?(/\A\s*(?:[,:}\]]|\z)/)
+          in_string = false
+        else
+          out << "\\"
+        end
+      end
+      out << c
+      i += 1
+    end
+    out
   end
 
   # LLM round-trips can re-serialize floats (7.7 -> 7.700000001).

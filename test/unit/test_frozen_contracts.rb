@@ -245,7 +245,7 @@ class TestFrozenContracts < Minitest::Test
 
   # --- podcast:transcript + guid attributes (P8-9 (c), (d)) ---
 
-  def test_rss_transcript_link_and_bare_guid_are_frozen
+  def test_rss_transcript_link_and_guid_attribute_are_frozen
     episodes_dir = File.join(@tmpdir, "episodes")
     make_episode(episodes_dir, "pod-2026-01-15")
     File.write(File.join(episodes_dir, "pod-2026-01-15_transcript.html"), "<html></html>")
@@ -270,9 +270,13 @@ class TestFrozenContracts < Minitest::Test
       "podcast:transcript carries exactly url + type=text/html")
 
     guid = item.elements["guid"]
-    assert_empty guid.attributes.each_attribute.to_a,
-      "guid has NO isPermaLink attribute (RSS default true) — adding one changes the guid " \
-      "contract for every subscriber's app; do not \"fix\" it"
+    assert_equal({"isPermaLink" => "false"},
+      guid.attributes.each_attribute.to_h { |a| [a.expanded_name, a.value] },
+      "guid carries exactly isPermaLink=\"false\" (owner ruling R12-03, Q-153): the value " \
+      "is a filename, not a URL; the guid VALUE stays the bare mp3 filename")
+    assert_equal "pod-2026-01-15.mp3", guid.text, "guid value byte-identical to the pre-P17-1 scheme"
+    assert_includes File.read(feed_path), "<guid isPermaLink='false'>pod-2026-01-15.mp3</guid>",
+      "serialized guid element, byte-for-byte"
   end
 
   private

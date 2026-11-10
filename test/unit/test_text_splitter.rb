@@ -101,11 +101,11 @@ class TestTextSplitter < Minitest::Test
   end
 
   def test_split_prefers_comma_over_later_whitespace
-    # Characterization: the comma pattern matches AT the comma, so the
-    # first chunk ends before it and the comma leads the next chunk.
+    # P17-3 (Q-135) flipped this pin: the split falls AFTER the comma, so
+    # the comma ends the first chunk instead of leading the next one.
     text = "aaa, bbb ccc #{"z" * 90}"
     result = @splitter.split(text)
-    assert_equal ["aaa", ", bbb ccc #{"z" * 90}"], result
+    assert_equal ["aaa,", "bbb ccc #{"z" * 90}"], result
   end
 
   def test_split_falls_back_to_whitespace

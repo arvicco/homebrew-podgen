@@ -13,6 +13,8 @@ require_relative "tell/espeak"
 require_relative "tell/hunspell"
 require_relative "tell/icu_phonetic"
 require_relative "key_terms"
+require_relative "transcript_renderer"
+require_relative "language_names"
 
 class VocabularyAnnotator
   include Loggable
@@ -21,7 +23,7 @@ class VocabularyAnnotator
 
   CEFR_LEVELS = %w[A1 A2 B1 B2 C1 C2].freeze
   MAX_PARTICLE_LENGTH = 3
-  # Re-exposed lemmas may fill at most this share of max (ceil).
+  # Re-exposed lemmas may fill at most this share of the emitted entries (ceil).
   REEXPOSURE_SHARE = 0.25
   PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
@@ -85,16 +87,20 @@ class VocabularyAnnotator
 
     count_occurrences(text, entries, language)
     priority = filters[:priority] || "balanced"
-    cap_reexposures!(entries, ledger, pinned, max, priority) if ledger
 
     # Over-select to leave room for cognate filtering after enrichment
     has_cognate_filter = filters[:similar] && !filters[:similar].empty?
     enrich_cap = max ? (has_cognate_filter ? max * 2 : max) : nil
+    unselected = []
     if enrich_cap && entries.length > enrich_cap
       included, rest = entries.partition(&pinned)
-      entries = included + select_by_bands(rest, [enrich_cap - included.length, 0].max, priority, cutoff, ledger)
+      selected = select_by_bands(rest, [enrich_cap - included.length, 0].max, priority, cutoff, ledger)
+      unselected = rest.reject { |e| selected.any? { |s| s.equal?(e) } }
+      entries = included + selected
       log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length})")
     end
+    # Capped before enrichment so cut re-exposures are never paid for.
+    entries = cap_reexposures(entries, unselected, ledger, pinned, priority, cutoff) if ledger && max
 
     # Stage 3: Enrich selected entries with translations/definitions
     # (cache hits are filled in place; only the misses reach the API)
@@ -124,11 +130,17 @@ class VocabularyAnnotator
     end
 
     # Final cap to max
+    unselected = []
     if max && entries.length > max
       included, rest = entries.partition(&pinned)
-      entries = included + select_by_bands(rest, [max - included.length, 0].max, priority, cutoff, ledger)
+      selected = select_by_bands(rest, [max - included.length, 0].max, priority, cutoff, ledger)
+      unselected = rest.reject { |e| selected.any? { |s| s.equal?(e) } }
+      entries = included + selected
       log("Capped to #{max} entries (priority: #{priority})")
     end
+    # Again on what is emitted: the cognate filter may have shrunk it.
+    entries = cap_reexposures(entries, unselected, ledger, pinned, priority, cutoff) if ledger && max
+    log_reexposed(entries, ledger, pinned, priority) if ledger
 
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
     add_ipa(entries, language)
@@ -218,8 +230,10 @@ class VocabularyAnnotator
 
   CYRILLIC_LANGUAGES = Set.new(%w[russian ukrainian bulgarian serbian macedonian belarusian]).freeze
 
+  # language: a name ("Russian") or, as the pipeline passes it, a code ("ru").
   def sanitize_script(entries, language)
-    return entries if CYRILLIC_LANGUAGES.include?(language.to_s.downcase)
+    name = LANGUAGE_NAMES.fetch(language.to_s.downcase, language.to_s)
+    return entries if CYRILLIC_LANGUAGES.include?(name.downcase)
 
     entries.each do |entry|
       %i[word lemma].each do |field|
@@ -463,22 +477,37 @@ class VocabularyAnnotator
     log("Ledger: dropped #{dropped} already-explained lemma(s)") if dropped > 0
   end
 
-  # Re-exposures (lemmas the ledger has seen explained) may take at most
-  # REEXPOSURE_SHARE of max (ceil; uncapped without max); the ones explained
-  # longest ago win, then band score, then lemma. Exempt (pinned) entries
-  # neither count nor are cut. Logs the surviving re-exposed lemmas.
-  def cap_reexposures!(entries, ledger, exempt, max, priority)
-    reexposed = entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }
-    allowed = max && (max * REEXPOSURE_SHARE).ceil
-    if allowed && reexposed.length > allowed
-      keep = reexposed.sort_by do |e|
-        [-(ledger.episodes_since(e[:lemma]) || Float::INFINITY), -band_score(e, priority, ledger), e[:lemma].to_s.downcase]
-      end.first(allowed)
-      cut = reexposed.reject { |e| keep.any? { |k| k.equal?(e) } }
-      entries.reject! { |e| cut.any? { |c| c.equal?(e) } }
-      log("Ledger: re-exposure cap #{allowed} of #{reexposed.length} (max × #{REEXPOSURE_SHARE})")
-      reexposed = keep
+  # Re-exposures (lemmas the ledger has seen explained) may be at most
+  # REEXPOSURE_SHARE (ceil) of the entries emitted; the ones explained
+  # longest ago win (among the unselected too), then band score, then
+  # lemma. The freed slots are refilled from unselected's new words by band
+  # selection; without enough new words the section shrinks until the share
+  # holds. Exempt (pinned) entries count in the total but are never
+  # re-exposures nor cut. Returns the capped entries.
+  def cap_reexposures(entries, unselected, ledger, exempt, priority, cutoff)
+    reexposed = ranked_reexposures(entries, ledger, exempt, priority)
+    allowed = (entries.length * REEXPOSURE_SHARE).ceil
+    return entries if reexposed.length <= allowed
+
+    fresh = unselected.reject { |e| exempt.call(e) || ledger.exposures(e[:lemma]) > 0 }
+    refill = select_by_bands(fresh, reexposed.length - allowed, priority, cutoff, ledger)
+    keep = ranked_reexposures(entries + unselected, ledger, exempt, priority).first(allowed)
+    others = entries.length - reexposed.length + refill.length
+    keep.pop while keep.length > ((others + keep.length) * REEXPOSURE_SHARE).ceil
+    capped = entries.reject { |e| reexposed.any? { |r| r.equal?(e) } } + keep + refill
+    log("Ledger: re-exposure cap #{(capped.length * REEXPOSURE_SHARE).ceil} of #{capped.length} entries (× #{REEXPOSURE_SHARE}): " \
+        "kept #{keep.length} of #{reexposed.length} re-exposures, refilled #{refill.length} new")
+    capped
+  end
+
+  def ranked_reexposures(entries, ledger, exempt, priority)
+    entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }.sort_by do |e|
+      [-(ledger.episodes_since(e[:lemma]) || Float::INFINITY), -band_score(e, priority, ledger), e[:lemma].to_s.downcase]
     end
+  end
+
+  def log_reexposed(entries, ledger, exempt, priority)
+    reexposed = ranked_reexposures(entries, ledger, exempt, priority)
     log("Ledger: re-exposing #{reexposed.map { |e| e[:lemma] }.join(", ")}") unless reexposed.empty?
   end
 
@@ -495,8 +524,8 @@ class VocabularyAnnotator
 
   # Fills entries from the cache in place and returns { lang => entries still
   # missing that language }. A lemma is a hit when every target language has
-  # a cached translation (and similar-language translations when the cognate
-  # filter needs them).
+  # a non-blank cached translation for the entry's part of speech (and
+  # similar-language translations when the cognate filter needs them).
   def apply_cache!(entries, target_languages, filters, cache)
     multi = target_languages.length > 1
     needs_similar = filters[:similar]&.split(/,\s*/)&.any? { |l| target_languages.none? { |tl| tl.casecmp?(l) } }
@@ -504,8 +533,8 @@ class VocabularyAnnotator
     hits = 0
 
     entries.each do |entry|
-      cached = cache.fetch(entry[:lemma])
-      missing = target_languages.reject { |tl| cached&.dig("translations", tl) }
+      cached = cache.fetch(entry[:lemma], pos: entry[:pos])
+      missing = target_languages.reject { |tl| present?(cached&.dig("translations", tl)) }
       missing = [target_languages.first] if missing.empty? && needs_similar && cached["similar_translations"].nil?
       missing.empty? ? hits += 1 : missing.each { |tl| misses[tl] << entry }
       next unless cached
@@ -529,27 +558,31 @@ class VocabularyAnnotator
     misses
   end
 
-  # Stores every freshly enriched entry (per language that came back) and
-  # writes the cache once.
+  # Stores every freshly enriched entry (per language that came back with a
+  # non-blank translation) and writes the cache once.
   def store_in_cache!(misses, target_languages, cache, episode)
     misses.values.flatten.uniq(&:object_id).each do |entry|
       translations = if target_languages.length > 1
-        (entry[:translations] || {}).compact
+        (entry[:translations] || {}).select { |_, v| present?(v) }
       else
-        entry[:translation] ? { target_languages.first => entry[:translation] } : {}
+        present?(entry[:translation]) ? { target_languages.first => entry[:translation] } : {}
       end
       next if translations.empty?
 
       definitions = if target_languages.length > 1
-        (entry[:definitions] || {}).compact.slice(*translations.keys)
+        (entry[:definitions] || {}).select { |_, v| present?(v) }.slice(*translations.keys)
       else
-        entry[:definition] ? { target_languages.first => entry[:definition] } : {}
+        present?(entry[:definition]) ? { target_languages.first => entry[:definition] } : {}
       end
-      cache.store(entry[:lemma], translations: translations, definitions: definitions,
+      cache.store(entry[:lemma], pos: entry[:pos], translations: translations, definitions: definitions,
         pronunciation: entry[:pronunciation],
         similar_translations: entry[:similar_translations], first_seen: episode)
     end
     cache.save
+  end
+
+  def present?(value)
+    !value.to_s.strip.empty?
   end
 
   def call_enrich_api(entries, language:, target_language:, filters:)
@@ -871,10 +904,15 @@ class VocabularyAnnotator
     head_forms.filter_map { |f| text =~ /\b#{Regexp.escape(f)}\b/i }.min || Float::INFINITY
   end
 
+  # A target language without a gloss gets MISSING_GLOSS_LINE, so the
+  # renderer's positional parse keeps every gloss under its own language.
+  MISSING_GLOSS_LINE = "  - #{TranscriptRenderer::MISSING_GLOSS}"
+
   def vocab_entry_lines(entry, multi, target_languages)
     lines = []
     line = "- **#{entry[:lemma]}**"
-    line += " #{entry[:ipa]}" if entry[:ipa]
+    ipa = entry[:ipa].to_s.delete("/").strip
+    line += " /#{ipa}/" unless ipa.empty?
     line += " (#{entry[:level]} #{entry[:pos]})"
     # Show word forms that differ from lemma, excluding particles
     _head, particle_forms = partition_forms(entry)
@@ -887,19 +925,21 @@ class VocabularyAnnotator
     if multi
       lines << line
       target_languages.each do |tl|
-        translation = entry.dig(:translations, tl)
-        definition = entry.dig(:definitions, tl)
-        next unless translation || definition
-        def_line = "  - #{translation}"
-        def_line += ". #{definition}" if definition
-        lines << def_line
+        gloss = gloss_text(entry.dig(:translations, tl), entry.dig(:definitions, tl))
+        lines << (gloss ? "  - #{gloss}" : MISSING_GLOSS_LINE)
       end
     else
-      line += " — #{entry[:translation]}" if entry[:translation]
-      line += ". #{entry[:definition]}" if entry[:definition]
+      gloss = gloss_text(entry[:translation], entry[:definition])
+      line += " — #{gloss}" if gloss
       lines << line
     end
     lines
+  end
+
+  # "translation. definition", either part alone, or nil when both are blank.
+  def gloss_text(translation, definition)
+    parts = [translation, definition].map { |s| s.to_s.strip }.reject(&:empty?)
+    parts.empty? ? nil : parts.join(". ")
   end
 
 end

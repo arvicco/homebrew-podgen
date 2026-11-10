@@ -153,7 +153,9 @@ class RssGenerator
         "type" => "audio/mpeg"
       })
 
-      add_text(item, "guid", ep[:filename])
+      # The guid value is the bare filename (frozen); isPermaLink="false"
+      # says it is not a URL (P17-1, owner ruling R12-03).
+      add_text(item, "guid", ep[:filename]).add_attribute("isPermaLink", "false")
 
       # Add transcript link if HTML version exists (transcript or script)
       if @base_url
