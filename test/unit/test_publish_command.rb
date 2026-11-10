@@ -233,6 +233,19 @@ class TestPublishCommand < Minitest::Test
     assert_equal "2026-03-10b", cmd.instance_variable_get(:@episode_id)
   end
 
+  def test_full_basename_id_is_kept_for_exact_matching
+    cmd = PodgenCLI::PublishCommand.new(["testpod", "testpod-2026-05-16a"], {})
+    assert_equal "testpod-2026-05-16a", cmd.instance_variable_get(:@episode_id)
+  end
+
+  def test_basename_of_another_podcast_is_a_usage_error
+    assert_raises(OptionParser::ParseError) { PodgenCLI::PublishCommand.new(["testpod", "otherpod-2026-05-16a"], {}) }
+  end
+
+  def test_publish_to_youtube_returns_1_when_explicit_id_matches_nothing
+    assert_equal 1, youtube_code_for(errors: [{type: :no_match, message: "No episode found matching '2026-01-15'"}])
+  end
+
   def test_unparseable_episode_id_is_a_usage_error
     assert_raises(OptionParser::ParseError) { PodgenCLI::PublishCommand.new(["testpod", "--date", "soon"], {}) }
   end

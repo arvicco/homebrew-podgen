@@ -7,6 +7,7 @@ root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "publish_options")
 require_relative File.join(root, "lib", "cli", "episode_selector")
+require_relative File.join(root, "lib", "episode_scanner")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "regen_cache")
@@ -58,8 +59,12 @@ module PodgenCLI
 
     # Q-132: the short forms the other episode commands accept (MMDD, DD,
     # …) resolve to one full YYYY-MM-DD[a-z]; a raw "17" would otherwise
-    # suffix-match the 17th of every month.
+    # suffix-match the 17th of every month. A full basename of this podcast
+    # (<pod>-YYYY-MM-DD[a-z]) is kept as is and matched exactly.
     def normalize_episode_id(raw)
+      prefix = "#{@podcast_name}-"
+      return raw if raw.start_with?(prefix) && raw.delete_prefix(prefix).match?(EpisodeScanner::EPISODE_ID_RE)
+
       date, suffix = EpisodeSelector::DateParser.parse(raw)
       "#{date.strftime("%Y-%m-%d")}#{suffix}"
     rescue ArgumentError => e
