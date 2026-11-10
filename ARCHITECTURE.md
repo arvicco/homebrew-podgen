@@ -48,7 +48,7 @@ Vocabulary filtering for cognates (words similar enough to the target-language e
 
 ## One transcript renderer, driven by a flag
 
-`TranscriptRenderer` is shared by RSS (`RssGenerator`) and site (`SiteGenerator`). RSS passes `vocab: false` (strips vocab, removes bold markers); site uses the default `vocab: true` (linked words + rendered definitions).
+`TranscriptRenderer` is shared by RSS (`RssGenerator`) and site (`SiteGenerator`). RSS passes `vocab: false` (strips vocab, removes bold markers); site uses the default `vocab: true` (linked words + rendered definitions). Source links (`- [title](url)`, written raw by `ScriptRenderer`) are read with one pattern, `TranscriptRenderer::MARKDOWN_LINK` — one level of `[..]` in a title and of `(..)` in a URL — by the feed HTML, the site and `LegacyScriptParser` alike (P17-3).
 
 **Why.** There is exactly one source of truth for how a transcript turns into HTML. The two consumers differ only in whether vocabulary annotation is *rendered* — not in transcript structure, segmentation, or escaping. A second renderer would drift.
 

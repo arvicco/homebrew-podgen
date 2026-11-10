@@ -168,6 +168,24 @@ class TestSiteGenerator < Minitest::Test
     assert_includes html, "<li>"
   end
 
+  # P17-3 (Q-135): a URL with parentheses and a title with brackets, as
+  # ScriptRenderer writes them, render as whole links on the site.
+  def test_parse_transcript_html_links_paren_url_and_bracketed_title_from_script_renderer
+    require "script_renderer"
+    sources = ScriptRenderer.render_sources([
+      {title: "Ruby", url: "https://en.wikipedia.org/wiki/Ruby_(programming_language)"},
+      {title: "[Video] Rails 8", url: "https://example.com/rails8"}
+    ])
+    path = File.join(@episodes_dir, "test.md")
+    File.write(path, "# Title\n\n## Opening\n\nHello.\n\n## More info\n\n#{sources}")
+
+    html, _langs = build_generator.send(:parse_transcript_html, path)
+
+    assert_includes html, '<a href="https://en.wikipedia.org/wiki/Ruby_(programming_language)" target="_blank" rel="noopener">Ruby</a>'
+    assert_includes html, '<a href="https://example.com/rails8" target="_blank" rel="noopener">[Video] Rails 8</a>'
+    refute_includes html, "language)</li>", "no stray paren after the link"
+  end
+
   def test_parse_transcript_html_returns_nil_for_missing_file
     gen = build_generator
     html, langs = gen.send(:parse_transcript_html, nil)
