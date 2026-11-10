@@ -112,8 +112,9 @@ module PodgenCLI
       return 2 unless lang
 
       kv = KnownVocabulary.for_config(@config)
-      known = kv.lemma_set(lang)
-      rows = VocabLedger.for_config(@config).top_explained(min: @min)
+      ledger = VocabLedger.for_config(@config)
+      known = kv.lemma_set(lang).map { |w| ledger.lemma_key(w) }.to_set # Q-159 (10): compared as the ledger keys
+      rows = ledger.top_explained(min: @min)
         .reject { |row| known.include?(row[:lemma]) }
 
       if rows.empty?

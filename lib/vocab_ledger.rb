@@ -123,6 +123,10 @@ class VocabLedger
       .sort_by { |h| [-h[:count], h[:lemma]] }
   end
 
+  # The ledger's key for lemma (lowercased; reflexive particle stripped for
+  # the reflexive languages), for callers that filter its rows (Q-159 (10)).
+  def lemma_key(lemma) = key(lemma)
+
   private
 
   def key(lemma)
