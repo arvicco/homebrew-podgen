@@ -197,6 +197,28 @@ class TestR2Publisher < Minitest::Test
     assert_equal 1, regen_calls, "RegenCache memo must skip regen on second call for same pod"
   end
 
+  # P18-10 pin: the tweet selection (scan_eligible_episodes) and status's
+  # tweet-stall dates (StatusCommand#announced_episode_dates) apply one
+  # language filter, for every shape of the `## Twitter` languages value.
+  def test_announced_language_filter_tweets_and_status_agree_pinned
+    require "cli/status_command"
+    %w[pod-2026-10-01 pod-2026-10-02-es pod-2026-10-03-it].each do |b|
+      File.write(File.join(@episodes_dir, "#{b}.mp3"), "x")
+      File.write(File.join(@episodes_dir, "#{b}_transcript.md"), "# T\n")
+    end
+    config = StubR2Config.new(episodes_dir: @episodes_dir)
+    config.define_singleton_method(:language_for_episode) { |b| b[/-(es|it)\z/, 1] || "en" }
+    publisher = build_publisher(config: config, runner: ->(*) { true })
+    status = PodgenCLI::StatusCommand.new([], {})
+    {:all => %w[01 02 03], nil => %w[01], [] => %w[01], %w[es] => %w[02],
+     %w[es it] => %w[02 03], "es" => %w[02], "en,es" => %w[01 02]}.each do |langs, days|
+      dates = days.map { |d| Date.new(2026, 10, d.to_i) }
+      tweeted = publisher.send(:scan_eligible_episodes, Date.new(2026, 1, 1), langs)
+      assert_equal dates, tweeted.map { |ep| EpisodeFiltering.parse_date(ep[:base_name]) }, "tweets #{langs.inspect}"
+      assert_equal dates, status.send(:announced_episode_dates, config, langs), "status #{langs.inspect}"
+    end
+  end
+
   private
 
   StubR2Config = Struct.new(:episodes_dir, :name, :base_url, :image,
