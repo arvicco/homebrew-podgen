@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 
 ENV["ELEVENLABS_API_KEY"] ||= "test-key"
 ENV["ELEVENLABS_VOICE_ID"] ||= "test-voice"
@@ -157,6 +158,19 @@ class TestTTSAgent < Minitest::Test
       assert_equal "dict-abc", data["dictionary_id"]
       assert_equal "ver-def", data["version_id"]
       assert_equal "sha-ghi", data["file_sha256"]
+    end
+  end
+
+  def test_save_dict_cache_writes_through_atomic_writer
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "dict.yml")
+      agent = build_agent
+
+      written = record_atomic_writes { agent.send(:save_dict_cache, path, "d1", "v1", "s1") }
+
+      assert_equal [path], written
+      assert_equal YAML.dump({ "dictionary_id" => "d1", "version_id" => "v1", "file_sha256" => "s1" }), File.read(path)
+      assert_empty Dir.glob(File.join(dir, "*.tmp.*"))
     end
   end
 

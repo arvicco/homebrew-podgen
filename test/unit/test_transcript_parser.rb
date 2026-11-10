@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "transcript_parser"
 
 class TestTranscriptParser < Minitest::Test
@@ -220,6 +221,21 @@ class TestTranscriptParser < Minitest::Test
       assert_includes content, "## Transcript\n\nParagraph one.\n\nParagraph two."
       assert_includes content, "## Vocabulary\n"
       assert_includes content, "**word**"
+    end
+  end
+
+  def test_write_goes_through_atomic_writer_with_unchanged_bytes
+    Dir.mktmpdir("tp_test") do |dir|
+      path = File.join(dir, "out_transcript.md")
+      File.write(path, "old")
+
+      written = record_atomic_writes do
+        TranscriptParser.write(path, title: "T", description: "D.", body: "B.", vocabulary: "- **w** — x")
+      end
+
+      assert_equal [path], written
+      assert_equal "# T\n\nD.\n\n## Transcript\n\nB.\n\n## Vocabulary\n\n- **w** — x\n", File.read(path)
+      assert_empty Dir.glob(File.join(dir, "*.tmp.*"))
     end
   end
 

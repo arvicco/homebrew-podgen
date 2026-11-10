@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "timestamp_persister"
 
 class TestTimestampPersister < Minitest::Test
@@ -168,6 +169,35 @@ class TestTimestampPersister < Minitest::Test
     assert_equal 1, data["version"]
     assert_equal "elab", data["engine"]
     assert_in_delta 3.5, data["intro_duration"]
+  end
+
+  def test_persist_writes_through_atomic_writer_leaving_no_temp
+    path = File.join(@tmpdir, "ep_timestamps.json")
+
+    written = record_atomic_writes do
+      TimestampPersister.persist(segments: [{ start: 0.0, end: 1.0, text: "A." }],
+        engine: "groq", intro_duration: 0.0, output_path: path)
+    end
+
+    assert_equal [path], written
+    assert_equal JSON.pretty_generate({ "version" => 1, "engine" => "groq", "intro_duration" => 0.0,
+      "segments" => [{ "start" => 0.0, "end" => 1.0, "text" => "A." }] }), File.read(path)
+    assert_empty Dir.glob(File.join(@tmpdir, "*.tmp.*"))
+  end
+
+  def test_update_segments_rewrites_through_atomic_writer_leaving_no_temp
+    path = File.join(@tmpdir, "ep_timestamps.json")
+    TimestampPersister.persist(segments: [{ start: 0.0, end: 1.0, text: "Raw." }],
+      engine: "groq", intro_duration: 0.0, output_path: path)
+
+    written = record_atomic_writes do
+      TimestampPersister.update_segments(path, [{ "start" => 0.0, "end" => 1.0, "text" => "Clean." }])
+    end
+
+    assert_equal [path], written
+    assert_equal JSON.pretty_generate({ "version" => 1, "engine" => "groq", "intro_duration" => 0.0,
+      "segments" => [{ "start" => 0.0, "end" => 1.0, "text" => "Clean." }], "reconciled" => true }), File.read(path)
+    assert_empty Dir.glob(File.join(@tmpdir, "*.tmp.*"))
   end
 
   def test_load_returns_reconciled_flag

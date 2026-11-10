@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "atomic_writer"
 
 # Persists transcription segment timestamps to a JSON sidecar file.
 # Used by the language pipeline to enable SRT subtitle generation for YouTube.
@@ -48,7 +49,7 @@ module TimestampPersister
       "segments" => adjusted
     }
 
-    File.write(output_path, JSON.pretty_generate(data))
+    AtomicWriter.write(output_path, JSON.pretty_generate(data))
   end
 
   # Replace segments in an existing timestamps file and mark as reconciled.
@@ -58,7 +59,7 @@ module TimestampPersister
 
     data["segments"] = segments
     data["reconciled"] = true
-    File.write(path, JSON.pretty_generate(data))
+    AtomicWriter.write(path, JSON.pretty_generate(data))
   end
 
   # Load a timestamps JSON file. Returns parsed Hash or nil if file missing.
