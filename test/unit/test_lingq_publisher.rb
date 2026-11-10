@@ -245,6 +245,29 @@ class TestLingQPublisher < Minitest::Test
     assert_match(/ep-2026-01-15/, agent.uploads.first[:title])
   end
 
+  # Q-132 (P18-3): an explicit id that matches nothing is a failed run.
+  def test_episode_id_matching_nothing_is_an_error
+    seed_ep("ep-2026-01-14")
+    config = stub_config(lingq_enabled: true)
+    publisher = build_publisher(config: config, agent: stub_agent, episode_id: "2026-01-15")
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_equal [:no_match], result.errors.map { |e| e[:type] }
+    assert_includes err, "No episode found matching '2026-01-15'"
+  end
+
+  def test_no_episode_id_and_nothing_pending_is_no_error
+    config = stub_config(lingq_enabled: true)
+    publisher = build_publisher(config: config, agent: stub_agent)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_empty result.errors
+  end
+
   def test_episode_id_with_force_does_not_pull_in_other_episodes
     seed_ep("ep-2026-01-14")
     seed_ep("ep-2026-01-15")
