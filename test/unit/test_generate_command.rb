@@ -246,6 +246,42 @@ class TestGenerateCommand < Minitest::Test
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-141 (P19-5): one truth for a queue.yml of the wrong shape — `podgen
+  # validate` reports an ERROR and generate aborts, with the same message
+  # (today: validate warns "unexpected format" while generate dies).
+  def test_queue_wrong_shape_is_the_same_error_in_validate_and_generate
+    require "validators/guidelines_validator"
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "qpod")
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), "## Format\nf\n## Tone\nt\n## Topics\nx\n")
+    require "podcast_config"
+
+    ["- AI\n", "a: 1\n", "topics: AI\n"].each do |body|
+      File.write(File.join(podcast_dir, "queue.yml"), body)
+      config = PodcastConfig.new("qpod")
+
+      result = Validators::GuidelinesValidator.new(config).validate
+      queue_errors = result[:errors].grep(/queue\.yml/)
+      assert_equal 1, queue_errors.size, "#{body.inspect}: #{result.inspect}"
+      refute(result[:warnings].any? { it.include?("queue.yml") }, "#{body.inspect}: #{result[:warnings].inspect}")
+
+      cmd = runnable_command("news")
+      cmd.singleton_class.send(:remove_method, :generate_topics)
+      cmd.instance_variable_set(:@config, config)
+      cmd.instance_variable_set(:@dry_run, true)
+      code = nil
+      capture_io { code = cmd.run }
+
+      assert_equal 1, code, body.inspect
+      message = last_log_line[/first=RuntimeError: (.*)\z/, 1]
+      assert_equal "Guidelines: #{message}", queue_errors.first, body.inspect
+    end
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success
@@ -473,6 +509,7 @@ class TestGenerateCommand < Minitest::Test
   def test_run_news_corrupt_history_fails_before_any_phase
     cmd = owner_data_command("news")
     File.write(cmd.instance_variable_get(:@config).history_path, "not: a list\n")
+    cmd.singleton_class.send(:remove_method, :generate_topics)
     cmd.define_singleton_method(:generate_topics) { raise "topics ran against an unreadable history" }
     code = nil
     capture_io { code = cmd.run }
