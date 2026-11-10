@@ -25,6 +25,7 @@ class TestOpenAIClient < Minitest::Test
     }) do
       h = Class.new {
         include OpenAIClient
+
         public :init_openai_client
       }.new
       h.init_openai_client
