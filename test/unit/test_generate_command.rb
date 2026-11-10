@@ -467,6 +467,45 @@ class TestGenerateCommand < Minitest::Test
       last_log_line
   end
 
+  # Q-140 (P19-4): the commit writes history.yml strictly; a corrupt file
+  # stops the run before any paid step, not after the episode is produced
+  # and moved into place (today: the run proceeds and reads it as empty).
+  def test_run_news_corrupt_history_fails_before_any_phase
+    cmd = owner_data_command("news")
+    File.write(cmd.instance_variable_get(:@config).history_path, "not: a list\n")
+    cmd.define_singleton_method(:generate_topics) { raise "topics ran against an unreadable history" }
+    code = nil
+    capture_io { code = cmd.run }
+
+    assert_equal 1, code
+    assert_match(/RUN-OUTCOME status=error .*history\.yml: expected Array, got Hash/, last_log_line)
+  end
+
+  # Q-140 (P19-4): a language run also writes excluded_urls.yml mid-run (a
+  # gone source, an [x] at the listening prompt) after archiving and
+  # downloading; a corrupt file stops it before the pipeline starts.
+  def test_run_language_corrupt_excluded_urls_fails_before_the_pipeline
+    cmd = owner_data_command("language")
+    File.write(cmd.instance_variable_get(:@config).excluded_urls_path, "not: a list\n")
+    built = false
+    code = nil
+    PodgenCLI::LanguagePipeline.stub(:new, ->(**) { (built = true) and Struct.new(:warnings) { def run = 0 }.new([]) }) do
+      capture_io { code = cmd.run }
+    end
+
+    assert_equal 1, code
+    refute built, "language pipeline started against an unreadable excluded_urls.yml"
+    assert_match(/excluded_urls\.yml: expected Array, got Hash/, last_log_line)
+  end
+
+  def test_run_news_clean_owner_data_passes_preflight
+    cmd = owner_data_command("news")
+    File.write(cmd.instance_variable_get(:@config).excluded_urls_path, "not: a list\n") # news never writes it
+    capture_io { cmd.run }
+
+    assert_equal "RUN-OUTCOME status=ok warnings=0 errors=0", last_log_line
+  end
+
   def test_run_outcome_counts_logged_library_warnings
     cmd = runnable_command("news")
     cmd.define_singleton_method(:research_topics) do |_|
@@ -679,6 +718,7 @@ class TestGenerateCommand < Minitest::Test
     cmd.define_singleton_method(:setup_pipeline) { nil }
     cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil }
     cmd.define_singleton_method(:preflight_network!) { |_| nil }
+    cmd.define_singleton_method(:preflight_owner_data!) { nil }
     cmd.define_singleton_method(:generate_topics) { ["t"] }
     cmd.define_singleton_method(:research_topics) { |_| [] }
     cmd.define_singleton_method(:inject_priority_links) { |r| [r, []] }
@@ -686,6 +726,16 @@ class TestGenerateCommand < Minitest::Test
     cmd.define_singleton_method(:review_script) { |s, *| s }
     cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod-2026-10-10.mp3"] }
     cmd.define_singleton_method(:finalize) { |*| nil }
+    cmd
+  end
+
+  # runnable_command with the real owner-data preflight over temp files.
+  def owner_data_command(type)
+    cmd = runnable_command(type)
+    cmd.singleton_class.send(:remove_method, :preflight_owner_data!)
+    config = Struct.new(:type, :history_path, :excluded_urls_path)
+      .new(type, File.join(@tmpdir, "history.yml"), File.join(@tmpdir, "excluded_urls.yml"))
+    cmd.instance_variable_set(:@config, config)
     cmd
   end
 

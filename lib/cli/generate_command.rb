@@ -22,6 +22,7 @@ require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "priority_links")
 require_relative File.join(root, "lib", "script_artifact")
@@ -53,6 +54,7 @@ module PodgenCLI
 
         verify_ffmpeg!(@logger) unless @dry_run
         preflight_network!(@logger) unless @dry_run
+        preflight_owner_data!
 
         return finish_run(run_language_pipeline) if @config.type == "language"
 
@@ -549,6 +551,15 @@ module PodgenCLI
 
     # One DNS lookup before any phase: a dead network fails here in seconds
     # with a single line instead of hours of stacked retries (P1-13).
+    # Strict reads before any paid or written step: the commit writes
+    # history.yml strictly, and a language run writes excluded_urls.yml
+    # mid-run, so a corrupt file stops the run here rather than after the
+    # episode is produced and moved into place (Q-140).
+    def preflight_owner_data!
+      YamlLoader.load(@config.history_path, default: [], raise_on_error: true)
+      YamlLoader.load(@config.excluded_urls_path, default: [], raise_on_error: true) if @config.type == "language"
+    end
+
     def preflight_network!(logger)
       Connectivity.preflight!
     rescue Connectivity::PreflightError => e

@@ -37,6 +37,12 @@ module PodgenCLI
       new_output_dir = File.join(PodcastConfig.root, "output", @new_name)
       new_episodes_dir = File.join(new_output_dir, "episodes")
 
+      # Strict read before anything is copied: a corrupt ledger read as {}
+      # would fork a podcast with no upload tracking (Q-140).
+      old_tracking = File.join(old_output_dir, "uploads.yml")
+      old_tracking = File.join(old_output_dir, "lingq_uploads.yml") unless File.exist?(old_tracking)
+      tracking_data = YamlLoader.load(old_tracking, default: {}, raise_on_error: true)
+
       # 1. Copy config directory
       FileUtils.cp_r(old_config.podcast_dir, new_podcast_dir)
       puts "Config: #{old_config.podcast_dir} → #{new_podcast_dir}"
@@ -63,15 +69,10 @@ module PodgenCLI
       end
 
       # 4. Copy and rename upload tracking
-      old_tracking = File.join(old_output_dir, "uploads.yml")
-      old_tracking = File.join(old_output_dir, "lingq_uploads.yml") unless File.exist?(old_tracking)
-      if File.exist?(old_tracking)
-        data = YamlLoader.load(old_tracking, default: {})
-        if data.is_a?(Hash) && !data.empty?
-          renamed = rename_tracking_basenames(data, @podcast_name, @new_name)
-          File.write(File.join(new_output_dir, "uploads.yml"), renamed.to_yaml)
-          puts "Upload tracking: copied and renamed"
-        end
+      unless tracking_data.empty?
+        renamed = rename_tracking_basenames(tracking_data, @podcast_name, @new_name)
+        File.write(File.join(new_output_dir, "uploads.yml"), renamed.to_yaml)
+        puts "Upload tracking: copied and renamed"
       end
 
       puts
