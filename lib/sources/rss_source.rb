@@ -149,18 +149,24 @@ class RSSSource
   end
 
   def fetch_feed(feed_url, tag: nil)
-    log("Fetching RSS#{tag ? " '#{tag}'" : ""}: #{feed_url}")
+    fetch_parsed(feed_url, tag: tag) { |body| parse_feed(body) }
+  end
+
+  # Shared by fetch_feed (research) and fetch_feed_episodes: logs the fetch,
+  # retries transient failures, and turns any failure into a counted
+  # warning and [].
+  def fetch_parsed(feed_url, tag:, what: "")
+    log("Fetching RSS#{tag ? " '#{tag}'" : ""}#{what}: #{feed_url}")
     gone = nil
     items = with_retries(max: MAX_RETRIES, label: "RSS") do
-      body = http_get_with_redirects(feed_url)
-      parse_feed(body)
+      yield http_get_with_redirects(feed_url)
     rescue FeedGone => e
       gone = e # permanent: leave the retry loop after one attempt
     end
     raise gone if gone
 
     items
-  rescue => e # skippable: one feed down; the other feeds still feed research
+  rescue => e # skippable: one feed down; the other feeds still serve research/episodes
     log_warning("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
     []
   end
@@ -242,20 +248,7 @@ class RSSSource
   end
 
   def fetch_feed_episodes(feed_url, tag: nil)
-    log("Fetching RSS#{tag ? " '#{tag}'" : ""} episodes: #{feed_url}")
-    gone = nil
-    items = with_retries(max: MAX_RETRIES, label: "RSS") do
-      body = http_get_with_redirects(feed_url)
-      parse_feed_episodes(body)
-    rescue FeedGone => e
-      gone = e # permanent: leave the retry loop after one attempt
-    end
-    raise gone if gone
-
-    items
-  rescue => e # skippable: an unreachable feed yields no episodes
-    log_warning("Failed to fetch#{tag ? " '#{tag}'" : ""} #{feed_url}: #{e.class}: #{e.message}")
-    []
+    fetch_parsed(feed_url, tag: tag, what: " episodes") { |body| parse_feed_episodes(body) }
   end
 
   def parse_feed_episodes(xml)
