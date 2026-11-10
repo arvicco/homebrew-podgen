@@ -79,6 +79,17 @@ class TestTranscriptRenderer < Minitest::Test
     assert_equal "plain text", @r.linkify_markdown("plain text")
   end
 
+  # P18-8 (4): text outside links is escaped like the site's override.
+  def test_linkify_markdown_escapes_text_outside_links
+    result = @r.linkify_markdown("[A](https://a.com) — R&D <b>")
+    assert_equal '<a href="https://a.com">A</a> — R&amp;D &lt;b&gt;', result
+  end
+
+  def test_linkify_markdown_quote_in_url_cannot_close_href
+    result = @r.linkify_markdown('[A](https://a.com/x"onmouseover="y)')
+    assert_equal '<a href="https://a.com/x&quot;onmouseover=&quot;y">A</a>', result
+  end
+
   # --- split_vocabulary_section ---
 
   def test_split_vocabulary_section_with_vocab

@@ -294,7 +294,7 @@ class SiteGenerator
     parts.map do |part|
       if part =~ MARKDOWN_LINK_EXACT
         title = escape_html(Regexp.last_match(1))
-        url = escape_html(Regexp.last_match(2))
+        url = escape_attr(Regexp.last_match(2))
         "<a href=\"#{url}\" target=\"_blank\" rel=\"noopener\">#{title}</a>"
       else
         escape_html(part)
