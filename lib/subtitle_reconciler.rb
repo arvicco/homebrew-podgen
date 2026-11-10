@@ -21,10 +21,12 @@ module SubtitleReconciler
   # chars/token, so the cap is sized from the content: ~40 tokens of
   # structure per segment + 0.8 tokens per char of segment and transcript
   # text, floored at MIN_TOKENS. MAX_TOKENS_CEILING keeps every request
-  # (including the doubled retry) well inside the Sonnet line's output
-  # limit and the non-streaming request bound.
+  # (including the doubled retry) inside what the model can emit within
+  # AnthropicClient::REQUEST_TIMEOUT (300 s): a 20k-token answer is the
+  # most a non-streaming call completes in that window. The I-12 episode
+  # (65 segments, 6043 chars) needs ~12k; its doubled retry still fits.
   MIN_TOKENS = 4096
-  MAX_TOKENS_CEILING = 32_000
+  MAX_TOKENS_CEILING = 20_000
 
   # Usage logging (P8-2) through the ambient logger; private singletons, so
   # the module's public surface is unchanged.
