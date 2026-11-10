@@ -266,8 +266,9 @@ tool, six DRY extractions) CLOSED 2026-11-09 21:30 CST (PR #20, merge
 and site safety: HTML escaping in site templates, atomic rewrites of
 published files, move/fork history rows, strict-read residues,
 guidelines validation; plus Phase 18 residues and the review-bundle
-capture) EXECUTING — adopted 2026-11-09 21:32 CST (options B+C of the
-Gate 18 slate). 0 open rulings; R9-02 returns 11-12, R10-02 11-26.
+capture) AT GATE 19 — adopted 2026-11-09 21:32 CST (options B+C of the
+Gate 18 slate), all eight packets landed, CRPR APPROVED after two rounds
+(refs/cr/reviewed = f41570c); gate PR open, the owner merges. 0 open rulings; R9-02 returns 11-12, R10-02 11-26.
 I-11: owner re-consented 2026-11-09 15:39 (expires ≈ 11-16 while the
 OAuth app is in testing).
 Update this line at each gate.
