@@ -25,6 +25,7 @@ class VocabHealth
   TOP_N = 12
   MISS_MIN = 3
   COVER_PREFIX = 5
+  KEY_GROUP_TITLE = "Key words" # VocabularyAnnotator::KEY_GROUP_HEADING without "### "
 
   Report = Struct.new(:episodes, :total_episodes, :entries, :unlevelled, :unique_lemmas,
     :repeat_entries, :median_per_episode, :median_per_minute, :lemmas_3plus,
@@ -107,7 +108,7 @@ class VocabHealth
     density += ", #{format("%.1f", r.median_per_minute)}/min" if r.median_per_minute
     top = r.top_lemmas.select { |_, c| c >= 2 }.map { |l, c| "#{l}×#{c}" }.join(", ")
     out = ["#{name} (#{scope}): #{r.entries} entries (#{r.unique_lemmas} unique lemmas); #{density}"]
-    out << "  repeat share #{pct(r.repeat_entries, r.entries)}% (#{r.repeat_entries} entries re-explain a lemma from an earlier episode)"
+    out << "  repeat share #{pct(r.repeat_entries, r.entries)}% (#{r.repeat_entries} entries re-explain a lemma from an earlier episode, key words aside)"
     out << "  explained ≥3×: #{r.lemmas_3plus} lemmas#{"; top: #{top}" unless top.empty?}"
     out << "  #{format_levels(r)}"
     out << "  key-term misses: #{r.key_term_misses}/#{r.episodes} episodes with ≥#{MISS_MIN} unexplained candidates"
@@ -122,6 +123,7 @@ class VocabHealth
     EpisodeFiltering.all_transcripts(@episodes_dir).map do |path|
       parsed = TranscriptParser.parse_file(path)
       by_key = (parsed.vocabulary && parse_vocab_entries(parsed.vocabulary)) || {}
+      keys = key_lemmas(parsed.vocabulary)
       entries = []
       unlevelled = 0
       by_key.values.uniq(&:object_id).each do |e|
@@ -130,7 +132,8 @@ class VocabHealth
           unlevelled += 1
           next
         end
-        entries << {lemma: e[:lemma].to_s.downcase.strip, level: level,
+        lemma = e[:lemma].to_s.downcase.strip
+        entries << {lemma: lemma, level: level, key: keys.include?(lemma),
                      definition: first_sentence(e[:definition])}
       end
       basename = File.basename(path, "_transcript.md")
@@ -144,13 +147,26 @@ class VocabHealth
     text.empty? ? nil : text
   end
 
+  # Lemmas listed under the `### Key words` sub-heading (the annotator's
+  # KEY_GROUP_HEADING): pinned entries that bypass the ledger and the cap.
+  def key_lemmas(vocabulary)
+    return Set.new unless vocabulary
+
+    languages, body = extract_vocab_languages(vocabulary)
+    prefix = languages ? " (#{languages.join(", ")})\n" : ""
+    vocab_groups(body).select { |title, _| title == KEY_GROUP_TITLE }
+      .flat_map { |_, text| (parse_vocab_entries(prefix + text) || {}).values }
+      .map { |e| e[:lemma].to_s.downcase.strip }.to_set
+  end
+
+  # Re-explanations of a lemma from an earlier episode, pinned key words
+  # aside (they bypass the re-exposure cap; Q-157).
   def count_repeats(eps, window_start)
     seen = Set.new
     repeats = 0
     eps.each_with_index do |ep, i|
-      lemmas = ep[:entries].map { |e| e[:lemma] }
-      repeats += lemmas.count { |l| seen.include?(l) } if i >= window_start
-      seen.merge(lemmas)
+      repeats += ep[:entries].count { |e| !e[:key] && seen.include?(e[:lemma]) } if i >= window_start
+      seen.merge(ep[:entries].map { |e| e[:lemma] })
     end
     repeats
   end

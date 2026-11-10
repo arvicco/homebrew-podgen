@@ -64,6 +64,27 @@ class TestVocabHealth < Minitest::Test
     assert_equal 0, r.lemmas_3plus                 # within the window
   end
 
+  # P18-8 (8): a pinned key word bypasses the re-exposure cap, so its
+  # re-explanation is not a repeat the cap controls; the same lemma
+  # re-explained outside Key words still is.
+  def test_report_repeats_do_not_count_re_explained_key_words
+    write_ep("p-2026-01-01", "x", ["- **lupo** (B1 noun) — wolf", "- **mela** (B1 noun) — apple"])
+    write_raw("p-2026-01-02", "x", "## Vocabulary\n\n### Key words\n\n- **lupo** (B1 noun) — wolf\n\n" \
+      "### Also new\n\n- **mela** (B1 noun) — apple\n")
+    write_raw("p-2026-01-03", "x", "## Vocabulary (English, Russian)\n\n### Key words\n\n" \
+      "- **lupo** (B1 noun)\n  - wolf\n  - волк\n\n### Also new\n\n- **mela** (B1 noun)\n  - apple\n  - яблоко\n")
+
+    r = health.report
+
+    assert_equal 6, r.entries
+    assert_equal 2, r.repeat_entries # mela (ep2, ep3); lupo pinned both times
+  end
+
+  def test_key_group_title_matches_the_annotator_heading
+    require "vocabulary_annotator"
+    assert_equal VocabularyAnnotator::KEY_GROUP_HEADING, "### #{VocabHealth::KEY_GROUP_TITLE}"
+  end
+
   def test_report_reads_multi_language_sections
     write_raw("p-2026-01-01", "Il lupo.", "## Vocabulary (English, Russian)\n\n- **lupo** (B1 noun)\n  - wolf. An animal\n  - волк\n")
     write_raw("p-2026-01-02", "Il lupo.", "## Vocabulary (English, Russian)\n\n- **lupo** (B1 noun)\n  - she-wolf. x\n  - волчица\n")
