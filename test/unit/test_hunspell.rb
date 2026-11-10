@@ -93,10 +93,60 @@ class TestHunspell < Minitest::Test
     assert_includes forms, "medena"
   end
 
+  # --- P17-5 (Q-115): verb-stem expansion keeps only forms of the lemma ---
+
+  def test_expand_verb_excludes_words_that_only_share_the_stem
+    forms = expand_stubbed("leteti", roots: %w[leteti letim],
+      unmunched: %w[leteti letim letel letela leta leto letom],
+      stems: {"leteti" => %w[leteti letim], "letim" => %w[letim], "letel" => %w[letel leteti],
+              "letela" => %w[leteti], "leta" => %w[leta letam let le], "leto" => %w[leto],
+              "letom" => %w[leto]})
+    assert_equal %w[leteti letim letel letela], forms
+  end
+
+  def test_expand_verb_without_dictionary_roots_returns_empty
+    forms = expand_stubbed("xyzzeti", roots: [], unmunched: %w[xyzzam xyzzati], stems: {})
+    assert_equal [], forms
+  end
+
+  def test_expand_noun_does_not_stem_the_forms_again
+    stems_called = false
+    forms = expand_stubbed("lupina", roots: %w[lupin], unmunched: %w[lupina lupino lupini],
+      stems: ->(*) { stems_called = true; {} })
+    assert_equal %w[lupina lupino lupini], forms
+    refute stems_called
+  end
+
   def test_expand_unknown_word_returns_empty
     skip "hunspell + sl_SI dictionary required" unless Tell::Hunspell.supports?("sl")
 
     forms = Tell::Hunspell.expand("burkla", lang: "sl")
     assert_equal [], forms
+  end
+
+  private
+
+  Status = Struct.new(:success?)
+
+  # expand with every external seam stubbed: the .dic index holds the
+  # unmunched words, `hunspell -s` of the lemma gives roots, unmunch prints
+  # unmunched, and stems (a hash or a callable) answers the batch stemmer.
+  def expand_stubbed(lemma, roots:, unmunched:, stems:)
+    index = Hash.new { |h, k| h[k] = [] }
+    (unmunched + roots + [lemma]).uniq.each { |w| index[w] << "#{w}/A\n" }
+    stems_impl = stems.respond_to?(:call) ? stems : ->(*) { stems }
+    Tell::Hunspell.stub(:supports?, true) do
+      Tell::Hunspell.stub(:utf8_paths, ["/x.dic", "/x.aff"]) do
+        Tell::Hunspell.stub(:dic_word_index, index) do
+          Tell::Hunspell.stub(:stem, roots) do
+            Tell::Hunspell.stub(:stems_of, stems_impl) do
+              Open3.stub(:capture3, ["#{unmunched.join("\n")}\n", "", Status.new(true)]) do
+                Tell::Hunspell.expand(lemma, lang: "sl")
+              end
+            end
+          end
+        end
+      end
+    end
   end
 end
