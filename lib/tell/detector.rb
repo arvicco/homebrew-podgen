@@ -93,8 +93,8 @@ module Tell
       "pt" => %w[uma dos das não com como mas para por muito isso esta este],
       "nl" => %w[het een zijn heeft voor met niet van ook maar wel deze],
       "pl" => %w[jest nie ale jak tak dla czy ten jest tego jego],
-      "cs" => %w[jest není ale jak tak pro ten jeho jsem jsou],
-      "hr" => %w[sam bio bila bilo smo ste kao također ili jer pri tom kako vrlo],
+      "cs" => %w[je jest není ale jak tak pro ten jeho jsem jsou],
+      "hr" => %w[je nije prije sam bio bila bilo smo ste kao također ili jer pri tom kako vrlo],
       "ro" => %w[este sunt avea fost care dar sau pentru acest aceasta foarte],
       "hu" => %w[egy hogy nem van ezt azt igen nem volt csak mint],
       "sv" => %w[och det att den för med har inte som ett],
@@ -118,7 +118,11 @@ module Tell
       best_lang, best_score = scores.max_by { |_, v| v }
       return nil if best_score < 2
 
-      best_lang
+      # A tie goes to the one tied language whose characteristic letters
+      # appear; otherwise the first in STOP_WORDS order, as before (P18-7).
+      tied = scores.select { |_, v| v == best_score }.keys
+      marked = tied.select { |lang| has_characteristic_chars?(text, lang) }
+      (tied.size > 1 && marked.size == 1) ? marked.first : best_lang
     end
 
     # Diacritics/characters that are distinctive to specific languages

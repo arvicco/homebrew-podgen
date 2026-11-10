@@ -592,13 +592,8 @@ module PodgenCLI
       UPLOAD_CONDITIONS.filter_map { |re, condition| condition if batch.any? { |l| l.match?(re) } }
     end
 
-    # Same language filter as R2Publisher#scan_eligible_episodes.
     def announced_episode_dates(config, languages)
-      allowed = if languages == :all
-        nil
-      else
-        Array(languages).empty? ? [config.primary_language] : languages
-      end
+      allowed = EpisodeFiltering.announced_languages(config, languages)
       EpisodeScanner.scan(config.episodes_dir).filter_map do |ep|
         next if allowed && !allowed.include?(config.language_for_episode(ep[:base_name]))
         EpisodeFiltering.parse_date(ep[:base_name])

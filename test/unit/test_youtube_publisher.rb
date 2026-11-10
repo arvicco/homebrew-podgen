@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "youtube_publisher"
+require "video_generator"
 require "youtube_uploader"
 require "regen_cache"
 require "google/apis/errors"
@@ -488,6 +490,29 @@ class TestYouTubePublisher < Minitest::Test
     assert_match(/ep-2026-01-15/, uploader.uploads.first[1][:title])
   end
 
+  # Q-132 (P18-3): an explicit id that matches nothing is a failed run.
+  def test_episode_id_matching_nothing_is_an_error
+    seed_ep("ep-2026-01-14")
+    config = stub_config(youtube_enabled: true)
+    publisher = build_publisher(config: config, uploader: stub_uploader, episode_id: "2026-01-15")
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_equal [:no_match], result.errors.map { |e| e[:type] }
+    assert_includes err, "No episode found matching '2026-01-15'"
+  end
+
+  def test_no_episode_id_and_no_episodes_is_no_error
+    config = stub_config(youtube_enabled: true)
+    publisher = build_publisher(config: config, uploader: stub_uploader)
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert_empty result.errors
+  end
+
   def test_episode_id_with_force_does_not_pull_in_other_episodes
     seed_ep("ep-2026-01-14")
     seed_ep("ep-2026-01-15")
@@ -801,7 +826,7 @@ class TestYouTubePublisher < Minitest::Test
     seed_ep(base)
     config = stub_config(youtube_enabled: true)
     config.transcription_engines = %w[groq]
-    logger = RecordingLogger.new
+    logger = LineLogger.new
     publisher = YouTubePublisher.new(config: config, uploader: stub_uploader, tracker_path: @uploads_path, logger: logger)
 
     _, err = capture_io do
@@ -845,7 +870,7 @@ class TestYouTubePublisher < Minitest::Test
     File.write(File.join(@episodes_dir, "#{base}_timestamps.json"),
       JSON.generate({"version" => 1, "engine" => "groq", "intro_duration" => 0.0, "segments" => []}))
     config = stub_config(youtube_enabled: true)
-    logger = RecordingLogger.new
+    logger = LineLogger.new
     publisher = YouTubePublisher.new(config: config, uploader: stub_uploader, tracker_path: @uploads_path, logger: logger)
     failed = Struct.new(:status, :message).new(:failed, "bad reply")
 
@@ -858,13 +883,6 @@ class TestYouTubePublisher < Minitest::Test
   end
 
   private
-
-  class RecordingLogger
-    attr_reader :lines
-
-    def initialize = @lines = []
-    def log(msg) = @lines << msg
-  end
 
   def ep_hash(base)
     {base_name: base, mp3_path: File.join(@episodes_dir, "#{base}.mp3"),

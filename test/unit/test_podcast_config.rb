@@ -675,6 +675,12 @@ class TestPodcastConfig < Minitest::Test
     assert_equal "myshow-2026-03-01b", config.episode_basename(Date.new(2026, 3, 1))
   end
 
+  # P18-8 (9): the feed scan is an episode_basename helper, not config API.
+  def test_served_feed_guids_is_private
+    refute PodcastConfig.public_method_defined?(:served_feed_guids)
+    assert PodcastConfig.private_method_defined?(:served_feed_guids)
+  end
+
   def test_episode_basename_no_feed_keeps_lowest_free_slot
     write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
     refute File.exist?(File.join(@output_dir, "feed.xml"))
@@ -1481,6 +1487,30 @@ class TestPodcastConfig < Minitest::Test
     write_guidelines("## Podcast\n- name: Test\n")
     config = PodcastConfig.new("myshow")
     assert_equal "feed.xml", config.feed_file_name("en")
+  end
+
+  # P18-10 pin: the plain GuidelinesParser delegates return the parser's
+  # own object (same identity), for a populated and an empty guidelines.
+  PARSER_DELEGATES = {
+    guidelines: :text, parser_warnings: :warnings, sources: :sources,
+    languages: :languages, site_config: :site_config,
+    transcription_engines: :transcription_engines, lingq_config: :lingq_config,
+    links_config: :links_config, youtube_config: :youtube_config,
+    twitter_config: :twitter_config
+  }.freeze
+
+  def test_parser_delegates_return_parser_objects_pinned
+    full = "## Podcast\n- name: T\n## Sources\n- rss:\n  - https://ex.com/f\n## Site\n- accent: #fff\n" \
+           "## LingQ\n- collection: 5\n## Links\n- show: true\n## YouTube\n- playlist: p\n" \
+           "## Twitter\n- template: x\n## Audio\n- engine:\n  - open\n  - elab\n## Image\n- font\n"
+    [full, ""].each do |text|
+      write_guidelines(text)
+      config = PodcastConfig.new("myshow")
+      parser = config.send(:parser)
+      PARSER_DELEGATES.each do |name, target|
+        assert_same parser.public_send(target), config.public_send(name), "#{name} (#{text.empty? ? "empty" : "full"})"
+      end
+    end
   end
 
   private

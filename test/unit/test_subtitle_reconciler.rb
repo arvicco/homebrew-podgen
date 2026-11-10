@@ -456,6 +456,14 @@ class TestSubtitleReconciler < Minitest::Test
     end
   end
 
+  # P18-8 (9): one pass over the characters — no slice of the rest per `"`
+  # (4000 segments of non-ASCII text took ~2.4 s before; linear is ~0.1 s).
+  def test_repair_json_large_non_ascii_reply_is_unchanged
+    seg = JSON.generate({"text" => %(powiedział "tak" — źle)})
+    text = "[" + ([seg] * 4000).join(",") + "]"
+    assert_equal text, SubtitleReconciler.repair_json(text)
+  end
+
   private
 
   def stub_reconcile_reply(reply, &)

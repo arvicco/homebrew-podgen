@@ -231,8 +231,12 @@ class VocabularyAnnotator
   CYRILLIC_LANGUAGES = Set.new(%w[russian ukrainian bulgarian serbian macedonian belarusian]).freeze
 
   # language: a name ("Russian") or, as the pipeline passes it, a code ("ru").
+  def language_name(language)
+    LANGUAGE_NAMES.fetch(language.to_s.downcase, language.to_s)
+  end
+
   def sanitize_script(entries, language)
-    name = LANGUAGE_NAMES.fetch(language.to_s.downcase, language.to_s)
+    name = language_name(language)
     return entries if CYRILLIC_LANGUAGES.include?(name.downcase)
 
     entries.each do |entry|
@@ -324,7 +328,7 @@ class VocabularyAnnotator
     end
 
     <<~PROMPT
-      Given this #{language} text, identify all unique words at CEFR level #{cutoff} or above.
+      Given this #{language_name(language)} text, identify all unique words at CEFR level #{cutoff} or above.
       For each word, provide ONLY these fields:
       - word: the word as it appears in text
       - lemma: dictionary form (infinitive for verbs, positive nominative singular masculine for adjectives — never comparative/superlative, nominative singular for nouns)
@@ -358,7 +362,7 @@ class VocabularyAnnotator
     keys << "similar_translations" if similar_line
 
     <<~PROMPT
-      For each #{language} word below, provide:
+      For each #{language_name(language)} word below, provide:
       - lemma: the word (as given)
       - translation: #{target_language} translation of the word (not inflected forms)
       - definition: brief dictionary-style definition in #{target_language} (1 sentence max)#{ipa_line}#{similar_line}

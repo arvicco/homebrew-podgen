@@ -163,6 +163,22 @@ class TestVocabCommand < Minitest::Test
     assert_equal ["lupo"], kv.lemmas("sl")
   end
 
+  # P18-8 (1): the report reads the ledger the generate pipeline reads
+  # (for_config: the show's language selects the reflexive rule), so an sl
+  # show's "bati se" and "bati" are one lemma, not two rows.
+  def test_review_sl_show_merges_reflexive_particle_like_pipeline
+    eps = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(eps)
+    {"2026-01-01" => "bati se", "2026-01-02" => "bati", "2026-01-03" => "bati se"}.each do |date, lemma|
+      File.write(File.join(eps, "testpod-#{date}_transcript.md"),
+        "# T\n\n## Transcript\n\nText.\n\n## Vocabulary\n\n- **#{lemma}** (B1 verb) — gloss\n")
+    end
+
+    out, = capture_io { build_command("review", "testpod").run }
+
+    assert_match(/bati\s+3\s+testpod-2026-01-03/, out)
+  end
+
   def test_review_missing_podcast_is_usage_error
     code = nil
     capture_io { code = build_command("review").run }

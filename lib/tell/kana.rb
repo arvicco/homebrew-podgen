@@ -264,9 +264,9 @@ module Tell
           if char == SOKUON
             next_romaji = peek_romaji(chars, i + 1, table, digraphs)
             if next_romaji && !next_romaji.empty?
-              consonant = next_romaji[0]
-              # Special case: っち → tchi (hepburn), っつ → ttsu (hepburn)
-              # The doubled letter is always the first letter of the next syllable.
+              # The doubled letter is the first letter of the next syllable,
+              # except Hepburn っ+ch → tch (matcha, P18-7); っつ → ttsu.
+              consonant = (system == "hepburn" && next_romaji.start_with?("ch")) ? "t" : next_romaji[0]
               result << consonant
             end
             i += 1
@@ -279,6 +279,12 @@ module Tell
             next_romaji = peek_romaji(chars, i + 1, table, digraphs)
             if next_romaji && LABIALS.include?(next_romaji[0])
               result << (system == "hepburn" ? "m" : "n")
+              i += 1
+              next
+            end
+            # Hepburn ん before a vowel or y: n' (kin'en vs kinen, P18-7).
+            if system == "hepburn" && next_romaji&.match?(/\A[aiueoy]/)
+              result << "n'"
               i += 1
               next
             end

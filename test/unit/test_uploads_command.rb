@@ -7,6 +7,7 @@ require "r2_publisher"
 require "lingq_publisher"
 require "youtube_publisher"
 require "upload_tracker"
+require "production_run"
 
 class TestUploadsCommand < Minitest::Test
   R2Result = R2Publisher::Result
@@ -577,6 +578,78 @@ class TestUploadsCommand < Minitest::Test
     YTResult.new(uploaded: 0, attempted: 0, rate_limited: false,
       errors: [{ type: :not_authorized, error_class: "YouTubeUploader::NotInteractive",
                  message: "YouTube token missing (x: 7 bytes)" }])
+  end
+
+  # ── P18-5 (Q-128): the batch holds output/uploads.lock for its lifetime ──
+
+  def uploads_lock
+    File.join(@tmpdir, "output", "uploads.lock")
+  end
+
+  # The probe runs in a forked child: an in-process flock doesn't contend.
+  def held_by_other_process?(path)
+    pid = fork { exit!(ProductionRun.locked?(path) ? 0 : 1) }
+    Process.wait(pid)
+    $?.exitstatus.zero?
+  end
+
+  def test_run_releases_uploads_lock_when_the_batch_raises
+    cmd = wire_cmd(["pod_a"], r2: ok_r2_result, lingq: nil, yt: ok_yt_result)
+    cmd.define_singleton_method(:run_r2_for) { |_| raise "rclone exploded" }
+
+    assert_raises(RuntimeError) { capture_io { cmd.run } }
+
+    refute held_by_other_process?(uploads_lock), "the lock is released when the batch raises"
+  end
+
+  def test_run_holds_uploads_lock_during_the_batch
+    held = nil
+    ok = ok_r2_result
+    probe = -> { held_by_other_process?(uploads_lock) }
+    cmd = wire_cmd(["pod_a"], r2: ok, lingq: nil, yt: ok_yt_result)
+    cmd.define_singleton_method(:run_r2_for) do |_|
+      held = probe.call
+      ok
+    end
+
+    capture_io { @code = cmd.run }
+
+    assert_equal 0, @code
+    assert held, "the lock must be held while the batch runs"
+    refute held_by_other_process?(uploads_lock), "the lock is released on exit"
+  end
+
+  def test_run_while_another_batch_holds_lock_refuses_before_any_upload
+    FileUtils.mkdir_p(File.dirname(uploads_lock))
+    File.write(uploads_lock, "")
+    reader, writer = IO.pipe
+    holder = fork do
+      reader.close
+      File.open(uploads_lock, File::RDWR).flock(File::LOCK_EX)
+      writer.write("1")
+      writer.close
+      sleep 30
+    end
+    writer.close
+    reader.read(1)
+    r2_called = false
+    ok = ok_r2_result
+    cmd = wire_cmd(["pod_a"], r2: ok, lingq: nil, yt: ok_yt_result)
+    cmd.define_singleton_method(:run_r2_for) do |_|
+      r2_called = true
+      ok
+    end
+
+    _out, err = capture_io { @code = cmd.run }
+
+    assert_equal 1, @code
+    refute r2_called, "no phase runs while another batch holds the lock"
+    assert_includes err, "uploads.lock"
+  ensure
+    if holder
+      Process.kill(:KILL, holder)
+      Process.wait(holder)
+    end
   end
 
   private

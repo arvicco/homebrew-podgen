@@ -1440,6 +1440,37 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "HTTPS://x/y.png", parser.lingq_config[:image]
   end
 
+  # P18-10 pin: the three overlay-option sites (## Image, ## LingQ, per-feed
+  # RSS options) parse every overlay key and text_ alias identically,
+  # including key order, last-wins and to_i coercion of junk values.
+  OVERLAY_PIN_PAIRS = [
+    %w[font Arial], %w[font_color #fff], %w[font_size 42x], %w[width 500],
+    %w[text_width abc], %w[gravity south], %w[text_gravity north],
+    %w[x_offset 12], %w[text_x_offset -3], %w[y_offset 24], %w[text_y_offset 7],
+    %w[text_font Nope]
+  ].freeze
+  OVERLAY_PIN_EXPECTED = {
+    font: "Arial", font_color: "#fff", font_size: 42, width: 0,
+    gravity: "north", x_offset: -3, y_offset: 7
+  }.freeze
+
+  def test_overlay_options_three_sites_pinned_identical
+    kv = OVERLAY_PIN_PAIRS.map { |k, v| "- #{k}: #{v}\n" }.join
+    inline = OVERLAY_PIN_PAIRS.map { |k, v| "#{k}: #{v}" }.join(" ")
+    parser = build_parser("## Image\n#{kv}\n## LingQ\n#{kv}\n## Sources\n- rss:\n  - https://ex.com/feed #{inline}\n")
+
+    image = parser.image_section
+    lingq = parser.lingq_config
+    rss = parser.sources["rss"][0]
+
+    assert_equal OVERLAY_PIN_EXPECTED, image
+    assert_equal OVERLAY_PIN_EXPECTED.keys, image.keys
+    assert_equal OVERLAY_PIN_EXPECTED, lingq
+    assert_equal OVERLAY_PIN_EXPECTED.keys, lingq.keys
+    assert_equal({url: "https://ex.com/feed"}.merge(OVERLAY_PIN_EXPECTED), rss)
+    assert_equal [:url] + OVERLAY_PIN_EXPECTED.keys, rss.keys
+  end
+
   private
 
   def build_parser(text)

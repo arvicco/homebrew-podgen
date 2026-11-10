@@ -120,6 +120,33 @@ class TestHunspell < Minitest::Test
     refute stems_called
   end
 
+  # --- P18-8 (5): the batch `hunspell -s` parser ---
+
+  # Recorded from `printf 'letim\nleta\nburkla\n' | hunspell -d sl_SI -s`
+  # (hunspell 1.7, macOS): one "word root" line per root, a blank line
+  # per word, an unknown word echoed alone.
+  STEMS_SAMPLE = "letim letim\n\nleta leta\nleta letam\nleta let\nleta le\n\nburkla\n\n"
+
+  def test_stems_of_parses_batch_output_into_roots_per_word
+    stems = Open3.stub(:capture3, [STEMS_SAMPLE, "", Status.new(true)]) do
+      Tell::Hunspell.send(:stems_of, %w[letim leta burkla], "sl_SI")
+    end
+    assert_equal({"letim" => %w[letim], "leta" => %w[leta letam let le]}, stems)
+    refute stems.key?("burkla")
+  end
+
+  def test_stems_of_failed_run_warns_and_returns_empty
+    stems = nil
+    _out, err = capture_io do
+      stems = Open3.stub(:capture3, ["", "boom", Status.new(false)]) do
+        Tell::Hunspell.send(:stems_of, %w[letim], "sl_SI")
+      end
+    end
+    assert_equal({}, stems)
+    assert_includes err, "hunspell -s failed"
+    assert_includes err, "sl_SI"
+  end
+
   def test_expand_unknown_word_returns_empty
     skip "hunspell + sl_SI dictionary required" unless Tell::Hunspell.supports?("sl")
 

@@ -26,11 +26,11 @@ class TestProdGuardScript < Minitest::Test
   end
 
   # Held by a forked child: an in-process thread doesn't contend on macOS.
-  def hold_lock
+  def hold_lock(path = @lock)
     reader, writer = IO.pipe
     @holder = fork do
       reader.close
-      f = File.open(@lock, File::RDWR)
+      f = File.open(path, File::RDWR)
       f.flock(File::LOCK_EX)
       writer.write("1")
       writer.close
@@ -64,6 +64,17 @@ class TestProdGuardScript < Minitest::Test
     assert_equal 2, code
     assert_includes err, "YIELD"
     assert_includes err, "podx"
+  end
+
+  # P18-5 (Q-128): the uploads batch's lock yields like a generate's.
+  def test_edit_under_lib_while_uploads_batch_active_yields
+    uploads_lock = File.join(@cwd, "output", "uploads.lock")
+    File.write(uploads_lock, "")
+    hold_lock(uploads_lock)
+    code, err = run_guard("Edit", {file_path: File.join(@cwd, "lib", "x.rb")}, now: "2026-10-11T10:40:00")
+
+    assert_equal 2, code
+    assert_includes err, "uploads batch active"
   end
 
   def test_edit_under_lib_while_free_allowed

@@ -25,7 +25,8 @@ module PodgenCLI
       "transcription"  => "test_transcription.rb",
       "cover"          => "test_cover.rb",
       "lingq_upload"   => "test_lingq_upload.rb",
-      "trim"           => "test_trim.rb"
+      "trim"           => "test_trim.rb",
+      "reviewer_recall" => "reviewer_recall.rb"
     }.freeze
 
     TESTS = MINITEST.merge(SCRIPTS).freeze

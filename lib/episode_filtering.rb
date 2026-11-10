@@ -49,4 +49,11 @@ module EpisodeFiltering
   def self.parse_date(filename)
     EpisodeNaming.parse_date(filename)
   end
+
+  # Languages a `## Twitter` `languages:` value announces (nil = all), shared
+  # by the tweet selection and status's tweet-stall check; unset = primary.
+  def self.announced_languages(config, languages)
+    return nil if languages == :all
+    Array(languages).empty? ? [config.primary_language] : languages
+  end
 end

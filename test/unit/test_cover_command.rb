@@ -222,7 +222,7 @@ class TestCoverCommand < Minitest::Test
     # Create a real base image
     system("magick", "-size", "100x100", "xc:white", File.join(@podcast_dir, "base.png"))
 
-    out, = capture_io do
+    _out, = capture_io do
       code = PodgenCLI::CoverCommand.new(["testpod", "--date", "2026-03-10"], {}).run
       assert_equal 0, code
     end

@@ -364,13 +364,12 @@ class TestAudioTrimmer < Minitest::Test
     assert trimmer.send(:words_match?, %w[hello world], %w[hello world extra])
   end
 
-  def test_words_match_longer_target_raises
-    # Characterization: zip pads the candidate with nil, and word_match?
-    # calls nil.length — NoMethodError. Callers always pass equal-length
-    # windows (groq_words[i, n]), so this path never fires in practice.
-    assert_raises(NoMethodError) do
-      trimmer.send(:words_match?, %w[hello world extra], %w[hello world])
-    end
+  def test_words_match_longer_target_false
+    # P18-6 (Q-137): a candidate shorter than the target is no match (zip
+    # used to pad it with nil and raise NoMethodError). Callers pass
+    # equal-length windows (groq_words[i, n]) — a window cut short at the
+    # end of the transcript now reads as "not found", not a crash.
+    refute trimmer.send(:words_match?, %w[a b c], %w[a b])
   end
 
   def test_words_match_empty_arrays_vacuously_true

@@ -225,4 +225,55 @@ class TestTellDetector < Minitest::Test
     # 3+ words but fewer than 2 stop-word hits in any language
     assert_nil Tell::Detector.latin_language("purple elephants dance quietly")
   end
+  # --- P18-7 (Q-136): Croatian and Czech misreads ---
+
+  # Characterization: what the detector returns today for the languages it
+  # already covers — the fix must leave every row unchanged. Two rows are
+  # known misreads kept as they are ("to" is an English stop word).
+  COVERED_ROWS = {
+    "To je to, kar sem rekel." => "en",
+    "Ali je to res tako, kot pravijo?" => "sl",
+    "To je bila zelo lepa izkušnja za vse nas." => "sl",
+    "Smo bili tam, kako je bilo?" => "sl",
+    "Danes je lep dan in sem zelo vesel." => "sl",
+    "Včeraj sem bil v trgovini, ker je bilo treba kupiti kruh." => "sl",
+    "Kaj je novega pri tebi, kako si kaj?" => "sl",
+    "Czy to jest to, co chcesz?" => "en",
+    "To nie jest tak, jak myślisz." => "pl",
+    "Jest bardzo dobrze, ale nie wiem dlaczego." => "pl",
+    "Ten dom jest duży i ładny, ale stary." => "pl",
+    "Jsem rád, že jsou tady, ale není to snadné." => "cs",
+    "Jak se máš? Je to pro mě velmi důležité." => "cs",
+    "Ja sam bio kod kuće, ali nije bilo nikoga." => "hr",
+    "Kao što sam rekao, bilo je vrlo lijepo." => "hr",
+    "The cat is on the table and it is sleeping." => "en",
+    "Der Hund ist nicht mit dem Ball gekommen." => "de",
+    "Les enfants sont dans le jardin avec leur mère." => "fr",
+    "Los niños están en la casa con todo el día." => "es",
+    "Questo è molto bello, anche perché sono qui." => "it",
+    "Não sei como isso aconteceu, mas está tudo bem." => "pt",
+    "Het is niet mooi, maar wel goed voor ons." => "nl",
+    "Det är inte som det var för med oss." => "sv",
+    "Este foarte frumos, dar sunt obosit pentru că am fost acolo." => "ro",
+    "Hogy van? Nem tudom, de ezt nem volt jó." => "hu",
+    "Bu bir kitap ama çok daha iyi olan var." => "tr"
+  }.freeze
+
+  def test_detect_covered_languages_unchanged
+    COVERED_ROWS.each { |text, lang| assert_equal lang, Tell::Detector.detect(text), text }
+  end
+
+  def test_detect_croatian_sentence_with_slovenian_overlap_is_hr
+    assert_equal "hr", Tell::Detector.detect("Bila je to kako smo rekli prije.")
+  end
+
+  def test_detect_czech_sentence_with_polish_overlap_is_cs
+    assert_equal "cs", Tell::Detector.detect("Je to dobré, ale jak to tak bude, nevím.")
+  end
+
+  # A stop-word tie goes to the one tied language whose characteristic
+  # letters appear (ć is Croatian, not Slovenian); otherwise the first.
+  def test_latin_language_tie_broken_by_characteristic_chars
+    assert_equal "hr", Tell::Detector.latin_language("smo bili kod kuće kako je bilo")
+  end
 end

@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "date"
+require "forwardable"
 require_relative "yaml_loader"
 require_relative "time_value"
 require_relative "episode_filtering"
@@ -10,6 +11,8 @@ require_relative "guidelines_parser"
 require_relative "cover_resolver"
 
 class PodcastConfig
+  extend Forwardable
+
   attr_reader :name, :podcast_dir, :guidelines_path, :queue_path, :links_path, :episodes_dir, :feed_path, :log_dir, :history_path, :excluded_urls_path
 
   def initialize(name)
@@ -43,25 +46,16 @@ class PodcastConfig
   end
 
   # Comment-stripped guidelines text (used by ScriptAgent, ValidateCommand, etc.)
-  def guidelines
-    parser.text
-  end
+  def_delegator :parser, :text, :guidelines
 
   # Warnings collected during guidelines parsing (e.g. misindented Audio
   # section keys that were silently dropped). Surfaced by the validator.
-  def parser_warnings
-    parser.warnings
-  end
+  def_delegator :parser, :warnings, :parser_warnings
 
   # --- Delegated to GuidelinesParser ---
 
-  def sources
-    parser.sources
-  end
-
-  def languages
-    parser.languages
-  end
+  def_delegators :parser, :sources, :languages, :site_config, :transcription_engines,
+    :lingq_config, :links_config, :youtube_config, :twitter_config
 
   def title
     @title ||= parser.podcast_section[:name] || parser.extract_heading("Name") || @name
@@ -152,10 +146,6 @@ class PodcastConfig
     File.exist?(path) ? path : nil
   end
 
-  def site_config
-    parser.site_config
-  end
-
   def site_css_path
     path = File.join(@podcast_dir, "site.css")
     File.exist?(path) ? path : nil
@@ -192,18 +182,6 @@ class PodcastConfig
 
   def autotrim
     @autotrim ||= parser.audio_section[:autotrim]
-  end
-
-  def transcription_engines
-    parser.transcription_engines
-  end
-
-  def lingq_config
-    parser.lingq_config
-  end
-
-  def links_config
-    parser.links_config
   end
 
   def vocabulary_level
@@ -256,10 +234,6 @@ class PodcastConfig
     !!links_config&.dig(:show)
   end
 
-  def youtube_config
-    parser.youtube_config
-  end
-
   # `- youtube_app_published: true` in ## Podcast (owner-set once the OAuth
   # consent screen is published): refresh tokens no longer expire on day 7,
   # so status stops warning about the consent age (Q-102).
@@ -277,10 +251,6 @@ class PodcastConfig
     config = lingq_config
     has_key = config&.[](:token) || (ENV["LINGQ_API_KEY"] && !ENV["LINGQ_API_KEY"].empty?)
     config && config[:collection] && has_key
-  end
-
-  def twitter_config
-    parser.twitter_config
   end
 
   # Returns the per-language glossary Hash for a language code, or {} if no
@@ -373,7 +343,8 @@ class PodcastConfig
     EpisodeNaming::SUFFIXES.each do |suffix|
       candidate = "#{prefix}#{suffix}"
       next if existing.include?(candidate)
-      next if served.any? { |g| g.match?(/\A#{Regexp.escape(candidate)}(?:-[a-z]{2})?\.mp3\z/) }
+      guid = /\A#{Regexp.escape(candidate)}(?:-[a-z]{2})?\.mp3\z/
+      next if served.any? { |g| g.match?(guid) }
       return candidate
     end
     raise "No free episode slot for #{date_str} — all 27 suffixes are taken"
@@ -381,7 +352,7 @@ class PodcastConfig
 
   # Guid texts of every feed on disk for this podcast (primary + language
   # feeds). A plain text scan, so a feed REXML would reject still counts.
-  def served_feed_guids
+  private def served_feed_guids
     codes = language_codes.empty? ? [primary_language] : language_codes
     codes.map { |c| File.join(File.dirname(@feed_path), feed_file_name(c)) }.uniq
       .select { |path| File.file?(path) }

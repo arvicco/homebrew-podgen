@@ -124,8 +124,33 @@ class TestTellKana < Minitest::Test
     assert_equal "zassi", Tell::Kana.to_kunrei("ざっし")
   end
 
+  # P18-7 (Q-136): standard Hepburn writes っ before ch as t (was "macchi").
   def test_gemination_before_chi
-    assert_equal "macchi", Tell::Kana.to_hepburn("まっち")
+    assert_equal "matchi", Tell::Kana.to_hepburn("まっち")
+  end
+
+  def test_hepburn_gemination_before_cha_matcha
+    assert_equal "matcha", Tell::Kana.to_hepburn("まっちゃ")
+  end
+
+  def test_kunrei_gemination_before_ti_unchanged
+    assert_equal "matti", Tell::Kana.to_kunrei("まっち")
+  end
+
+  # P18-7 (Q-136): ん before a vowel or y takes an apostrophe in Hepburn, so
+  # きんえん (kin'en) no longer reads as きねん (kinen).
+  def test_hepburn_syllabic_n_before_vowel_apostrophe
+    assert_equal "kin'en", Tell::Kana.to_hepburn("きんえん")
+    assert_equal "kinen", Tell::Kana.to_hepburn("きねん")
+  end
+
+  def test_hepburn_syllabic_n_before_y_apostrophe
+    assert_equal "shin'you", Tell::Kana.to_hepburn("しんよう")
+  end
+
+  def test_hepburn_syllabic_n_before_consonant_or_end_no_apostrophe
+    assert_equal "konnichiha", Tell::Kana.to_hepburn("こんにちは")
+    assert_equal "hon", Tell::Kana.to_hepburn("ほん")
   end
 
   # --- syllabic n before labials ---
