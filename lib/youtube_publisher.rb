@@ -476,7 +476,7 @@ class YouTubePublisher
       target_language: @config.target_language
     )
     result = manager.transcribe(mp3_path)
-    segments, engine_code = TimestampPersister.extract_segments(result, engine_codes: [engine_code])
+    segments, engine_code = TimestampPersister.extract_segments(result, engine_codes: [engine_code], language: language)
 
     if segments && !segments.empty?
       TimestampPersister.persist(

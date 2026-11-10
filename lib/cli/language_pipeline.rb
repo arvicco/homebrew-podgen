@@ -686,7 +686,8 @@ module PodgenCLI
       segments, engine = TimestampPersister.extract_segments(
         @transcription_result,
         engine_codes: @config.transcription_engines,
-        comparison_results: @comparison_results
+        comparison_results: @comparison_results,
+        language: @config.transcription_language
       )
 
       unless segments
