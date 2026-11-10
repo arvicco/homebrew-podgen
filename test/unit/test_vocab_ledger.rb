@@ -231,7 +231,8 @@ class TestVocabLedger < Minitest::Test
     vocab = annotate_share(max: 8, logs: logs, enriched: enriched)
     assert_equal %w[rei rej], lemmas_in(vocab) & RE_LEMMAS, "the two explained longest ago"
     assert_equal 6, (lemmas_in(vocab) & NEW_LEMMAS).length
-    assert logs.any? { |m| m.end_with?("Ledger: re-exposure cap 2 of 10 (max × 0.25)") }, logs.inspect
+    assert logs.any? { |m| m.end_with?("Ledger: re-exposure cap 2 of 8 entries (× 0.25): kept 2 of 8 re-exposures, refilled 6 new") },
+      logs.inspect
     assert logs.any? { |m| m.end_with?("Ledger: re-exposing rej, rei") }, logs.inspect
     assert_equal %w[rei rej], enriched.uniq.sort & RE_LEMMAS, "capped-out re-exposures are never enriched"
   end
@@ -247,6 +248,43 @@ class TestVocabLedger < Minitest::Test
     vocab = annotate_share(max: 8, key: true)
     assert_includes lemmas_in(vocab), "asino"
     assert_equal %w[rei rej], lemmas_in(vocab) & RE_LEMMAS
+  end
+
+  # --- P17-6 (Q-97 b): the share is of the entries emitted, not of max ---
+
+  # 12 emitted (max 12), 8 re-exposure candidates, 10 new: ceil(12 × 0.25)
+  # = 3 re-exposures (the oldest), the freed slots refilled from new words.
+  def test_annotate_reexposure_share_refills_freed_slots_with_new_words
+    logs = []
+    re = RE_LEMMAS.first(8)
+    vocab = annotate_entries(share_text(re, NEW_LEMMAS), re + NEW_LEMMAS, share_ledger, max: 12, logs: logs)
+    assert_equal %w[ref reg reh], lemmas_in(vocab) & re
+    assert_equal 9, (lemmas_in(vocab) & NEW_LEMMAS).length
+    assert logs.any? { |m| m.end_with?("Ledger: re-exposure cap 3 of 12 entries (× 0.25): kept 3 of 8 re-exposures, refilled 5 new") },
+      logs.inspect
+  end
+
+  # max 40 does not bind: 8 re-exposures + 4 new words emitted 12 with 8
+  # re-exposures before. No new word is left to refill, so the section
+  # shrinks until r ≤ ceil((4 + r) × 0.25): r = 2, 6 entries.
+  def test_annotate_reexposure_share_under_max_shrinks_the_section
+    re = RE_LEMMAS.first(8)
+    fresh = NEW_LEMMAS.first(4)
+    vocab = annotate_entries(share_text(re, fresh), re + fresh, share_ledger, max: 40)
+    assert_equal %w[reg reh], lemmas_in(vocab) & re
+    assert_equal fresh, lemmas_in(vocab) & NEW_LEMMAS
+  end
+
+  # 8 pinned (--include) words + 8 re-exposures, no other new word: pinned
+  # entries count in the emitted total but never against the share, so
+  # r ≤ ceil((8 + r) × 0.25) gives r = 3 — 11 entries.
+  def test_annotate_reexposure_share_without_new_words_keeps_pinned_plus_three
+    re = RE_LEMMAS.first(8)
+    pinned = NEW_LEMMAS.first(8)
+    vocab = annotate_entries(share_text(re, pinned), re + pinned, share_ledger, max: 40,
+      include_words: Set.new(pinned))
+    assert_equal %w[ref reg reh], lemmas_in(vocab) & re
+    assert_equal pinned, lemmas_in(vocab) & NEW_LEMMAS
   end
 
   def test_annotate_without_max_does_not_cap_reexposures
@@ -278,8 +316,13 @@ class TestVocabLedger < Minitest::Test
     annotate_entries(text, lemmas, share_ledger, max: max, logs: logs, enriched: enriched)
   end
 
+  # Re-exposures 3× each (they win the band cap), new words once.
+  def share_text(re, fresh)
+    (re.map { |l| "#{l} #{l} #{l}" } + fresh).join(" ")
+  end
+
   # enriched collects every lemma handed to the enrichment call.
-  def annotate_entries(text, lemmas, ledger, max:, logs: [], enriched: [])
+  def annotate_entries(text, lemmas, ledger, max:, logs: [], enriched: [], include_words: Set.new)
     entries = lemmas.map { |l| {word: l, lemma: l, level: "B1", pos: "noun"} }
     logger = Object.new
     logger.define_singleton_method(:log) { |m| logs << m }
@@ -292,7 +335,8 @@ class TestVocabLedger < Minitest::Test
       annotator.stub(:call_enrich_api, enrich) do
         Tell::Espeak.stub(:supports?, false) do
           Tell::Hunspell.stub(:supports?, false) do
-            annotator.annotate(text, language: "Italian", cutoff: "B1", max: max, ledger: ledger).last
+            annotator.annotate(text, language: "Italian", cutoff: "B1", max: max, ledger: ledger,
+              include_words: include_words).last
           end
         end
       end
