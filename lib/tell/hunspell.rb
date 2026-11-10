@@ -89,9 +89,16 @@ module Tell
 
           # Filter to forms sharing the verb stem or shortest root
           prefix = verb_stem != lemma ? verb_stem : roots.min_by(&:length)
-          stdout.lines.map(&:strip).reject(&:empty?)
+          forms = stdout.lines.map(&:strip).reject(&:empty?)
             .select { |form| form.start_with?(prefix) }
             .uniq
+          return forms if verb_stem == lemma
+
+          # The stem search also reaches other words ("leteti" → "leta",
+          # years): keep only forms that stem back to one of the lemma's roots.
+          root_set = Set.new(roots)
+          stems = stems_of(forms, dict)
+          forms.select { |form| form == lemma || stems.fetch(form, []).any? { |r| root_set.include?(r) } }
         end
       end
 
@@ -129,6 +136,19 @@ module Tell
         return [] unless status.success?
 
         stdout.lines.flat_map { |l| l.strip.split(/\s+/).drop(1) }.uniq
+      end
+
+      # Stem many words in one `hunspell -s` call: { word => [roots] }
+      # (a word hunspell does not know has no entry).
+      def stems_of(words, dict)
+        stdout, _, status = Open3.capture3("hunspell", "-d", dict, "-s",
+                                           stdin_data: words.join("\n"))
+        return {} unless status.success?
+
+        stdout.lines.each_with_object(Hash.new { |h, k| h[k] = [] }) do |line, map|
+          word, root = line.strip.split(/\s+/, 2)
+          map[word] << root if word && root
+        end
       end
 
       # Find the .dic file path for a dictionary name.

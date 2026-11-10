@@ -14,6 +14,7 @@ require_relative "tell/hunspell"
 require_relative "tell/icu_phonetic"
 require_relative "key_terms"
 require_relative "transcript_renderer"
+require_relative "language_names"
 
 class VocabularyAnnotator
   include Loggable
@@ -219,8 +220,10 @@ class VocabularyAnnotator
 
   CYRILLIC_LANGUAGES = Set.new(%w[russian ukrainian bulgarian serbian macedonian belarusian]).freeze
 
+  # language: a name ("Russian") or, as the pipeline passes it, a code ("ru").
   def sanitize_script(entries, language)
-    return entries if CYRILLIC_LANGUAGES.include?(language.to_s.downcase)
+    name = LANGUAGE_NAMES.fetch(language.to_s.downcase, language.to_s)
+    return entries if CYRILLIC_LANGUAGES.include?(name.downcase)
 
     entries.each do |entry|
       %i[word lemma].each do |field|
