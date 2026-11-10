@@ -118,7 +118,17 @@ class TestValidators < Minitest::Test
     File.write(@queue_path, "just a string".to_yaml)
     result = validate(Validators::GuidelinesValidator, type: "news")
 
-    assert result[:warnings].any? { |w| w.include?("unexpected format") }
+    # Q-141: an error, as generate aborts on the same read.
+    assert result[:errors].any? { |e| e.include?("expected Hash, got String") }
+    refute result[:warnings].any? { |w| w.include?("queue.yml") }
+  end
+
+  def test_guidelines_queue_without_topics_list_is_error
+    write_guidelines("## Format\nfoo\n## Tone\nbar\n## Topics\nbaz")
+    File.write(@queue_path, { "a" => 1 }.to_yaml)
+    result = validate(Validators::GuidelinesValidator, type: "news")
+
+    assert result[:errors].any? { |e| e.include?("queue.yml has unexpected format") }
   end
 
   def test_guidelines_queue_parse_error
@@ -126,7 +136,7 @@ class TestValidators < Minitest::Test
     File.write(@queue_path, "---\n: bad:\n  - [invalid\n")
     result = validate(Validators::GuidelinesValidator, type: "news")
 
-    assert result[:warnings].any? { |w| w.include?("parse error") }
+    assert result[:errors].any? { |e| e.include?("YAML syntax error in #{@queue_path}") }
   end
 
   def test_guidelines_select_is_not_unrecognized_source

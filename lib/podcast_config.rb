@@ -308,7 +308,17 @@ class PodcastConfig
   end
 
   def queue_topics
-    YamlLoader.load(@queue_path, default: {}, raise_on_error: true)["topics"]
+    self.class.read_queue_topics(@queue_path)
+  end
+
+  # The one reading of queue.yml, shared by generate and `podgen validate`
+  # (Q-141): no file is no queue (nil); a file that is not a Hash with a
+  # `topics:` list raises, and validate prints the same message as an error.
+  def self.read_queue_topics(path)
+    topics = YamlLoader.load(path, default: {}, raise_on_error: true)["topics"]
+    return topics if topics.is_a?(Array) || !File.exist?(path)
+
+    raise "queue.yml has unexpected format: #{path} needs a `topics:` list, got #{topics.class}"
   end
 
   def ensure_directories!
