@@ -148,6 +148,14 @@ class TestTellKana < Minitest::Test
     assert_equal "shin'you", Tell::Kana.to_hepburn("しんよう")
   end
 
+  # Q-159 (7): Kunrei (ISO 3602) marks the same ん boundary with an apostrophe.
+  def test_kunrei_syllabic_n_before_vowel_or_y_apostrophe
+    assert_equal "kin'en", Tell::Kana.to_kunrei("きんえん")
+    assert_equal "kinen", Tell::Kana.to_kunrei("きねん")
+    assert_equal "sin'you", Tell::Kana.to_kunrei("しんよう")
+    assert_equal "hon", Tell::Kana.to_kunrei("ほん")
+  end
+
   def test_hepburn_syllabic_n_before_consonant_or_end_no_apostrophe
     assert_equal "konnichiha", Tell::Kana.to_hepburn("こんにちは")
     assert_equal "hon", Tell::Kana.to_hepburn("ほん")
