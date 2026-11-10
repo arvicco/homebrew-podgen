@@ -52,6 +52,23 @@ class TestTranscriptDiscovery < Minitest::Test
     end
   end
 
+  # P18-6 (Q-137): a transport failure inside the fetch was fully silent
+  # (rescue => e; nil, never logged) — it now leaves a log line; the result
+  # is still nil and the next strategy is still tried.
+  def test_fetch_url_transport_failure_logs_and_returns_nil
+    lines = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |msg| lines << msg }
+
+    result = Net::HTTP.stub(:new, ->(*) { raise SocketError, "getaddrinfo failed" }) do
+      TranscriptDiscovery.fetch_podcast_transcript("https://example.com/ep.srt", logger: logger)
+    end
+
+    assert_nil result
+    assert(lines.any? { |l| l.include?("SocketError") && l.include?("https://example.com/ep.srt") },
+      "expected a fetch-failure log line, got #{lines.inspect}")
+  end
+
   # --- content:encoded ---
 
   def test_content_encoded_substantial_text

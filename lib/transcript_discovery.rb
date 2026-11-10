@@ -66,7 +66,7 @@ module TranscriptDiscovery
   # Fetch and parse a Podcasting 2.0 transcript URL.
   def self.fetch_podcast_transcript(url, content_type = nil, logger: nil)
     log("Checking podcast:transcript → #{url}", logger)
-    content = fetch_url(url)
+    content = fetch_url(url, logger: logger)
     return nil unless content
 
     text = SubtitleParser.parse(content, content_type: content_type)
@@ -91,7 +91,7 @@ module TranscriptDiscovery
   # Scrape an episode web page for transcript content.
   def self.scrape_episode_page(url, logger: nil)
     log("Checking episode page → #{url}", logger)
-    html = fetch_url(url)
+    html = fetch_url(url, logger: logger)
     return nil unless html
 
     text = extract_transcript_from_html(html)
@@ -107,7 +107,7 @@ module TranscriptDiscovery
   class << self
     private
 
-    def fetch_url(url, limit: 3)
+    def fetch_url(url, limit: 3, logger: nil)
       uri = URI.parse(url)
 
       limit.times do
@@ -132,6 +132,7 @@ module TranscriptDiscovery
       end
       nil
     rescue => e # skippable: transport guard — transcript discovery fetch; nil means not found, the next strategy is tried
+      log("Fetch failed for #{url}: #{e.class}: #{e.message}", logger)
       nil
     end
 
