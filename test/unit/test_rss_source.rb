@@ -259,6 +259,26 @@ class TestRSSSource < Minitest::Test
     assert_equal ["https://example.com/a.mp3?src=rss"], episodes.map { |e| e[:audio_url] }
   end
 
+  # P18-10 pin: fetch_feed (research) and fetch_feed_episodes share one
+  # fetch path; both log, retry and warn identically apart from the
+  # " episodes" word in the fetch line.
+  def test_fetch_twins_tagged_500_pinned_identical
+    url = "https://example.com/flaky.xml"
+    expected_warning = "Failed to fetch 'news' #{url}: RuntimeError: RSS failed after 3 attempts: HTTP 500 from #{url}"
+    { research: [:research, ["Topic"]], episodes: [:fetch_episodes] }.each do |name, (meth, *args)|
+      logger = WarningLogger.new
+      source = RSSSource.new(feeds: [{ url: url, tag: "news" }], logger: logger)
+      source.define_singleton_method(:sleep) { |_| }
+
+      requests = with_status_server("500") { source.public_send(meth, *args) }
+      assert_equal RSSSource::MAX_RETRIES + 1, requests, name
+      assert_equal 1, logger.warnings.size, name
+      assert_includes logger.warnings.first, expected_warning, name
+      fetch_line = (name == :episodes) ? "Fetching RSS 'news' episodes: #{url}" : "Fetching RSS 'news': #{url}"
+      assert(logger.messages.any? { |m| m.end_with?(fetch_line) }, "#{name}: #{logger.messages.inspect}")
+    end
+  end
+
   private
 
   def feed_source_with_enclosure(url)
