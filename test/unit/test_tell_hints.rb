@@ -289,4 +289,21 @@ class TestTellHints < Minitest::Test
     hints = Tell::Hints::Result.new(text: "", formality: nil, gender: :male)
     assert_nil Tell::Hints.deepl_formality(hints)
   end
+
+  # P18-6 (CRPR r1): `ruby -wc` sees only parse-time warnings; a regex
+  # literal compiles at load time, so a duplicated character-class range
+  # slipped past the gate. Loading the file under -w must stay silent.
+  def test_hints_loads_without_ruby_warnings
+    require "open3"
+    require "rbconfig"
+    lib = File.expand_path("../../lib", __dir__)
+    _out, err, status = Open3.capture3(RbConfig.ruby, "-w", "-I", lib, "-e", "require 'tell/hints'")
+    assert status.success?, err
+    refute_match(/warning:/, err)
+  end
+
+  def test_hint_re_matches_after_word_space_punctuation_and_non_ascii
+    re = Tell::Hints::HINT_RE
+    ["hello/p", "čau/p", "x_/p", "a /p", "b./p", "/p"].each { |t| assert_match re, t, t }
+  end
 end

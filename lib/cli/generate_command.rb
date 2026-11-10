@@ -25,7 +25,6 @@ require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "priority_links")
 require_relative File.join(root, "lib", "script_artifact")
-require_relative File.join(root, "lib", "script_renderer")
 require_relative File.join(root, "lib", "voicer")
 require_relative File.join(root, "lib", "cli", "language_pipeline")
 
@@ -570,9 +569,7 @@ module PodgenCLI
     end
 
     def save_script_debug(script, path, logger, links_config: nil)
-      FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, ScriptRenderer.render(script, links_config: links_config))
-      ScriptArtifact.write(ScriptArtifact.json_path_for(path), script)
+      ScriptArtifact.save(path, script, links_config: links_config)
       logger.log("Script saved to #{path}")
     end
   end

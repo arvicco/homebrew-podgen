@@ -1,8 +1,10 @@
 # frozen_string_literal: true
 
 require "json"
+require "fileutils"
 require_relative "atomic_writer"
 require_relative "legacy_script_parser"
+require_relative "script_renderer"
 
 # Canonical structured persistence for podcast scripts.
 # Markdown views (script.md, script.html) are derived; this JSON is the source of truth.
@@ -17,6 +19,14 @@ module ScriptArtifact
   # Path next to the markdown view: <basename>_script.md → <basename>_script.json
   def self.json_path_for(markdown_path)
     markdown_path.sub(/\.md\z/, ".json")
+  end
+
+  # Saves the markdown view at md_path (creating its directory) and the
+  # canonical JSON next to it.
+  def self.save(md_path, script, links_config: nil)
+    FileUtils.mkdir_p(File.dirname(md_path))
+    File.write(md_path, ScriptRenderer.render(script, links_config: links_config))
+    write(json_path_for(md_path), script)
   end
 
   def self.write(path, script)

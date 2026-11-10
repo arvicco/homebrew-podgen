@@ -85,6 +85,55 @@ class TestRSSSource < Minitest::Test
     assert_equal "/abs/bg.png", episode[:base_image]
   end
 
+  # Q-134 (P18-1): an Atom feed yields clean entries instead of raising
+  # NoMethodError on Entry#description (retried and the feed dropped).
+  def test_parse_feed_atom_document_returns_clean_entries
+    now = Time.now.utc.iso8601
+    xml = <<~XML
+      <?xml version="1.0" encoding="utf-8"?>
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <title>Ex</title><id>urn:x</id><updated>#{now}</updated>
+        <entry>
+          <title>Chips news</title>
+          <link rel="alternate" href="https://example.com/a"/>
+          <id>urn:a</id><updated>#{now}</updated>
+          <summary type="html">&lt;p&gt;Some summary&lt;/p&gt;</summary>
+        </entry>
+        <entry>
+          <title>Old one</title>
+          <link href="https://example.com/old"/>
+          <id>urn:b</id><updated>2020-01-01T00:00:00Z</updated>
+          <content type="text">Body</content>
+        </entry>
+      </feed>
+    XML
+
+    items = build_source([]).send(:parse_feed, xml)
+
+    assert_equal [{ title: "Chips news", url: "https://example.com/a", summary: "Some summary" }], items
+  end
+
+  def test_parse_feed_atom_entry_without_summary_uses_content
+    now = Time.now.utc.iso8601
+    xml = <<~XML
+      <?xml version="1.0" encoding="utf-8"?>
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <title>Ex</title><id>urn:x</id><updated>#{now}</updated>
+        <entry>
+          <title>Two</title>
+          <link rel="enclosure" href="https://example.com/b.mp3"/>
+          <link href="https://example.com/b"/>
+          <id>urn:b</id><updated>#{now}</updated>
+          <content type="text">Body text</content>
+        </entry>
+      </feed>
+    XML
+
+    items = build_source([]).send(:parse_feed, xml)
+
+    assert_equal [{ title: "Two", url: "https://example.com/b", summary: "Body text" }], items
+  end
+
   # --- distribute_by_topic (characterization, private) ---
 
   def test_distribute_by_topic_buckets_by_keyword_match
@@ -115,24 +164,39 @@ class TestRSSSource < Minitest::Test
     assert_equal ["Ethereum news"], result.map { |b| b[:topic] }
   end
 
-  def test_distribute_by_topic_short_only_topic_never_matches
-    # Characterization: a topic whose tokens are all <3 chars ("AI")
-    # yields an empty keyword list, so nothing can ever match it.
+  # Q-134 (P18-1): an acronym topic ("AI") claims its findings.
+  def test_distribute_by_topic_acronym_topic_matches
     findings = [{ title: "AI breakthrough", summary: "" }]
+    result = build_source([]).send(:distribute_by_topic, ["AI"], findings)
+
+    assert_equal ["AI"], result.map { |b| b[:topic] }
+  end
+
+  # A two-letter keyword matches whole words only: "ai" is not in "rain".
+  def test_distribute_by_topic_acronym_does_not_match_inside_words
+    findings = [{ title: "Heavy rain said to continue", summary: "" }]
     result = build_source([]).send(:distribute_by_topic, ["AI"], findings)
 
     assert_equal ["Other recent headlines (RSS)"], result.map { |b| b[:topic] }
   end
 
-  # --- topic_keywords (characterization, private) ---
+  # --- topic_keywords (private) ---
 
   def test_topic_keywords_lowercases_and_drops_short_tokens
-    assert_equal %w[bitcoin mining 42x],
+    assert_equal %w[bitcoin ai mining 42x],
       build_source([]).send(:topic_keywords, "Bitcoin AI-Mining 42x")
   end
 
-  def test_topic_keywords_all_short_tokens_returns_empty
-    assert_equal [], build_source([]).send(:topic_keywords, "AI is ok")
+  def test_topic_keywords_lowercase_short_tokens_dropped_acronyms_kept
+    assert_equal %w[ai], build_source([]).send(:topic_keywords, "AI is ok")
+  end
+
+  def test_topic_keywords_keeps_two_letter_acronyms
+    assert_equal %w[ai chips the eu], build_source([]).send(:topic_keywords, "AI chips in the EU")
+  end
+
+  def test_topic_keywords_keeps_non_ascii_words_whole
+    assert_equal %w[zürich banks], build_source([]).send(:topic_keywords, "Zürich banks")
   end
 
   # Q-101 (P11-4): a feed that cannot be fetched is a counted warning, not
@@ -193,6 +257,26 @@ class TestRSSSource < Minitest::Test
     source = feed_source_with_enclosure("https://example.com/a.mp3?src=rss")
     episodes = source.fetch_episodes(exclude_urls: Set["https://example.com/b.mp3"])
     assert_equal ["https://example.com/a.mp3?src=rss"], episodes.map { |e| e[:audio_url] }
+  end
+
+  # P18-10 pin: fetch_feed (research) and fetch_feed_episodes share one
+  # fetch path; both log, retry and warn identically apart from the
+  # " episodes" word in the fetch line.
+  def test_fetch_twins_tagged_500_pinned_identical
+    url = "https://example.com/flaky.xml"
+    expected_warning = "Failed to fetch 'news' #{url}: RuntimeError: RSS failed after 3 attempts: HTTP 500 from #{url}"
+    { research: [:research, ["Topic"]], episodes: [:fetch_episodes] }.each do |name, (meth, *args)|
+      logger = WarningLogger.new
+      source = RSSSource.new(feeds: [{ url: url, tag: "news" }], logger: logger)
+      source.define_singleton_method(:sleep) { |_| }
+
+      requests = with_status_server("500") { source.public_send(meth, *args) }
+      assert_equal RSSSource::MAX_RETRIES + 1, requests, name
+      assert_equal 1, logger.warnings.size, name
+      assert_includes logger.warnings.first, expected_warning, name
+      fetch_line = (name == :episodes) ? "Fetching RSS 'news' episodes: #{url}" : "Fetching RSS 'news': #{url}"
+      assert(logger.messages.any? { |m| m.end_with?(fetch_line) }, "#{name}: #{logger.messages.inspect}")
+    end
   end
 
   private

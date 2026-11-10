@@ -291,17 +291,11 @@ class GuidelinesParser
       when "cover"                       then { cover: value }
       when "image"                       then { image: value }
       when "base_image"                  then { base_image: resolve_path(value) }
-      when "font"                        then { font: value }
-      when "font_color"                  then { font_color: value }
-      when "font_size"                   then { font_size: value.to_i }
-      when "width", "text_width"         then { width: value.to_i }
-      when "gravity", "text_gravity"     then { gravity: value }
-      when "x_offset", "text_x_offset"   then { x_offset: value.to_i }
-      when "y_offset", "text_y_offset"   then { y_offset: value.to_i }
       when "auto_cover_min_bytes"        then { auto_cover_min_bytes: value.to_i }
       when "auto_cover_min_score"        then { auto_cover_min_score: value.to_i }
       when "auto_cover_candidates"       then { auto_cover_candidates: value.to_i }
       when "auto_cover_model"            then { auto_cover_model: value }
+      else overlay_option(key, value)
       end
     end || {}
   end
@@ -392,15 +386,9 @@ class GuidelinesParser
       when "tags"        then { tags: value.split(",").map(&:strip) }
       when "image"       then { image: resolve_path(value) }
       when "base_image"  then { base_image: resolve_path(value) }
-      when "font"                      then { font: value }
-      when "font_color"                then { font_color: value }
-      when "font_size"                 then { font_size: value.to_i }
-      when "width", "text_width"       then { width: value.to_i }
-      when "gravity", "text_gravity"   then { gravity: value }
-      when "x_offset", "text_x_offset" then { x_offset: value.to_i }
-      when "y_offset", "text_y_offset" then { y_offset: value.to_i }
-      when "accent"                    then { accent: value }
-      when "status"                    then { status: value }
+      when "accent"      then { accent: value }
+      when "status"      then { status: value }
+      else overlay_option(key, value)
       end
     end
     return nil if config.nil? || config.empty?
@@ -544,6 +532,20 @@ class GuidelinesParser
     sources.empty? ? default : sources
   end
 
+  # Text-overlay keys (CoverResolver::OVERLAY_KEYS) shared by ## Image,
+  # ## LingQ and per-feed RSS options; the text_ aliases map to the bare key.
+  def overlay_option(key, value)
+    case key
+    when "font"                      then { font: value }
+    when "font_color"                then { font_color: value }
+    when "font_size"                 then { font_size: value.to_i }
+    when "width", "text_width"       then { width: value.to_i }
+    when "gravity", "text_gravity"   then { gravity: value }
+    when "x_offset", "text_x_offset" then { x_offset: value.to_i }
+    when "y_offset", "text_y_offset" then { y_offset: value.to_i }
+    end
+  end
+
   # Parses inline key-value options from a source sub-item.
   # "https://example.com/feed skip: 38 cut: 10" → { url: "https://...", skip: 38.0, cut: 10.0 }
   # "https://example.com/feed autotrim" → { url: "https://...", autotrim: true }
@@ -578,13 +580,7 @@ class GuidelinesParser
       when "image" then options[:image] = v
       when "tag" then options[:tag] = v
       when "weight" then options[:weight] = v.to_i
-      when "font" then options[:font] = v
-      when "font_color" then options[:font_color] = v
-      when "font_size" then options[:font_size] = v.to_i
-      when "width", "text_width" then options[:width] = v.to_i
-      when "gravity", "text_gravity" then options[:gravity] = v
-      when "x_offset", "text_x_offset" then options[:x_offset] = v.to_i
-      when "y_offset", "text_y_offset" then options[:y_offset] = v.to_i
+      else overlay_option(k, v)&.then { |o| options.merge!(o) }
       end
     end
 

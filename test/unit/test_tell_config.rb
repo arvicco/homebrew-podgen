@@ -426,7 +426,7 @@ class TestTellConfig < Minitest::Test
       "translation_engine" => ["deepl", "claude"]
     )
 
-    config, stderr_output = capture_stderr { Tell::Config.new }
+    _config, stderr_output = capture_stderr { Tell::Config.new }
     assert_match(/claude fallback skipped/, stderr_output)
   end
 

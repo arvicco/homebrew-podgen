@@ -110,9 +110,11 @@ class SnipInterval
     TimeValue.parse_timestamp(str)
   end
 
-  def merge_intervals(sorted)
-    return [] if sorted.empty?
+  # Sorts its own input (P18-6): unsorted, an earlier interval was lost.
+  def merge_intervals(intervals)
+    return [] if intervals.empty?
 
+    sorted = intervals.sort_by(&:from)
     merged = [sorted.first.dup]
     sorted[1..].each do |iv|
       last = merged.last

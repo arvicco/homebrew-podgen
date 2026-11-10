@@ -4,6 +4,7 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "priority_links")
+require_relative File.join(root, "lib", "url_cleaner")
 
 module PodgenCLI
   class LinksCommand
@@ -38,7 +39,9 @@ module PodgenCLI
       end
 
       if @remove_url
-        if links.remove(@remove_url)
+        # `add` stores the cleaned URL (P18-6); the raw form still matches
+        # a row stored before cleaning.
+        if links.remove(UrlCleaner.clean(@remove_url)) || links.remove(@remove_url)
           puts "\u2713 Removed: #{@remove_url}"
           puts "  #{links.count} link(s) remaining"
         else

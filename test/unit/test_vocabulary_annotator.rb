@@ -547,6 +547,22 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_includes prompt, "rare"
   end
 
+  # P18-8 (7): the pipeline passes the code; the prompt names the language.
+  def test_classify_prompt_names_language_from_code
+    prompt = @annotator.send(:classify_prompt, "sl", "B1")
+    assert_includes prompt, "Given this Slovenian text"
+  end
+
+  def test_classify_prompt_keeps_a_language_name
+    prompt = @annotator.send(:classify_prompt, "Slovenian", "B1")
+    assert_includes prompt, "Given this Slovenian text"
+  end
+
+  def test_enrich_prompt_names_language_from_code
+    prompt = @annotator.send(:enrich_prompt, "sl", "English")
+    assert_includes prompt, "For each Slovenian word below"
+  end
+
   # --- enrich_prompt (stage 3: targeted) ---
 
   def test_enrich_prompt_requests_translations

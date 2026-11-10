@@ -263,9 +263,13 @@ podgen publish lahko_noc --lingq --dry-run
 
 # Publish to every configured target (R2 + LingQ + YouTube) in one shot.
 # Unconfigured targets are skipped silently with a one-line note; failures
-# in one target don't halt the others. Exit code is the worst per-target code.
+# in one target don't halt the others. Exit code is the worst per-target code;
+# any failed episode upload makes a target's code 1.
 podgen publish lahko_noc --all
 podgen publish lahko_noc 2026-05-30 --all --force        # specific episode, force re-upload everywhere
+# The episode accepts the same date forms as voice/translate (YYYY-MM-DD[a-z],
+# YYYYMMDD, MM-DD, MMDD, DD = this month) or a full basename (lahko_noc-2026-05-30a);
+# it names exactly one episode, and an id matching none fails the run (exit 1).
 
 # Run a component test
 podgen test hn
@@ -1695,7 +1699,7 @@ podgen/
 │   ├── run.sh                # launchd wrapper: generate, optional publish + Telegram alert
 │   ├── run_uploads.sh        # launchd wrapper: podgen uploads
 │   ├── run_status.sh         # launchd wrapper: podgen status → Telegram on non-zero
-│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate runs
+│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate or the uploads batch runs
 │   ├── serve.rb              # WEBrick static file server
 │   ├── tell_web.rb           # Tell Web UI launcher
 │   ├── install_hunspell_dicts.rb # Hunspell dictionaries for vocabulary frequency
@@ -1716,7 +1720,8 @@ podgen/
 │   ├── excluded_urls.yml     # URLs excluded from future episodes
 │   ├── research_cache/       # Cached source results (24h)
 │   ├── debug/                # Raw script responses
-│   └── run.lock              # Held while a generate runs
+│   ├── run.lock              # Held while a generate runs
+│   └── uploads.lock          # Held while the 10:30 batch runs (output/ level, one per install)
 └── logs/
     ├── <name>/               # Run logs per podcast (token usage, warnings, phase timings)
     └── launchd_stderr.log    # Shared stderr of the scheduled jobs (publish markers, warnings)
@@ -1775,6 +1780,7 @@ podgen test assembly       # ffmpeg assembly
 podgen test translation    # Claude script translation
 podgen test transcription  # Transcription engines (podgen test transcription <podcast|file> [open|elab|groq|all])
 podgen test sources        # Every configured source for a podcast
+podgen test reviewer_recall BUNDLE.json...  # Script reviewer at low effort vs the saved default review (BLOCKER recall)
 ```
 
 ## Cost Estimate

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "stringio"
 require "cli"
 require "cli/generate_options"
@@ -140,11 +141,6 @@ class TestOwnerGuard < Minitest::Test
     ENV.delete("PODGEN_OWNER")
     ENV["POSIXLY_CORRECT"] = @posixly_correct if @posixly_correct
     FileUtils.rm_rf(@tmpdir)
-  end
-
-  class FakeCommand
-    def initialize(*) = nil
-    def run = 0
   end
 
   def test_probe_table_has_at_least_forty_rows

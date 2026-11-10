@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "youtube_uploader"
 require "socket"
 require "stringio"
@@ -202,7 +203,7 @@ class TestYouTubeUploader < Minitest::Test
     fresh.define_singleton_method(:expired?) { false }
     authorizer = Object.new
     authorizer.define_singleton_method(:get_credentials) { |_| fresh }
-    logger = RecordingLogger.new
+    logger = LineLogger.new
     uploader = YouTubeUploader.new(logger: logger, consent: ->(_a) { flunk "no consent needed" }, token_file: token_file)
 
     with_youtube_env do
@@ -533,13 +534,6 @@ class TestYouTubeUploader < Minitest::Test
     def delete(id) = @deleted << id
   end
 
-  class RecordingLogger
-    attr_reader :lines
-
-    def initialize = @lines = []
-    def log(msg) = @lines << msg
-  end
-
   def with_youtube_env
     original_id = ENV["YOUTUBE_CLIENT_ID"]
     original_secret = ENV["YOUTUBE_CLIENT_SECRET"]
@@ -583,7 +577,7 @@ class TestYouTubeUploader < Minitest::Test
     consent.define_singleton_method(:interactive?) { interactive }
     consent.define_singleton_method(:call) { |_| [nil, "http://127.0.0.1:1"] }
     store = RecordingTokenStore.new
-    logger = RecordingLogger.new
+    logger = LineLogger.new
     uploader = YouTubeUploader.new(logger: logger, consent: consent, token_file: token_file)
 
     Google::Auth::UserAuthorizer.stub(:new, authorizer) do

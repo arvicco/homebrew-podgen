@@ -6,6 +6,8 @@ root = File.expand_path("../..", __dir__)
 
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "cli", "publish_options")
+require_relative File.join(root, "lib", "cli", "episode_selector")
+require_relative File.join(root, "lib", "episode_scanner")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "site_generator")
 require_relative File.join(root, "lib", "regen_cache")
@@ -33,6 +35,7 @@ module PodgenCLI
       @podcast_name = args.shift
       @episode_id ||= args.shift # optional: e.g. "2026-03-31" or "2026-03-31b"
       reject_leftover_args!(args)
+      @episode_id = normalize_episode_id(@episode_id) if @episode_id
     end
 
     def run
@@ -53,6 +56,20 @@ module PodgenCLI
     end
 
     private
+
+    # Q-132: the short forms the other episode commands accept (MMDD, DD,
+    # …) resolve to one full YYYY-MM-DD[a-z]; a raw "17" would otherwise
+    # suffix-match the 17th of every month. A full basename of this podcast
+    # (<pod>-YYYY-MM-DD[a-z]) is kept as is and matched exactly.
+    def normalize_episode_id(raw)
+      prefix = "#{@podcast_name}-"
+      return raw if raw.start_with?(prefix) && raw.delete_prefix(prefix).match?(EpisodeScanner::EPISODE_ID_RE)
+
+      date, suffix = EpisodeSelector::DateParser.parse(raw)
+      "#{date.strftime("%Y-%m-%d")}#{suffix}"
+    rescue ArgumentError => e
+      raise OptionParser::ParseError, e.message
+    end
 
     # Dispatch table:
     #   no flags          → [:r2]
@@ -114,7 +131,8 @@ module PodgenCLI
         puts "  LingQ: skipped (not configured)" unless @options[:verbosity] == :quiet
         return 0
       end
-      not_configured ? 2 : 0
+      return 2 if not_configured
+      result.errors.any? ? 1 : 0 # Q-132: a failed episode upload (or unreadable ledger) is a failed run
     end
 
     def publish_to_youtube
@@ -136,9 +154,9 @@ module PodgenCLI
         return 0
       end
       return 2 if not_configured
-      return 1 if result.errors.any? { |e| e[:type] == :playlist_verification }
-      return 1 if result.errors.any? { |e| %i[not_authorized authorization].include?(e[:type]) } # Q-77/Q-80: nothing uploaded
-      0
+      # Playlist/authorization failures upload nothing (Q-77/Q-80); per-episode
+      # upload, video, cover, quota and ledger errors fail the run too (Q-132).
+      result.errors.any? ? 1 : 0
     end
 
     def build_youtube_uploader

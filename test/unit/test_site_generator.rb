@@ -186,6 +186,12 @@ class TestSiteGenerator < Minitest::Test
     refute_includes html, "language)</li>", "no stray paren after the link"
   end
 
+  # P18-8 (4): a `"` in the url cannot close the href attribute.
+  def test_linkify_markdown_quote_in_url_cannot_close_href
+    html = build_generator.send(:linkify_markdown, '[A](https://a.com/x"onmouseover="y)')
+    assert_equal '<a href="https://a.com/x&quot;onmouseover=&quot;y" target="_blank" rel="noopener">A</a>', html
+  end
+
   def test_parse_transcript_html_returns_nil_for_missing_file
     gen = build_generator
     html, langs = gen.send(:parse_transcript_html, nil)

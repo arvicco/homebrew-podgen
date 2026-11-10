@@ -117,7 +117,8 @@ module PodgenCLI
                 basename: base_name,
                 language_code: lang_code,
                 duration: AudioAssembler.probe_duration(output_path),
-                voiced_at: Time.now.iso8601
+                voiced_at: Time.now.iso8601,
+                primary: lang_code == config.primary_language
               )
             rescue => e # skippable: the audio is voiced; only the history entry is missing
               logger.log("Note: history not updated (#{e.class}: #{e.message})")

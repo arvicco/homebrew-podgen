@@ -431,7 +431,7 @@ module PodgenCLI
     end
 
     def send_test_message
-      config = load_config!
+      load_config!
       token = ENV["TELEGRAM_BOT_TOKEN"]
       chat_id = ENV["TELEGRAM_CHAT_ID"]
 

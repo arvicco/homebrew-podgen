@@ -157,21 +157,24 @@ module SubtitleReconciler
   # or the end) cannot be the closing quote, so it is escaped. In valid
   # JSON every unescaped in-string `"` closes the string and is followed by
   # a structural character, so valid JSON passes through unchanged.
+  # One pass over a chars array: String#[] by index and a slice of the rest
+  # per `"` made it quadratic on non-ASCII text (Q-157).
   def self.repair_json(text)
+    chars = text.chars
     out = +""
     in_string = false
     i = 0
-    while i < text.length
-      c = text[i]
+    while i < chars.length
+      c = chars[i]
       if in_string && c == "\\"
-        out << c << text[i + 1].to_s
+        out << c << chars[i + 1].to_s
         i += 2
         next
       end
       if c == '"'
         if !in_string
           in_string = true
-        elsif text[(i + 1)..].match?(/\A\s*(?:[,:}\]]|\z)/)
+        elsif structural_next?(chars, i + 1)
           in_string = false
         else
           out << "\\"
@@ -182,6 +185,13 @@ module SubtitleReconciler
     end
     out
   end
+
+  # Is the next non-space character from j structural (`,` `:` `}` `]`) or the end?
+  def self.structural_next?(chars, j)
+    j += 1 while j < chars.length && chars[j].match?(/\s/)
+    j == chars.length || ",:}]".include?(chars[j])
+  end
+  private_class_method :structural_next?
 
   # LLM round-trips can re-serialize floats (7.7 -> 7.700000001).
   def self.close_enough?(a, b)
