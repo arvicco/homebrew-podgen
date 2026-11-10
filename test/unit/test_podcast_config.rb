@@ -675,6 +675,12 @@ class TestPodcastConfig < Minitest::Test
     assert_equal "myshow-2026-03-01b", config.episode_basename(Date.new(2026, 3, 1))
   end
 
+  # P18-8 (9): the feed scan is an episode_basename helper, not config API.
+  def test_served_feed_guids_is_private
+    refute PodcastConfig.public_method_defined?(:served_feed_guids)
+    assert PodcastConfig.private_method_defined?(:served_feed_guids)
+  end
+
   def test_episode_basename_no_feed_keeps_lowest_free_slot
     write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
     refute File.exist?(File.join(@output_dir, "feed.xml"))
