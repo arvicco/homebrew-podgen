@@ -561,6 +561,26 @@ class TestGenerateCommand < Minitest::Test
     assert_equal [{ title: "S1", url: "https://example.com/1" }], parsed[:segments][0][:sources]
   end
 
+  # P18-10 pin: the saved pair is exactly the renderer's markdown (with the
+  # links config) and the artifact's pretty JSON; the save is logged.
+  def test_save_script_debug_pair_bytes_and_log_pinned
+    cmd = build_command
+    script = {
+      title: "Episode",
+      segments: [{ name: "News", text: "Big story.", sources: [{ title: "S1", url: "https://example.com/1" }] }],
+      sources: [{ title: "S1", url: "https://example.com/1" }]
+    }
+    links = { show: true, position: "inline" }
+    md_path = File.join(@tmpdir, "fresh", "ep_script.md")
+    logger = StubGenLogger.new
+    cmd.send(:save_script_debug, script, md_path, logger, links_config: links)
+
+    assert_equal ScriptRenderer.render(script, links_config: links), File.read(md_path)
+    assert_equal JSON.pretty_generate(ScriptArtifact.serialize(script)),
+                 File.read(ScriptArtifact.json_path_for(md_path))
+    assert_equal ["Script saved to #{md_path}"], logger.messages
+  end
+
   # write_sources extracted into ScriptRenderer; see test_script_renderer.rb
 
   # --- primary language from config (P7-6) ---

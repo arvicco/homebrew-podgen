@@ -15,7 +15,6 @@ require_relative File.join(root, "lib", "voicer")
 require_relative File.join(root, "lib", "episode_history")
 require_relative File.join(root, "lib", "cli", "rss_command")
 require_relative File.join(root, "lib", "script_artifact")
-require_relative File.join(root, "lib", "script_renderer")
 require_relative File.join(root, "lib", "legacy_script_parser")
 
 module PodgenCLI
@@ -221,7 +220,7 @@ module PodgenCLI
 
       # Save translated script
       lang_script_path = File.join(episodes_dir, "#{basename}-#{lang_code}_script.md")
-      save_script(lang_script, lang_script_path, links_config: links_config)
+      ScriptArtifact.save(lang_script_path, lang_script, links_config: links_config)
 
       output_path = File.join(episodes_dir, "#{basename}-#{lang_code}.mp3")
       Voicer.new(logger: logger).voice(
@@ -242,12 +241,6 @@ module PodgenCLI
     def parse_script(path)
       script, _source = ScriptArtifact.read_with_fallback(path)
       script || raise("Could not read script at #{path} (or its .json sibling)")
-    end
-
-    def save_script(script, path, links_config: nil)
-      FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, ScriptRenderer.render(script, links_config: links_config))
-      ScriptArtifact.write(ScriptArtifact.json_path_for(path), script)
     end
 
     def regenerate_rss(config, logger)
