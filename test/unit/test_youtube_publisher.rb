@@ -3,6 +3,7 @@
 require_relative "../test_helper"
 require_relative "../support/fakes"
 require "youtube_publisher"
+require "video_generator"
 require "youtube_uploader"
 require "regen_cache"
 require "google/apis/errors"

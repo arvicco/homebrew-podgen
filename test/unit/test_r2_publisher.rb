@@ -219,6 +219,23 @@ class TestR2Publisher < Minitest::Test
     end
   end
 
+  def test_regen_failure_warning_prints_even_when_quiet
+    # Pins the PublisherShared consolidation choice: a failed site/feed
+    # regen is a skippable failure that must be VISIBLE regardless of
+    # verbosity (previously R2/LingQ gated it behind :verbose).
+    require "cli/rss_command"
+    publisher = build_publisher(config: stub_config, runner: ->(*) { true },
+      options: {verbosity: :quiet})
+
+    err = nil
+    PodgenCLI::RssCommand.stub(:new, ->(*) { raise "regen exploded" }) do
+      _out, err = capture_io { publisher.send(:regenerate!) }
+    end
+
+    assert_match(/site\/feed regen failed/, err)
+    assert_match(/RuntimeError/, err)
+  end
+
   private
 
   StubR2Config = Struct.new(:episodes_dir, :name, :base_url, :image,
@@ -243,23 +260,6 @@ class TestR2Publisher < Minitest::Test
       transcription_language: "en",
       _twitter: tw
     )
-  end
-
-  def test_regen_failure_warning_prints_even_when_quiet
-    # Pins the PublisherShared consolidation choice: a failed site/feed
-    # regen is a skippable failure that must be VISIBLE regardless of
-    # verbosity (previously R2/LingQ gated it behind :verbose).
-    require "cli/rss_command"
-    publisher = build_publisher(config: stub_config, runner: ->(*) { true },
-      options: {verbosity: :quiet})
-
-    err = nil
-    PodgenCLI::RssCommand.stub(:new, ->(*) { raise "regen exploded" }) do
-      _out, err = capture_io { publisher.send(:regenerate!) }
-    end
-
-    assert_match(/site\/feed regen failed/, err)
-    assert_match(/RuntimeError/, err)
   end
 
   # Tweet eligibility uses a rolling window (Date.today - twitter[:since]),
