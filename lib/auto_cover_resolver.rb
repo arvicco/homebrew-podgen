@@ -78,9 +78,9 @@ class AutoCoverResolver
     type = ImageRanker.sniff_media_type(head)
     return candidate[:ext] unless type
 
-    return (candidate[:ext] == ".jpeg" ? ".jpeg" : ".jpg") if type == "image/jpeg"
+    return ".#{type.delete_prefix("image/")}" unless type == "image/jpeg"
 
-    ".#{type.delete_prefix("image/")}"
+    (candidate[:ext] == ".jpeg") ? ".jpeg" : ".jpg"
   end
 
   def cleanup(candidates)

@@ -605,24 +605,25 @@ module PodgenCLI
     # tick after it or nil], or [] when the log is absent, stale or unmarked.
     # A skipped tick's begin marker (its end is exit=3) opens no batch.
     def latest_upload_batch
-      @latest_upload_batch ||= begin
-        if !File.exist?(@uploads_log) || (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
-          []
-        else
-          lines = File.readlines(@uploads_log).map(&:scrub)
-          begins = []
+      @latest_upload_batch ||= read_latest_upload_batch
+    end
+
+    def read_latest_upload_batch
+      return [] unless File.exist?(@uploads_log)
+      return [] if (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
+
+      lines = File.readlines(@uploads_log).map(&:scrub)
+      begins = []
+      skipped = nil
+      lines.each_with_index do |l, i|
+        if l.match?(UPLOAD_MARKER_RE)
+          begins << i
           skipped = nil
-          lines.each_with_index do |l, i|
-            if l.match?(UPLOAD_MARKER_RE)
-              begins << i
-              skipped = nil
-            elsif l.match?(UPLOAD_SKIP_END_RE) && begins.any?
-              skipped = lines[begins.pop][0, 19]
-            end
-          end
-          begins.empty? ? [nil, skipped] : [lines.drop(begins.last + 1), skipped]
+        elsif l.match?(UPLOAD_SKIP_END_RE) && begins.any?
+          skipped = lines[begins.pop][0, 19]
         end
       end
+      begins.empty? ? [nil, skipped] : [lines.drop(begins.last + 1), skipped]
     end
 
     def announced_episode_dates(config, languages)
