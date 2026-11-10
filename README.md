@@ -1699,7 +1699,7 @@ podgen/
 │   ├── run.sh                # launchd wrapper: generate, optional publish + Telegram alert
 │   ├── run_uploads.sh        # launchd wrapper: podgen uploads
 │   ├── run_status.sh         # launchd wrapper: podgen status → Telegram on non-zero
-│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate runs
+│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate or the uploads batch runs
 │   ├── serve.rb              # WEBrick static file server
 │   ├── tell_web.rb           # Tell Web UI launcher
 │   ├── install_hunspell_dicts.rb # Hunspell dictionaries for vocabulary frequency
@@ -1721,6 +1721,7 @@ podgen/
 │   ├── research_cache/       # Cached source results (24h)
 │   ├── debug/                # Raw script responses
 │   └── run.lock              # Held while a generate runs
+├── output/uploads.lock       # Held while the uploads batch runs
 └── logs/
     ├── <name>/               # Run logs per podcast (token usage, warnings, phase timings)
     └── launchd_stderr.log    # Shared stderr of the scheduled jobs (publish markers, warnings)

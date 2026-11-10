@@ -3,6 +3,7 @@
 require "open3"
 require "json"
 require "tmpdir"
+require "securerandom"
 require_relative "loggable"
 require_relative "subtitle_parser"
 
@@ -42,7 +43,8 @@ class YouTubeDownloader
   # Downloads the video thumbnail. Returns temp file path or nil on failure.
   def download_thumbnail(url)
     verify_yt_dlp!
-    path = File.join(Dir.tmpdir, "podgen_thumb_#{Process.pid}.%(ext)s")
+    stem = File.join(Dir.tmpdir, "podgen_thumb_#{Process.pid}_#{SecureRandom.hex(4)}")
+    path = "#{stem}.%(ext)s"
 
     log("Downloading thumbnail: #{url}")
     _stdout, stderr, status = Open3.capture3(
@@ -60,7 +62,7 @@ class YouTubeDownloader
     end
 
     # yt-dlp writes thumbnail as the output path with image extension
-    thumb = Dir.glob(File.join(Dir.tmpdir, "podgen_thumb_#{Process.pid}.{jpg,webp,png}")).first
+    thumb = Dir.glob("#{stem}.{jpg,webp,png}").first
     unless thumb && File.exist?(thumb) && File.size(thumb) > 0
       log("Thumbnail file not found after download (non-fatal)")
       return nil
@@ -75,8 +77,9 @@ class YouTubeDownloader
 
   # Downloads audio as MP3, returns temp file path
   def download_audio(url)
-    output_template = File.join(Dir.tmpdir, "podgen_yt_#{Process.pid}.%(ext)s")
-    expected_path = File.join(Dir.tmpdir, "podgen_yt_#{Process.pid}.mp3")
+    stem = File.join(Dir.tmpdir, "podgen_yt_#{Process.pid}_#{SecureRandom.hex(4)}")
+    output_template = "#{stem}.%(ext)s"
+    expected_path = "#{stem}.mp3"
 
     log("Downloading audio: #{url}")
     _stdout, stderr, status = Open3.capture3(

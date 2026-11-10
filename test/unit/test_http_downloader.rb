@@ -49,6 +49,24 @@ class TestHttpDownloader < Minitest::Test
     assert_empty Dir.glob("#{@dest}.part.*"), "temp partial must be cleaned up"
   end
 
+  # P18-6 (Q-137): the partial's name carries a random suffix, not the pid
+  # alone — two downloads to one path in one process never share a partial.
+  def test_write_body_partial_name_random_suffixed
+    partials = []
+    dest = @dest
+    response = Object.new
+    response.define_singleton_method(:read_body) do |&block|
+      partials.concat(Dir.glob("#{dest}.part.*"))
+      block.call("ok")
+    end
+
+    @downloader.send(:write_body, response, @dest, URI.parse("http://example.com/a"))
+
+    assert_equal 1, partials.size
+    assert_match(/\.part\.#{Process.pid}_\h{8}\z/, partials.first)
+    assert_equal "ok", File.read(@dest)
+  end
+
   def test_follow_redirect_raises_when_exhausted
     response = Object.new
     response.define_singleton_method(:[]) { |_key| "http://example.com/next" }

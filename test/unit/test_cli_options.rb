@@ -228,7 +228,7 @@ class TestCLIOptions < Minitest::Test
     File.write(File.join(episodes_dir, "test_pod-2026-01-15.mp3"), "fake")
 
     # --force + --dry-run so it doesn't actually run the pipeline
-    code, _, err = run_cli("generate", "test_pod", "--date", "2026-01-15", "--force", "--dry-run")
+    _code, _, err = run_cli("generate", "test_pod", "--date", "2026-01-15", "--force", "--dry-run")
     refute_includes err, "episode already exists"
   end
 

@@ -54,7 +54,7 @@ class TestInitCommand < Minitest::Test
   # --- init from existing (two-arg mode) ---
 
   def test_init_from_existing_copies_config_dir
-    out, = capture_io { PodgenCLI::InitCommand.new([@source_name, "new_pod"], {}).run }
+    _out, = capture_io { PodgenCLI::InitCommand.new([@source_name, "new_pod"], {}).run }
 
     new_dir = File.join(@tmpdir, "podcasts", "new_pod")
     assert Dir.exist?(new_dir)

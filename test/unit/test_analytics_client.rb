@@ -63,6 +63,14 @@ class TestAnalyticsClient < Minitest::Test
     assert_equal "it\\'s", client.send(:escape, "it's")
   end
 
+  # P18-6 (Q-137): a backslash is escaped first — `x\'` used to become
+  # `x\\'`, whose quote then closed the SQL string literal.
+  def test_escape_backslash_before_quote
+    client = AnalyticsClient.new
+    assert_equal "a\\\\b", client.send(:escape, "a\\b")
+    assert_equal "x\\\\\\'", client.send(:escape, "x\\'")
+  end
+
   def test_escape_no_quotes
     client = AnalyticsClient.new
     assert_equal "safe string", client.send(:escape, "safe string")

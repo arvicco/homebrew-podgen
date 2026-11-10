@@ -74,7 +74,7 @@ module TimestampPersister
   # Returns [segments, engine_code] or [nil, nil] if no segments available.
   PREFERRED_ENGINES = %w[groq elab open].freeze
 
-  def self.extract_segments(transcription_result, engine_codes:, comparison_results: nil)
+  def self.extract_segments(transcription_result, engine_codes:, comparison_results: nil, language: nil)
     # In comparison mode, pick the best engine's segments (or words→segments)
     if comparison_results
       PREFERRED_ENGINES.each do |code|
@@ -87,7 +87,7 @@ module TimestampPersister
         next unless comparison_results[code]
         words = comparison_results[code][:words]
         if words && !words.empty?
-          segs = build_segments_from_words(words)
+          segs = build_segments_from_words(words, language: language)
           return [segs, code] unless segs.empty?
         end
       end
@@ -103,7 +103,7 @@ module TimestampPersister
     # Fallback: build segments from words
     words = transcription_result[:words]
     if words && !words.empty?
-      segs = build_segments_from_words(words)
+      segs = build_segments_from_words(words, language: language)
       return [segs, engine_codes.first] unless segs.empty?
     end
 
@@ -121,9 +121,12 @@ module TimestampPersister
   #     empty/whitespace tokens are kept as words (joined text keeps their gap)
   #   - splits on SENTENCE_END
   #   - timings: Float() coercion, nil/unparseable -> 0.0; end clamped >= start
-  # Words are always joined with a single space; language-aware joining (no
-  # spaces for CJK) is deferred.
-  def self.build_segments_from_words(words)
+  # Words are joined with a single space, or with none when the language
+  # code is ja/zh (P18-6; a region suffix such as zh-CN counts).
+  UNSPACED_LANGUAGES = %w[ja zh].freeze
+
+  def self.build_segments_from_words(words, language: nil)
+    joiner = UNSPACED_LANGUAGES.include?(language.to_s.downcase.split(/[-_]/).first) ? "" : " "
     segments = []
     current_words = []
     current_start = nil
@@ -140,7 +143,7 @@ module TimestampPersister
       current_words << text
 
       if text.match?(SENTENCE_END)
-        segments << { start: current_start, end: [last_end, current_start].max, text: current_words.join(" ").strip }
+        segments << { start: current_start, end: [last_end, current_start].max, text: current_words.join(joiner).strip }
         current_words = []
         current_start = nil
       end
@@ -148,7 +151,7 @@ module TimestampPersister
 
     # Flush remaining words as final segment
     unless current_words.empty?
-      segments << { start: current_start, end: [last_end, current_start].max, text: current_words.join(" ").strip }
+      segments << { start: current_start, end: [last_end, current_start].max, text: current_words.join(joiner).strip }
     end
 
     segments

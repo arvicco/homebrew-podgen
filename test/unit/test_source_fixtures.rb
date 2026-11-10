@@ -80,17 +80,19 @@ class TestSourceFixtures < Minitest::Test
   def test_every_registered_fixture_exists
     skip_unless_env("PODGEN_FIXTURES_RECORDED")
     readme = File.read(File.join(ROOT, "test", "fixtures", "README.md"))
-    paths = readme.scan(/^\|.*`(sources\/[^`]+\.json)`/).flatten
+    paths = readme.scan(/^\|.*`((?:sources|transcription)\/[^`]+\.json)`/).flatten
 
     refute_empty paths
     missing = paths.reject { |p| File.exist?(File.join(ROOT, "test", "fixtures", p)) }
     assert_empty missing, "registered fixtures missing: run rake fixtures:record"
-    assert_equal FixtureRecorder::TARGETS.values.map(&:first).sort, paths.map { |p| p.delete_prefix("sources/") }.sort
+    assert_equal FixtureRecorder::TARGETS.values.map(&:first).sort, paths.sort
   end
 
   def test_readme_registry_matches_recorder_targets
     readme = File.read(File.join(ROOT, "test", "fixtures", "README.md"))
-    paths = readme.scan(/^\|.*`sources\/([^`]+\.json)`/).flatten
+    # P18-6 (Q-137): the Scribe fixture is a recorder target too, so the
+    # registry rows under transcription/ count; paths are fixture-root relative.
+    paths = readme.scan(/^\|.*`((?:sources|transcription)\/[^`]+\.json)`/).flatten
 
     assert_equal FixtureRecorder::TARGETS.values.map(&:first).sort, paths.sort
   end
@@ -200,7 +202,7 @@ class TestSourceFixtures < Minitest::Test
     readme = File.join(dir, "README.md")
     File.write(readme, "| hn | `sources/hn/search_by_date.json` | x | NOT RECORDED | t |\n")
     rec = FixtureRecorder.new(out: out, fixture_dir: dir, readme: readme)
-    %i[fetch_bluesky fetch_x fetch_claude_web].each { |m| rec.define_singleton_method(m) { raise "stubbed: no network in tests" } }
+    %i[fetch_bluesky fetch_x fetch_claude_web fetch_elevenlabs_scribe].each { |m| rec.define_singleton_method(m) { raise "stubbed: no network in tests" } }
     rec.define_singleton_method(:fetch_hn, &hn)
     rec
   end
@@ -228,7 +230,7 @@ class TestSourceFixtures < Minitest::Test
       rec = offline_recorder(dir, out, hn: -> { {"hits" => []} })
       failed = rec.record_all
       assert_includes failed, "hn"
-      refute File.exist?(File.join(dir, "hn/search_by_date.json")), "empty body must not be written"
+      refute File.exist?(File.join(dir, "sources/hn/search_by_date.json")), "empty body must not be written"
       assert_match(/hn\s+FAILED \(unusable/, out.string)
     end
   end
@@ -263,10 +265,49 @@ class TestSourceFixtures < Minitest::Test
     refute claude["content"][0]["content"][0].key?("encrypted_content")
   end
 
+  # P18-6 (Q-137): the Scribe fixture has a recorder target — the trim
+  # drops transcription_id, an answer without spoken words is refused, and
+  # a recording lands under transcription/ with its README row stamped.
+  def test_synthetic_trim_elevenlabs_scribe_drops_transcription_id
+    body = {"language_code" => "eng", "language_probability" => 1.0, "text" => "Hi.", "transcription_id" => "abc",
+            "words" => [{"text" => "Hi.", "start" => 0.0, "end" => 0.2, "type" => "word", "logprob" => -0.1, "speaker_id" => "s"}]}
+
+    trimmed = FixtureRecorder.trim_elevenlabs_scribe(body)
+
+    refute trimmed.key?("transcription_id")
+    assert_equal %w[end logprob start text type], trimmed["words"].first.keys.sort
+    assert_equal "eng", trimmed["language_code"]
+  end
+
+  def test_recorder_refuses_scribe_body_without_spoken_words
+    assert FixtureRecorder.unusable?("elevenlabs_scribe", {"words" => []})
+    assert FixtureRecorder.unusable?("elevenlabs_scribe", {"words" => [{"type" => "spacing", "text" => " "}]})
+    refute FixtureRecorder.unusable?("elevenlabs_scribe", {"words" => [{"type" => "word", "text" => "Hi"}]})
+  end
+
+  def test_recorder_writes_scribe_fixture_under_transcription_and_stamps_row
+    Dir.mktmpdir do |dir|
+      out = StringIO.new
+      rec = offline_recorder(dir, out, hn: -> { {"hits" => [{"title" => "t"}]} })
+      File.write(File.join(dir, "README.md"), "| elevenlabs_scribe | e | `transcription/elevenlabs_scribe_words.json` | OLD | t | c |\n")
+      rec.define_singleton_method(:fetch_elevenlabs_scribe) { {"words" => [{"type" => "word", "text" => "Hi"}]} }
+      saved = ENV["ELEVENLABS_API_KEY"]
+      ENV["ELEVENLABS_API_KEY"] = "recorder-test"
+      begin
+        rec.record_all
+      ensure
+        ENV["ELEVENLABS_API_KEY"] = saved
+      end
+
+      assert File.exist?(File.join(dir, "transcription", "elevenlabs_scribe_words.json")), out.string
+      refute_includes File.read(File.join(dir, "README.md")), "OLD"
+    end
+  end
+
   def test_synthetic_stamp_readme_fills_only_the_matching_row
     text = "| a | e | `sources/hn/s.json` | NOT RECORDED | t | c |\n| b | e | `sources/x/s.json` | NOT RECORDED | t | c |\n"
 
-    out = FixtureRecorder.stamp_readme(text, "hn/s.json", "2026-01-01T00:00:00Z")
+    out = FixtureRecorder.stamp_readme(text, "sources/hn/s.json", "2026-01-01T00:00:00Z")
 
     assert_equal text, FixtureRecorder.stamp_readme(text, "none.json", "z")
     assert_equal text.lines[1], out.lines[1]
