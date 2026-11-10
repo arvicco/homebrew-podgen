@@ -73,6 +73,8 @@ class TestCharacterizationYouTubeUploadPaths < Minitest::Test
       @path = path
     end
 
+    def verify! = nil
+
     def entries_for(_platform, _group, strict: false) = {}
 
     def record(platform, group, base_name, upload_id)

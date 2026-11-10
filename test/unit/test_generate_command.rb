@@ -246,6 +246,82 @@ class TestGenerateCommand < Minitest::Test
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-141 (P19-5): one truth for a queue.yml of the wrong shape — `podgen
+  # validate` reports an ERROR and generate aborts, with the same message
+  # (today: validate warns "unexpected format" while generate dies).
+  def test_queue_wrong_shape_is_the_same_error_in_validate_and_generate
+    require "validators/guidelines_validator"
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "qpod")
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), "## Format\nf\n## Tone\nt\n## Topics\nx\n")
+    require "podcast_config"
+
+    ["- AI\n", "a: 1\n", "topics: AI\n"].each do |body|
+      File.write(File.join(podcast_dir, "queue.yml"), body)
+      config = PodcastConfig.new("qpod")
+
+      result = Validators::GuidelinesValidator.new(config).validate
+      queue_errors = result[:errors].grep(/queue\.yml/)
+      assert_equal 1, queue_errors.size, "#{body.inspect}: #{result.inspect}"
+      refute(result[:warnings].any? { it.include?("queue.yml") }, "#{body.inspect}: #{result[:warnings].inspect}")
+
+      cmd = runnable_command("news")
+      cmd.singleton_class.send(:remove_method, :generate_topics)
+      cmd.instance_variable_set(:@config, config)
+      cmd.instance_variable_set(:@dry_run, true)
+      code = nil
+      capture_io { code = cmd.run }
+
+      assert_equal 1, code, body.inspect
+      message = last_log_line[/first=RuntimeError: (.*)\z/, 1]
+      assert_equal "Guidelines: #{message}", queue_errors.first, body.inspect
+    end
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
+  # Q-133 (P19-6): an unknown `type:` is an error in validate and generate
+  # refuses — never silently the paid news pipeline (today: `langauge` or
+  # `Language` runs news, no warning anywhere).
+  def test_unknown_type_is_a_validate_error_and_generate_refuses
+    require "podcast_validator"
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "typod")
+    FileUtils.mkdir_p(podcast_dir)
+    require "podcast_config"
+
+    %w[langauge Language].each do |type|
+      File.write(File.join(podcast_dir, "guidelines.md"), "## Podcast\n- type: #{type}\n## Format\nf\n## Tone\nt\n")
+      config = PodcastConfig.new("typod")
+
+      result = PodcastValidator.validate(config)
+      type_errors = result.errors.grep(/unknown type/)
+      assert_equal ["Guidelines: unknown type '#{type}' (known: news, language)"], type_errors, type
+      refute(result.passes.any? { it.start_with?("News:") }, "#{type}: news checks ran: #{result.passes.inspect}")
+
+      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :quiet})
+      cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil } # no network/tools if the refusal regresses
+      cmd.define_singleton_method(:preflight_network!) { |_| nil }
+      cmd.define_singleton_method(:run_language_pipeline) { raise "language pipeline ran for type #{type}" }
+      cmd.define_singleton_method(:generate_topics) { raise "news pipeline ran for type #{type}" }
+      code = nil
+      _, err = capture_io { code = cmd.run }
+
+      assert_equal 1, code, type
+      assert_includes err, "Error: guidelines.md: unknown type '#{type}' (known: news, language)"
+      # The scheduled run's log ends in the refusal, not the previous run's outcome.
+      log_path = config.log_path(Date.today)
+      assert File.exist?(log_path), "#{type}: no run log"
+      assert_match(/\ARUN-OUTCOME status=error .*unknown type '#{type}' \(known: news, language\)\z/,
+        File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, ""), type)
+    end
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success
@@ -467,6 +543,46 @@ class TestGenerateCommand < Minitest::Test
       last_log_line
   end
 
+  # Q-140 (P19-4): the commit writes history.yml strictly; a corrupt file
+  # stops the run before any paid step, not after the episode is produced
+  # and moved into place (today: the run proceeds and reads it as empty).
+  def test_run_news_corrupt_history_fails_before_any_phase
+    cmd = owner_data_command("news")
+    File.write(cmd.instance_variable_get(:@config).history_path, "not: a list\n")
+    cmd.singleton_class.send(:remove_method, :generate_topics)
+    cmd.define_singleton_method(:generate_topics) { raise "topics ran against an unreadable history" }
+    code = nil
+    capture_io { code = cmd.run }
+
+    assert_equal 1, code
+    assert_match(/RUN-OUTCOME status=error .*history\.yml: expected Array, got Hash/, last_log_line)
+  end
+
+  # Q-140 (P19-4): a language run also writes excluded_urls.yml mid-run (a
+  # gone source, an [x] at the listening prompt) after archiving and
+  # downloading; a corrupt file stops it before the pipeline starts.
+  def test_run_language_corrupt_excluded_urls_fails_before_the_pipeline
+    cmd = owner_data_command("language")
+    File.write(cmd.instance_variable_get(:@config).excluded_urls_path, "not: a list\n")
+    built = false
+    code = nil
+    PodgenCLI::LanguagePipeline.stub(:new, ->(**) { (built = true) and Struct.new(:warnings) { def run = 0 }.new([]) }) do
+      capture_io { code = cmd.run }
+    end
+
+    assert_equal 1, code
+    refute built, "language pipeline started against an unreadable excluded_urls.yml"
+    assert_match(/excluded_urls\.yml: expected Array, got Hash/, last_log_line)
+  end
+
+  def test_run_news_clean_owner_data_passes_preflight
+    cmd = owner_data_command("news")
+    File.write(cmd.instance_variable_get(:@config).excluded_urls_path, "not: a list\n") # news never writes it
+    capture_io { cmd.run }
+
+    assert_equal "RUN-OUTCOME status=ok warnings=0 errors=0", last_log_line
+  end
+
   def test_run_outcome_counts_logged_library_warnings
     cmd = runnable_command("news")
     cmd.define_singleton_method(:research_topics) do |_|
@@ -627,6 +743,75 @@ class TestGenerateCommand < Minitest::Test
     assert_equal %w[sl en], recorded[:languages].keys
   end
 
+  # --- P19-8 (Q-158): the first-attempt review bundle ---
+
+  BLOCKER_ISSUE = {severity: "BLOCKER", check: "fact", segment: "Uvod", message: "Wrong date", auto_fixed: false}.freeze
+  RESEARCH = [{topic: "t", findings: [{title: "A", url: "https://ex.com/a", summary: "s"}]}].freeze
+
+  # reviews: one issues list per review call; each review returns the script
+  # it was given (the reviewer reports, it does not rewrite).
+  def review_with(cmd, reviews)
+    calls = 0
+    reviewer = Object.new
+    reviewer.define_singleton_method(:review) do |script|
+      issues = reviews[calls] || []
+      calls += 1
+      {script: script, issues: issues, passed: issues.none? { |i| i[:severity] == "BLOCKER" }}
+    end
+    regenerated = 0
+    cmd.define_singleton_method(:regenerate_script_with_feedback) do |*|
+      regenerated += 1
+      {title: "Retry #{regenerated}", segments: [{name: "Uvod", text: "Znova."}], sources: []}
+    end
+    ScriptReviewer.stub(:new, ->(**) { reviewer }) do
+      cmd.send(:review_script, sl_script, RESEARCH, ["https://ex.com/p"])
+    end
+  end
+
+  def bundle_path(config)
+    File.join(File.dirname(config.episodes_dir), "debug", "mypod-2026-01-15_review_attempt1.json")
+  end
+
+  def test_review_script_unfixed_blocker_on_first_attempt_writes_recall_bundle
+    require_relative "../../scripts/reviewer_recall"
+    cmd, config = build_sl_en_command
+
+    review_with(cmd, [[BLOCKER_ISSUE], []])
+
+    path = bundle_path(config)
+    bundle = JSON.parse(File.read(path))
+    assert_equal %w[name date script research_data priority_urls default_issues], bundle.keys
+    assert_equal "mypod-2026-01-15", bundle["name"]
+    assert_equal "2026-01-15", bundle["date"]
+    assert_equal "Naslov", bundle["script"]["title"]
+    assert_equal ["https://ex.com/p"], bundle["priority_urls"]
+    assert_equal [{"severity" => "BLOCKER", "check" => "fact", "segment" => "Uvod", "message" => "Wrong date"}],
+      bundle["default_issues"]
+    loaded = ReviewerRecall.load_bundle(path)
+    assert_equal 1, ReviewerRecall.blockers(loaded[:default_issues])
+    assert_equal "https://ex.com/a", loaded[:research_data].first[:findings].first[:url]
+    assert_includes cmd.instance_variable_get(:@logger).messages, "Review bundle saved: #{path}"
+  end
+
+  def test_review_script_clean_first_review_writes_no_bundle
+    cmd, config = build_sl_en_command
+
+    review_with(cmd, [[]])
+
+    refute File.exist?(File.dirname(bundle_path(config))), "a clean review leaves no debug artifact"
+  end
+
+  def test_review_script_second_blocker_attempt_keeps_the_first_bundle
+    cmd, config = build_sl_en_command
+
+    review_with(cmd, [[BLOCKER_ISSUE], [BLOCKER_ISSUE.merge(message: "Still wrong")], []])
+
+    bundle = JSON.parse(File.read(bundle_path(config)))
+    assert_equal "Naslov", bundle["script"]["title"], "attempt 1's script, not the retry's"
+    assert_equal ["Wrong date"], bundle["default_issues"].map { |i| i["message"] }
+    assert_equal ["mypod-2026-01-15_review_attempt1.json"], Dir.children(File.dirname(bundle_path(config)))
+  end
+
   private
 
   def sl_script
@@ -679,6 +864,7 @@ class TestGenerateCommand < Minitest::Test
     cmd.define_singleton_method(:setup_pipeline) { nil }
     cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil }
     cmd.define_singleton_method(:preflight_network!) { |_| nil }
+    cmd.define_singleton_method(:preflight_owner_data!) { nil }
     cmd.define_singleton_method(:generate_topics) { ["t"] }
     cmd.define_singleton_method(:research_topics) { |_| [] }
     cmd.define_singleton_method(:inject_priority_links) { |r| [r, []] }
@@ -686,6 +872,16 @@ class TestGenerateCommand < Minitest::Test
     cmd.define_singleton_method(:review_script) { |s, *| s }
     cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod-2026-10-10.mp3"] }
     cmd.define_singleton_method(:finalize) { |*| nil }
+    cmd
+  end
+
+  # runnable_command with the real owner-data preflight over temp files.
+  def owner_data_command(type)
+    cmd = runnable_command(type)
+    cmd.singleton_class.send(:remove_method, :preflight_owner_data!)
+    config = Struct.new(:type, :history_path, :excluded_urls_path)
+      .new(type, File.join(@tmpdir, "history.yml"), File.join(@tmpdir, "excluded_urls.yml"))
+    cmd.instance_variable_set(:@config, config)
     cmd
   end
 

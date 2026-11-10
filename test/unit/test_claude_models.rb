@@ -84,7 +84,11 @@ class TestClaudeModels < Minitest::Test
   def test_effort_default_policy_for_every_role
     expected = {description: "low", language_detect: "low"}
     ClaudeModels::ROLES.each_key do |role|
-      assert_equal expected[role], ClaudeModels.effort(role), "role #{role}"
+      if expected.key?(role)
+        assert_equal expected[role], ClaudeModels.effort(role), "role #{role}"
+      else
+        assert_nil ClaudeModels.effort(role), "role #{role}" # Q-159 (14): Minitest 6
+      end
     end
   end
 

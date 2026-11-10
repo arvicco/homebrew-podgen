@@ -337,6 +337,31 @@ class TestEpisodeHistory < Minitest::Test
     refute entries[0].key?("timestamp")
   end
 
+  # P19-3 (Q-124): a row without an explicit basename is found by its
+  # same-day position and gains the new basename; its siblings are pinned.
+  def test_rename_positional_row_gains_basename_and_pins_same_day_siblings
+    File.write(@history_path, YAML.dump([
+      { "date" => "2026-01-01", "title" => "A" },
+      { "date" => "2026-01-01", "title" => "B" }
+    ]))
+
+    renamed = @history.rename!("pod-2026-01-01", new_basename: "pod-2026-01-09", new_date: Date.new(2026, 1, 9))
+
+    assert_equal "A", renamed["title"]
+    assert_equal [
+      { "date" => "2026-01-09", "title" => "A", "basename" => "pod-2026-01-09" },
+      { "date" => "2026-01-01", "title" => "B", "basename" => "pod-2026-01-01a" }
+    ], YAML.load_file(@history_path)
+  end
+
+  def test_rename_unmatched_basename_returns_nil_and_leaves_file
+    original = YAML.dump([{ "date" => "2026-01-01", "title" => "A" }])
+    File.write(@history_path, original)
+
+    assert_nil @history.rename!("pod-2026-01-01a", new_basename: "pod-2026-01-09", new_date: Date.new(2026, 1, 9))
+    assert_equal original, File.read(@history_path)
+  end
+
   # Q-108: a corrupt hand-edited history is never rewritten from an empty default.
   CORRUPT_HISTORY = "- date: \"2026-01-01\"\n  title: x\n- date: [[[\n"
 

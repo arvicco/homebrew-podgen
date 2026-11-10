@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "yaml"
 
 ENV["ANTHROPIC_API_KEY"] ||= "test-key"
@@ -109,6 +110,51 @@ class TestForkCommand < Minitest::Test
     assert_equal "First", entries.first["title"]
   end
 
+  # P19-3 (Q-124): explicit basenames follow the renamed episode files.
+  def test_fork_rewrites_explicit_history_basenames_to_new_name
+    File.write(File.join(@old_output_dir, "history.yml"), [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "#{@old_name}-2026-03-01" },
+      { "date" => "2026-03-02", "title" => "Second" }
+    ].to_yaml)
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    new_history = File.join(@tmpdir, "output", @new_name, "history.yml")
+    assert_equal [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "#{@new_name}-2026-03-01" },
+      { "date" => "2026-03-02", "title" => "Second" }
+    ], YAML.load_file(new_history)
+    require "history_maps"
+    titles = HistoryMaps.build(history_path: new_history, podcast_name: @new_name,
+      episodes_dir: File.join(@tmpdir, "output", @new_name, "episodes")).first
+    assert_equal "First", titles["#{@new_name}-2026-03-01.mp3"]
+    assert_equal "Second", titles["#{@new_name}-2026-03-02.mp3"]
+    assert_includes File.read(File.join(@old_output_dir, "history.yml")), "basename: #{@old_name}-2026-03-01"
+  end
+
+  def test_fork_history_without_basenames_is_copied_byte_identical
+    old_bytes = File.read(File.join(@old_output_dir, "history.yml"))
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    assert_equal old_bytes, File.read(File.join(@tmpdir, "output", @new_name, "history.yml"))
+  end
+
+  # P19-3 (Q-124): legacy flat lingq_uploads.yml lands in the unified shape.
+  def test_fork_wraps_legacy_lingq_tracking_under_lingq
+    File.delete(File.join(@old_output_dir, "uploads.yml"))
+    File.write(File.join(@old_output_dir, "lingq_uploads.yml"), {
+      "12345" => { "#{@old_name}-2026-03-01" => 100 }
+    }.to_yaml)
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    new_tracking = File.join(@tmpdir, "output", @new_name, "uploads.yml")
+    assert_equal({ "lingq" => { "12345" => { "#{@new_name}-2026-03-01" => 100 } } }, YAML.load_file(new_tracking))
+    require "upload_tracker"
+    assert UploadTracker.new(new_tracking).tracked?("lingq", "12345", "#{@new_name}-2026-03-01")
+  end
+
   def test_fork_copies_and_renames_upload_tracking
     capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
 
@@ -116,6 +162,34 @@ class TestForkCommand < Minitest::Test
     data = YAML.load_file(new_tracking)
     assert_equal 100, data["lingq"]["12345"]["#{@new_name}-2026-03-01"]
     refute data["lingq"]["12345"].key?("#{@old_name}-2026-03-01")
+  end
+
+  def test_fork_writes_upload_tracking_through_atomic_writer
+    new_tracking = File.join(@tmpdir, "output", @new_name, "uploads.yml")
+
+    written = record_atomic_writes do
+      capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+    end
+
+    assert_includes written, new_tracking
+    assert_equal({ "lingq" => { "12345" => { "#{@new_name}-2026-03-01" => 100 } } }.to_yaml, File.read(new_tracking))
+    assert_empty Dir.glob(File.join(@tmpdir, "output", @new_name, "*.tmp.*"))
+  end
+
+  # Q-140 (P19-4): a corrupt uploads.yml stops the fork before anything is
+  # written — no half-forked podcast whose ledger is silently missing (today:
+  # config and episodes copied, tracking skipped, exit 0).
+  def test_fork_corrupt_upload_tracking_fails_before_copying_anything
+    File.write(File.join(@old_output_dir, "uploads.yml"), "- not a hash\n")
+
+    error = nil
+    capture_io do
+      error = assert_raises(RuntimeError) { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+    end
+
+    assert_includes error.message, "uploads.yml"
+    refute Dir.exist?(File.join(@tmpdir, "podcasts", @new_name))
+    refute Dir.exist?(File.join(@tmpdir, "output", @new_name))
   end
 
   def test_fork_preserves_old_podcast

@@ -246,6 +246,18 @@ class TestPublishCommand < Minitest::Test
     assert_equal 1, youtube_code_for(errors: [{type: :no_match, message: "No episode found matching '2026-01-15'"}])
   end
 
+  # Q-159 (13): with no podcast argument the missing-podcast usage line is
+  # the error, not DateParser's "Invalid date" for an unprefixed basename.
+  def test_date_basename_without_podcast_is_missing_podcast_usage
+    cmd = PodgenCLI::PublishCommand.new(["--date", "testpod-2026-05-16a"], {})
+    code = nil
+    _out, err = capture_io { code = cmd.run }
+
+    assert_equal 2, code
+    assert_includes err, "Usage: podgen publish <podcast_name>"
+    refute_includes err, "Invalid date"
+  end
+
   def test_unparseable_episode_id_is_a_usage_error
     assert_raises(OptionParser::ParseError) { PodgenCLI::PublishCommand.new(["testpod", "--date", "soon"], {}) }
   end

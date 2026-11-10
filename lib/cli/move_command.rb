@@ -214,7 +214,9 @@ module PodgenCLI
           end
           return 1
         end
-        EpisodeHistory.new(config.history_path).rename!(from_base, new_basename: to_base, new_date: to_date)
+        unless EpisodeHistory.new(config.history_path).rename!(from_base, new_basename: to_base, new_date: to_date)
+          $stderr.puts "Warning: no history entry for #{from_base}; the feed shows #{to_base} without its title, timestamp or duration"
+        end
         UploadTracker.for_config(config).rename(from_base, to_base)
         completed_pairs << [from_base, to_base]
         puts "  ✓ #{from_base} → #{to_base}" unless quiet?

@@ -33,6 +33,7 @@ class ScriptAgent
   include UsageLogger
 
   MAX_RETRIES = 3
+  RAW_DEBUG_ENV = "PODGEN_DEBUG_RAW_SCRIPT" # opt-in debug/<basename>_script_raw.json (Q-158)
 
   def initialize(guidelines:, script_path:, logger: nil, priority_urls: [], links_config: nil)
     @logger = logger
@@ -197,11 +198,12 @@ class ScriptAgent
   # sense for that shape, and unit tests passing flat tmpdir paths shouldn't
   # leak files above their sandbox.
   #
-  # TODO(2026-06-15): always-on diagnostic instrumentation added to investigate
-  # the fulgur_news 2026-05-07 missing-per-segment-sources incident. If the
-  # issue hasn't recurred by this date, drop this method or gate it on
-  # ENV["PODGEN_DEBUG_RAW_SCRIPT"].
+  # Diagnostic added for the fulgur_news 2026-05-07 missing-per-segment-
+  # sources incident; nothing reads the file. Opt-in since 2026-11-10
+  # (Q-158, P19-8; the TODO(2026-06-15) review date had passed with no
+  # recurrence): set PODGEN_DEBUG_RAW_SCRIPT to write it.
   def save_raw_debug(script, message)
+    return unless ENV[RAW_DEBUG_ENV]
     return unless @script_path.end_with?("_script.md")
 
     debug_dir = File.join(File.dirname(File.dirname(@script_path)), "debug")

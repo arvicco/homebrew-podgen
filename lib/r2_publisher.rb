@@ -121,6 +121,9 @@ class R2Publisher
 
     puts "Syncing #{source_dir} → #{dest}" unless quiet?
     puts "(dry run)" if @options[:dry_run] && !quiet?
+    # Q-159 (2): an episode id never narrows the mirror (feed and site list
+    # every episode); say so rather than let the id read as a scoped upload.
+    puts "R2 sync is show-wide (feed and site list every episode); #{@episode_id} scopes the tweets only" if @episode_id && !quiet?
 
     if @runner
       @runner.call(env: env, args: args)

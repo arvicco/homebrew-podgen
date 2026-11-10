@@ -163,6 +163,21 @@ class TestVocabCommand < Minitest::Test
     assert_equal ["lupo"], kv.lemmas("sl")
   end
 
+  # Q-133 (P19-6): --min below 1 would list every explained lemma, and with
+  # --promote write them all into known_vocabulary.yml; it is refused.
+  def test_review_min_below_one_is_refused_and_promotes_nothing
+    review_fixture
+    known_path = File.join(@podcast_dir, "known_vocabulary.yml")
+
+    %w[0 -2].each do |min|
+      error = assert_raises(OptionParser::InvalidArgument) do
+        build_command("review", "testpod", "--min", min, "--promote").run
+      end
+      assert_includes error.message, "--min #{min} (must be at least 1)"
+    end
+    refute File.exist?(known_path)
+  end
+
   # P18-8 (1): the report reads the ledger the generate pipeline reads
   # (for_config: the show's language selects the reflexive rule), so an sl
   # show's "bati se" and "bati" are one lemma, not two rows.
@@ -177,6 +192,23 @@ class TestVocabCommand < Minitest::Test
     out, = capture_io { build_command("review", "testpod").run }
 
     assert_match(/bati\s+3\s+testpod-2026-01-03/, out)
+  end
+
+  # Q-159 (10): the known-vocabulary filter compares through the ledger's
+  # own key, so a known "bati se" hides the ledger's "bati" row.
+  def test_review_sl_show_known_reflexive_form_excludes_stripped_row
+    eps = File.join(@tmpdir, "output", "testpod", "episodes")
+    FileUtils.mkdir_p(eps)
+    %w[2026-01-01 2026-01-02 2026-01-03].each do |date|
+      File.write(File.join(eps, "testpod-#{date}_transcript.md"),
+        "# T\n\n## Transcript\n\nText.\n\n## Vocabulary\n\n- **bati se** (B1 verb) — gloss\n")
+    end
+    capture_io { build_command("add", "testpod", "bati se").run }
+
+    out, = capture_io { build_command("review", "testpod").run }
+
+    refute_match(/^\s+bati\s+3/, out)
+    assert_includes out, "No lemmas explained 3+ times outside known vocabulary"
   end
 
   def test_review_missing_podcast_is_usage_error

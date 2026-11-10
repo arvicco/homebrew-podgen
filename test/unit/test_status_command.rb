@@ -580,6 +580,69 @@ class TestStatusCommand < Minitest::Test
     assert_includes script, %(echo "$(date '+%Y/%m/%d %H:%M:%S') podgen uploads $PODS end exit=$UP_EXIT" >&2)
   end
 
+  # Q-159 (12): a second batch refused while the first holds the lock ends
+  # exit=3. The board names the skipped tick (OK level), reads conditions
+  # from the running batch, and the running batch's stdout summary written
+  # after the refused marker still counts.
+  def test_run_refused_second_batch_reads_as_skipped_tick_not_failure
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin", "uploads: priority mode across alpha, beta",
+      "─── alpha ───", "2026/10/10 10:30:05 podgen uploads alpha,beta begin",
+      "uploads: batch skipped: another batch was running", "─── summary ───", "  alpha: yt-uploaded 3",
+      "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      "2026/10/10 10:30:05 podgen uploads alpha,beta begin",
+      "uploads: another uploads batch is running (lockfile: /x/output/uploads.lock)",
+      "2026/10/10 10:30:06 podgen uploads alpha,beta end exit=3",
+      "  ✗ alpha-2026-10-08 failed: uploadLimitExceeded: x",
+      "2026/10/10 10:50:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind; batch stops at the daily quota/, out)
+    assert_includes out, "uploads batch skipped 2026/10/10 10:30:05: another batch was running"
+    refute_includes out, "stalled"
+  end
+
+  # Q-159 (12), buffered order: under launchd the running batch's stdout
+  # reaches the file only at its exit, after the refused batch's marker and
+  # skip line. The running batch's block keeps its own marker's date.
+  def test_run_refused_second_batch_buffered_block_after_skip_still_counts
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin", "2026/10/10 10:30:05 podgen uploads alpha,beta begin",
+      "uploads: batch skipped: another batch was running", "uploads: priority mode across alpha, beta",
+      "─── alpha ───", "─── summary ───", "  alpha: yt-uploaded 3", "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      "2026/10/10 10:30:05 podgen uploads alpha,beta begin",
+      "uploads: another uploads batch is running (lockfile: /x/output/uploads.lock)",
+      "2026/10/10 10:30:06 podgen uploads alpha,beta end exit=3",
+      "2026/10/10 10:50:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+    refute_includes out, "stalled"
+  end
+
+  def test_run_skipped_tick_before_a_newer_batch_is_not_named
+    current_youtube_pod
+    write_uploads_log(["2026/10/09 10:30:00 podgen uploads alpha,beta begin",
+      "2026/10/09 10:30:01 podgen uploads alpha,beta end exit=3"] + upload_batch("2026/10/10", []), marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    refute_includes out, "skipped"
+  end
+
   def test_run_uploads_stderr_ignored_for_podcast_without_youtube
     make_pod("alpha", dates: fresh_dates)
     write_uploads_log(["  ✗ beta-2026-10-10 skipped: YouTube not authorized: x"])

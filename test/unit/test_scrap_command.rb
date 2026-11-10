@@ -148,6 +148,89 @@ class TestScrapCommand < Minitest::Test
     ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-140 (P19-4): a dry run reports the corrupt uploads.yml the real run
+  # stops on (the same RuntimeError), and writes nothing — no legacy
+  # migration, no deletion.
+  def test_run_dry_run_corrupt_uploads_file_raises_like_the_real_run
+    ENV["PODGEN_ROOT"] = @tmpdir
+    pod_dir = File.join(@tmpdir, "podcasts", "scrappod")
+    FileUtils.mkdir_p(pod_dir)
+    File.write(File.join(pod_dir, "guidelines.md"), "## Podcast\n- name: scrappod\n")
+    require "podcast_config"
+    config = PodcastConfig.new("scrappod")
+    FileUtils.mkdir_p(config.episodes_dir)
+    File.write(File.join(config.episodes_dir, "scrappod-2026-03-15.mp3"), "x")
+    uploads_path = File.join(File.dirname(config.episodes_dir), "uploads.yml")
+    File.write(uploads_path, "- not a hash\n")
+
+    real = nil
+    dry = nil
+    $stdin = StringIO.new("y\n")
+    capture_io { real = assert_raises(RuntimeError) { PodgenCLI::ScrapCommand.new(["scrappod", "2026-03-15"], {}).run } }
+    out, _ = capture_io do
+      dry = assert_raises(RuntimeError) { PodgenCLI::ScrapCommand.new(["scrappod", "2026-03-15"], {dry_run: true}).run }
+    end
+
+    assert_equal real.message, dry.message
+    assert_includes dry.message, "uploads.yml"
+    refute_includes out, "[dry-run] Would remove"
+    assert_equal ["scrappod-2026-03-15.mp3"], Dir.children(config.episodes_dir)
+    assert_equal "- not a hash\n", File.read(uploads_path)
+  ensure
+    $stdin = STDIN
+    ENV.delete("PODGEN_ROOT")
+  end
+
+  # Q-140 (P19-4): the dry-run preflight reads uploads.yml without the
+  # legacy migration, which writes uploads.yml and deletes lingq_uploads.yml.
+  def test_run_dry_run_does_not_migrate_legacy_uploads_file
+    ENV["PODGEN_ROOT"] = @tmpdir
+    pod_dir = File.join(@tmpdir, "podcasts", "scrappod")
+    FileUtils.mkdir_p(pod_dir)
+    File.write(File.join(pod_dir, "guidelines.md"), "## Podcast\n- name: scrappod\n")
+    require "podcast_config"
+    config = PodcastConfig.new("scrappod")
+    FileUtils.mkdir_p(config.episodes_dir)
+    File.write(File.join(config.episodes_dir, "scrappod-2026-03-15.mp3"), "x")
+    output_dir = File.dirname(config.episodes_dir)
+    File.write(File.join(output_dir, "lingq_uploads.yml"), { "123" => { "scrappod-2026-03-15" => 1 } }.to_yaml)
+
+    code = nil
+    capture_io { code = PodgenCLI::ScrapCommand.new(["scrappod", "2026-03-15"], {dry_run: true}).run }
+
+    assert_equal 0, code
+    assert File.exist?(File.join(output_dir, "lingq_uploads.yml"))
+    refute File.exist?(File.join(output_dir, "uploads.yml"))
+  ensure
+    ENV.delete("PODGEN_ROOT")
+  end
+
+  # Q-140 (P19-4): a corrupt excluded_urls.yml is reported by the dry run of
+  # a language scrap that would exclude, as the real run reports it.
+  def test_run_dry_run_corrupt_excluded_urls_raises_like_the_real_run
+    ENV["PODGEN_ROOT"] = @tmpdir
+    pod_dir = File.join(@tmpdir, "podcasts", "scrappod")
+    FileUtils.mkdir_p(pod_dir)
+    File.write(File.join(pod_dir, "guidelines.md"), "## Podcast\n- name: scrappod\n- type: language\n")
+    require "podcast_config"
+    config = PodcastConfig.new("scrappod")
+    FileUtils.mkdir_p(config.episodes_dir)
+    File.write(File.join(config.episodes_dir, "scrappod-2026-03-15.mp3"), "x")
+    File.write(config.history_path, [{ "date" => "2026-03-15", "title" => "D1", "basename" => "scrappod-2026-03-15",
+                                       "urls" => ["https://a.example/ep.mp3"] }].to_yaml)
+    File.write(config.excluded_urls_path, "not: a list\n")
+
+    dry = nil
+    capture_io do
+      dry = assert_raises(RuntimeError) { PodgenCLI::ScrapCommand.new(["scrappod", "2026-03-15", "--exclude"], {dry_run: true}).run }
+    end
+
+    assert_includes dry.message, File.basename(config.excluded_urls_path)
+    assert_equal ["scrappod-2026-03-15.mp3"], Dir.children(config.episodes_dir)
+  ensure
+    ENV.delete("PODGEN_ROOT")
+  end
+
   # --- find_history_entry ---
 
   def test_find_history_entry_by_basename

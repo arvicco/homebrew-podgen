@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "guidelines_parser"
+require "cover_resolver"
 
 class TestGuidelinesParser < Minitest::Test
   def setup
@@ -1021,6 +1022,15 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal :all, parser.twitter_config[:languages]
   end
 
+  # Q-133 (P19-6): a heading at EOF without a trailing newline is the
+  # heading of an empty section, as it is with the newline (today: nil).
+  def test_extract_section_heading_at_eof_without_newline_is_empty_section
+    ["## Podcast\n- name: T\n## Twitter", "## Podcast\n- name: T\n## Twitter  ", "## Podcast\n- name: T\n## Twitter\n"].each do |text|
+      assert_equal "", build_parser(text).send(:extract_section, "Twitter"), text.inspect
+    end
+    assert_nil build_parser("## Podcast\n- name: T\n## TwitterX").send(:extract_section, "Twitter")
+  end
+
   def test_twitter_section_returns_nil_when_absent
     parser = build_parser("## Podcast\n- name: Test\n")
     assert_nil parser.twitter_config
@@ -1139,11 +1149,11 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal "", parser.send(:extract_section, "B")
   end
 
-  def test_extract_section_heading_at_eof_without_newline_returns_nil
-    # Characterization: the heading regex requires a trailing newline,
-    # so a bare "## B" as the final line yields nil, not empty body.
+  # Q-133 (P19-6) changed the characterization: a bare "## B" as the final
+  # line is an empty body, as with the trailing newline (was nil).
+  def test_extract_section_heading_at_eof_without_newline_returns_empty
     parser = build_parser("## A\nx\n\n## B")
-    assert_nil parser.send(:extract_section, "B")
+    assert_equal "", parser.send(:extract_section, "B")
   end
 
   # --- parse_language_entry (characterization, private) ---
@@ -1469,6 +1479,15 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal OVERLAY_PIN_EXPECTED.keys, lingq.keys
     assert_equal({url: "https://ex.com/feed"}.merge(OVERLAY_PIN_EXPECTED), rss)
     assert_equal [:url] + OVERLAY_PIN_EXPECTED.keys, rss.keys
+  end
+
+  # Q-159 (9): the parse table is one method; a key added to
+  # CoverResolver::OVERLAY_KEYS must join it or no section can set it.
+  def test_overlay_option_parses_every_overlay_key
+    parser = build_parser("")
+    CoverResolver::OVERLAY_KEYS.each do |key|
+      assert_equal [key], parser.send(:overlay_option, key.to_s, "1")&.keys, key.to_s
+    end
   end
 
   private

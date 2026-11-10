@@ -1196,7 +1196,11 @@ class TestLanguagePipeline < Minitest::Test
       data = YAML.load_file(File.join(archive_root, "test-2026-03-10.trim.yml"))
       assert_equal cut, data["cut"]
       assert_equal false, data["cut_absolute"]
-      assert_equal point, data["cut_point"], "absolute seconds; nil when the cut was invalid and ignored"
+      if point
+        assert_equal point, data["cut_point"], "absolute seconds"
+      else
+        assert_nil data["cut_point"], "nil when the cut was invalid and ignored" # Q-159 (14): Minitest 6
+      end
       assert_equal keeps, data["kept_segments"]
     end
   end

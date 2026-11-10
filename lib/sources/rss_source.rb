@@ -243,6 +243,33 @@ class RSSSource
     end
   end
 
+  # Atom episodes (Q-159 (3)): the audio is a rel="enclosure" link; the
+  # same element reading as parse_atom_entries, no lookback cutoff.
+  def parse_atom_episodes(feed)
+    feed.entries.filter_map do |entry|
+      enclosure = entry.links.find { |l| l.rel == "enclosure" && l.type.to_s.start_with?("audio") && l.href }
+      next unless enclosure
+
+      title = entry.title&.content.to_s.strip
+      next if title.empty?
+
+      alternate = entry.links.find { |l| l.rel.nil? || l.rel == "alternate" }
+      body = entry.summary&.content || entry.content&.content
+      file_size = enclosure.length.to_i
+
+      ep = {
+        title: title,
+        description: strip_html(body.to_s).strip,
+        audio_url: enclosure.href.to_s.strip,
+        pub_date: entry.published&.content || entry.updated&.content,
+        link: alternate&.href.to_s.strip
+      }
+      ep[:content_type] = enclosure.type.to_s.strip
+      ep[:file_size] = file_size if file_size > 0
+      ep
+    end
+  end
+
   def strip_html(html)
     html.gsub(/<[^>]+>/, " ").gsub(/\s+/, " ").strip
   end
@@ -254,6 +281,7 @@ class RSSSource
   def parse_feed_episodes(xml)
     feed = RSS::Parser.parse(xml, false)
     return [] unless feed
+    return parse_atom_episodes(feed) if feed.is_a?(RSS::Atom::Feed)
 
     feed.items.filter_map do |item|
       # Only include items with audio enclosures

@@ -571,7 +571,7 @@ Set `type: language` in `## Podcast` and configure `## Audio` in `podcasts/<name
 - target_language: Slovenian
 ```
 
-- `type: language` in `## Podcast` activates this pipeline
+- `type: language` in `## Podcast` activates this pipeline (absent means `news`; any other value is a `podgen validate` error and generate refuses to run)
 - `language` in `## Audio` is an ISO-639-1 code passed to the transcription engine
 - `engine` in `## Audio` selects transcription engines (`open`, `elab`, `groq`); multiple = comparison mode
 - RSS feeds support per-feed `skip:` and `cut:` options in seconds or min:sec format (see below)
@@ -985,7 +985,7 @@ Every news script is reviewed before it is voiced. Deterministic checks run firs
 - A WARNING or NIT is logged (the indented `WARNING: [...]` / `NIT: [...]` lines in the run log) and the script is kept as written.
 - Beyond the three mechanical fixes above, the reviewer never rewrites content. Titles in particular are never truncated: the writer is asked for about 40 characters, and a longer title is warned about and kept whole.
 
-The raw script responses are kept under `output/<podcast>/debug/` for inspection.
+When the first review finds an unfixed BLOCKER, its input is kept as `output/<podcast>/debug/<basename>_review_attempt1.json` (script, research, priority links and the review's findings) — the bundle `podgen test reviewer_recall` reads. A clean first review writes nothing. The raw script response (`<basename>_script_raw.json`) is written only when `PODGEN_DEBUG_RAW_SCRIPT` is set.
 
 ### Priority Links
 
@@ -1084,7 +1084,7 @@ podgen vocab add lahko_noc beseda          # add a word (language from config)
 podgen vocab add lahko_noc sprechen --lang de  # explicit language
 podgen vocab remove lahko_noc beseda       # remove a word
 podgen vocab list lahko_noc                # show all known words
-podgen vocab review fiabe [--min 3]        # lemmas explained 3+ times (count, last episode), known ones excluded
+podgen vocab review fiabe [--min 3]        # lemmas explained 3+ times (count, last episode), known ones excluded; --min must be at least 1
 podgen vocab review fiabe --promote        # add every listed lemma to known vocabulary
 podgen vocab edit fiabe accorgersi --lang English --translation "to notice" [--definition "..."]  # fix a cached gloss for future episodes
 ```
@@ -1211,7 +1211,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `podgen validate` freshness check; `- freshness: off` in `## Podcast` reports OK).
   The cadence is the median gap between recent episode dates, or
   `- cadence_days: N` in `## Podcast` when set (a positive integer; anything
-  else is ignored); the threshold is twice the cadence, at least 2 days:
+  else is ignored with a guidelines warning); the threshold is twice the cadence, at least 2 days:
   `newest episode 2026-10-01 is 10 days old (cadence 2d configured, threshold 4d)`.
   With no cadence (episodes on a single date and no `cadence_days`) there is no
   threshold: the show stays OK, and once its newest episode is more than 30
@@ -1378,6 +1378,7 @@ Failure rules:
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
 - **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
+- **Another batch running** (it holds `output/uploads.lock`): the tick is skipped before any upload and exits `3`, printing `uploads: batch skipped: another batch was running` (stdout) and the lockfile path (stderr). `podgen status` reads it as a skipped tick, not a failure: `uploads batch skipped <begin stamp>: another batch was running` (OK level), and the running batch's counts still apply.
 
 Run ad-hoc (no schedule) with the same semantics:
 
@@ -1719,7 +1720,7 @@ podgen/
 │   ├── priority_links.yml    # Queued priority links
 │   ├── excluded_urls.yml     # URLs excluded from future episodes
 │   ├── research_cache/       # Cached source results (24h)
-│   ├── debug/                # Raw script responses
+│   ├── debug/                # First-attempt review bundles (BLOCKER runs); raw script responses (opt-in)
 │   ├── run.lock              # Held while a generate runs
 │   └── uploads.lock          # Held while the 10:30 batch runs (output/ level, one per install)
 └── logs/

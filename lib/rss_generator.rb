@@ -12,6 +12,7 @@ require_relative "audio_assembler"
 require_relative "episode_filtering"
 require_relative "transcript_renderer"
 require_relative "history_maps"
+require_relative "atomic_writer"
 
 class RssGenerator
   include Loggable
@@ -69,14 +70,11 @@ class RssGenerator
 
     doc = build_feed(episodes)
 
-    FileUtils.mkdir_p(File.dirname(@feed_path))
-    File.open(@feed_path, "w") do |f|
-      formatter = REXML::Formatters::Pretty.new(2)
-      formatter.compact = true
-      f.puts '<?xml version="1.0" encoding="UTF-8"?>'
-      formatter.write(doc.root, f)
-      f.puts
-    end
+    formatter = REXML::Formatters::Pretty.new(2)
+    formatter.compact = true
+    xml = +%(<?xml version="1.0" encoding="UTF-8"?>\n)
+    formatter.write(doc.root, xml)
+    AtomicWriter.write(@feed_path, "#{xml}\n")
 
     log("Feed written to #{@feed_path}")
     @feed_path

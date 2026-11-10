@@ -78,12 +78,19 @@ class EpisodeHistory
   end
 
   # Rename an entry's basename and date. Used by `podgen move`. Returns the
-  # updated entry, or nil if no entry with `old_basename` exists.
+  # updated entry, or nil if no entry maps to `old_basename`. An entry without
+  # an explicit basename is found by its same-day position (the HistoryMaps
+  # mapping); every positional entry on the old and new dates first gains the
+  # basename it maps to today, so moving one does not shift its siblings
+  # (P19-3, Q-124).
   def rename!(old_basename, new_basename:, new_date:)
     entries = YamlLoader.load(@path, default: [], raise_on_error: true)
     idx = entries.index { |e| e["basename"] == old_basename }
+    parsed = EpisodeNaming.parse(old_basename)
+    idx ||= parsed && EpisodeNaming.history_entry_index(entries, parsed[:date], parsed[:letter])
     return nil unless idx
 
+    pin_positional_basenames!(entries, parsed[:podcast], [parsed[:date], new_date.to_s]) if parsed
     entries[idx]["basename"] = new_basename
     entries[idx]["date"] = new_date.to_s
     write_entries!(entries)
@@ -137,6 +144,14 @@ class EpisodeHistory
 
   def stringify_language_keys(languages)
     languages.each_with_object({}) { |(k, v), h| h[k.to_s] = v }
+  end
+
+  # Gives each entry dated in `dates` that lacks an explicit basename the one
+  # it maps to now (EpisodeNaming.each_history_basename).
+  def pin_positional_basenames!(entries, podcast, dates)
+    EpisodeNaming.each_history_basename(entries, podcast) do |entry, basename|
+      entry["basename"] ||= basename if dates.include?(entry["date"].to_s)
+    end
   end
 
   def write_entries!(entries)

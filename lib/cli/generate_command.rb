@@ -4,6 +4,7 @@ require "yaml"
 require "date"
 require "fileutils"
 require "optparse"
+require "json"
 
 root = File.expand_path("../..", __dir__)
 
@@ -22,6 +23,8 @@ require_relative File.join(root, "lib", "agents", "tts_agent")
 require_relative File.join(root, "lib", "agents", "translation_agent")
 require_relative File.join(root, "lib", "audio_assembler")
 require_relative File.join(root, "lib", "episode_history")
+require_relative File.join(root, "lib", "atomic_writer")
+require_relative File.join(root, "lib", "yaml_loader")
 require_relative File.join(root, "lib", "url_cleaner")
 require_relative File.join(root, "lib", "priority_links")
 require_relative File.join(root, "lib", "script_artifact")
@@ -51,8 +54,10 @@ module PodgenCLI
         @logger.log("Podcast Agent started for '#{@podcast_name}'#{@dry_run ? ' (DRY RUN)' : ''}")
         @pipeline_start = Time.now
 
+        preflight_type!
         verify_ffmpeg!(@logger) unless @dry_run
         preflight_network!(@logger) unless @dry_run
+        preflight_owner_data!
 
         return finish_run(run_language_pipeline) if @config.type == "language"
 
@@ -353,6 +358,7 @@ module PodgenCLI
           break
         end
 
+        save_review_bundle(script, research_data, priority_urls, result[:issues]) if attempt.zero?
         attempt += 1
         if attempt > MAX_REVIEW_RETRIES
           @warnings << "Script review: #{unfixed_blockers.length} unresolved blocker(s) after #{MAX_REVIEW_RETRIES} retries"
@@ -368,6 +374,27 @@ module PodgenCLI
 
       @logger.phase_end("Review")
       script
+    end
+
+    # Q-158 (P19-8): a first review with unfixed BLOCKERs keeps its input as
+    # output/<pod>/debug/<basename>_review_attempt1.json, the bundle shape
+    # scripts/reviewer_recall.rb reads; script is the one the AI review saw
+    # (deterministic fixes applied). Measurement artifact only.
+    def save_review_bundle(script, research_data, priority_urls, issues)
+      name = @config.episode_basename(@today)
+      path = File.join(File.dirname(@config.episodes_dir), "debug", "#{name}_review_attempt1.json")
+      bundle = {
+        name: name,
+        date: @today.strftime("%Y-%m-%d"),
+        script: script.slice(:title, :segments, :sources),
+        research_data: research_data,
+        priority_urls: Array(priority_urls),
+        default_issues: issues.map { |i| i.slice(:severity, :check, :segment, :message) }
+      }
+      AtomicWriter.write(path, JSON.pretty_generate(bundle))
+      @logger.log("Review bundle saved: #{path}")
+    rescue => e # skippable: a measurement artifact; the review loop goes on
+      @logger.log("Warning: review bundle not saved: #{e.class}: #{e.message}")
     end
 
     def regenerate_script_with_feedback(research_data, priority_urls, feedback)
@@ -545,6 +572,25 @@ module PodgenCLI
       summary = "[dry-run] Config validated, #{topics.length} topics, #{total_findings} stub findings, #{script[:segments].length} segments, #{languages.length} language(s) — no API calls made"
       @logger.log(summary)
       puts summary unless @options[:verbosity] == :quiet
+    end
+
+    # An unknown `type:` never runs the paid news pipeline by default
+    # (Q-133); refused inside the run so its log ends in a RUN-OUTCOME line.
+    def preflight_type!
+      type_error = PodcastConfig.type_error(@config.type)
+      return unless type_error
+
+      $stderr.puts "Error: guidelines.md: #{type_error}"
+      raise "guidelines.md: #{type_error}"
+    end
+
+    # Strict reads before any paid or written step: the commit writes
+    # history.yml strictly, and a language run writes excluded_urls.yml
+    # mid-run, so a corrupt file stops the run here rather than after the
+    # episode is produced and moved into place (Q-140).
+    def preflight_owner_data!
+      YamlLoader.load(@config.history_path, default: [], raise_on_error: true)
+      YamlLoader.load(@config.excluded_urls_path, default: [], raise_on_error: true) if @config.type == "language"
     end
 
     # One DNS lookup before any phase: a dead network fails here in seconds

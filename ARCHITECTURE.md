@@ -70,7 +70,7 @@ Two mixins exist (`lib/retryable.rb`, `lib/http_retryable.rb`) with overlapping-
 
 ## Atomic writes for history and cache
 
-History (`episode_history.rb`), caches (`research_cache.rb`), and upload tracking (`upload_tracker.rb`) all write via temp file + rename.
+History (`episode_history.rb`), caches (`research_cache.rb`), and upload tracking (`upload_tracker.rb`) all write via temp file + rename; so do the published rewrites — `*_timestamps.json` (`TimestampPersister`), transcripts (`TranscriptParser.write`), the feed (`RssGenerator#generate`), the pronunciation-dictionary cache and a forked `uploads.yml` (P19-2).
 
 **Why.** The canonical failure mode is a crash mid-write producing a half-written YAML that poisons all subsequent runs. `File.rename` is atomic on POSIX; temp + rename turns a partial-write failure into a no-op.
 

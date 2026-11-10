@@ -18,3 +18,19 @@ class LineLogger
   def initialize = @lines = []
   def log(msg) = @lines << msg
 end
+
+# Records the path of every AtomicWriter.write made inside the block while
+# still delegating to the real writer, so a test can prove a rewrite goes
+# through temp + rename (P19-2). Returns the recorded paths.
+def record_atomic_writes
+  require "minitest/mock"
+  require_relative "../../lib/atomic_writer"
+  paths = []
+  real = AtomicWriter.method(:write)
+  spy = ->(path, content, **opts) {
+    paths << path
+    real.call(path, content, **opts)
+  }
+  AtomicWriter.stub(:write, spy) { yield }
+  paths
+end
