@@ -114,12 +114,16 @@ class EpisodeHistory
   # Record (or update) per-language voicing metadata on an existing episode.
   # Looks up the entry by basename. Raises if no matching entry exists.
   # Used by `podgen voice` to mark a language as voiced after a successful run.
-  def record_language!(basename:, language_code:, duration: nil, voiced_at: nil)
+  # `primary: true` also refreshes an existing top-level "duration" (the one
+  # the feed reads for the suffix-less mp3; Q-123). A missing key is not
+  # added: it would land after "languages" and break the frozen key order.
+  def record_language!(basename:, language_code:, duration: nil, voiced_at: nil, primary: false)
     entries = YamlLoader.load(@path, default: [], raise_on_error: true)
     idx = entries.index { |e| e["basename"] == basename }
     raise "No history entry for basename #{basename.inspect}" unless idx
 
     entry = entries[idx]
+    entry["duration"] = duration if primary && duration && entry.key?("duration")
     entry["languages"] ||= {}
     lang_meta = entry["languages"][language_code.to_s] ||= {}
     lang_meta["duration"] = duration if duration

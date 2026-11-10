@@ -386,13 +386,46 @@ class TestTranslateCommand < Minitest::Test
     ENV.delete("PODGEN_ROOT")
   end
 
+  # --- voicing parity with generate (Q-123, P18-2) ---
+
+  def test_run_passes_configured_tts_model_and_records_language_duration
+    config = setup_podcast("mypod", %w[en it], extra: "\n## Audio\n- tts_model: eleven_v3\n")
+    base = "mypod-2026-01-15"
+    File.write(File.join(config.episodes_dir, "#{base}_script.md"), "# Title\n\n## Intro\n\nHello.\n")
+    File.write(File.join(config.episodes_dir, "#{base}.mp3"), "x" * 100)
+    File.write(config.history_path, [{ "date" => "2026-01-15", "title" => "Title", "topics" => [], "urls" => [],
+                                       "duration" => 300.0, "basename" => base }].to_yaml)
+    voice_kwargs = nil
+    fake_voicer = Object.new
+    fake_voicer.define_singleton_method(:voice) { |**kw| voice_kwargs = kw }
+    fake_translator = Object.new
+    fake_translator.define_singleton_method(:translate) { |script| script }
+
+    code = nil
+    TranslationAgent.stub(:new, ->(**) { fake_translator }) do
+      Voicer.stub(:new, ->(**) { fake_voicer }) do
+        AudioAssembler.stub(:probe_duration, 42.5) do
+          capture_io { code = PodgenCLI::TranslateCommand.new(["mypod", "--date", "2026-01-15"], { verbosity: :quiet }).run }
+        end
+      end
+    end
+
+    assert_equal 0, code
+    assert_equal "eleven_v3", voice_kwargs[:tts_model_id]
+    entry = YAML.load_file(config.history_path).first
+    assert_equal 42.5, entry.dig("languages", "it", "duration")
+    assert_equal 300.0, entry["duration"], "the primary duration is untouched"
+  ensure
+    ENV.delete("PODGEN_ROOT")
+  end
+
   private
 
-  def setup_podcast(name, codes)
+  def setup_podcast(name, codes, extra: "")
     require "podcast_config"
     FileUtils.mkdir_p(File.join(@tmpdir, "podcasts", name))
     File.write(File.join(@tmpdir, "podcasts", name, "guidelines.md"),
-      "## Podcast\n- name: #{name}\n- language:\n#{codes.map { |c| "  - #{c}\n" }.join}")
+      "## Podcast\n- name: #{name}\n- language:\n#{codes.map { |c| "  - #{c}\n" }.join}#{extra}")
     ENV["PODGEN_ROOT"] = @tmpdir
     config = PodcastConfig.new(name)
     FileUtils.mkdir_p(config.episodes_dir)
