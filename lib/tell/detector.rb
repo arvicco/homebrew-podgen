@@ -119,10 +119,16 @@ module Tell
       return nil if best_score < 2
 
       # A tie goes to the one tied language whose characteristic letters
-      # appear; otherwise the first in STOP_WORDS order, as before (P18-7).
+      # appear; otherwise the first in STOP_WORDS order, as before (P18-7),
+      # English last: its short stop words ("to", "a") are Slavic words too
+      # (Q-159 (6)).
       tied = scores.select { |_, v| v == best_score }.keys
+      return best_lang if tied.size == 1
+
       marked = tied.select { |lang| has_characteristic_chars?(text, lang) }
-      (tied.size > 1 && marked.size == 1) ? marked.first : best_lang
+      return marked.first if marked.size == 1
+
+      (tied - ["en"]).first
     end
 
     # Diacritics/characters that are distinctive to specific languages
