@@ -25,14 +25,6 @@ class ImageRanker
   include Loggable
   include UsageLogger
 
-  MEDIA_TYPES = {
-    ".jpg"  => "image/jpeg",
-    ".jpeg" => "image/jpeg",
-    ".png"  => "image/png",
-    ".webp" => "image/webp",
-    ".gif"  => "image/gif"
-  }.freeze
-
   def initialize(model: nil, logger: nil)
     @model = model || ClaudeModels.for(:image_rank)
     @client = Anthropic::Client.new(timeout: AnthropicClient::REQUEST_TIMEOUT)
@@ -42,6 +34,11 @@ class ImageRanker
   def rank(candidates, title:, description:)
     return [] if candidates.nil? || candidates.empty?
 
+    images = image_candidates(candidates)
+    return [] if images.empty?
+
+    candidates = images.map(&:first)
+
     response, elapsed = measure_time do
       @client.messages.create(
         model: @model,
@@ -49,7 +46,7 @@ class ImageRanker
         # shares this budget; the rankings JSON itself is ~70 tokens per
         # candidate (5 by default). A cap is billed only as used (P8-2).
         max_tokens: 4096,
-        messages: [{ role: "user", content: build_content(candidates, title, description) }],
+        messages: [{ role: "user", content: build_content(images, title, description) }],
         **AnthropicClient.effort_params(:image_rank)
       )
     end
@@ -80,16 +77,39 @@ class ImageRanker
 
   private
 
-  def build_content(candidates, title, description)
-    blocks = [{ type: "text", text: prompt_intro(title, description, candidates.length) }]
-    candidates.each_with_index do |c, i|
+  # Q-134: the media type is read from the file's magic bytes (the URL's
+  # extension lies — a WEBP under .jpg 400s the whole call); a candidate
+  # whose bytes are no supported image (an HTML block page) is dropped.
+  # Returns [[candidate, bytes, media_type], ...].
+  def image_candidates(candidates)
+    candidates.filter_map do |c|
+      bytes = File.binread(c[:path])
+      media_type = sniff_media_type(bytes)
+      next [c, bytes, media_type] if media_type
+
+      log("dropped non-image candidate #{c[:url]}")
+      nil
+    end
+  end
+
+  def sniff_media_type(bytes)
+    if bytes.start_with?("\xFF\xD8\xFF".b) then "image/jpeg"
+    elsif bytes.start_with?("\x89PNG\r\n\x1A\n".b) then "image/png"
+    elsif bytes.start_with?("GIF87a", "GIF89a") then "image/gif"
+    elsif bytes.byteslice(0, 4) == "RIFF" && bytes.byteslice(8, 4) == "WEBP" then "image/webp"
+    end
+  end
+
+  def build_content(images, title, description)
+    blocks = [{ type: "text", text: prompt_intro(title, description, images.length) }]
+    images.each_with_index do |(_c, bytes, media_type), i|
       blocks << { type: "text", text: "Image #{i} (index #{i}):" }
       blocks << {
         type: "image",
         source: {
           type: "base64",
-          media_type: media_type_for(c[:ext]),
-          data: Base64.strict_encode64(File.binread(c[:path]))
+          media_type: media_type,
+          data: Base64.strict_encode64(bytes)
         }
       }
     end
@@ -141,10 +161,6 @@ class ImageRanker
         ]
       }
     TEXT
-  end
-
-  def media_type_for(ext)
-    MEDIA_TYPES[ext.to_s.downcase] || "image/jpeg"
   end
 
   def parse_response(response)

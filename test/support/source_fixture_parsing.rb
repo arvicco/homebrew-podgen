@@ -11,7 +11,6 @@ require "sources/claude_web_source"
 # replaced on the instance, everything downstream is the production code.
 module SourceFixtureParsing
   FIXTURE_ROOT = File.join(ROOT, "test", "fixtures", "sources")
-  Message = Struct.new(:content)
 
   def fixture_body(rel_path, root: FIXTURE_ROOT)
     JSON.parse(File.read(File.join(root, rel_path)))
@@ -41,16 +40,29 @@ module SourceFixtureParsing
     src.send(:search_topic, topic, exclude)
   end
 
-  # body: the recorded message Hash (string keys), as the SDK would expose it.
+  # body: the recorded message Hash (string keys), coerced into the SDK's
+  # Anthropic::Models::Message exactly as a live response is (Symbol block
+  # types, model objects) — Q-134: Hash blocks hid a Symbol/String mismatch.
   def parse_claude_web(body, topic: "Bitcoin ETF latest news", exclude: Set.new)
     previous = ENV["ANTHROPIC_API_KEY"]
     ENV["ANTHROPIC_API_KEY"] ||= "test-key-not-real"
     src = ClaudeWebSource.new
-    message = Message.new(JSON.parse(JSON.generate(body["content"]), symbolize_names: true))
+    message = sdk_message(body)
     src.define_singleton_method(:call_api) { |_topic| message }
     src.send(:search_topic, topic, exclude)
   ensure
     previous.nil? ? ENV.delete("ANTHROPIC_API_KEY") : ENV["ANTHROPIC_API_KEY"] = previous
+  end
+
+  def sdk_message(body)
+    full = JSON.parse(JSON.generate(body), symbolize_names: true).merge(
+      id: "msg_fixture", type: "message", model: "claude-fixture", stop_sequence: nil,
+      usage: { input_tokens: 0, output_tokens: 0 }
+    ) { |_key, recorded, _default| recorded }
+    message = Anthropic::Internal::Type::Converter.coerce(Anthropic::Models::Message, full)
+    raise "fixture did not coerce to an SDK message" unless message.is_a?(Anthropic::Models::Message)
+
+    message
   end
 
   def assert_finding_shape(findings)
