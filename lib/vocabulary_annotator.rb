@@ -23,7 +23,7 @@ class VocabularyAnnotator
 
   CEFR_LEVELS = %w[A1 A2 B1 B2 C1 C2].freeze
   MAX_PARTICLE_LENGTH = 3
-  # Re-exposed lemmas may fill at most this share of max (ceil).
+  # Re-exposed lemmas may fill at most this share of the emitted entries (ceil).
   REEXPOSURE_SHARE = 0.25
   PHRASE_BOUNDARY = /(?<=[.!?,;:—–\n])/
 
@@ -87,16 +87,20 @@ class VocabularyAnnotator
 
     count_occurrences(text, entries, language)
     priority = filters[:priority] || "balanced"
-    cap_reexposures!(entries, ledger, pinned, max, priority) if ledger
 
     # Over-select to leave room for cognate filtering after enrichment
     has_cognate_filter = filters[:similar] && !filters[:similar].empty?
     enrich_cap = max ? (has_cognate_filter ? max * 2 : max) : nil
+    unselected = []
     if enrich_cap && entries.length > enrich_cap
       included, rest = entries.partition(&pinned)
-      entries = included + select_by_bands(rest, [enrich_cap - included.length, 0].max, priority, cutoff, ledger)
+      selected = select_by_bands(rest, [enrich_cap - included.length, 0].max, priority, cutoff, ledger)
+      unselected = rest.reject { |e| selected.any? { |s| s.equal?(e) } }
+      entries = included + selected
       log("Pre-enrichment cap: #{entries.length} entries (from #{included.length + rest.length})")
     end
+    # Capped before enrichment so cut re-exposures are never paid for.
+    entries = cap_reexposures(entries, unselected, ledger, pinned, priority, cutoff) if ledger && max
 
     # Stage 3: Enrich selected entries with translations/definitions
     # (cache hits are filled in place; only the misses reach the API)
@@ -126,11 +130,17 @@ class VocabularyAnnotator
     end
 
     # Final cap to max
+    unselected = []
     if max && entries.length > max
       included, rest = entries.partition(&pinned)
-      entries = included + select_by_bands(rest, [max - included.length, 0].max, priority, cutoff, ledger)
+      selected = select_by_bands(rest, [max - included.length, 0].max, priority, cutoff, ledger)
+      unselected = rest.reject { |e| selected.any? { |s| s.equal?(e) } }
+      entries = included + selected
       log("Capped to #{max} entries (priority: #{priority})")
     end
+    # Again on what is emitted: the cognate filter may have shrunk it.
+    entries = cap_reexposures(entries, unselected, ledger, pinned, priority, cutoff) if ledger && max
+    log_reexposed(entries, ledger, pinned, priority) if ledger
 
     log("Found #{entries.length} vocabulary words at #{cutoff}+ level")
     add_ipa(entries, language)
@@ -467,22 +477,37 @@ class VocabularyAnnotator
     log("Ledger: dropped #{dropped} already-explained lemma(s)") if dropped > 0
   end
 
-  # Re-exposures (lemmas the ledger has seen explained) may take at most
-  # REEXPOSURE_SHARE of max (ceil; uncapped without max); the ones explained
-  # longest ago win, then band score, then lemma. Exempt (pinned) entries
-  # neither count nor are cut. Logs the surviving re-exposed lemmas.
-  def cap_reexposures!(entries, ledger, exempt, max, priority)
-    reexposed = entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }
-    allowed = max && (max * REEXPOSURE_SHARE).ceil
-    if allowed && reexposed.length > allowed
-      keep = reexposed.sort_by do |e|
-        [-(ledger.episodes_since(e[:lemma]) || Float::INFINITY), -band_score(e, priority, ledger), e[:lemma].to_s.downcase]
-      end.first(allowed)
-      cut = reexposed.reject { |e| keep.any? { |k| k.equal?(e) } }
-      entries.reject! { |e| cut.any? { |c| c.equal?(e) } }
-      log("Ledger: re-exposure cap #{allowed} of #{reexposed.length} (max × #{REEXPOSURE_SHARE})")
-      reexposed = keep
+  # Re-exposures (lemmas the ledger has seen explained) may be at most
+  # REEXPOSURE_SHARE (ceil) of the entries emitted; the ones explained
+  # longest ago win (among the unselected too), then band score, then
+  # lemma. The freed slots are refilled from unselected's new words by band
+  # selection; without enough new words the section shrinks until the share
+  # holds. Exempt (pinned) entries count in the total but are never
+  # re-exposures nor cut. Returns the capped entries.
+  def cap_reexposures(entries, unselected, ledger, exempt, priority, cutoff)
+    reexposed = ranked_reexposures(entries, ledger, exempt, priority)
+    allowed = (entries.length * REEXPOSURE_SHARE).ceil
+    return entries if reexposed.length <= allowed
+
+    fresh = unselected.reject { |e| exempt.call(e) || ledger.exposures(e[:lemma]) > 0 }
+    refill = select_by_bands(fresh, reexposed.length - allowed, priority, cutoff, ledger)
+    keep = ranked_reexposures(entries + unselected, ledger, exempt, priority).first(allowed)
+    others = entries.length - reexposed.length + refill.length
+    keep.pop while keep.length > ((others + keep.length) * REEXPOSURE_SHARE).ceil
+    capped = entries.reject { |e| reexposed.any? { |r| r.equal?(e) } } + keep + refill
+    log("Ledger: re-exposure cap #{(capped.length * REEXPOSURE_SHARE).ceil} of #{capped.length} entries (× #{REEXPOSURE_SHARE}): " \
+        "kept #{keep.length} of #{reexposed.length} re-exposures, refilled #{refill.length} new")
+    capped
+  end
+
+  def ranked_reexposures(entries, ledger, exempt, priority)
+    entries.reject(&exempt).select { |e| ledger.exposures(e[:lemma]) > 0 }.sort_by do |e|
+      [-(ledger.episodes_since(e[:lemma]) || Float::INFINITY), -band_score(e, priority, ledger), e[:lemma].to_s.downcase]
     end
+  end
+
+  def log_reexposed(entries, ledger, exempt, priority)
+    reexposed = ranked_reexposures(entries, ledger, exempt, priority)
     log("Ledger: re-exposing #{reexposed.map { |e| e[:lemma] }.join(", ")}") unless reexposed.empty?
   end
 
