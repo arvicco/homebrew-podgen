@@ -188,8 +188,16 @@ class TranslationAgent
   # The structured-output schema doesn't include them, so we copy the original
   # script's :sources (top-level) and per-segment :sources back onto the
   # translated result by positional segment index. This way, downstream
-  # rendering keeps inline links intact across all languages.
+  # rendering keeps inline links intact across all languages. A segment
+  # count that differs from the original would shift every source onto the
+  # wrong segment, so it is a StructuredOutputError and retried (P17-3).
   def carry_over_sources(original, translated)
+    expected = Array(original[:segments]).length
+    got = translated[:segments].length
+    unless expected == got
+      raise StructuredOutputError, "Segment count mismatch: expected #{expected}, got #{got}"
+    end
+
     translated[:sources] = original[:sources] if original[:sources]
     Array(original[:segments]).each_with_index do |orig_seg, i|
       next unless orig_seg[:sources]&.any?
