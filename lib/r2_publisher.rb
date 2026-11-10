@@ -177,10 +177,8 @@ class R2Publisher
       date && date >= cutoff
     end
 
-    unless allowed_langs == :all
-      allowed = Array(allowed_langs).empty? ? [@config.primary_language] : allowed_langs
-      episodes.select! { |ep| allowed.include?(@config.language_for_episode(ep[:base_name])) }
-    end
+    allowed = EpisodeFiltering.announced_languages(@config, allowed_langs)
+    episodes.select! { |ep| allowed.include?(@config.language_for_episode(ep[:base_name])) } if allowed
     episodes
   end
 
