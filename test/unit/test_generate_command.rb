@@ -312,6 +312,11 @@ class TestGenerateCommand < Minitest::Test
 
       assert_equal 1, code, type
       assert_includes err, "Error: guidelines.md: unknown type '#{type}' (known: news, language)"
+      # The scheduled run's log ends in the refusal, not the previous run's outcome.
+      log_path = config.log_path(Date.today)
+      assert File.exist?(log_path), "#{type}: no run log"
+      assert_match(/\ARUN-OUTCOME status=error .*unknown type '#{type}' \(known: news, language\)\z/,
+        File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, ""), type)
     end
   ensure
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
