@@ -65,10 +65,22 @@ class AutoCoverResolver
   def persist_top(top, episodes_dir, basename)
     FileUtils.mkdir_p(episodes_dir)
     top.each_with_index.map do |c, i|
-      dest = File.join(episodes_dir, "#{basename}_cover#{i + 1}#{c[:ext]}")
+      dest = File.join(episodes_dir, "#{basename}_cover#{i + 1}#{sniffed_ext(c)}")
       FileUtils.cp(c[:path], dest)
       dest
     end
+  end
+
+  # Q-159 (1): the URL's extension can lie (a WEBP under .jpg); the bytes
+  # name the file. Falls back to the URL's extension when unrecognised.
+  def sniffed_ext(candidate)
+    head = File.binread(candidate[:path], 16) || ""
+    type = ImageRanker.sniff_media_type(head)
+    return candidate[:ext] unless type
+
+    return (candidate[:ext] == ".jpeg" ? ".jpeg" : ".jpg") if type == "image/jpeg"
+
+    ".#{type.delete_prefix("image/")}"
   end
 
   def cleanup(candidates)

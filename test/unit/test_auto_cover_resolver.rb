@@ -97,6 +97,22 @@ class TestAutoCoverResolver < Minitest::Test
     expected.each { |p| assert File.exist?(p) }
   end
 
+  # Q-159 (1): a WEBP served under a .jpg URL is saved under the extension
+  # its bytes name, not the URL's.
+  def test_persist_top_webp_bytes_under_jpg_url_saved_as_webp
+    File.binwrite(@candidates[0][:path], "RIFF\x00\x00\x00\x00WEBPVP8 ".b)
+    ranked = @candidates.each_with_index.map do |c, i|
+      c.merge(score: 18 - i, has_title_text: false, has_overlay_watermark: false, vetoed: false, reasons: "")
+    end
+    result = build_resolver(@candidates, ranked).try(
+      title: "T", description: "D", episodes_dir: @episodes_dir, basename: @basename
+    )
+
+    assert_equal File.join(@episodes_dir, "#{@basename}_cover1.webp"), result[:top_paths].first
+    assert_equal result[:top_paths].first, result[:winner_path]
+    assert File.exist?(result[:top_paths].first)
+  end
+
   def test_passes_config_overrides_to_searcher_and_ranker
     captured = {}
     fake_searcher = Object.new
