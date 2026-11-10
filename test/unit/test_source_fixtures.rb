@@ -170,7 +170,7 @@ class TestSourceFixtures < Minitest::Test
 
     findings = parse_claude_web(body)
 
-    assert_equal [{ title: "C1", url: "https://example.test/c1", summary: "quoted" }], findings
+    assert_equal [{title: "C1", url: "https://example.test/c1", summary: "quoted"}], findings
   end
 
   def test_synthetic_claude_web_body_parses_citations_then_search_results
