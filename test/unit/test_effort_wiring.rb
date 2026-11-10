@@ -84,7 +84,9 @@ class TestEffortWiring < Minitest::Test
     image_rank: [nil, ->(c) {
       ranker = ImageRanker.new
       ranker.instance_variable_set(:@client, c)
-      ranker.rank([{path: __FILE__, ext: ".png"}], title: "T", description: "D")
+      png = File.join(Dir.tmpdir, "effort_wiring_rank.png")
+      File.binwrite(png, "\x89PNG\r\n\x1A\nfake".b) # a sniffed image (Q-134), not text
+      ranker.rank([{path: png, ext: ".png"}], title: "T", description: "D")
     }],
     web_search: [nil, ->(c) {
       source = ClaudeWebSource.new

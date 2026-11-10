@@ -10,7 +10,7 @@ class TestImageRanker < Minitest::Test
     @tmpdir = Dir.mktmpdir("podgen_ranker_test")
     @candidates = (1..3).map do |i|
       path = File.join(@tmpdir, "c#{i}.jpg")
-      File.binwrite(path, "fake-image-bytes-#{i}")
+      File.binwrite(path, JPEG_BYTES + i.to_s)
       { url: "https://x.com/c#{i}.jpg", path: path, bytes: 10_000, ext: ".jpg" }
     end
   end
@@ -65,7 +65,7 @@ class TestImageRanker < Minitest::Test
   def test_rank_sort_key_orders_veto_then_title_text_then_score_then_index
     cands = (1..5).map do |i|
       path = File.join(@tmpdir, "s#{i}.jpg")
-      File.binwrite(path, "fake-#{i}")
+      File.binwrite(path, JPEG_BYTES + i.to_s)
       { url: "https://x.com/s#{i}.jpg", path: path, bytes: 10_000, ext: ".jpg" }
     end
     row = lambda do |i, q, m, title, wm|
@@ -101,6 +101,48 @@ class TestImageRanker < Minitest::Test
   def test_rank_returns_empty_when_no_candidates
     ranked = ImageRanker.new.rank([], title: "T", description: "D")
     assert_equal [], ranked
+  end
+
+  # Q-134 (P18-1): a WEBP served under a .jpg URL was sent as image/jpeg
+  # and the API refused the whole ranking with a 400.
+  def test_rank_media_type_comes_from_bytes_not_url_extension
+    File.binwrite(@candidates[0][:path], WEBP_BYTES)
+    captured = nil
+    text = Struct.new(:type, :text).new("text", JSON.generate("rankings" => []))
+    with_fake_response(FakeMsg.new([text], "end_turn", FakeUsage.new(1, 1)), capture: ->(kw) { captured = kw }) do
+      ImageRanker.new.rank([@candidates[0]], title: "T", description: "D")
+    end
+
+    image = captured[:messages][0][:content].find { |b| b[:type] == "image" }
+    assert_equal "image/webp", image[:source][:media_type]
+  end
+
+  def test_rank_drops_candidates_whose_bytes_are_not_an_image
+    File.binwrite(@candidates[1][:path], "<!DOCTYPE html><html>blocked</html>")
+    captured = nil
+    rankings = [0, 1].map do |i|
+      { "index" => i, "visual_quality" => 5, "subject_match" => 5,
+        "has_title_text" => false, "has_overlay_watermark" => false, "reasons" => "" }
+    end
+    text = Struct.new(:type, :text).new("text", JSON.generate("rankings" => rankings))
+    ranked = with_fake_response(FakeMsg.new([text], "end_turn", FakeUsage.new(1, 1)), capture: ->(kw) { captured = kw }) do
+      ImageRanker.new.rank(@candidates, title: "T", description: "D")
+    end
+
+    images = captured[:messages][0][:content].count { |b| b[:type] == "image" }
+    assert_equal 2, images
+    assert_equal %w[c1 c3], ranked.map { |c| c[:url][/c\d/] }
+  end
+
+  def test_rank_no_image_candidates_returns_empty_without_api_call
+    @candidates.each { |c| File.binwrite(c[:path], "not an image") }
+    called = false
+    ranked = with_fake_response(Object.new, capture: ->(_kw) { called = true }) do
+      ImageRanker.new.rank(@candidates, title: "T", description: "D")
+    end
+
+    assert_equal [], ranked
+    refute called
   end
 
   def test_rank_passes_configured_model_to_api
@@ -175,6 +217,9 @@ class TestImageRanker < Minitest::Test
   end
 
   private
+
+  JPEG_BYTES = "\xFF\xD8\xFF\xE0fake-jpeg".b.freeze
+  WEBP_BYTES = "RIFF\x10\x00\x00\x00WEBPVP8 fake".b.freeze
 
   FakeMsg = Struct.new(:content, :stop_reason, :usage)
   FakeUsage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens) do

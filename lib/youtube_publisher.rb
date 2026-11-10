@@ -90,8 +90,10 @@ class YouTubePublisher
 
     episodes = scan_episodes
     if episodes.empty? && @episode_id
-      $stderr.puts "No episode found matching '#{@episode_id}'"
-      return Result.new(uploaded: 0, attempted: 0, rate_limited: false, errors: [])
+      msg = "No episode found matching '#{@episode_id}'"
+      $stderr.puts msg
+      return Result.new(uploaded: 0, attempted: 0, rate_limited: false,
+                        errors: [{ type: :no_match, message: msg }]) # Q-132: a wrong id is a failed run
     end
 
     # Strict reads, before anything goes up: a corrupt ledger read as {}
