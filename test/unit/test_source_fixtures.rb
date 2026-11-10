@@ -157,6 +157,22 @@ class TestSourceFixtures < Minitest::Test
     end
   end
 
+  # Q-134 (P18-1): the SDK exposes block types as Symbols; one cited text
+  # block yields one finding (it yielded none before).
+  def test_claude_web_sdk_message_with_one_citation_yields_one_finding
+    body = {"content" => [
+      {"type" => "text", "text" => "SYNTHETIC", "citations" => [
+        {"type" => "web_search_result_location", "url" => "https://example.test/c1",
+         "title" => "C1", "cited_text" => "quoted", "encrypted_index" => "x"}
+      ]}
+    ]}
+    assert_equal :text, sdk_message(body).content.first.type
+
+    findings = parse_claude_web(body)
+
+    assert_equal [{ title: "C1", url: "https://example.test/c1", summary: "quoted" }], findings
+  end
+
   def test_synthetic_claude_web_body_parses_citations_then_search_results
     body = {"content" => [
       {"type" => "web_search_tool_result", "content" => [

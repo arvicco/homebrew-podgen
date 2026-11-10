@@ -64,7 +64,7 @@ class ClaudeWebSource < BaseSource
 
     message.content.each do |block|
       # Extract from text citations (best source of URL + summary)
-      if block.is_a?(Hash) ? block[:type] == "text" : (block.respond_to?(:type) && block.type == "text")
+      if block.is_a?(Hash) ? block[:type].to_s == "text" : (block.respond_to?(:type) && block.type.to_s == "text")
         citations = if block.is_a?(Hash)
           block[:citations] || []
         else
@@ -89,12 +89,12 @@ class ClaudeWebSource < BaseSource
 
       # Fallback: extract from web_search_tool_result blocks
       block_type = block.is_a?(Hash) ? block[:type] : (block.respond_to?(:type) ? block.type : nil)
-      next unless block_type == "web_search_tool_result"
+      next unless block_type.to_s == "web_search_tool_result"
 
       results = block.is_a?(Hash) ? block[:content] : (block.respond_to?(:content) ? block.content : [])
       (results || []).each do |result|
         result_type = result.is_a?(Hash) ? result[:type] : (result.respond_to?(:type) ? result.type : nil)
-        next unless result_type == "web_search_result"
+        next unless result_type.to_s == "web_search_result"
 
         url = result.is_a?(Hash) ? result[:url] : result.url
         title = result.is_a?(Hash) ? result[:title] : result.title
