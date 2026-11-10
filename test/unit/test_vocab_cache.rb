@@ -89,8 +89,9 @@ class TestVocabCache < Minitest::Test
   end
 
   def test_fetch_legacy_entry_without_pos_matches_any_pos
-    File.write(@path, {"pesar" => {"translations" => {"English" => "to weigh"}, "definitions" => {},
-      "pronunciation" => nil, "similar_translations" => nil, "first_seen" => nil}}.to_yaml)
+    legacy = {"translations" => {"English" => "to weigh"}, "definitions" => {},
+              "pronunciation" => nil, "similar_translations" => nil, "first_seen" => nil}
+    File.write(@path, {"pesar" => legacy}.to_yaml)
     cache = VocabCache.new(@path)
     assert_equal "to weigh", cache.fetch("pesar", pos: "noun")["translations"]["English"]
   end
@@ -147,7 +148,7 @@ class TestVocabCache < Minitest::Test
 
   def test_annotate_blank_language_is_not_cached_in_multi_language
     enrich = lambda do |entries, target_language:, **|
-      translation = target_language == "English" ? "cat" : ""
+      translation = (target_language == "English") ? "cat" : ""
       entries.map { |e| {lemma: e[:lemma], translation: translation, definition: ""} }
     end
     cache = VocabCache.new(@path)

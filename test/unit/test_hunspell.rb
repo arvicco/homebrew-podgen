@@ -111,8 +111,11 @@ class TestHunspell < Minitest::Test
 
   def test_expand_noun_does_not_stem_the_forms_again
     stems_called = false
-    forms = expand_stubbed("lupina", roots: %w[lupin], unmunched: %w[lupina lupino lupini],
-      stems: ->(*) { stems_called = true; {} })
+    stems = lambda do |*|
+      stems_called = true
+      {}
+    end
+    forms = expand_stubbed("lupina", roots: %w[lupin], unmunched: %w[lupina lupino lupini], stems: stems)
     assert_equal %w[lupina lupino lupini], forms
     refute stems_called
   end
