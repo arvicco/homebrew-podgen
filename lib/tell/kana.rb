@@ -282,8 +282,9 @@ module Tell
               i += 1
               next
             end
-            # Hepburn ん before a vowel or y: n' (kin'en vs kinen, P18-7).
-            if system == "hepburn" && next_romaji&.match?(/\A[aiueoy]/)
+            # ん before a vowel or y: n' (kin'en vs kinen, P18-7); Kunrei
+            # marks the same boundary (Q-159 (7)).
+            if next_romaji&.match?(/\A[aiueoy]/)
               result << "n'"
               i += 1
               next

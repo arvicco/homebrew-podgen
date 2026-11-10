@@ -92,6 +92,19 @@ class TestPodcastCommand < Minitest::Test
     end
   end
 
+  # Q-159 (11): DidYouMean raises on invalid UTF-8; the scrubbed name still
+  # gets the suggestion and the list, exit 2.
+  def test_require_podcast_invalid_utf8_name_still_suggests_exit_2
+    cmd = StubCommand.new((+"lahko_no\xFF").force_encoding("UTF-8"))
+    PodcastConfig.stub(:available, ["fulgur_news", "lahko_noc", "ruby_world"]) do
+      code = nil
+      _out, err = capture_io { code = cmd.test_require_podcast!("generate") }
+      assert_equal 2, code
+      assert_includes err, "Did you mean?\n  - lahko_noc"
+      assert_includes err, "Available podcasts:"
+    end
+  end
+
   def test_require_podcast_valid_name_passes
     cmd = StubCommand.new("alpha")
     PodcastConfig.stub(:available, ["alpha", "beta"]) do

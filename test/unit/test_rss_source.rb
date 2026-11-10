@@ -134,6 +134,36 @@ class TestRSSSource < Minitest::Test
     assert_equal [{ title: "Two", url: "https://example.com/b", summary: "Body text" }], items
   end
 
+  # Q-159 (3): an Atom feed as a language-show episode source yields its
+  # audio enclosures instead of silently nothing.
+  def test_parse_feed_episodes_atom_enclosure_returns_episode
+    xml = <<~XML
+      <?xml version="1.0" encoding="utf-8"?>
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <title>Show</title><id>urn:x</id><updated>2026-11-01T00:00:00Z</updated>
+        <entry>
+          <title>Episode One</title><id>urn:e1</id>
+          <updated>2026-11-01T10:00:00Z</updated>
+          <link rel="alternate" href="https://example.com/e1"/>
+          <link rel="enclosure" type="audio/mpeg" length="12345" href="https://example.com/e1.mp3"/>
+          <summary type="html">&lt;p&gt;About one&lt;/p&gt;</summary>
+        </entry>
+        <entry>
+          <title>Text only</title><id>urn:e2</id>
+          <updated>2026-11-02T10:00:00Z</updated>
+          <link href="https://example.com/e2"/>
+        </entry>
+      </feed>
+    XML
+
+    episodes = build_source([]).send(:parse_feed_episodes, xml)
+
+    assert_equal [{ title: "Episode One", description: "About one",
+                    audio_url: "https://example.com/e1.mp3",
+                    pub_date: Time.utc(2026, 11, 1, 10), link: "https://example.com/e1",
+                    content_type: "audio/mpeg", file_size: 12_345 }], episodes
+  end
+
   # --- distribute_by_topic (characterization, private) ---
 
   def test_distribute_by_topic_buckets_by_keyword_match

@@ -11,7 +11,9 @@ class CoverResolver
   # - whitelist keys from `## Image` / `## LingQ` into `PodcastConfig#cover_options`,
   # - transfer per-RSS overrides onto each episode hash in `RSSSource`,
   # - extract per-RSS overrides into per-episode opts in `LanguagePipeline`.
-  # Adding a new key here makes all three sites pick it up automatically.
+  # Those three consumers pick a new key up automatically; parsing does not:
+  # the key (and any text_ alias) must also join the one parse table,
+  # `GuidelinesParser#overlay_option` (pinned by test_guidelines_parser).
   OVERLAY_KEYS = %i[font font_color font_size width gravity x_offset y_offset].freeze
 
   # Newest screenshot on the Desktop, for `--image last` / `image: last`.

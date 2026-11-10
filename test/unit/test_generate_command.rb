@@ -627,6 +627,75 @@ class TestGenerateCommand < Minitest::Test
     assert_equal %w[sl en], recorded[:languages].keys
   end
 
+  # --- P19-8 (Q-158): the first-attempt review bundle ---
+
+  BLOCKER_ISSUE = {severity: "BLOCKER", check: "fact", segment: "Uvod", message: "Wrong date", auto_fixed: false}.freeze
+  RESEARCH = [{topic: "t", findings: [{title: "A", url: "https://ex.com/a", summary: "s"}]}].freeze
+
+  # reviews: one issues list per review call; each review returns the script
+  # it was given (the reviewer reports, it does not rewrite).
+  def review_with(cmd, reviews)
+    calls = 0
+    reviewer = Object.new
+    reviewer.define_singleton_method(:review) do |script|
+      issues = reviews[calls] || []
+      calls += 1
+      {script: script, issues: issues, passed: issues.none? { |i| i[:severity] == "BLOCKER" }}
+    end
+    regenerated = 0
+    cmd.define_singleton_method(:regenerate_script_with_feedback) do |*|
+      regenerated += 1
+      {title: "Retry #{regenerated}", segments: [{name: "Uvod", text: "Znova."}], sources: []}
+    end
+    ScriptReviewer.stub(:new, ->(**) { reviewer }) do
+      cmd.send(:review_script, sl_script, RESEARCH, ["https://ex.com/p"])
+    end
+  end
+
+  def bundle_path(config)
+    File.join(File.dirname(config.episodes_dir), "debug", "mypod-2026-01-15_review_attempt1.json")
+  end
+
+  def test_review_script_unfixed_blocker_on_first_attempt_writes_recall_bundle
+    require_relative "../../scripts/reviewer_recall"
+    cmd, config = build_sl_en_command
+
+    review_with(cmd, [[BLOCKER_ISSUE], []])
+
+    path = bundle_path(config)
+    bundle = JSON.parse(File.read(path))
+    assert_equal %w[name date script research_data priority_urls default_issues], bundle.keys
+    assert_equal "mypod-2026-01-15", bundle["name"]
+    assert_equal "2026-01-15", bundle["date"]
+    assert_equal "Naslov", bundle["script"]["title"]
+    assert_equal ["https://ex.com/p"], bundle["priority_urls"]
+    assert_equal [{"severity" => "BLOCKER", "check" => "fact", "segment" => "Uvod", "message" => "Wrong date"}],
+      bundle["default_issues"]
+    loaded = ReviewerRecall.load_bundle(path)
+    assert_equal 1, ReviewerRecall.blockers(loaded[:default_issues])
+    assert_equal "https://ex.com/a", loaded[:research_data].first[:findings].first[:url]
+    assert_includes cmd.instance_variable_get(:@logger).messages, "Review bundle saved: #{path}"
+  end
+
+  def test_review_script_clean_first_review_writes_no_bundle
+    cmd, config = build_sl_en_command
+
+    review_with(cmd, [[]])
+
+    refute File.exist?(File.dirname(bundle_path(config))), "a clean review leaves no debug artifact"
+  end
+
+  def test_review_script_second_blocker_attempt_keeps_the_first_bundle
+    cmd, config = build_sl_en_command
+
+    review_with(cmd, [[BLOCKER_ISSUE], [BLOCKER_ISSUE.merge(message: "Still wrong")], []])
+
+    bundle = JSON.parse(File.read(bundle_path(config)))
+    assert_equal "Naslov", bundle["script"]["title"], "attempt 1's script, not the retry's"
+    assert_equal ["Wrong date"], bundle["default_issues"].map { |i| i["message"] }
+    assert_equal ["mypod-2026-01-15_review_attempt1.json"], Dir.children(File.dirname(bundle_path(config)))
+  end
+
   private
 
   def sl_script
