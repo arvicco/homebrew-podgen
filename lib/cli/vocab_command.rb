@@ -113,7 +113,7 @@ module PodgenCLI
 
       kv = KnownVocabulary.for_config(@config)
       known = kv.lemma_set(lang)
-      rows = VocabLedger.build(@config.episodes_dir).top_explained(min: @min)
+      rows = VocabLedger.for_config(@config).top_explained(min: @min)
         .reject { |row| known.include?(row[:lemma]) }
 
       if rows.empty?
