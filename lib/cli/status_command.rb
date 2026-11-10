@@ -71,6 +71,12 @@ module PodgenCLI
     UPLOAD_SINCE = 7
     UPLOAD_LOG = File.join("logs", "uploads_stderr.log")
     UPLOAD_MARKER_RE = %r{\A(\d{4})/(\d{2})/(\d{2}) \d{2}:\d{2}:\d{2} podgen uploads \S* begin\b}
+    # Q-159 (12): a batch refused because another one held the lock ends
+    # exit=3 (UploadsCommand::LOCK_HELD_EXIT) and prints UPLOAD_SKIP_RE to
+    # stdout — a skipped tick: its markers neither open a batch nor cut the
+    # running batch's stdout block.
+    UPLOAD_SKIP_END_RE = %r{\A\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} podgen uploads \S* end exit=3\b}
+    UPLOAD_SKIP_RE = /\Auploads: batch skipped\b/
     QUOTA_CONDITION = "YouTube upload quota exceeded"
     CONSENT_WARN_DAYS = 6 # a testing-status OAuth app's refresh token dies on day 7
     UPLOAD_CONDITIONS = {
@@ -467,6 +473,8 @@ module PodgenCLI
       # catching-up show's line and is the daily cap, not a failure.
       conditions.delete(QUOTA_CONDITION) if recent_youtube_uploads.values.any?(&:positive?)
       conditions.each { |condition| escalate.call("WARN", "#{File.basename(@uploads_log)}: #{condition}") }
+      skipped = platforms.key?("youtube") && latest_upload_batch[1]
+      inform.call("uploads batch skipped #{skipped}: another batch was running") if skipped # Q-159 (12): not a failure
       progress
     end
 
@@ -536,13 +544,19 @@ module PodgenCLI
 
       legacy = []
       dated = []
-      pending = first_stamp = current = nil
+      pending = first_stamp = current = previous = nil
       File.foreach(@uploads_stdout_log) do |raw|
         line = raw.scrub
         if (m = line.match(UPLOAD_MARKER_RE))
           pending = marker_date(m)
           first_stamp ||= line[0, 19]
+          previous = current
           current = nil
+        elsif line.match?(UPLOAD_SKIP_RE)
+          # Q-159 (12): the marker was a skipped tick's; the running batch's
+          # block continues.
+          current = previous
+          pending = nil
         elsif line.match?(UPLOAD_BLOCK_RE)
           current = [line]
           first_stamp ? dated << [pending, current] : legacy << current
@@ -581,15 +595,34 @@ module PodgenCLI
     # marked batches) reports nothing: its old lines would outlive a fix.
     # Never the matched line itself.
     def upload_log_conditions
-      return [] unless File.exist?(@uploads_log)
-      return [] if (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
+      batch, = latest_upload_batch
+      return [] unless batch
 
-      lines = File.readlines(@uploads_log).map(&:scrub)
-      start = lines.rindex { |l| l.match?(UPLOAD_MARKER_RE) }
-      return [] unless start
-
-      batch = lines.drop(start + 1)
       UPLOAD_CONDITIONS.filter_map { |re, condition| condition if batch.any? { |l| l.match?(re) } }
+    end
+
+    # [lines after the latest batch's begin marker, begin stamp of a skipped
+    # tick after it or nil], or [] when the log is absent, stale or unmarked.
+    # A skipped tick's begin marker (its end is exit=3) opens no batch.
+    def latest_upload_batch
+      @latest_upload_batch ||= begin
+        if !File.exist?(@uploads_log) || (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
+          []
+        else
+          lines = File.readlines(@uploads_log).map(&:scrub)
+          begins = []
+          skipped = nil
+          lines.each_with_index do |l, i|
+            if l.match?(UPLOAD_MARKER_RE)
+              begins << i
+              skipped = nil
+            elsif l.match?(UPLOAD_SKIP_END_RE) && begins.any?
+              skipped = lines[begins.pop][0, 19]
+            end
+          end
+          begins.empty? ? [nil, skipped] : [lines.drop(begins.last + 1), skipped]
+        end
+      end
     end
 
     def announced_episode_dates(config, languages)

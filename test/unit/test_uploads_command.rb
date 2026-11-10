@@ -640,9 +640,13 @@ class TestUploadsCommand < Minitest::Test
       ok
     end
 
-    _out, err = capture_io { @code = cmd.run }
+    out, err = capture_io { @code = cmd.run }
 
-    assert_equal 1, @code
+    # Q-159 (12): a refusal is its own exit code and stdout line, so the
+    # board reads a skipped tick, not a failed batch.
+    assert_equal PodgenCLI::UploadsCommand::LOCK_HELD_EXIT, @code
+    assert_equal 3, @code
+    assert_equal "uploads: batch skipped: another batch was running\n", out
     refute r2_called, "no phase runs while another batch holds the lock"
     assert_includes err, "uploads.lock"
   ensure
