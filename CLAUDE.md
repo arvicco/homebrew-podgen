@@ -258,14 +258,16 @@ calibration measured first, feed guid never reused with
 rendering nits) CLOSED 2026-11-09 19:25 CST (PR #19, merge 19526df;
 phase clock 39m; I-12 closed by the post-merge regen). Phase 18
 (latent defects and the small sweep: sources/research defects,
-translate/voice drift, publish selection and exit code, translation
-request timeout, yield for the uploads batch, hygiene batch, Tell
-nits, Phase 17 residues, blocker-recall measurement, DRY packets)
-AT GATE 18 — adopted 2026-11-09 19:24 CST (options C+D of the Gate 17
-slate), all ten packets landed (P18-9 tool only — no input to measure;
-P18-10 two candidates stopped), CRPR APPROVED after two rounds
-(refs/cr/reviewed = 7ed8ab9); gate PR open, the owner merges. R18-01
-open (retired guid after `move`). 0 open rulings; R9-02 returns 11-12, R10-02 11-26. I-11:
-owner re-consented 2026-11-09 15:39 (expires ≈ 11-16 while the OAuth
-app is in testing).
+translate/voice drift, episode-id selection and exit codes, translation
+request timeout, the 10:30 batch lock in the yield, hygiene batch with
+warnings fatal in the gate, Tell nits, Phase 17 residues, blocker-recall
+tool, six DRY extractions) CLOSED 2026-11-09 21:30 CST (PR #20, merge
+8a2939c; phase clock 1h 5m; R18-01 ruled (c)). Phase 19 (owner-data
+and site safety: HTML escaping in site templates, atomic rewrites of
+published files, move/fork history rows, strict-read residues,
+guidelines validation; plus Phase 18 residues and the review-bundle
+capture) EXECUTING — adopted 2026-11-09 21:32 CST (options B+C of the
+Gate 18 slate). 0 open rulings; R9-02 returns 11-12, R10-02 11-26.
+I-11: owner re-consented 2026-11-09 15:39 (expires ≈ 11-16 while the
+OAuth app is in testing).
 Update this line at each gate.
