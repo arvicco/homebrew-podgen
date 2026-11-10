@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # P2-0 PreToolUse hook: the dev-loop YIELDS while a production generate holds
-# output/<podcast>/run.lock (or during the 16:25–17:10 launchd window).
+# output/<podcast>/run.lock, while the uploads batch holds output/uploads.lock
+# (P18-5), or during the 16:25–17:10 launchd window.
 # Blocks Edit/Write/MultiEdit under lib/ bin/ scripts/ .claude/, and Bash
 # branch moves/merges/history rewrites or writes into lib/ bin/ scripts/
 # (redirect, tee, sed/ruby/perl -i, patch, cp/mv/rm). Exit 2 = blocked.
