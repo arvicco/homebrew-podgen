@@ -1489,6 +1489,30 @@ class TestPodcastConfig < Minitest::Test
     assert_equal "feed.xml", config.feed_file_name("en")
   end
 
+  # P18-10 pin: the plain GuidelinesParser delegates return the parser's
+  # own object (same identity), for a populated and an empty guidelines.
+  PARSER_DELEGATES = {
+    guidelines: :text, parser_warnings: :warnings, sources: :sources,
+    languages: :languages, site_config: :site_config,
+    transcription_engines: :transcription_engines, lingq_config: :lingq_config,
+    links_config: :links_config, youtube_config: :youtube_config,
+    twitter_config: :twitter_config
+  }.freeze
+
+  def test_parser_delegates_return_parser_objects_pinned
+    full = "## Podcast\n- name: T\n## Sources\n- rss:\n  - https://ex.com/f\n## Site\n- accent: #fff\n" \
+           "## LingQ\n- collection: 5\n## Links\n- show: true\n## YouTube\n- playlist: p\n" \
+           "## Twitter\n- template: x\n## Audio\n- engine:\n  - open\n  - elab\n## Image\n- font\n"
+    [full, ""].each do |text|
+      write_guidelines(text)
+      config = PodcastConfig.new("myshow")
+      parser = config.send(:parser)
+      PARSER_DELEGATES.each do |name, target|
+        assert_same parser.public_send(target), config.public_send(name), "#{name} (#{text.empty? ? "empty" : "full"})"
+      end
+    end
+  end
+
   private
 
   def write_guidelines(content)
