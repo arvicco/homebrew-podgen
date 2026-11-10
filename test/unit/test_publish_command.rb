@@ -225,7 +225,7 @@ class TestPublishCommand < Minitest::Test
   # episode command, so a short form names one date, not a suffix.
   def test_positional_short_day_is_normalised_to_a_full_date
     cmd = PodgenCLI::PublishCommand.new(["testpod", "17"], {})
-    assert_equal "#{Date.today.strftime('%Y-%m')}-17", cmd.instance_variable_get(:@episode_id)
+    assert_equal "#{Date.today.strftime("%Y-%m")}-17", cmd.instance_variable_get(:@episode_id)
   end
 
   def test_date_flag_keeps_the_slot_suffix

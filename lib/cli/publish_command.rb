@@ -61,7 +61,7 @@ module PodgenCLI
     # suffix-match the 17th of every month.
     def normalize_episode_id(raw)
       date, suffix = EpisodeSelector::DateParser.parse(raw)
-      "#{date.strftime('%Y-%m-%d')}#{suffix}"
+      "#{date.strftime("%Y-%m-%d")}#{suffix}"
     rescue ArgumentError => e
       raise OptionParser::ParseError, e.message
     end
