@@ -50,6 +50,16 @@ class TestVocabGlossLines < Minitest::Test
     assert_equal "собака. Животное.", entry[:definition]
   end
 
+  # P18-8 (2): :definition is the first language's gloss only — a `—`
+  # first line leaves it empty rather than borrowing the second language's
+  # (vocab-health definition drift would compare English against Russian).
+  def test_parse_vocab_entries_placeholder_first_language_leaves_definition_empty
+    body = " (Russian, English)\n\n- **pes** (B1 noun)\n  - —\n  - dog. An animal.\n"
+    entry = PARSER.parse_vocab_entries(body)["pes"]
+    assert_equal({"English" => "dog. An animal."}, entry[:definitions])
+    assert_empty entry[:definition].to_s
+  end
+
   def test_render_vocabulary_html_placeholder_renders_no_definition
     entry = {word: "pes", lemma: "pes", level: "B1", pos: "noun", translations: {"English" => "x"}}
     section = @annotator.send(:build_vocabulary_section, [entry], %w[Russian English])

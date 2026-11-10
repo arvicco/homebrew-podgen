@@ -63,12 +63,19 @@ module TranscriptRenderer
     text.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;")
   end
 
+  # Attribute-value escape: escape_html plus `"`, so a url cannot close href.
+  def escape_attr(text)
+    escape_html(text).gsub('"', "&quot;")
+  end
+
   def linkify_markdown(text)
-    text.gsub(MARKDOWN_LINK) do
-      title = escape_html(Regexp.last_match(1))
-      url = escape_html(Regexp.last_match(2))
-      "<a href=\"#{url}\">#{title}</a>"
-    end
+    text.split(MARKDOWN_LINK_SPLIT).map do |part|
+      if part =~ MARKDOWN_LINK_EXACT
+        "<a href=\"#{escape_attr(Regexp.last_match(2))}\">#{escape_html(Regexp.last_match(1))}</a>"
+      else
+        escape_html(part)
+      end
+    end.join
   end
 
   def split_vocabulary_section(body)
@@ -134,7 +141,7 @@ module TranscriptRenderer
           lang = languages[definition_index]
           unless def_text == MISSING_GLOSS
             current_entry[:definitions][lang] = def_text
-            current_entry[:definition] = def_text if current_entry[:definition].to_s.empty?
+            current_entry[:definition] = def_text if definition_index.zero? # first language only (Q-157)
           end
           definition_index += 1
         end
