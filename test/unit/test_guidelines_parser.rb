@@ -2,6 +2,7 @@
 
 require_relative "../test_helper"
 require "guidelines_parser"
+require "cover_resolver"
 
 class TestGuidelinesParser < Minitest::Test
   def setup
@@ -1469,6 +1470,15 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal OVERLAY_PIN_EXPECTED.keys, lingq.keys
     assert_equal({url: "https://ex.com/feed"}.merge(OVERLAY_PIN_EXPECTED), rss)
     assert_equal [:url] + OVERLAY_PIN_EXPECTED.keys, rss.keys
+  end
+
+  # Q-159 (9): the parse table is one method; a key added to
+  # CoverResolver::OVERLAY_KEYS must join it or no section can set it.
+  def test_overlay_option_parses_every_overlay_key
+    parser = build_parser("")
+    CoverResolver::OVERLAY_KEYS.each do |key|
+      assert_equal [key], parser.send(:overlay_option, key.to_s, "1")&.keys, key.to_s
+    end
   end
 
   private
