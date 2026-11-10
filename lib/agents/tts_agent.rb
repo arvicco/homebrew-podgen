@@ -10,6 +10,7 @@ require "fileutils"
 require "tmpdir"
 require_relative "../loggable"
 require_relative "../retryable"
+require_relative "../atomic_writer"
 require_relative "../http_retryable"
 require_relative "../yaml_loader"
 require_relative "../audio_assembler"
@@ -271,7 +272,7 @@ class TTSAgent
   end
 
   def save_dict_cache(path, dictionary_id, version_id, file_sha)
-    File.write(path, YAML.dump({
+    AtomicWriter.write(path, YAML.dump({
       "dictionary_id" => dictionary_id,
       "version_id" => version_id,
       "file_sha256" => file_sha

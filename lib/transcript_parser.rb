@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require_relative "atomic_writer"
 
 # Parses and writes the standard transcript/script markdown format:
 #
@@ -92,7 +93,7 @@ class TranscriptParser
     end
     content += "\n"
 
-    File.write(path, content)
+    AtomicWriter.write(path, content)
   end
 
   def self.title_from_line(first_line)

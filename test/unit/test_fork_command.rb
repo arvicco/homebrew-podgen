@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "yaml"
 
 ENV["ANTHROPIC_API_KEY"] ||= "test-key"
@@ -116,6 +117,18 @@ class TestForkCommand < Minitest::Test
     data = YAML.load_file(new_tracking)
     assert_equal 100, data["lingq"]["12345"]["#{@new_name}-2026-03-01"]
     refute data["lingq"]["12345"].key?("#{@old_name}-2026-03-01")
+  end
+
+  def test_fork_writes_upload_tracking_through_atomic_writer
+    new_tracking = File.join(@tmpdir, "output", @new_name, "uploads.yml")
+
+    written = record_atomic_writes do
+      capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+    end
+
+    assert_includes written, new_tracking
+    assert_equal({ "lingq" => { "12345" => { "#{@new_name}-2026-03-01" => 100 } } }.to_yaml, File.read(new_tracking))
+    assert_empty Dir.glob(File.join(@tmpdir, "output", @new_name, "*.tmp.*"))
   end
 
   def test_fork_preserves_old_podcast

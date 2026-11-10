@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "rss_generator"
 
 class TestRssGenerator < Minitest::Test
@@ -253,6 +254,21 @@ class TestRssGenerator < Minitest::Test
   end
 
   # --- build_feed ---
+
+  def test_generate_writes_feed_through_atomic_writer_with_same_framing
+    create_mp3("test-2026-01-15.mp3", 5000)
+    gen = RssGenerator.new(episodes_dir: @episodes_dir, feed_path: @feed_path, title: "Test Pod",
+      base_url: "https://example.com/test")
+
+    written = record_atomic_writes { gen.generate }
+
+    assert_equal [@feed_path], written
+    xml = File.read(@feed_path)
+    assert xml.start_with?("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss ")
+    assert xml.end_with?("</rss>\n")
+    refute xml.end_with?("\n\n")
+    assert_empty Dir.glob(File.join(@dir, "*.tmp.*"))
+  end
 
   def test_generate_produces_valid_rss
     create_mp3("test-2026-01-15.mp3", 5000)

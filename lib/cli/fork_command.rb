@@ -5,6 +5,7 @@ require "fileutils"
 root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
 require_relative File.join(root, "lib", "yaml_loader")
+require_relative File.join(root, "lib", "atomic_writer")
 
 module PodgenCLI
   class ForkCommand
@@ -69,7 +70,7 @@ module PodgenCLI
         data = YamlLoader.load(old_tracking, default: {})
         if data.is_a?(Hash) && !data.empty?
           renamed = rename_tracking_basenames(data, @podcast_name, @new_name)
-          File.write(File.join(new_output_dir, "uploads.yml"), renamed.to_yaml)
+          AtomicWriter.write(File.join(new_output_dir, "uploads.yml"), renamed.to_yaml)
           puts "Upload tracking: copied and renamed"
         end
       end
