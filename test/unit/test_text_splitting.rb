@@ -46,8 +46,36 @@ class TestTextSplitting < Minitest::Test
 
     chunks = @splitter.split(text)
     assert_equal 2, chunks.length
-    # Split happens at the comma position; comma stays in second chunk
-    assert_equal "A" * 7000, chunks[0]
+    # P17-3 (Q-135): split AFTER the comma, so TTS never reads ", B..."
+    assert_equal part1, chunks[0]
+    assert chunks[0].end_with?(","), "chunk 0 ends with the comma"
+    assert_equal "B" * 5000, chunks[1]
+  end
+
+  def test_splits_after_semicolon_and_colon
+    %w[; :].each do |mark|
+      text = "A" * 7000 + mark + " " + "B" * 5000
+      chunks = @splitter.split(text)
+      assert_equal "A" * 7000 + mark, chunks[0]
+      assert_equal "B" * 5000, chunks[1]
+    end
+  end
+
+  # P17-3 (Q-135): CJK sentence ends (no space follows them) are sentence
+  # boundaries, as in TimestampPersister::SENTENCE_END.
+  def test_splits_on_cjk_sentence_end_without_space
+    %w[。 ！ ？].each do |mark|
+      sentence1 = "あ" * 7000 + mark
+      sentence2 = "い" * 5000
+      chunks = @splitter.split(sentence1 + sentence2)
+      assert_equal [sentence1, sentence2], chunks, "split after #{mark}"
+    end
+  end
+
+  def test_cjk_sentence_end_preferred_over_comma
+    text = "あ" * 6000 + "。" + "い" * 1000 + "、, " + "う" * 5000
+    chunks = @splitter.split(text)
+    assert chunks[0].end_with?("。"), "sentence end wins over a later comma"
   end
 
   def test_splits_on_whitespace

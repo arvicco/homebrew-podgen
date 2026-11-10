@@ -17,9 +17,11 @@ class TextSplitter
     remaining = text.dup
 
     while remaining.length > @max_chars
+      # Punctuation stays with the chunk it ends (P17-3): CJK sentence ends
+      # need no following space; a comma split falls after the comma.
       split_at = remaining.rindex(/\n\n/, @max_chars) ||
-                 remaining.rindex(/(?<=[.!?])\s+/, @max_chars) ||
-                 remaining.rindex(/[,;:]\s+/, @max_chars) ||
+                 remaining.rindex(/(?<=[.!?])\s+|(?<=[。！？])/, @max_chars) ||
+                 remaining.rindex(/(?<=[,;:])\s+/, @max_chars) ||
                  remaining.rindex(/\s+/, @max_chars) ||
                  find_safe_split_point(remaining, @max_chars)
       split_at = [split_at, 1].max
