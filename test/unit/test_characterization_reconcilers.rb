@@ -26,7 +26,7 @@ class TestCharacterizationReconcilers < Minitest::Test
 
   def test_subtitle_reconciler_surface_is_a_module_of_singleton_functions
     assert_instance_of Module, SubtitleReconciler
-    assert_equal %i[build_prompt close_enough? parse_response reconcile validate!],
+    assert_equal %i[build_prompt close_enough? parse_response reconcile repair_json token_cap validate!],
       SubtitleReconciler.singleton_methods(false).sort
     assert_equal [[:req, :segments], [:req, :reconciled_text], [:keyreq, :api_key], [:key, :model]],
       SubtitleReconciler.method(:reconcile).parameters
@@ -77,11 +77,11 @@ class TestCharacterizationReconcilers < Minitest::Test
 
     call = fake.calls.first
     assert_equal %i[max_tokens messages model request_options], call.keys.sort, "no system: key"
-    assert_equal 4096, call[:max_tokens], "max(4096, segments * 80)"
-    many = Array.new(60) { |i| {"start" => i.to_f, "end" => i + 1.0, "text" => "x"} }
+    assert_equal 4096, call[:max_tokens], "floor 4096 (P17-2: segments * 40 + text chars * 0.8)"
+    many = Array.new(60) { |i| {"start" => i.to_f, "end" => i + 1.0, "text" => "x" * 100} }
     fake2 = FakeSubtitleClient.new(JSON.generate(many))
     Anthropic::Client.stub(:new, fake2) { SubtitleReconciler.reconcile(many, "x", api_key: "k", model: "m") }
-    assert_equal 4800, fake2.calls.first[:max_tokens]
+    assert_equal((60 * 40 + 6001 * 0.8).ceil, fake2.calls.first[:max_tokens], "60 * 40 + (6000 + 1) chars * 0.8, ceiled")
   end
 
   # Drift within epsilon is ACCEPTED, but the ORIGINAL values are returned

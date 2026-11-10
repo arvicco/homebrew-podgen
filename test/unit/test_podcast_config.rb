@@ -652,6 +652,65 @@ class TestPodcastConfig < Minitest::Test
     assert_match(/slot/i, err.message)
   end
 
+  # P17-1 (Q-153): a slot whose guid is in the served feed is never reused.
+  def write_feed(name, guids)
+    items = guids.map { |g| "<item><guid isPermaLink=\"false\">#{g}</guid></item>" }.join
+    File.write(File.join(@output_dir, name), "<rss><channel>#{items}</channel></rss>")
+  end
+
+  def test_episode_basename_scrapped_slot_in_feed_takes_next_suffix
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
+    # Published then scrapped: the mp3 is gone, the served feed still lists it.
+    write_feed("feed.xml", ["myshow-2026-03-01.mp3"])
+    config = PodcastConfig.new("myshow")
+    assert_equal "myshow-2026-03-01a", config.episode_basename(Date.new(2026, 3, 1))
+  end
+
+  def test_episode_basename_legacy_bare_guid_in_feed_takes_next_suffix
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
+    File.write(File.join(@output_dir, "feed.xml"),
+      "<rss><channel><item><guid>myshow-2026-03-01.mp3</guid></item>" \
+      "<item><guid>myshow-2026-03-01a.mp3</guid></item></channel></rss>")
+    config = PodcastConfig.new("myshow")
+    assert_equal "myshow-2026-03-01b", config.episode_basename(Date.new(2026, 3, 1))
+  end
+
+  def test_episode_basename_no_feed_keeps_lowest_free_slot
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
+    refute File.exist?(File.join(@output_dir, "feed.xml"))
+    config = PodcastConfig.new("myshow")
+    assert_equal "myshow-2026-03-01", config.episode_basename(Date.new(2026, 3, 1))
+  end
+
+  def test_episode_basename_feed_of_other_days_does_not_block_slot
+    write_guidelines("## Format\nShort.\n\n## Tone\nFun.\n\n## Topics\n- News\n")
+    write_feed("feed.xml", ["myshow-2026-02-28.mp3", "myshow-2026-03-01a.mp3", "myshow-2026-03-011.mp3"])
+    config = PodcastConfig.new("myshow")
+    assert_equal "myshow-2026-03-01", config.episode_basename(Date.new(2026, 3, 1))
+  end
+
+  def test_episode_basename_language_feed_variant_guid_blocks_slot
+    write_guidelines(<<~MD)
+      ## Podcast
+      - language:
+        - en
+        - es
+
+      ## Format
+      Short.
+
+      ## Tone
+      Fun.
+
+      ## Topics
+      - News
+    MD
+    # Only the Spanish variant of the scrapped slot is still served.
+    write_feed("feed-es.xml", ["myshow-2026-03-01-es.mp3"])
+    config = PodcastConfig.new("myshow")
+    assert_equal "myshow-2026-03-01a", config.episode_basename(Date.new(2026, 3, 1))
+  end
+
   # --- ## Image section ---
 
   def test_cover_reads_from_image_section

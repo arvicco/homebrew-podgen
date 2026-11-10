@@ -5,6 +5,22 @@ require "set"
 # Shared markdown-to-HTML conversion for transcripts.
 # Used by both RssGenerator (podcast feed HTML) and SiteGenerator (static site).
 module TranscriptRenderer
+  # A markdown link [title](url) whose title may hold one level of [..]
+  # and whose url one level of (..) (P17-3, Q-135): "[[Video] Rails 8](u)"
+  # and ".../wiki/Ruby_(programming_language)" link whole. MARKDOWN_LINK
+  # captures title and url; MARKDOWN_LINK_SPLIT (one group, the whole
+  # link) serves String#split and MARKDOWN_LINK_EXACT a whole-part match.
+  # The site, the feed HTML and LegacyScriptParser all read
+  # ScriptRenderer's source lists with these.
+  LINK_TITLE = /(?:[^\[\]]|\[[^\[\]]*\])+/
+  LINK_URL = /(?:[^()]|\([^()]*\))+/
+  MARKDOWN_LINK = /\[(#{LINK_TITLE})\]\((#{LINK_URL})\)/
+  MARKDOWN_LINK_SPLIT = /(\[#{LINK_TITLE}\]\(#{LINK_URL}\))/
+  MARKDOWN_LINK_EXACT = /\A#{MARKDOWN_LINK}\z/
+  # A multi-language gloss line carrying only this marks a target language
+  # the entry has no gloss for: the line keeps its position, holds no text.
+  MISSING_GLOSS = "—"
+
   # Converts a transcript/script body (after header extraction) to HTML.
   # When vocab: true (default), renders vocabulary section with linked bold words.
   # When vocab: false, strips vocabulary section and removes bold markers (for podcast apps).
@@ -48,7 +64,7 @@ module TranscriptRenderer
   end
 
   def linkify_markdown(text)
-    text.gsub(/\[([^\]]+)\]\(([^)]+)\)/) do
+    text.gsub(MARKDOWN_LINK) do
       title = escape_html(Regexp.last_match(1))
       url = escape_html(Regexp.last_match(2))
       "<a href=\"#{url}\">#{title}</a>"
@@ -116,8 +132,10 @@ module TranscriptRenderer
         elsif line =~ /\A\s{2,}- / && current_entry && definition_index < languages.length
           def_text = stripped.sub(/\A- /, "")
           lang = languages[definition_index]
-          current_entry[:definitions][lang] = def_text
-          current_entry[:definition] = def_text if definition_index == 0
+          unless def_text == MISSING_GLOSS
+            current_entry[:definitions][lang] = def_text
+            current_entry[:definition] = def_text if current_entry[:definition].to_s.empty?
+          end
           definition_index += 1
         end
       end

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "transcript_renderer"
+
 # Reads the legacy markdown view (<basename>_script.md) back into the
 # structured script hash that the rest of the pipeline uses.
 #
@@ -15,7 +17,8 @@
 #     "## More info") is treated as the script-level :sources rather than
 #     a real segment.
 module LegacyScriptParser
-  LINK_BULLET = /\A- \[([^\]]+)\]\(([^)]+)\)/.freeze
+  # Same link pattern as the site (P17-3): brackets in titles, parens in URLs.
+  LINK_BULLET = /\A- #{TranscriptRenderer::MARKDOWN_LINK}/
 
   # Parse a script markdown file. Returns
   #   { title:, segments: [{name:, text:, sources?: [{title:, url:}]}], sources: [...] }

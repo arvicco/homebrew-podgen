@@ -19,20 +19,27 @@ class VocabLedger
   MIN_TOKEN_LENGTH = 4
   TOKEN = /\p{L}+/
 
+  # Languages whose reflexive verbs carry a separate particle ("bać się",
+  # "bati se"): the verb with and without it is one lemma to the ledger.
+  # Never Spanish/Italian, where -rse/-rsi is part of the word.
+  REFLEXIVE_LANGUAGES = %w[sl hr pl slovenian croatian polish].freeze
+  REFLEXIVE_PARTICLE = /\s+(?:się|se|si)\z/
+
   # Vocabulary-section parser shared with the renderer (no second parser).
   PARSER = Object.new.extend(TranscriptRenderer)
 
   attr_reader :episodes
 
   def self.for_config(config, before: nil)
-    build(config.episodes_dir, before: before)
+    build(config.episodes_dir, before: before, language: config.transcription_language)
   end
 
   # before: exclusive basename cutoff — only transcripts whose basename sorts
   # before it are read (revocab of an old episode sees only its past).
-  def self.build(episodes_dir, before: nil)
+  # language: the show's code or name; selects the reflexive-particle rule.
+  def self.build(episodes_dir, before: nil, language: nil)
     cutoff = before&.delete_suffix("_transcript.md")
-    ledger = new
+    ledger = new(language: language)
     EpisodeFiltering.all_transcripts(episodes_dir)
       .map { |path| [File.basename(path, "_transcript.md"), path] }
       .sort_by(&:first)
@@ -58,15 +65,16 @@ class VocabLedger
   end
   private_class_method :vocab_lemmas
 
-  def initialize
+  def initialize(language: nil)
     @episodes = 0
     @explained = Hash.new { |h, k| h[k] = [] } # lemma → [[index, basename], ...]
     @df = Hash.new(0)
+    @strip_reflexive = REFLEXIVE_LANGUAGES.include?(language.to_s.downcase.strip)
   end
 
   # Appends one episode (in chronological order).
   def add(basename, lemmas:, body:)
-    lemmas.each { |lemma| @explained[lemma] << [@episodes, basename] }
+    lemmas.map { |lemma| key(lemma) }.uniq.each { |lemma| @explained[lemma] << [@episodes, basename] }
     self.class.tokens(body).uniq.each { |t| @df[t] += 1 }
     @episodes += 1
     self
@@ -118,6 +126,7 @@ class VocabLedger
   private
 
   def key(lemma)
-    lemma.to_s.downcase.strip
+    k = lemma.to_s.downcase.strip
+    @strip_reflexive ? k.sub(REFLEXIVE_PARTICLE, "") : k
   end
 end

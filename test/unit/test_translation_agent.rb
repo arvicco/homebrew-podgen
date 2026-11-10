@@ -9,11 +9,11 @@ require "agents/translation_agent"
 class TestTranslationAgent < Minitest::Test
   def test_translate_returns_translated_script
     agent = build_agent("sl")
-    stub_client(agent, title: "Epizoda 1", segments: [{ name: "Uvod", text: "Pozdravljeni!" }])
+    stub_client(agent, title: "Epizoda 1", segments: [{ name: "Uvod", text: "Pozdravljeni!" }, { name: "Konec", text: "Hvala." }])
 
     result = agent.translate(sample_script)
     assert_equal "Epizoda 1", result[:title]
-    assert_equal 1, result[:segments].length
+    assert_equal 2, result[:segments].length
     assert_equal "Uvod", result[:segments].first[:name]
     assert_equal "Pozdravljeni!", result[:segments].first[:text]
   end
@@ -22,7 +22,7 @@ class TestTranslationAgent < Minitest::Test
 
   def test_translate_requests_max_tokens_of_at_least_16384
     agent = build_agent("sl")
-    client = stub_client(agent, title: "E", segments: [{ name: "Uvod", text: "Živjo" }])
+    client = stub_client(agent, title: "E")
 
     agent.translate(sample_script)
 
@@ -48,7 +48,7 @@ class TestTranslationAgent < Minitest::Test
 
   def test_prompt_includes_language_name
     agent = build_agent("sl")
-    client = stub_client(agent, title: "T", segments: [])
+    client = stub_client(agent, title: "T")
 
     agent.translate(sample_script)
     system = client.last_call[:system]
@@ -57,7 +57,7 @@ class TestTranslationAgent < Minitest::Test
 
   def test_prompt_uses_natural_conventions_not_blanket_preserve
     agent = build_agent("de")
-    client = stub_client(agent, title: "T", segments: [])
+    client = stub_client(agent, title: "T")
 
     agent.translate(sample_script)
     system = client.last_call[:system]
@@ -70,7 +70,7 @@ class TestTranslationAgent < Minitest::Test
 
   def test_prompt_omits_glossary_block_when_empty
     agent = build_agent("de")
-    client = stub_client(agent, title: "T", segments: [])
+    client = stub_client(agent, title: "T")
 
     agent.translate(sample_script)
     refute_includes client.last_call[:system], "GLOSSARY"
@@ -83,7 +83,7 @@ class TestTranslationAgent < Minitest::Test
       "mining" => "マイニング"
     })
     agent.define_singleton_method(:sleep) { |_| }
-    stub_client(agent, title: "T", segments: [])
+    stub_client(agent, title: "T")
 
     agent.translate(sample_script)
     system = agent.instance_variable_get(:@client).last_call[:system]
@@ -96,7 +96,7 @@ class TestTranslationAgent < Minitest::Test
 
   def test_prompt_instructs_segment_name_translation
     agent = build_agent("de")
-    client = stub_client(agent, title: "T", segments: [])
+    client = stub_client(agent, title: "T")
 
     agent.translate(sample_script)
     system = client.last_call[:system]
@@ -117,7 +117,7 @@ class TestTranslationAgent < Minitest::Test
 
   def test_unknown_language_code_uses_code_as_name
     agent = build_agent("xx")
-    client = stub_client(agent, title: "T", segments: [])
+    client = stub_client(agent, title: "T")
 
     agent.translate(sample_script)
     system = client.last_call[:system]
@@ -132,7 +132,7 @@ class TestTranslationAgent < Minitest::Test
       "kr" => "Korean"
     }.each do |code, expected_name|
       agent = build_agent(code)
-      client = stub_client(agent, title: "T", segments: [])
+      client = stub_client(agent, title: "T")
       agent.translate(sample_script)
       assert_includes client.last_call[:system], expected_name,
         "Expected #{code} to resolve to #{expected_name} in prompt"
@@ -141,7 +141,7 @@ class TestTranslationAgent < Minitest::Test
 
   def test_translate_carries_top_level_sources_from_original
     agent = build_agent("sl")
-    stub_client(agent, title: "T", segments: [{ name: "Open", text: "Pozdravljeni." }])
+    stub_client(agent, title: "T")
 
     script_with_sources = sample_script.merge(sources: [
       { title: "S1", url: "https://example.com/1" }
@@ -172,9 +172,37 @@ class TestTranslationAgent < Minitest::Test
     assert_equal [{ title: "Src2", url: "https://example.com/2" }], result[:segments][1][:sources]
   end
 
+  # P17-3 (Q-135): a translation with fewer segments than the script would
+  # shift every per-segment source by index; it is a structured-output
+  # error, so the existing retry re-asks.
+  def test_translate_segment_count_mismatch_raises_structured_output_error_and_retries
+    agent = build_agent("sl")
+    client = stub_client(agent, title: "T", segments: [{ name: "Open", text: "A." }])
+
+    err = assert_raises(RuntimeError) { agent.translate(sample_script) }
+
+    assert_includes err.message, "Segment count mismatch: expected 2, got 1"
+    assert_equal TranslationAgent::MAX_RETRIES + 1, client.calls.length, "retried like any StructuredOutputError"
+  end
+
+  def test_translate_segment_count_mismatch_then_full_answer_succeeds
+    agent = build_agent("sl")
+    short = MockTranslation.new("T", [MockSegment.new("Open", "A.")])
+    full = MockTranslation.new("T", [MockSegment.new("Open", "A."), MockSegment.new("Wrap", "B.")])
+    client = MockClient.new(short)
+    outputs = [short, full]
+    client.define_singleton_method(:create) { |**kw| (@calls << kw; MockMsg.new(outputs.shift)) }
+    agent.instance_variable_set(:@client, client)
+
+    result = agent.translate(sample_script)
+
+    assert_equal 2, client.calls.length
+    assert_equal %w[A. B.], result[:segments].map { |s| s[:text] }
+  end
+
   def test_translate_omits_sources_when_original_has_none
     agent = build_agent("sl")
-    stub_client(agent, title: "T", segments: [{ name: "Open", text: "Hi." }])
+    stub_client(agent, title: "T")
 
     result = agent.translate(sample_script)  # sample has no sources
     refute result[:segments].first.key?(:sources)
@@ -195,11 +223,11 @@ class TestTranslationAgent < Minitest::Test
 
   def test_openai_backend_uses_responses_api
     agent = build_openai_agent("jp")
-    client = stub_openai_client(agent, title: "エピソード1", segments: [{ name: "オープニング", text: "こんにちは" }])
+    client = stub_openai_client(agent, title: "エピソード1", segments: [{ name: "オープニング", text: "こんにちは" }, { name: "まとめ", text: "ありがとう" }])
 
     result = agent.translate(sample_script)
     assert_equal "エピソード1", result[:title]
-    assert_equal 1, result[:segments].length
+    assert_equal 2, result[:segments].length
     assert_equal "オープニング", result[:segments].first[:name]
     # Confirm we hit responses.create, not messages.create
     assert_equal :responses, client.api_called
@@ -240,7 +268,7 @@ class TestTranslationAgent < Minitest::Test
     reasoning = OpenAI::Models::Responses::ResponseReasoningItem.new({})
     reasoning.define_singleton_method(:content) { nil }
 
-    parsed = MockTranslation.new("Title", [MockSegment.new("Open", "Hello")])
+    parsed = MockTranslation.new("Title", [MockSegment.new("Open", "Hello"), MockSegment.new("Wrap", "Bye")])
     msg = OpenAI::Models::Responses::ResponseOutputMessage.new({})
     msg.define_singleton_method(:content) { [MockOpenAIContent.new(parsed)] }
 
@@ -260,7 +288,7 @@ class TestTranslationAgent < Minitest::Test
   # episode. Only the model's own ceiling can produce an incomplete response.
   def test_openai_backend_request_carries_no_max_output_tokens
     agent = build_openai_agent("jp")
-    client = stub_openai_client(agent, title: "T", segments: [])
+    client = stub_openai_client(agent, title: "T")
 
     agent.translate(sample_script)
 
@@ -287,7 +315,7 @@ class TestTranslationAgent < Minitest::Test
     logger = Object.new
     logger.define_singleton_method(:log) { |msg| lines << msg }
     agent = TranslationAgent.new(target_language: "sl", backend: "openai", logger: logger)
-    response = stub_openai_client(agent, title: "T", segments: [{ name: "A", text: "a" }]).response
+    response = stub_openai_client(agent, title: "T").response
     response.status = :completed
     response.usage = OpenAI::Internal::Type::Converter.coerce(
       OpenAI::Models::Responses::ResponseUsage, openai_usage_hash(output_tokens: 400)
@@ -298,7 +326,7 @@ class TestTranslationAgent < Minitest::Test
     assert_equal 4, lines.length
     assert_match(/\A\[TranslationAgent\] Translation generated in [\d.]+s \(completed\)\z/, lines[1])
     assert_equal "[TranslationAgent]   Input: 500 tokens | Output: 400 tokens", lines[2]
-    assert_equal "[TranslationAgent] Translation complete: 1 segments", lines[3]
+    assert_equal "[TranslationAgent] Translation complete: 2 segments", lines[3]
   end
 
   def test_prompt_glossary_block_unindented_with_escaped_quotes
@@ -339,7 +367,7 @@ class TestTranslationAgent < Minitest::Test
     response = if empty
       MockOpenAIResponse.new([])
     else
-      segs = (segments || []).map { |s| MockSegment.new(s[:name], s[:text]) }
+      segs = (segments || TWO_SEGMENTS).map { |s| MockSegment.new(s[:name], s[:text]) }
       content = MockOpenAIContent.new(MockTranslation.new(title, segs))
       # Real ResponseOutputMessage so the production code's `grep(class)` matches.
       msg = OpenAI::Models::Responses::ResponseOutputMessage.new({})
@@ -360,7 +388,7 @@ class TestTranslationAgent < Minitest::Test
     output = if nil_output
       nil
     else
-      segs = (segments || []).map { |s| MockSegment.new(s[:name], s[:text]) }
+      segs = (segments || TWO_SEGMENTS).map { |s| MockSegment.new(s[:name], s[:text]) }
       MockTranslation.new(title, segs)
     end
     client = MockClient.new(output)
@@ -369,6 +397,8 @@ class TestTranslationAgent < Minitest::Test
   end
 
   MockSegment = Struct.new(:name, :text)
+  # Default fake answer: as many segments as sample_script (P17-3 checks the count).
+  TWO_SEGMENTS = [{ name: "Uvod", text: "Pozdravljeni!" }, { name: "Konec", text: "Hvala." }].freeze
   MockTranslation = Struct.new(:title, :segments)
 
   class MockClient

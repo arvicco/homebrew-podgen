@@ -79,6 +79,85 @@ class TestVocabCache < Minitest::Test
     refute File.exist?(@path)
   end
 
+  # --- P17-4 (Q-114): part of speech ---
+
+  def test_fetch_part_of_speech_mismatch_is_a_miss
+    cache = VocabCache.new(@path)
+    cache.store("pesar", pos: "verb", translations: {"English" => "to weigh"})
+    assert_equal "to weigh", cache.fetch("pesar", pos: "verb")["translations"]["English"]
+    assert_nil cache.fetch("pesar", pos: "noun")
+  end
+
+  def test_fetch_legacy_entry_without_pos_matches_any_pos
+    legacy = {"translations" => {"English" => "to weigh"}, "definitions" => {},
+              "pronunciation" => nil, "similar_translations" => nil, "first_seen" => nil}
+    File.write(@path, {"pesar" => legacy}.to_yaml)
+    cache = VocabCache.new(@path)
+    assert_equal "to weigh", cache.fetch("pesar", pos: "noun")["translations"]["English"]
+  end
+
+  def test_store_different_pos_replaces_the_entry
+    cache = VocabCache.new(@path)
+    cache.store("pesar", pos: "verb", translations: {"English" => "to weigh", "Russian" => "весить"},
+      first_seen: "ep-1")
+    cache.store("pesar", pos: "noun", translations: {"English" => "sorrow"}, first_seen: "ep-2")
+    cache.save
+    entry = VocabCache.new(@path).fetch("pesar", pos: "noun")
+    assert_equal({"English" => "sorrow"}, entry["translations"])
+    assert_equal "noun", entry["pos"]
+    assert_equal "ep-2", entry["first_seen"]
+  end
+
+  def test_annotate_cached_lemma_with_other_pos_is_enriched_again
+    cache = VocabCache.new(@path)
+    cache.store("gatto", pos: "verb", translations: {"English" => "to cat"}, definitions: {"English" => "Wrong."})
+    calls = []
+    enrich = lambda do |entries, **|
+      calls << entries.map { |e| e[:lemma] }
+      entries.map { |e| {lemma: e[:lemma], translation: "cat", definition: "A feline."} }
+    end
+    annotate_with(enrich, cache: cache) do |_marked, vocab|
+      assert_includes vocab, "**gatto** (B1 noun) — cat. A feline."
+    end
+    assert_equal [["gatto"]], calls
+    assert_equal "noun", VocabCache.new(@path).fetch("gatto")["pos"]
+  end
+
+  # --- P17-4 (Q-114): blank glosses ---
+
+  def test_annotate_blank_cached_translation_is_a_miss
+    cache = VocabCache.new(@path)
+    cache.store("gatto", translations: {"English" => ""}, definitions: {"English" => ""})
+    calls = 0
+    enrich = lambda do |entries, **|
+      calls += 1
+      entries.map { |e| {lemma: e[:lemma], translation: "cat", definition: "A feline."} }
+    end
+    annotate_with(enrich, cache: cache) do |_marked, vocab|
+      assert_includes vocab, "— cat. A feline."
+    end
+    assert_equal 1, calls
+  end
+
+  def test_annotate_blank_enrichment_is_not_cached
+    enrich = ->(entries, **) { entries.map { |e| {lemma: e[:lemma], translation: " ", definition: ""} } }
+    cache = VocabCache.new(@path)
+    annotate_with(enrich, cache: cache) { |*| }
+    assert_nil VocabCache.new(@path).fetch("gatto")
+  end
+
+  def test_annotate_blank_language_is_not_cached_in_multi_language
+    enrich = lambda do |entries, target_language:, **|
+      translation = (target_language == "English") ? "cat" : ""
+      entries.map { |e| {lemma: e[:lemma], translation: translation, definition: ""} }
+    end
+    cache = VocabCache.new(@path)
+    annotate_with(enrich, cache: cache, target_languages: %w[English Russian]) { |*| }
+    entry = VocabCache.new(@path).fetch("gatto")
+    assert_equal({"English" => "cat"}, entry["translations"])
+    assert_equal({}, entry["definitions"])
+  end
+
   # --- VocabularyAnnotator#annotate(cache:) ---
 
   def test_annotate_second_run_uses_cache_and_makes_no_enrichment_call
