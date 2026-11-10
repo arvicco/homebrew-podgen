@@ -1775,6 +1775,7 @@ podgen test assembly       # ffmpeg assembly
 podgen test translation    # Claude script translation
 podgen test transcription  # Transcription engines (podgen test transcription <podcast|file> [open|elab|groq|all])
 podgen test sources        # Every configured source for a podcast
+podgen test reviewer_recall BUNDLE.json...  # Script reviewer at low effort vs the saved default review (BLOCKER recall)
 ```
 
 ## Cost Estimate
