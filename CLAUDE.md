@@ -254,8 +254,10 @@ rulings; R9-02 returns 11-12, R10-02 11-26). Phase 17 (didactics:
 vocabulary section correctness and lemma identity, selection
 calibration, feed guid never reused with `isPermaLink="false"`,
 subtitle reconciler output cap and retries, rendering nits)
-EXECUTING — adopted 2026-11-09 18:30 CST (option B of the Gate 16
-slate). I-11 open (YouTube consent expires every 7 days while the
+AT GATE 17 — adopted 2026-11-09 18:30 CST (option B of the Gate 16
+slate), all six packets landed (P17-6 part (a) measured and
+contradicted, no change), CRPR APPROVED in one round (refs/cr/reviewed
+= ea7a467); gate PR open, the owner merges. I-11 open (YouTube consent expires every 7 days while the
 OAuth app is in testing); I-12 open (bajke-2026-11-06 raw subtitles,
 regen after this phase merges).
 Update this line at each gate.
