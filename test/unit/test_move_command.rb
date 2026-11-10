@@ -105,6 +105,54 @@ class TestMoveCommand < Minitest::Test
     assert_nil hist.find { |e| e["basename"] == "mypod-2026-05-16" }
   end
 
+  # P19-3 (Q-124): rows without an explicit basename map by same-day position.
+
+  def test_single_history_row_without_basename_gains_new_date_and_basename
+    write_episode("mypod-2026-05-16")
+    write_history([{ "date" => "2026-05-16", "title" => "Old", "timestamp" => "2026-05-16T08:00:00+00:00" }])
+    stub_rss { run_move("mypod", "2026-05-16", "2026-05-20") }
+
+    hist = YAML.load_file(@config.history_path)
+    expected = { "date" => "2026-05-20", "title" => "Old", "timestamp" => "2026-05-16T08:00:00+00:00", "basename" => "mypod-2026-05-20" }
+    assert_equal [expected], hist
+    assert_equal "Old", feed_titles["mypod-2026-05-20.mp3"]
+  end
+
+  def test_single_move_of_first_positional_row_keeps_sibling_mapping
+    write_episode("mypod-2026-05-16")
+    write_episode("mypod-2026-05-16a")
+    write_history([{ "date" => "2026-05-16", "title" => "A" }, { "date" => "2026-05-16", "title" => "B" }])
+    stub_rss { run_move("mypod", "2026-05-16", "2026-05-20") }
+
+    titles = feed_titles
+    assert_equal "A", titles["mypod-2026-05-20.mp3"]
+    assert_equal "B", titles["mypod-2026-05-16a.mp3"]
+    refute titles.key?("mypod-2026-05-16.mp3")
+  end
+
+  def test_wildcard_moves_positional_rows_keeping_their_slots
+    write_episode("mypod-2026-05-16")
+    write_episode("mypod-2026-05-16a")
+    write_history([{ "date" => "2026-05-16", "title" => "A" }, { "date" => "2026-05-16", "title" => "B" }])
+    stub_rss { run_move("mypod", "2026-05-16+", "2026-05-20") }
+
+    hist = YAML.load_file(@config.history_path)
+    assert_equal [["2026-05-20", "mypod-2026-05-20"], ["2026-05-20", "mypod-2026-05-20a"]],
+      hist.map { |e| [e["date"], e["basename"]] }
+    titles = feed_titles
+    assert_equal "A", titles["mypod-2026-05-20.mp3"]
+    assert_equal "B", titles["mypod-2026-05-20a.mp3"]
+  end
+
+  def test_single_warns_when_no_history_row_matches
+    write_episode("mypod-2026-05-16")
+    write_history([{ "date" => "2026-05-01", "title" => "Other" }])
+    _, err = capture_io { stub_rss { run_move("mypod", "2026-05-16", "2026-05-20") } }
+
+    assert_includes err, "no history entry for mypod-2026-05-16"
+    assert_equal [{ "date" => "2026-05-01", "title" => "Other" }], YAML.load_file(@config.history_path)
+  end
+
   def test_single_updates_upload_tracker
     write_episode("mypod-2026-05-16")
     uploads_path = File.join(File.dirname(@config.episodes_dir), "uploads.yml")
@@ -317,6 +365,16 @@ class TestMoveCommand < Minitest::Test
     fake_rss = Object.new
     fake_rss.define_singleton_method(:run) { 0 }
     PodgenCLI::RssCommand.stub(:new, fake_rss) { yield }
+  end
+
+  def write_history(entries)
+    File.write(@config.history_path, YAML.dump(entries))
+  end
+
+  # The title each mp3 gets in the feed (HistoryMaps, as RssGenerator reads it).
+  def feed_titles
+    require "history_maps"
+    HistoryMaps.build(history_path: @config.history_path, podcast_name: "mypod", episodes_dir: @config.episodes_dir).first
   end
 
   def setup_fake_podcast(name)
