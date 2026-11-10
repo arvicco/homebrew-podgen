@@ -373,7 +373,8 @@ class PodcastConfig
     EpisodeNaming::SUFFIXES.each do |suffix|
       candidate = "#{prefix}#{suffix}"
       next if existing.include?(candidate)
-      next if served.any? { |g| g.match?(/\A#{Regexp.escape(candidate)}(?:-[a-z]{2})?\.mp3\z/) }
+      guid = /\A#{Regexp.escape(candidate)}(?:-[a-z]{2})?\.mp3\z/
+      next if served.any? { |g| g.match?(guid) }
       return candidate
     end
     raise "No free episode slot for #{date_str} — all 27 suffixes are taken"
@@ -381,7 +382,7 @@ class PodcastConfig
 
   # Guid texts of every feed on disk for this podcast (primary + language
   # feeds). A plain text scan, so a feed REXML would reject still counts.
-  def served_feed_guids
+  private def served_feed_guids
     codes = language_codes.empty? ? [primary_language] : language_codes
     codes.map { |c| File.join(File.dirname(@feed_path), feed_file_name(c)) }.uniq
       .select { |path| File.file?(path) }
