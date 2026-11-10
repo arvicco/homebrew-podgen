@@ -23,12 +23,11 @@ namespace :test do
   # safe for CI. Keyed and live-network cases live in test/api/ (Q-68);
   # a file joins this list only when it has none and sets no
   # process-wide placeholder key (one would un-gate skip_unless_env).
-  # CAUTION: `rake test` loads every tier (unit + integration + api) in ONE
-  # process, and many unit files set ENV["ANTHROPIC_API_KEY"] ||= "test-key"
-  # at load time — so a keyless `rake test` un-gates the test/api cases and
-  # runs them with a fake key against live endpoints. Run test:api only
-  # with real keys; the gate runs unit and integration_offline as separate
-  # processes and is unaffected (fix queued as Q-86).
+  # `rake test` loads every tier (unit + integration + api) in ONE process,
+  # and many unit files set ENV["ANTHROPIC_API_KEY"] ||= "test-key" at load
+  # time; skip_unless_env counts such placeholder values as absent (Q-86,
+  # test_helper.rb), so a keyless `rake test` still skips the test/api
+  # cases. The gate runs unit and integration_offline as separate processes.
   Rake::TestTask.new(:integration_offline) do |t|
     t.libs << "test"
     t.test_files = FileList[
@@ -88,16 +87,15 @@ namespace :fixtures do
   end
 end
 
-desc "Pre-commit gate: syntax + unit + offline integration (all green or no commit)"
+desc "Pre-commit gate: syntax + warnings + unit + offline integration (all green or no commit)"
 task :gate do
+  require_relative "lib/syntax_check"
   sources = FileList["lib/**/*.rb", "test/**/*.rb", "bin/podgen", "bin/tell", "Rakefile"]
-  failed = sources.reject do |f|
-    _out, err, status = Open3.capture3(RbConfig.ruby, "-c", f)
-    warn err unless status.success?
-    status.success?
-  end
-  abort "Syntax check failed: #{failed.join(", ")}" unless failed.empty?
-  puts "Syntax OK (#{sources.size} files)"
+  # `ruby -wc` (P18-6, Q-137): a parse-time warning fails like a syntax error.
+  failed = SyntaxCheck.failures(sources)
+  failed.each_value { |err| warn err }
+  abort "Syntax check failed: #{failed.keys.join(", ")}" unless failed.empty?
+  puts "Syntax OK, no warnings (#{sources.size} files)"
   sh "bundle exec standardrb"
   Rake::Task["test:unit"].invoke
   Rake::Task["test:integration_offline"].invoke

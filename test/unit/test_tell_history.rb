@@ -236,7 +236,7 @@ class TestTellHistory < Minitest::Test
   # --- Defaults ---
 
   def test_default_max_entries
-    h = Tell::History.new(@path)
+    _h = Tell::History.new(@path)
     assert_equal Tell::History::DEFAULT_MAX_ENTRIES, 1000
   end
 

@@ -47,7 +47,7 @@ class TestValidateCommand < Minitest::Test
 
   def test_check_guidelines_missing_file
     config = stub_config(guidelines_path: "/nonexistent")
-    passes, warnings, errors = run_check(:check_guidelines, config)
+    passes, _warnings, errors = run_check(:check_guidelines, config)
 
     assert_empty passes
     assert errors.any? { |e| e.include?("not found") }
@@ -56,7 +56,7 @@ class TestValidateCommand < Minitest::Test
   def test_check_guidelines_all_sections_present_news
     write_guidelines("## Format\nfoo\n## Tone\nbar\n## Topics\nbaz")
     config = stub_config(type: "news")
-    passes, warnings, errors = run_check(:check_guidelines, config)
+    passes, _warnings, errors = run_check(:check_guidelines, config)
 
     assert_empty errors
     assert passes.any? { |p| p.include?("all required sections") }
