@@ -4,6 +4,9 @@
 # Split priority: paragraph → sentence → comma/semicolon → whitespace → UTF-8-safe char boundary.
 class TextSplitter
   DEFAULT_MAX_CHARS = 9_500 # Safety margin below ElevenLabs' 10k limit
+  # After 。！？ and up to two closing 」』） (Q-157): the bracket ends the
+  # sentence's chunk rather than opening the next one.
+  SENTENCE_SPLIT = /(?<=[.!?])\s+|(?<=[。！？]|[。！？][」』）]|[。！？][」』）]{2})(?![」』）])/
 
   def initialize(max_chars: DEFAULT_MAX_CHARS)
     @max_chars = max_chars
@@ -20,7 +23,7 @@ class TextSplitter
       # Punctuation stays with the chunk it ends (P17-3): CJK sentence ends
       # need no following space; a comma split falls after the comma.
       split_at = remaining.rindex(/\n\n/, @max_chars) ||
-                 remaining.rindex(/(?<=[.!?])\s+|(?<=[。！？])/, @max_chars) ||
+                 remaining.rindex(SENTENCE_SPLIT, @max_chars) ||
                  remaining.rindex(/(?<=[,;:])\s+/, @max_chars) ||
                  remaining.rindex(/\s+/, @max_chars) ||
                  find_safe_split_point(remaining, @max_chars)
