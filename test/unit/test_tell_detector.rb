@@ -228,17 +228,18 @@ class TestTellDetector < Minitest::Test
   # --- P18-7 (Q-136): Croatian and Czech misreads ---
 
   # Characterization: what the detector returns today for the languages it
-  # already covers — the fix must leave every row unchanged. Two rows are
-  # known misreads kept as they are ("to" is an English stop word).
+  # already covers — the fix must leave every row unchanged. The two "to"
+  # rows read as English until Q-159 (6): a tie with English goes to the
+  # other language.
   COVERED_ROWS = {
-    "To je to, kar sem rekel." => "en",
+    "To je to, kar sem rekel." => "sl",
     "Ali je to res tako, kot pravijo?" => "sl",
     "To je bila zelo lepa izkušnja za vse nas." => "sl",
     "Smo bili tam, kako je bilo?" => "sl",
     "Danes je lep dan in sem zelo vesel." => "sl",
     "Včeraj sem bil v trgovini, ker je bilo treba kupiti kruh." => "sl",
     "Kaj je novega pri tebi, kako si kaj?" => "sl",
-    "Czy to jest to, co chcesz?" => "en",
+    "Czy to jest to, co chcesz?" => "pl",
     "To nie jest tak, jak myślisz." => "pl",
     "Jest bardzo dobrze, ale nie wiem dlaczego." => "pl",
     "Ten dom jest duży i ładny, ale stary." => "pl",
@@ -275,5 +276,13 @@ class TestTellDetector < Minitest::Test
   # letters appear (ć is Croatian, not Slovenian); otherwise the first.
   def test_latin_language_tie_broken_by_characteristic_chars
     assert_equal "hr", Tell::Detector.latin_language("smo bili kod kuće kako je bilo")
+  end
+
+  # Q-159 (6): "to" is a Slavic word too — a stop-word tie between English
+  # and another language goes to the other; an English-only lead stays en.
+  def test_latin_language_tie_with_english_goes_to_the_other_language
+    assert_equal "sl", Tell::Detector.latin_language("To je to, kar sem rekel.")
+    assert_equal "pl", Tell::Detector.latin_language("Czy to jest to, co chcesz?")
+    assert_equal "en", Tell::Detector.latin_language("Go to the shop and buy it.")
   end
 end
