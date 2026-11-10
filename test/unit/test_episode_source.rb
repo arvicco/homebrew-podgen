@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "open3"
 require "minitest/mock"
 require "yaml"
@@ -785,13 +786,6 @@ class TestEpisodeSource < Minitest::Test
     )
     history = Struct.new(:all_urls).new(Set.new)
     EpisodeSource.new(config: config, history: history, logger: logger)
-  end
-
-  class LineLogger
-    attr_reader :lines
-
-    def initialize = @lines = []
-    def log(msg) = @lines << msg
   end
 
   # Stands in for RSSSource: serves the episodes configured per feed URL,

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "youtube_publisher"
 require "youtube_uploader"
 require "regen_cache"
@@ -824,7 +825,7 @@ class TestYouTubePublisher < Minitest::Test
     seed_ep(base)
     config = stub_config(youtube_enabled: true)
     config.transcription_engines = %w[groq]
-    logger = RecordingLogger.new
+    logger = LineLogger.new
     publisher = YouTubePublisher.new(config: config, uploader: stub_uploader, tracker_path: @uploads_path, logger: logger)
 
     _, err = capture_io do
@@ -868,7 +869,7 @@ class TestYouTubePublisher < Minitest::Test
     File.write(File.join(@episodes_dir, "#{base}_timestamps.json"),
       JSON.generate({"version" => 1, "engine" => "groq", "intro_duration" => 0.0, "segments" => []}))
     config = stub_config(youtube_enabled: true)
-    logger = RecordingLogger.new
+    logger = LineLogger.new
     publisher = YouTubePublisher.new(config: config, uploader: stub_uploader, tracker_path: @uploads_path, logger: logger)
     failed = Struct.new(:status, :message).new(:failed, "bad reply")
 
@@ -881,13 +882,6 @@ class TestYouTubePublisher < Minitest::Test
   end
 
   private
-
-  class RecordingLogger
-    attr_reader :lines
-
-    def initialize = @lines = []
-    def log(msg) = @lines << msg
-  end
 
   def ep_hash(base)
     {base_name: base, mp3_path: File.join(@episodes_dir, "#{base}.mp3"),
