@@ -189,8 +189,11 @@ class TestR2Publisher < Minitest::Test
   def test_run_with_episode_id_says_sync_is_show_wide
     seed_ep("ep-2026-01-15")
     calls = []
-    publisher = build_publisher(config: stub_config, runner: ->(env:, args:) { calls << args; true },
-                                episode_id: "2026-01-15")
+    runner = lambda do |env:, args:|
+      calls << args
+      true
+    end
+    publisher = build_publisher(config: stub_config, runner: runner, episode_id: "2026-01-15")
 
     out, = capture_io { publisher.run }
 
