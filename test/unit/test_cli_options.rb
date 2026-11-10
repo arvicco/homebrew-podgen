@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "stringio"
 require "optparse"
 
@@ -29,12 +30,6 @@ class TestCLIOptions < Minitest::Test
   # ── P1-1: owner-action guard (second layer behind settings.json denies) ──
   # The command class is stubbed so a red run can never execute a real
   # publish/upload/schedule (lesson 2026-10-11: an unstubbed red run hung on one).
-
-  class FakeCommand
-    def initialize(*) = nil
-    def run = 0
-  end
-
   def guarded_run(*argv)
     PodgenCLI.stub(:const_get, FakeCommand) { run_cli(*argv) }
   end

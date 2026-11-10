@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "stringio"
 require "cli"
 
@@ -93,11 +94,8 @@ class TestCharacterizationCLI < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
-  # Never executes a real command: const_get returns a fake whose #run is a no-op.
-  class FakeCommand
-    def initialize(*) = nil
-    def run = 0
-  end
+  # Never executes a real command: const_get returns FakeCommand
+  # (test/support/fakes.rb), whose #run is a no-op.
 
   # Builds the REAL command (so constructor-level parse errors surface through
   # the dispatcher) but returns a FakeCommand, so #run never executes.
