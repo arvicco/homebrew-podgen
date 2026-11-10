@@ -72,6 +72,23 @@ class TestTextSplitting < Minitest::Test
     end
   end
 
+  # P18-8 (6): a closing quote/bracket after the sentence end stays with
+  # the sentence, not at the start of the next TTS chunk.
+  def test_cjk_sentence_end_keeps_closing_bracket_in_the_chunk
+    %w[」 』 ） 」』].each do |close|
+      sentence1 = "「" + "あ" * 7000 + "。" + close
+      sentence2 = "い" * 5000
+      chunks = @splitter.split(sentence1 + sentence2)
+      assert_equal [sentence1, sentence2], chunks, "split after 。#{close}"
+    end
+  end
+
+  def test_cjk_closing_bracket_without_sentence_end_is_not_a_boundary
+    text = "「" + "あ" * 7000 + "」" + "い" * 5000
+    chunks = @splitter.split(text)
+    refute chunks[0].end_with?("」"), "a bare 」 is not a sentence end"
+  end
+
   def test_cjk_sentence_end_preferred_over_comma
     text = "あ" * 6000 + "。" + "い" * 1000 + "、, " + "う" * 5000
     chunks = @splitter.split(text)
