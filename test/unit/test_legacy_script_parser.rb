@@ -63,6 +63,28 @@ class TestLegacyScriptParser < Minitest::Test
     refute result[:segments][1].key?(:sources)
   end
 
+  # P17-3 (Q-135): the read-back agrees with the site's link pattern.
+  def test_parse_recovers_paren_url_and_bracketed_title
+    path = write_md(<<~MD)
+      # Mixed
+
+      ## News
+
+      Big story.
+
+      - [Ruby](https://en.wikipedia.org/wiki/Ruby_(programming_language))
+      - [[Video] Rails 8](https://example.com/r8)
+    MD
+
+    seg = LegacyScriptParser.parse(path)[:segments][0]
+
+    assert_equal "Big story.", seg[:text]
+    assert_equal [
+      { title: "Ruby", url: "https://en.wikipedia.org/wiki/Ruby_(programming_language)" },
+      { title: "[Video] Rails 8", url: "https://example.com/r8" }
+    ], seg[:sources]
+  end
+
   def test_parse_recovers_bottom_more_info_section
     path = write_md(<<~MD)
       # Episode
