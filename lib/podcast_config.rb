@@ -355,6 +355,11 @@ class PodcastConfig
   # after the count — so `move`-ing out the bare slot frees it up cleanly,
   # and a gap from any other operation gets filled before pushing further
   # along the alphabet.
+  #
+  # A slot whose guid is still in a served feed on disk (feed.xml or a
+  # language feed) is taken too, even when its mp3 was scrapped: reusing
+  # the guid with new audio makes podcast apps keep the old item (P17-1,
+  # Q-153). With no feed on disk the rule is the mp3 walk alone.
   def episode_basename(date = Date.today)
     date_str = date.strftime("%Y-%m-%d")
     prefix = "#{@name}-#{date_str}"
@@ -363,12 +368,24 @@ class PodcastConfig
       .select { |f| EpisodeFiltering.matches_language?(File.basename(f, ".mp3"), primary_language, languages: language_codes) }
       .map { |f| File.basename(f, ".mp3") }
       .to_set
+    served = served_feed_guids
 
     EpisodeNaming::SUFFIXES.each do |suffix|
       candidate = "#{prefix}#{suffix}"
-      return candidate unless existing.include?(candidate)
+      next if existing.include?(candidate)
+      next if served.any? { |g| g.match?(/\A#{Regexp.escape(candidate)}(?:-[a-z]{2})?\.mp3\z/) }
+      return candidate
     end
     raise "No free episode slot for #{date_str} — all 27 suffixes are taken"
+  end
+
+  # Guid texts of every feed on disk for this podcast (primary + language
+  # feeds). A plain text scan, so a feed REXML would reject still counts.
+  def served_feed_guids
+    codes = language_codes.empty? ? [primary_language] : language_codes
+    codes.map { |c| File.join(File.dirname(@feed_path), feed_file_name(c)) }.uniq
+      .select { |path| File.file?(path) }
+      .flat_map { |path| File.read(path).scan(%r{<guid\b[^>]*>\s*([^<]*?)\s*</guid>}).flatten }
   end
 
   def script_path(date = Date.today)
