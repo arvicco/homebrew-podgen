@@ -154,6 +154,20 @@ class TestAddLinksCommands < Minitest::Test
     assert_equal 1, links.count
   end
 
+  # P18-6 (Q-137): `add` stores the cleaned URL, so `--remove` with the
+  # same raw URL (tracking params included) must find it.
+  def test_links_command_remove_raw_url_matches_cleaned_entry
+    require "cli/add_command"
+    require "cli/links_command"
+    raw = "https://example.com/article?utm_source=twitter&fbclid=abc123"
+    capture_io { PodgenCLI::AddCommand.new(["test_pod", raw], {}).run }
+
+    out, = capture_io { PodgenCLI::LinksCommand.new(["--remove", raw, "test_pod"], {}).run }
+
+    assert_includes out, "Removed"
+    assert_equal 0, PriorityLinks.new(File.join(@podcast_dir, "links.yml")).count
+  end
+
   def test_links_command_remove_nonexistent
     require "cli/links_command"
 
