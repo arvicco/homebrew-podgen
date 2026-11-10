@@ -1720,8 +1720,8 @@ podgen/
 │   ├── excluded_urls.yml     # URLs excluded from future episodes
 │   ├── research_cache/       # Cached source results (24h)
 │   ├── debug/                # Raw script responses
-│   └── run.lock              # Held while a generate runs
-├── output/uploads.lock       # Held while the uploads batch runs
+│   ├── run.lock              # Held while a generate runs
+│   └── uploads.lock          # Held while the 10:30 batch runs (output/ level, one per install)
 └── logs/
     ├── <name>/               # Run logs per podcast (token usage, warnings, phase timings)
     └── launchd_stderr.log    # Shared stderr of the scheduled jobs (publish markers, warnings)

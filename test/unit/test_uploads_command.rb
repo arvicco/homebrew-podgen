@@ -593,6 +593,15 @@ class TestUploadsCommand < Minitest::Test
     $?.exitstatus.zero?
   end
 
+  def test_run_releases_uploads_lock_when_the_batch_raises
+    cmd = wire_cmd(["pod_a"], r2: ok_r2_result, lingq: nil, yt: ok_yt_result)
+    cmd.define_singleton_method(:run_r2_for) { |_| raise "rclone exploded" }
+
+    assert_raises(RuntimeError) { capture_io { cmd.run } }
+
+    refute held_by_other_process?(uploads_lock), "the lock is released when the batch raises"
+  end
+
   def test_run_holds_uploads_lock_during_the_batch
     held = nil
     ok = ok_r2_result

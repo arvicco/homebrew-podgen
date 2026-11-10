@@ -5,8 +5,10 @@ require "rbconfig"
 
 # The gate's syntax step (P18-6, Q-137): `ruby -wc` on every source, so a
 # new parse-time warning (an unused variable, a silently dropped exception)
-# fails the gate like a syntax error does. Stdlib only — the Rakefile loads
-# it before bundler-managed code.
+# fails the gate like a syntax error does. PARSE-TIME only: a regex
+# literal compiles when the file is loaded, so a character-class warning
+# shows up in the test run's stderr, not here (CRPR r1, Phase 18). Stdlib
+# only — the Rakefile loads it before bundler-managed code.
 module SyntaxCheck
   module_function
 
