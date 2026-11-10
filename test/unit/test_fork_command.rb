@@ -110,6 +110,51 @@ class TestForkCommand < Minitest::Test
     assert_equal "First", entries.first["title"]
   end
 
+  # P19-3 (Q-124): explicit basenames follow the renamed episode files.
+  def test_fork_rewrites_explicit_history_basenames_to_new_name
+    File.write(File.join(@old_output_dir, "history.yml"), [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "#{@old_name}-2026-03-01" },
+      { "date" => "2026-03-02", "title" => "Second" }
+    ].to_yaml)
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    new_history = File.join(@tmpdir, "output", @new_name, "history.yml")
+    assert_equal [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "#{@new_name}-2026-03-01" },
+      { "date" => "2026-03-02", "title" => "Second" }
+    ], YAML.load_file(new_history)
+    require "history_maps"
+    titles = HistoryMaps.build(history_path: new_history, podcast_name: @new_name,
+      episodes_dir: File.join(@tmpdir, "output", @new_name, "episodes")).first
+    assert_equal "First", titles["#{@new_name}-2026-03-01.mp3"]
+    assert_equal "Second", titles["#{@new_name}-2026-03-02.mp3"]
+    assert_includes File.read(File.join(@old_output_dir, "history.yml")), "basename: #{@old_name}-2026-03-01"
+  end
+
+  def test_fork_history_without_basenames_is_copied_byte_identical
+    old_bytes = File.read(File.join(@old_output_dir, "history.yml"))
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    assert_equal old_bytes, File.read(File.join(@tmpdir, "output", @new_name, "history.yml"))
+  end
+
+  # P19-3 (Q-124): legacy flat lingq_uploads.yml lands in the unified shape.
+  def test_fork_wraps_legacy_lingq_tracking_under_lingq
+    File.delete(File.join(@old_output_dir, "uploads.yml"))
+    File.write(File.join(@old_output_dir, "lingq_uploads.yml"), {
+      "12345" => { "#{@old_name}-2026-03-01" => 100 }
+    }.to_yaml)
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    new_tracking = File.join(@tmpdir, "output", @new_name, "uploads.yml")
+    assert_equal({ "lingq" => { "12345" => { "#{@new_name}-2026-03-01" => 100 } } }, YAML.load_file(new_tracking))
+    require "upload_tracker"
+    assert UploadTracker.new(new_tracking).tracked?("lingq", "12345", "#{@new_name}-2026-03-01")
+  end
+
   def test_fork_copies_and_renames_upload_tracking
     capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
 
