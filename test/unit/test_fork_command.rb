@@ -118,6 +118,22 @@ class TestForkCommand < Minitest::Test
     refute data["lingq"]["12345"].key?("#{@old_name}-2026-03-01")
   end
 
+  # Q-140 (P19-4): a corrupt uploads.yml stops the fork before anything is
+  # written — no half-forked podcast whose ledger is silently missing (today:
+  # config and episodes copied, tracking skipped, exit 0).
+  def test_fork_corrupt_upload_tracking_fails_before_copying_anything
+    File.write(File.join(@old_output_dir, "uploads.yml"), "- not a hash\n")
+
+    error = nil
+    capture_io do
+      error = assert_raises(RuntimeError) { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+    end
+
+    assert_includes error.message, "uploads.yml"
+    refute Dir.exist?(File.join(@tmpdir, "podcasts", @new_name))
+    refute Dir.exist?(File.join(@tmpdir, "output", @new_name))
+  end
+
   def test_fork_preserves_old_podcast
     capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
 

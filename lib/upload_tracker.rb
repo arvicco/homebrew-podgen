@@ -40,6 +40,14 @@ class UploadTracker
     normalize_keys(data)
   end
 
+  # Strict read of uploads.yml as it is on disk, without the legacy
+  # migration (which writes): a preflight that raises on corruption and
+  # never touches a file, dry runs included (Q-140).
+  def verify!
+    YamlLoader.load(@path, default: {}, raise_on_error: true)
+    nil
+  end
+
   # Save tracking data atomically.
   def save(tracking)
     AtomicWriter.write_yaml(@path, tracking)
