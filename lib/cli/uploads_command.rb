@@ -29,6 +29,7 @@ module PodgenCLI
   #      after ONE pod and DOES exit non-zero: it needs the owner.
   class UploadsCommand
     MODES = %i[priority round_robin].freeze
+    LOCK_HELD_EXIT = 3 # another batch holds output/uploads.lock: this tick was skipped (Q-159 (12))
 
     def initialize(args, options)
       @options = options
@@ -84,8 +85,11 @@ module PodgenCLI
         lock.flock(File::LOCK_EX | File::LOCK_NB)
       end
       unless acquired
+        # Q-159 (12): a skipped tick, not a failed batch — its own exit code
+        # and a stdout line `podgen status` reads (STATUS UPLOAD_SKIP_RE).
+        puts "uploads: batch skipped: another batch was running"
         $stderr.puts "uploads: another uploads batch is running (lockfile: #{path})"
-        return 1
+        return LOCK_HELD_EXIT
       end
 
       begin
