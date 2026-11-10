@@ -95,7 +95,7 @@ task :gate do
   failed = SyntaxCheck.failures(sources)
   failed.each_value { |err| warn err }
   abort "Syntax check failed: #{failed.keys.join(", ")}" unless failed.empty?
-  puts "Syntax OK, no warnings (#{sources.size} files)"
+  puts "Syntax OK, no parse-time warnings (#{sources.size} files)"
   sh "bundle exec standardrb"
   Rake::Task["test:unit"].invoke
   Rake::Task["test:integration_offline"].invoke
