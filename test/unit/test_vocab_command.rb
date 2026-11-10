@@ -163,6 +163,21 @@ class TestVocabCommand < Minitest::Test
     assert_equal ["lupo"], kv.lemmas("sl")
   end
 
+  # Q-133 (P19-6): --min below 1 would list every explained lemma, and with
+  # --promote write them all into known_vocabulary.yml; it is refused.
+  def test_review_min_below_one_is_refused_and_promotes_nothing
+    review_fixture
+    known_path = File.join(@podcast_dir, "known_vocabulary.yml")
+
+    %w[0 -2].each do |min|
+      error = assert_raises(OptionParser::InvalidArgument) do
+        build_command("review", "testpod", "--min", min, "--promote").run
+      end
+      assert_includes error.message, "--min #{min} (must be at least 1)"
+    end
+    refute File.exist?(known_path)
+  end
+
   # P18-8 (1): the report reads the ledger the generate pipeline reads
   # (for_config: the show's language selects the reflexive rule), so an sl
   # show's "bati se" and "bati" are one lemma, not two rows.

@@ -144,6 +144,7 @@ class TestPostPipelineUploads < Minitest::Test
       raise LingQAgent::LessonExists.new("A lesson with the same URL already exists", lesson_id: 4242)
     end
     tracker = Object.new
+    tracker.define_singleton_method(:verify!) { nil }
     tracker.define_singleton_method(:record) { |*_| raise Errno::EACCES, "uploads.yml" }
 
     LingQAgent.stub(:new, ->(**_) { agent }) do
@@ -157,6 +158,46 @@ class TestPostPipelineUploads < Minitest::Test
     assert_includes uploads.warnings.first, "Errno::EACCES"
     assert(@logger.messages.any? { |m| m.start_with?("Warning: LingQ upload failed") && m.include?("Errno::EACCES") },
       @logger.messages.inspect)
+  end
+
+  # Q-140 (P19-4): a corrupt uploads.yml stops the LingQ upload before the
+  # lesson goes up (today: uploaded, then the strict record raises and the
+  # live lesson is untracked).
+  def test_lingq_corrupt_uploads_file_uploads_nothing_and_warns
+    File.write(File.join(@tmpdir, "uploads.yml"), "- not a hash\n")
+    uploads = build_uploads
+    called = false
+    agent = Object.new
+    agent.define_singleton_method(:upload) { |**_| (called = true) and 1 }
+
+    LingQAgent.stub(:new, ->(**_) { agent }) do
+      uploads.upload_to_lingq(episode: {title: "T"}, transcript: "x",
+        audio_path: "/tmp/a.mp3", base_name: "ep-2026-03-10")
+    end
+
+    refute called, "lesson uploaded against an unreadable ledger"
+    assert_equal 1, uploads.warnings.size
+    assert_includes uploads.warnings.first, "uploads.yml"
+    assert_equal "- not a hash\n", File.read(File.join(@tmpdir, "uploads.yml"))
+  end
+
+  # Q-140 (P19-4): the same for the generate-time YouTube upload — no video
+  # goes up that the record step could not track.
+  def test_upload_to_youtube_corrupt_uploads_file_uploads_nothing_and_warns
+    File.write(File.join(@tmpdir, "uploads.yml"), "- not a hash\n")
+    uploads = build_uploads_with_youtube
+    called = false
+    fake = Object.new
+    fake.define_singleton_method(:upload_episode) { |*, **| called = true }
+
+    YouTubePublisher.stub(:new, ->(**) { fake }) do
+      uploads.upload_to_youtube(episode: {title: "T"}, base_name: "ep-2026-03-10", output_path: "/tmp/a.mp3")
+    end
+
+    refute called, "video uploaded against an unreadable ledger"
+    assert_equal 1, uploads.warnings.size
+    assert_includes uploads.warnings.first, "YouTube upload failed"
+    assert_includes uploads.warnings.first, "uploads.yml"
   end
 
   # --- upload_to_youtube guards ---

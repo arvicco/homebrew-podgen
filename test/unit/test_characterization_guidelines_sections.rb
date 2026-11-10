@@ -65,7 +65,7 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
       present: [{"alpha" => "one", "beta" => "two"}, []],
       absent: [nil, []],
       empty: [{}, []],
-      heading_at_eof_no_newline: [nil, []],
+      heading_at_eof_no_newline: [{}, []], # Q-133: the empty section it is (was nil, read as absent)
       last_item_no_newline: [{"alpha" => "one", "beta" => "two"}, []],
       sub_bullets: [{"alpha" => "one", "beta" => "two"}, ["Generic: nested item '- sub: one' under '- alpha: one' is ignored (this entry takes no sub-items)"]],
       star_bullets: [{"beta" => "two"}, []],
@@ -519,7 +519,8 @@ class TestCharacterizationGuidelinesSections < Minitest::Test
 
   def test_cross_parser_empty_and_heading_at_eof_match_absent_except_kv
     SPECS.each_key do |m|
-      assert_equal EXPECTED[m][:absent], EXPECTED[m][:heading_at_eof_no_newline], m.to_s
+      # Q-133: a heading at EOF without a newline is an empty section.
+      assert_equal EXPECTED[m][:empty], EXPECTED[m][:heading_at_eof_no_newline], m.to_s
       next if m == :parse_kv_section
 
       assert_equal EXPECTED[m][:absent], EXPECTED[m][:empty], m.to_s

@@ -14,6 +14,23 @@ class TestUploadTracker < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # --- verify! (Q-140) ---
+
+  def test_verify_corrupt_file_raises_naming_the_file
+    File.write(@path, "- not a hash\n")
+    error = assert_raises(RuntimeError) { @tracker.verify! }
+    assert_includes error.message, @path
+  end
+
+  def test_verify_never_migrates_the_legacy_file
+    legacy = File.join(@tmpdir, "lingq_uploads.yml")
+    File.write(legacy, { "123" => { "ep" => 1 } }.to_yaml)
+
+    assert_nil @tracker.verify!
+    assert File.exist?(legacy)
+    refute File.exist?(@path)
+  end
+
   # --- load ---
 
   def test_load_empty_when_no_file
