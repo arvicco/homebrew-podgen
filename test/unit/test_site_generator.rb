@@ -743,6 +743,62 @@ class TestSiteGenerator < Minitest::Test
     assert File.exist?(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15_cover.jpg"))
   end
 
+  # --- title escaping (P19-1) ---
+
+  def test_generate_plain_title_renders_unchanged_markup
+    create_mp3("mypod-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"), "# Plain Title\n\n## Transcript\n\nText.")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_cover.jpg"), "fake image data")
+    write_history([{ "date" => "2026-01-15", "title" => "Plain Title" }])
+
+    build_generator(image: "cover.jpg").generate
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    assert_includes page, "<title>Plain Title — My Podcast</title>"
+    assert_includes page, 'alt="Plain Title">'
+    assert_includes page, "<h1>Plain Title</h1>"
+    assert_includes index, "<title>My Podcast</title>"
+    assert_includes index, 'alt="My Podcast">'
+    assert_includes index, "<h1>My Podcast"
+    assert_includes index, 'href="episodes/mypod-2026-01-15.html">Plain Title</a>'
+  end
+
+  def test_generate_title_with_markup_characters_is_escaped_on_page_and_index
+    create_mp3("mypod-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"), "# A \"b\" <i> & c\n\n## Transcript\n\nText.")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_cover.jpg"), "fake image data")
+    write_history([{ "date" => "2026-01-15", "title" => "ignored" }])
+
+    build_generator(title: "Pod <b> & \"Co\"", image: "cover.jpg").generate
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    assert_includes page, "<title>A \"b\" &lt;i&gt; &amp; c — Pod &lt;b&gt; &amp; \"Co\"</title>"
+    assert_includes page, 'alt="A &quot;b&quot; &lt;i&gt; &amp; c">'
+    assert_includes page, "<h1>A \"b\" &lt;i&gt; &amp; c</h1>"
+    assert_includes index, "<title>Pod &lt;b&gt; &amp; \"Co\"</title>"
+    assert_includes index, 'alt="Pod &lt;b&gt; &amp; &quot;Co&quot;">'
+    assert_includes index, "<h1>Pod &lt;b&gt; &amp; \"Co\""
+    assert_includes index, 'href="episodes/mypod-2026-01-15.html">A "b" &lt;i&gt; &amp; c</a>'
+    refute_includes page, "<i>"
+    refute_includes index, "<i>"
+    refute_includes index, "<b>"
+  end
+
+  def test_generate_history_title_with_ampersand_is_escaped_on_language_page
+    create_mp3("mypod-2026-01-15.mp3")
+    create_mp3("mypod-2026-01-15-es.mp3")
+    write_history([{ "date" => "2026-01-15", "title" => "Tom & Jerry <x>" }])
+
+    build_generator(languages: [{ "code" => "en" }, { "code" => "es" }]).generate
+
+    es_index = File.read(File.join(@podcast_dir, "site", "es", "index.html"))
+    es_page = File.read(File.join(@podcast_dir, "site", "es", "episodes", "mypod-2026-01-15-es.html"))
+    assert_includes es_index, ">Tom &amp; Jerry &lt;x&gt;</a>"
+    assert_includes es_page, "<h1>Tom &amp; Jerry &lt;x&gt;</h1>"
+  end
+
   def test_episode_page_no_cover_when_absent
     create_mp3("mypod-2026-01-15.mp3")
     write_history([{ "date" => "2026-01-15", "title" => "Ep" }])
@@ -990,16 +1046,16 @@ class TestSiteGenerator < Minitest::Test
 
   FakeConfig = Struct.new(:episodes_dir, :languages, :base_url, :history_path, :title, :description, :image, :site_config, :site_css_path, :favicon_path, keyword_init: true)
 
-  def build_generator(languages: nil, base_url: nil, clean: false, site_config: nil, site_css_path: nil, favicon_path: nil, description: "A test podcast")
+  def build_generator(languages: nil, base_url: nil, clean: false, site_config: nil, site_css_path: nil, favicon_path: nil, description: "A test podcast", title: "My Podcast", image: nil)
     languages ||= [{ "code" => "en" }]
     config = FakeConfig.new(
       episodes_dir: @episodes_dir,
       languages: languages,
       base_url: base_url,
       history_path: @history_path,
-      title: "My Podcast",
+      title: title,
       description: description,
-      image: nil,
+      image: image,
       site_config: site_config || {},
       site_css_path: site_css_path,
       favicon_path: favicon_path
