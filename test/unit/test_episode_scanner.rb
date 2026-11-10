@@ -118,6 +118,14 @@ class TestEpisodeScanner < Minitest::Test
     assert_equal ["pod-2026-05-17"], EpisodeScanner.scan(@dir, episode_id: "2026-05-17").map { |e| e[:base_name] }
   end
 
+  def test_scan_full_basename_selects_exactly_that_episode
+    %w[pod-2026-05-16 pod-2026-05-16a xpod-2026-05-16a].each do |b|
+      touch("#{b}.mp3")
+      touch("#{b}_transcript.md")
+    end
+    assert_equal ["pod-2026-05-16a"], EpisodeScanner.scan(@dir, episode_id: "pod-2026-05-16a").map { |e| e[:base_name] }
+  end
+
   def test_scan_with_nil_episode_id_same_as_omitted
     touch("pod-2026-05-16.mp3")
     touch("pod-2026-05-16_transcript.md")

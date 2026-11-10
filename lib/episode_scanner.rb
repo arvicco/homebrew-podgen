@@ -9,7 +9,7 @@ require_relative "episode_filtering"
 # of `{ base_name:, mp3_path:, transcript_path: }` hashes sorted by basename
 # (chronological since basenames embed the date).
 #
-# When `episode_id:` (a full YYYY-MM-DD[a-z]) is given, the result is filtered to entries whose
+# When `episode_id:` (a full YYYY-MM-DD[a-z], or a full basename) is given, the result is filtered to entries whose
 # basename ends with that id — same semantics PublishCommand has used for
 # its `--date` flag, now applied to every publisher that consumes the scan.
 module EpisodeScanner
@@ -28,14 +28,16 @@ module EpisodeScanner
       end
 
     return episodes unless episode_id
-    # Q-132: only a full date (callers normalise short forms first) is
-    # matched, and only as the basename's whole date[slot] tail.
-    raise ArgumentError, "episode id must be YYYY-MM-DD[a-z], got #{episode_id.inspect}" unless episode_id.match?(EPISODE_ID_RE)
+    # Q-132: a full date (callers normalise short forms first) is matched
+    # as the basename's whole date[slot] tail; a full basename exactly.
+    return episodes.select { |ep| ep[:base_name].end_with?("-#{episode_id}") } if episode_id.match?(EPISODE_ID_RE)
+    return episodes.select { |ep| ep[:base_name] == episode_id } if episode_id.match?(BASENAME_ID_RE)
 
-    episodes.select { |ep| ep[:base_name].end_with?("-#{episode_id}") }
+    raise ArgumentError, "episode id must be YYYY-MM-DD[a-z] or <podcast>-YYYY-MM-DD[a-z], got #{episode_id.inspect}"
   end
 
   EPISODE_ID_RE = /\A\d{4}-\d{2}-\d{2}[a-z]?\z/
+  BASENAME_ID_RE = /\A.+-\d{4}-\d{2}-\d{2}[a-z]?\z/
 
   # Prefer the transcribed version (language pipeline) over the authored
   # script (news pipeline). Some publishers may need either; the preference
