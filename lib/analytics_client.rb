@@ -151,8 +151,9 @@ class AnalyticsClient
     parsed["data"] || []
   end
 
+  # Backslash first, then the quote (P18-6): `x\'` must not close the literal.
   def escape(str)
-    str.gsub("'", "\\\\'")
+    str.gsub("\\") { "\\\\" }.gsub("'") { "\\'" }
   end
 
   UA_PATTERNS = [
