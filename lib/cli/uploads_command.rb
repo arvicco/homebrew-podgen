@@ -66,6 +66,7 @@ module PodgenCLI
         return 2
       end
 
+      $stdout.sync = true # stdout is a launchd log file: lines land in time order with stderr's markers (Q-159 (12))
       with_uploads_lock { run_batch(pods) }
     end
 
