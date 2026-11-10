@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "optparse"
+require "fileutils"
 
 root = File.expand_path("../..", __dir__)
 
@@ -10,6 +11,7 @@ require_relative File.join(root, "lib", "r2_publisher")
 require_relative File.join(root, "lib", "lingq_publisher")
 require_relative File.join(root, "lib", "youtube_publisher")
 require_relative File.join(root, "lib", "episode_filtering")
+require_relative File.join(root, "lib", "production_run")
 
 module PodgenCLI
   # Per-tick batch upload across multiple podcasts.
@@ -63,6 +65,39 @@ module PodgenCLI
         return 2
       end
 
+      with_uploads_lock { run_batch(pods) }
+    end
+
+    private
+
+    # P18-5 (Q-128): the batch holds output/uploads.lock for its lifetime so
+    # the dev-loop's production-run yield (ProductionRun.yield_reason,
+    # scripts/prod_guard.sh) covers it — its YouTube code loads lazily. A
+    # second batch refuses before any upload. Three tries ride over a yield
+    # probe's own momentary LOCK_NB at the instant the batch starts.
+    def with_uploads_lock
+      path = File.join(PodcastConfig.root, "output", ProductionRun::UPLOADS_LOCK)
+      FileUtils.mkdir_p(File.dirname(path))
+      lock = File.open(path, File::RDWR | File::CREAT, 0o644)
+      acquired = 3.times.any? do |i|
+        sleep(0.1) if i.positive?
+        lock.flock(File::LOCK_EX | File::LOCK_NB)
+      end
+      unless acquired
+        $stderr.puts "uploads: another uploads batch is running (lockfile: #{path})"
+        return 1
+      end
+
+      begin
+        yield
+      ensure
+        lock.flock(File::LOCK_UN)
+      end
+    ensure
+      lock&.close
+    end
+
+    def run_batch(pods)
       max_msg = @max ? " (yt-max #{@max})" : ""
       puts "uploads: #{@mode} mode across #{pods.join(', ')}#{max_msg}"
 
@@ -101,8 +136,6 @@ module PodgenCLI
       # authorized) → exit 1.
       failures.empty? && tick.not_authorized.nil? ? 0 : 1
     end
-
-    private
 
     Tick = Struct.new(:per_pod, :rate_limited, :not_authorized, keyword_init: true)
 

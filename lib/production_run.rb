@@ -11,6 +11,11 @@ module ProductionRun
   # Keep in step with `podgen schedule --time`.
   LAUNCHD_START = "16:30"
 
+  # P18-5 (Q-128): the uploads batch (launchd 10:30, 20+ min) holds an
+  # exclusive flock on output/uploads.lock for its lifetime — it loads its
+  # YouTube code lazily, so a lib/ edit mid-batch could load half-edited code.
+  UPLOADS_LOCK = "uploads.lock"
+
   # Podcast names whose run.lock is currently held by another process.
   # Never creates or writes a lock file; unreadable ones count as free.
   def running(output_root:)
@@ -38,7 +43,13 @@ module ProductionRun
     end
 
     names = running(output_root: output_root)
-    names.empty? ? nil : "production run active: #{names.join(", ")}"
+    return "production run active: #{names.join(", ")}" unless names.empty?
+
+    uploads_active?(output_root: output_root) ? "uploads batch active" : nil
+  end
+
+  def uploads_active?(output_root:)
+    locked?(File.join(output_root, UPLOADS_LOCK))
   end
 
   # flock works on a read-only descriptor, so a read-only lock file is
