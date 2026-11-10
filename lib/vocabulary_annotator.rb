@@ -13,6 +13,8 @@ require_relative "tell/espeak"
 require_relative "tell/hunspell"
 require_relative "tell/icu_phonetic"
 require_relative "key_terms"
+require_relative "transcript_renderer"
+require_relative "language_names"
 
 class VocabularyAnnotator
   include Loggable
@@ -218,8 +220,10 @@ class VocabularyAnnotator
 
   CYRILLIC_LANGUAGES = Set.new(%w[russian ukrainian bulgarian serbian macedonian belarusian]).freeze
 
+  # language: a name ("Russian") or, as the pipeline passes it, a code ("ru").
   def sanitize_script(entries, language)
-    return entries if CYRILLIC_LANGUAGES.include?(language.to_s.downcase)
+    name = LANGUAGE_NAMES.fetch(language.to_s.downcase, language.to_s)
+    return entries if CYRILLIC_LANGUAGES.include?(name.downcase)
 
     entries.each do |entry|
       %i[word lemma].each do |field|
@@ -495,8 +499,8 @@ class VocabularyAnnotator
 
   # Fills entries from the cache in place and returns { lang => entries still
   # missing that language }. A lemma is a hit when every target language has
-  # a cached translation (and similar-language translations when the cognate
-  # filter needs them).
+  # a non-blank cached translation for the entry's part of speech (and
+  # similar-language translations when the cognate filter needs them).
   def apply_cache!(entries, target_languages, filters, cache)
     multi = target_languages.length > 1
     needs_similar = filters[:similar]&.split(/,\s*/)&.any? { |l| target_languages.none? { |tl| tl.casecmp?(l) } }
@@ -504,8 +508,8 @@ class VocabularyAnnotator
     hits = 0
 
     entries.each do |entry|
-      cached = cache.fetch(entry[:lemma])
-      missing = target_languages.reject { |tl| cached&.dig("translations", tl) }
+      cached = cache.fetch(entry[:lemma], pos: entry[:pos])
+      missing = target_languages.reject { |tl| present?(cached&.dig("translations", tl)) }
       missing = [target_languages.first] if missing.empty? && needs_similar && cached["similar_translations"].nil?
       missing.empty? ? hits += 1 : missing.each { |tl| misses[tl] << entry }
       next unless cached
@@ -529,27 +533,31 @@ class VocabularyAnnotator
     misses
   end
 
-  # Stores every freshly enriched entry (per language that came back) and
-  # writes the cache once.
+  # Stores every freshly enriched entry (per language that came back with a
+  # non-blank translation) and writes the cache once.
   def store_in_cache!(misses, target_languages, cache, episode)
     misses.values.flatten.uniq(&:object_id).each do |entry|
       translations = if target_languages.length > 1
-        (entry[:translations] || {}).compact
+        (entry[:translations] || {}).select { |_, v| present?(v) }
       else
-        entry[:translation] ? { target_languages.first => entry[:translation] } : {}
+        present?(entry[:translation]) ? { target_languages.first => entry[:translation] } : {}
       end
       next if translations.empty?
 
       definitions = if target_languages.length > 1
-        (entry[:definitions] || {}).compact.slice(*translations.keys)
+        (entry[:definitions] || {}).select { |_, v| present?(v) }.slice(*translations.keys)
       else
-        entry[:definition] ? { target_languages.first => entry[:definition] } : {}
+        present?(entry[:definition]) ? { target_languages.first => entry[:definition] } : {}
       end
-      cache.store(entry[:lemma], translations: translations, definitions: definitions,
+      cache.store(entry[:lemma], pos: entry[:pos], translations: translations, definitions: definitions,
         pronunciation: entry[:pronunciation],
         similar_translations: entry[:similar_translations], first_seen: episode)
     end
     cache.save
+  end
+
+  def present?(value)
+    !value.to_s.strip.empty?
   end
 
   def call_enrich_api(entries, language:, target_language:, filters:)
@@ -871,10 +879,15 @@ class VocabularyAnnotator
     head_forms.filter_map { |f| text =~ /\b#{Regexp.escape(f)}\b/i }.min || Float::INFINITY
   end
 
+  # A target language without a gloss gets MISSING_GLOSS_LINE, so the
+  # renderer's positional parse keeps every gloss under its own language.
+  MISSING_GLOSS_LINE = "  - #{TranscriptRenderer::MISSING_GLOSS}"
+
   def vocab_entry_lines(entry, multi, target_languages)
     lines = []
     line = "- **#{entry[:lemma]}**"
-    line += " #{entry[:ipa]}" if entry[:ipa]
+    ipa = entry[:ipa].to_s.delete("/").strip
+    line += " /#{ipa}/" unless ipa.empty?
     line += " (#{entry[:level]} #{entry[:pos]})"
     # Show word forms that differ from lemma, excluding particles
     _head, particle_forms = partition_forms(entry)
@@ -887,19 +900,21 @@ class VocabularyAnnotator
     if multi
       lines << line
       target_languages.each do |tl|
-        translation = entry.dig(:translations, tl)
-        definition = entry.dig(:definitions, tl)
-        next unless translation || definition
-        def_line = "  - #{translation}"
-        def_line += ". #{definition}" if definition
-        lines << def_line
+        gloss = gloss_text(entry.dig(:translations, tl), entry.dig(:definitions, tl))
+        lines << (gloss ? "  - #{gloss}" : MISSING_GLOSS_LINE)
       end
     else
-      line += " — #{entry[:translation]}" if entry[:translation]
-      line += ". #{entry[:definition]}" if entry[:definition]
+      gloss = gloss_text(entry[:translation], entry[:definition])
+      line += " — #{gloss}" if gloss
       lines << line
     end
     lines
+  end
+
+  # "translation. definition", either part alone, or nil when both are blank.
+  def gloss_text(translation, definition)
+    parts = [translation, definition].map { |s| s.to_s.strip }.reject(&:empty?)
+    parts.empty? ? nil : parts.join(". ")
   end
 
 end

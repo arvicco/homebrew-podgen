@@ -60,11 +60,46 @@ class TestVocabLedger < Minitest::Test
 
   def test_for_config_reads_the_episodes_dir_with_cutoff
     write_series(3, {0 => %w[x], 2 => %w[x]})
-    config = Struct.new(:episodes_dir).new(@dir)
+    config = Struct.new(:episodes_dir, :transcription_language).new(@dir, nil)
     assert_equal 3, VocabLedger.for_config(config).episodes
     ledger = VocabLedger.for_config(config, before: "ep-002")
     assert_equal 2, ledger.episodes
     assert_equal ["ep-000"], ledger.explained("x")
+  end
+
+  # --- P17-5 (Q-115): a reflexive verb and its bare form are one lemma ---
+
+  def test_allowed_bare_verb_after_reflexive_explained_polish
+    write_series(2, {0 => ["bać się"]})
+    ledger = VocabLedger.build(@dir, language: "pl")
+    refute ledger.allowed?("bać")
+    refute ledger.allowed?("bać się")
+    assert_equal 1, ledger.exposures("bać")
+  end
+
+  def test_allowed_reflexive_after_bare_verb_explained_slovenian
+    write_series(2, {0 => ["bati"]})
+    refute VocabLedger.build(@dir, language: "sl").allowed?("bati se")
+  end
+
+  def test_build_reflexive_and_bare_in_one_episode_count_once
+    write_series(1, {0 => ["vratiti", "vratiti se"]})
+    assert_equal 1, VocabLedger.build(@dir, language: "hr").exposures("vratiti")
+  end
+
+  def test_allowed_spanish_rse_and_other_languages_unaffected
+    write_series(2, {0 => ["bać się"]})
+    assert VocabLedger.build(@dir).allowed?("bać"), "no language: exact lemma"
+    write_series(2, {0 => ["quedarse"]})
+    assert VocabLedger.build(@dir, language: "es").allowed?("quedar")
+    write_series(2, {0 => ["bać się"]})
+    assert VocabLedger.build(@dir, language: "it").allowed?("bać")
+  end
+
+  def test_for_config_passes_the_transcription_language
+    write_series(2, {0 => ["bać się"]})
+    config = Struct.new(:episodes_dir, :transcription_language).new(@dir, "pl")
+    refute VocabLedger.for_config(config).allowed?("bać")
   end
 
   def test_build_missing_dir_is_empty

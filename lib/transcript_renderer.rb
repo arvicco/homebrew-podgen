@@ -17,6 +17,9 @@ module TranscriptRenderer
   MARKDOWN_LINK = /\[(#{LINK_TITLE})\]\((#{LINK_URL})\)/
   MARKDOWN_LINK_SPLIT = /(\[#{LINK_TITLE}\]\(#{LINK_URL}\))/
   MARKDOWN_LINK_EXACT = /\A#{MARKDOWN_LINK}\z/
+  # A multi-language gloss line carrying only this marks a target language
+  # the entry has no gloss for: the line keeps its position, holds no text.
+  MISSING_GLOSS = "—"
 
   # Converts a transcript/script body (after header extraction) to HTML.
   # When vocab: true (default), renders vocabulary section with linked bold words.
@@ -129,8 +132,10 @@ module TranscriptRenderer
         elsif line =~ /\A\s{2,}- / && current_entry && definition_index < languages.length
           def_text = stripped.sub(/\A- /, "")
           lang = languages[definition_index]
-          current_entry[:definitions][lang] = def_text
-          current_entry[:definition] = def_text if definition_index == 0
+          unless def_text == MISSING_GLOSS
+            current_entry[:definitions][lang] = def_text
+            current_entry[:definition] = def_text if current_entry[:definition].to_s.empty?
+          end
           definition_index += 1
         end
       end

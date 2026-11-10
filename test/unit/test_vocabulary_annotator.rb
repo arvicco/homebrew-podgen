@@ -948,6 +948,20 @@ class TestVocabularyAnnotator < Minitest::Test
     assert_equal "студентка", result.first[:lemma]
   end
 
+  # P17-5 (Q-115): the pipeline passes the transcription language CODE.
+  def test_sanitize_script_preserves_cyrillic_for_cyrillic_language_code
+    entries = [{ word: "собака", lemma: "собака", level: "B1", pos: "noun" }]
+    result = @annotator.send(:sanitize_script, entries, "ru")
+    assert_equal "собака", result.first[:lemma]
+    assert_equal "собака", result.first[:word]
+  end
+
+  def test_sanitize_script_replaces_cyrillic_homoglyphs_for_latin_language_code
+    entries = [{ word: "ištevanка", lemma: "ištevanка", level: "C1", pos: "noun" }]
+    result = @annotator.send(:sanitize_script, entries, "sl")
+    assert_equal "ištevanka", result.first[:lemma]
+  end
+
   def test_sanitize_script_leaves_clean_latin_unchanged
     entries = [{ word: "ištevanka", lemma: "ištevanka", level: "C1", pos: "noun" }]
     result = @annotator.send(:sanitize_script, entries, "Slovenian")
