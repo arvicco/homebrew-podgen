@@ -4,6 +4,7 @@ require "set"
 require "tmpdir"
 require "uri"
 require "open3"
+require "securerandom"
 require_relative "loggable"
 require_relative "sources/rss_source"
 require_relative "http_downloader"
@@ -103,7 +104,7 @@ class EpisodeSource
 
   def download_audio(episode)
     ext = audio_extension_for(episode)
-    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}#{ext}")
+    path = File.join(Dir.tmpdir, "podgen_source_#{Process.pid}_#{SecureRandom.hex(4)}#{ext}")
     HttpDownloader.new(logger: @logger).download(episode[:audio_url], path)
     probe_and_fix_extension(path)
   end

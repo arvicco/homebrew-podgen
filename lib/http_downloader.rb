@@ -2,6 +2,7 @@
 
 require "net/http"
 require "uri"
+require "securerandom"
 require_relative "loggable"
 require_relative "retryable"
 
@@ -82,7 +83,7 @@ class HttpDownloader
 
   def write_body(response, path, uri)
     bytes = 0
-    tmp = "#{path}.part.#{Process.pid}"
+    tmp = "#{path}.part.#{Process.pid}_#{SecureRandom.hex(4)}"
     begin
       File.open(tmp, "wb") do |f|
         response.read_body do |chunk|
