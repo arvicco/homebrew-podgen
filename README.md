@@ -194,6 +194,9 @@ podgen move bajke 2026-05-16d 2026-05-18c                # explicit target suffi
 podgen move bajke '2026-05-16+' 2026-05-18
 
 # Scrap last episode (delete files + remove from history)
+# The feed on disk is not rewritten by scrap; while it still lists the
+# scrapped episode's <guid>, a same-day regenerate takes the next suffix
+# (2026-03-15 -> 2026-03-15a), so podcast apps never see one guid with new audio.
 podgen scrap ruby_world
 
 # Scrap a specific episode by date (with optional suffix for multi-episode days)
