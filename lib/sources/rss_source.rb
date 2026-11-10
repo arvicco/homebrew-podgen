@@ -121,7 +121,7 @@ class RSSSource
     findings.each do |item|
       text = "#{item[:title]} #{item[:summary]}".downcase
       matched_topic = keyword_map.find { |_topic, keywords|
-        keywords.any? { |kw| text.include?(kw) }
+        keywords.any? { |kw| keyword_in?(text, kw) }
       }&.first
 
       bucket_name = matched_topic || "Other recent headlines (RSS)"
@@ -132,9 +132,20 @@ class RSSSource
     buckets.map { |topic, items| { topic: topic, findings: items } }
   end
 
-  # Tokenize a topic string into significant lowercase keywords (3+ chars).
+  # Tokenize a topic string into significant lowercase keywords: words of
+  # 3+ chars (any script) plus all-caps two-letter acronyms ("AI", "EU").
   def topic_keywords(topic)
-    topic.downcase.scan(/[a-z0-9]+/).select { |w| w.length >= 3 }
+    topic.scan(/[[:alnum:]]+/)
+      .select { |w| w.length >= 3 || w.match?(/\A[[:upper:]]{2}\z/) }
+      .map(&:downcase)
+  end
+
+  # Substring match for 3+ char keywords; whole-word match for the short
+  # acronyms, so "ai" never matches inside "rain".
+  def keyword_in?(text, keyword)
+    return text.include?(keyword) if keyword.length >= 3
+
+    text.match?(/(?<![[:alnum:]])#{Regexp.escape(keyword)}(?![[:alnum:]])/)
   end
 
   def fetch_feed(feed_url, tag: nil)
@@ -180,6 +191,7 @@ class RSSSource
     cutoff = Time.now - (LOOKBACK_HOURS * 3600)
     feed = RSS::Parser.parse(xml, false)
     return [] unless feed
+    return parse_atom_entries(feed, cutoff) if feed.is_a?(RSS::Atom::Feed)
 
     feed.items.filter_map do |item|
       pub_date = item.respond_to?(:pubDate) ? item.pubDate : nil
@@ -203,6 +215,26 @@ class RSSSource
   rescue RSS::Error, RSS::NotWellFormedError => e
     log("RSS parse error: #{e.message}")
     []
+  end
+
+  # Atom entries (Q-134): element objects stringify as markup, so read
+  # title.content, the alternate link's href, summary or content, updated.
+  def parse_atom_entries(feed, cutoff)
+    feed.entries.filter_map do |entry|
+      updated = entry.updated&.content || entry.published&.content
+      next if updated && updated < cutoff
+
+      title = entry.title&.content.to_s.strip
+      alternate = entry.links.find { |l| l.rel.nil? || l.rel == "alternate" }
+      link = alternate&.href.to_s.strip
+      next if title.empty? || link.empty?
+
+      body = entry.summary&.content || entry.content&.content
+      summary = strip_html(body.to_s).strip
+      summary = summary[0, 500] if summary.length > 500
+
+      { title: title, url: link, summary: summary }
+    end
   end
 
   def strip_html(html)

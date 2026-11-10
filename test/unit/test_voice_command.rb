@@ -140,6 +140,31 @@ class TestVoiceCommand < Minitest::Test
     assert_equal 0, code
   end
 
+  # Q-123 (P18-2): the feed's primary duration is the top-level one.
+  def test_run_force_primary_refreshes_top_level_duration
+    config = setup_fake_podcast("mypod", languages: %w[en it])
+    base = "mypod-2026-04-29"
+    ScriptArtifact.write(File.join(config.episodes_dir, "#{base}_script.json"),
+      { title: "T", segments: [{ name: "S", text: "x" }], sources: [] })
+    File.write(File.join(config.episodes_dir, "#{base}_script.md"), "# T\n\nx.")
+    File.write(File.join(config.episodes_dir, "#{base}.mp3"), "old")
+    File.write(config.history_path, [{ "date" => "2026-04-29", "title" => "T", "topics" => [], "urls" => [],
+                                       "duration" => 300.0, "basename" => base,
+                                       "languages" => { "en" => { "duration" => 300.0 } } }].to_yaml)
+    fake_voicer = Object.new
+    fake_voicer.define_singleton_method(:voice) { |**| nil }
+
+    Voicer.stub(:new, ->(**) { fake_voicer }) do
+      AudioAssembler.stub(:probe_duration, 61.0) do
+        capture_io { PodgenCLI::VoiceCommand.new(["--date", "2026-04-29", "--lang", "en", "--force", "mypod"], { verbosity: :quiet }).run }
+      end
+    end
+
+    entry = YAML.load_file(config.history_path).first
+    assert_equal 61.0, entry["duration"]
+    assert_equal 61.0, entry.dig("languages", "en", "duration")
+  end
+
   private
 
   def setup_fake_podcast(name, languages: nil)

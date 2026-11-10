@@ -41,31 +41,7 @@ module PodgenCLI
         end
       end
 
-      # Convert markdown transcripts to HTML for podcast apps
-      RssGenerator.convert_transcripts(config.episodes_dir)
-
-      feed_paths = []
-
-      config.languages.each do |lang|
-        lang_code = lang["code"]
-
-        feed_path = File.join(File.dirname(config.feed_path), config.feed_file_name(lang_code))
-
-        generator = RssGenerator.new(
-          episodes_dir: config.episodes_dir,
-          feed_path: feed_path,
-          title: config.title,
-          description: config.description,
-          author: config.author,
-          language: lang_code,
-          languages: config.language_codes,
-          base_url: base_url,
-          image: config.image,
-          history_path: config.history_path
-        )
-        generator.generate
-        feed_paths << feed_path
-      end
+      feed_paths = self.class.generate_feeds(config, base_url: base_url)
 
       unless @options[:verbosity] == :quiet
         feed_paths.each { |fp| puts "Feed: #{fp}" }
@@ -80,6 +56,35 @@ module PodgenCLI
       end
 
       0
+    end
+
+    # Converts transcripts and writes one feed per configured language;
+    # returns the feed paths. Shared with `translate` (Q-123).
+    def self.generate_feeds(config, base_url:, logger: nil)
+      # Convert markdown transcripts to HTML for podcast apps
+      RssGenerator.convert_transcripts(config.episodes_dir)
+
+      config.languages.map do |lang|
+        lang_code = lang["code"]
+
+        feed_path = File.join(File.dirname(config.feed_path), config.feed_file_name(lang_code))
+
+        generator = RssGenerator.new(
+          episodes_dir: config.episodes_dir,
+          feed_path: feed_path,
+          title: config.title,
+          description: config.description,
+          author: config.author,
+          language: lang_code,
+          languages: config.language_codes,
+          base_url: base_url,
+          image: config.image,
+          history_path: config.history_path,
+          logger: logger
+        )
+        generator.generate
+        feed_path
+      end
     end
   end
 end
