@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "base_validator"
-require_relative "../yaml_loader"
+require_relative "../podcast_config"
 
 module Validators
   class GuidelinesValidator < BaseValidator
@@ -33,16 +33,16 @@ module Validators
         end
       end
 
+      type_error = PodcastConfig.type_error(@config.type)
+      @errors << "Guidelines: #{type_error}" if type_error
+
       @config.parser_warnings.each { |w| @warnings << "Guidelines: #{w}" }
 
       if @config.type == "news" && File.exist?(@config.queue_path)
         begin
-          data = YamlLoader.load(@config.queue_path, default: nil, raise_on_error: true)
-          unless data.is_a?(Hash) && data["topics"].is_a?(Array)
-            @warnings << "Guidelines: queue.yml has unexpected format"
-          end
-        rescue => e # skippable: reported as a validation warning
-          @warnings << "Guidelines: queue.yml parse error: #{e.class}: #{e.message}"
+          PodcastConfig.read_queue_topics(@config.queue_path)
+        rescue => e # skippable: reported as a validation error; generate aborts on the same read (Q-141)
+          @errors << "Guidelines: #{e.message}"
         end
       end
     end

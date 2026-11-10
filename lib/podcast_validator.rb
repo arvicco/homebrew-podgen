@@ -57,7 +57,7 @@ class PodcastValidator
 
   def run
     validators = VALIDATORS.dup
-    validators << (PIPELINE_VALIDATORS[@config.type] || Validators::NewsPipelineValidator)
+    validators << PIPELINE_VALIDATORS[@config.type] # an unknown type is a Guidelines error, not news (Q-133)
     validators << Validators::OrphansValidator
 
     validators.compact.each { |klass| merge_result(klass.new(@config).validate) }

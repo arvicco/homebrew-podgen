@@ -20,7 +20,11 @@ module PodgenCLI
 
       OptionParser.new do |opts|
         opts.on("--lang CODE", "Language code (default: from config); edit: target language") { |l| @lang = l }
-        opts.on("--min N", Integer, "review: lemmas explained at least N times (default 3)") { |n| @min = n }
+        opts.on("--min N", Integer, "review: lemmas explained at least N times (default 3)") do |n|
+          # Below 1 lists every explained lemma, and --promote would write them all (Q-133).
+          raise OptionParser::InvalidArgument, "--min #{n} (must be at least 1)" unless n >= 1
+          @min = n
+        end
         opts.on("--promote", "review: add every listed lemma to known vocabulary") { @promote = true }
         opts.on("--translation TEXT", "edit: cached translation") { |t| @translation = t }
         opts.on("--definition TEXT", "edit: cached definition") { |d| @definition = d }

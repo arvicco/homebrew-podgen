@@ -37,6 +37,7 @@ class PostPipelineUploads
 
     @logger.phase_start("LingQ Upload")
     lc = @config.lingq_config
+    UploadTracker.for_config(@config).verify! # before the lesson goes up: the record below reads strictly (Q-140)
 
     agent = LingQAgent.new(logger: @logger, api_key: lc&.[](:token))
     lesson_id = agent.upload(
@@ -91,6 +92,7 @@ class PostPipelineUploads
     end
 
     @logger.phase_start("YouTube Upload")
+    UploadTracker.for_config(@config).verify! # before the video goes up: the record reads strictly (Q-140)
 
     # One upload routine shared with publish/yt-batch (P4-8). The pipeline's
     # in-memory title/description win over the transcript file, and its fresh
