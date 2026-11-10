@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "optparse"
+require "did_you_mean"
 
 root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "podcast_config")
@@ -36,29 +37,16 @@ module PodgenCLI
       2
     end
 
+    # Q-159 (11): DidYouMean's distance raises on invalid UTF-8 argv, so
+    # the name is scrubbed first; the suggestion list still prints.
     def suggest_similar(name, available)
-      close = available.select { |a| levenshtein(name, a) <= [name.length / 3, 2].max }
+      clean = name.scrub
+      close = available.select { |a| DidYouMean::Levenshtein.distance(clean, a) <= [clean.length / 3, 2].max }
       return if close.empty?
 
       $stderr.puts "Did you mean?"
       close.each { |c| $stderr.puts "  - #{c}" }
       $stderr.puts
-    end
-
-    def levenshtein(a, b)
-      m, n = a.length, b.length
-      d = Array.new(m + 1) { |i| i }
-      (1..n).each do |j|
-        prev = d[0]
-        d[0] = j
-        (1..m).each do |i|
-          cost = a[i - 1] == b[j - 1] ? 0 : 1
-          temp = d[i]
-          d[i] = [d[i] + 1, d[i - 1] + 1, prev + cost].min
-          prev = temp
-        end
-      end
-      d[m]
     end
 
     # Creates and returns a PodcastConfig, calling load_env! automatically.
