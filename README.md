@@ -1378,6 +1378,7 @@ Failure rules:
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
 - **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
+- **Another batch running** (it holds `output/uploads.lock`): the tick is skipped before any upload and exits `3`, printing `uploads: batch skipped: another batch was running` (stdout) and the lockfile path (stderr). `podgen status` reads it as a skipped tick, not a failure: `uploads batch skipped <begin stamp>: another batch was running` (OK level), and the running batch's counts still apply.
 
 Run ad-hoc (no schedule) with the same semantics:
 

@@ -544,19 +544,21 @@ module PodgenCLI
 
       legacy = []
       dated = []
-      pending = first_stamp = current = previous = nil
+      pending = first_stamp = current = previous = previous_pending = nil
       File.foreach(@uploads_stdout_log) do |raw|
         line = raw.scrub
         if (m = line.match(UPLOAD_MARKER_RE))
+          previous_pending = pending
           pending = marker_date(m)
           first_stamp ||= line[0, 19]
           previous = current
           current = nil
         elsif line.match?(UPLOAD_SKIP_RE)
           # Q-159 (12): the marker was a skipped tick's; the running batch's
-          # block continues.
+          # block continues, or (stdout buffered to its exit) is still to come
+          # under its own marker's date.
           current = previous
-          pending = nil
+          pending = previous_pending
         elsif line.match?(UPLOAD_BLOCK_RE)
           current = [line]
           first_stamp ? dated << [pending, current] : legacy << current
