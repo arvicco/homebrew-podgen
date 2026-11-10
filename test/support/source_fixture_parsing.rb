@@ -57,7 +57,7 @@ module SourceFixtureParsing
   def sdk_message(body)
     full = JSON.parse(JSON.generate(body), symbolize_names: true).merge(
       id: "msg_fixture", type: "message", model: "claude-fixture", stop_sequence: nil,
-      usage: { input_tokens: 0, output_tokens: 0 }
+      usage: {input_tokens: 0, output_tokens: 0}
     ) { |_key, recorded, _default| recorded }
     message = Anthropic::Internal::Type::Converter.coerce(Anthropic::Models::Message, full)
     raise "fixture did not coerce to an SDK message" unless message.is_a?(Anthropic::Models::Message)
