@@ -826,6 +826,20 @@ class TestGenerateCommand < Minitest::Test
     assert_includes cmd.instance_variable_get(:@logger).messages, "Review bundle saved: #{path}"
   end
 
+  # Q-107 (P20-7): unresolved blockers are one degradation, one counted
+  # line; each blocker's message is in the log, not in the count.
+  def test_review_script_unresolved_blockers_count_one_warning
+    cmd, _config = build_sl_en_command
+    two = [BLOCKER_ISSUE, BLOCKER_ISSUE.merge(message: "Wrong weekday")]
+
+    review_with(cmd, [two, two, two])
+
+    assert_equal ["Script review: 2 unresolved blocker(s) after 2 retries"], cmd.instance_variable_get(:@warnings)
+    messages = cmd.instance_variable_get(:@logger).messages
+    assert_includes messages, "  unresolved blocker: Wrong date"
+    assert_includes messages, "  unresolved blocker: Wrong weekday"
+  end
+
   def test_review_script_clean_first_review_writes_no_bundle
     cmd, config = build_sl_en_command
 

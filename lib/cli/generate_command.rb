@@ -364,7 +364,7 @@ module PodgenCLI
         attempt += 1
         if attempt > MAX_REVIEW_RETRIES
           @warnings << "Script review: #{unfixed_blockers.length} unresolved blocker(s) after #{MAX_REVIEW_RETRIES} retries"
-          unfixed_blockers.each { |b| @warnings << "  - #{b[:message]}" }
+          unfixed_blockers.each { |b| @logger.log("  unresolved blocker: #{b[:message]}") } # one count, detail in the log (Q-107)
           @logger.log("Script review: proceeding with #{unfixed_blockers.length} unresolved blocker(s)")
           break
         end
