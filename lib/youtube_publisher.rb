@@ -121,7 +121,8 @@ class YouTubePublisher
 
     if pending.empty? && unfinished.empty?
       # finish_owed: false skipped owed steps of uploaded videos, so "all done" is untrue when any are owed.
-      owed_skipped = @options[:finish_owed] == false && owed_map.any? { |b, _| uploaded_map.key?(b) }
+      # Only scanned episodes count: an owed video whose mp3 is gone is never finished here.
+      owed_skipped = @options[:finish_owed] == false && episodes.any? { |ep| owed_map[ep[:base_name]] && uploaded_map.key?(ep[:base_name]) }
       puts "All episodes already uploaded to YouTube#{yt_config[:playlist] ? " playlist #{yt_config[:playlist]}" : ""}." unless quiet? || owed_skipped
       return Result.new(uploaded: 0, attempted: 0, rate_limited: false, errors: [])
     end

@@ -214,7 +214,7 @@ module PodgenCLI
     def generate_topics
       @logger.phase_start("Topics")
       topics = if @dry_run
-        t = @config.queue_topics
+        t = queue_topics!
         @logger.log("[dry-run] Using queue.yml topics: #{t.join(', ')}")
         t
       else
@@ -227,13 +227,19 @@ module PodgenCLI
         rescue => e # skippable: queue.yml topics stand in for generated ones
           @logger.log("Topic generation failed (#{e.class}: #{e.message}), falling back to queue.yml")
           @warnings << "Topic generation failed (#{e.class}: #{e.message}), fell back to queue.yml"
-          t = @config.queue_topics
+          t = queue_topics!
           @logger.log("Loaded #{t.length} fallback topics: #{t.join(', ')}")
           t
         end
       end
       @logger.phase_end("Topics")
       topics
+    end
+
+    # A missing queue.yml reads as nil (Q-160 point 1): fail the run with
+    # one clear message instead of a NoMethodError on nil.
+    def queue_topics!
+      @config.queue_topics || raise("no queue.yml topics to use (file missing); add queue.yml with a `topics:` list")
     end
 
     def research_topics(topics)
@@ -591,7 +597,6 @@ module PodgenCLI
       type_error = PodcastConfig.type_error(@config.type)
       return unless type_error
 
-      $stderr.puts "Error: guidelines.md: #{type_error}"
       raise "guidelines.md: #{type_error}"
     end
 

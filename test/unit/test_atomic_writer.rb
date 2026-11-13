@@ -101,6 +101,26 @@ class TestAtomicWriter < Minitest::Test
     assert_equal 0o644, mode, "Default permissions should be 0644"
   end
 
+  # Q-160 point 7: a rewrite keeps the existing file's mode.
+  def test_write_existing_file_keeps_its_mode
+    File.write(@path, "old")
+    File.chmod(0o600, @path)
+
+    AtomicWriter.write(@path, "new")
+    AtomicWriter.write_yaml(@path, {"a" => 1})
+
+    assert_equal 0o600, File.stat(@path).mode & 0o777
+  end
+
+  def test_write_explicit_perm_wins_over_existing_mode
+    File.write(@path, "old")
+    File.chmod(0o640, @path)
+
+    AtomicWriter.write(@path, "new", perm: 0o600)
+
+    assert_equal 0o600, File.stat(@path).mode & 0o777
+  end
+
   # --- Encoding ---
 
   def test_write_preserves_utf8

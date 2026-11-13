@@ -47,6 +47,9 @@ class ScriptReviewer
   # A weekday is auto-fixed only when the nearest candidate date lies within
   # this many days of the run date; beyond it the mismatch is reported.
   WEEKDAY_FIX_MAX_DAYS = 120
+  # Beyond it, a stated weekday right for any candidate this close to the
+  # run date (the other year, about six months out) is no issue.
+  WEEKDAY_MATCH_WINDOW_DAYS = 185
 
   WEEKDAY_PATTERN = /\b(#{WEEKDAYS.join("|")})\b(,?\s+)(#{MONTHS.join("|")})\s+(\d{1,2})(st|nd|rd|th)?\b/i
 
@@ -197,9 +200,12 @@ class ScriptReviewer
           actual_date = candidates.min_by { |d| (d - @date).abs }
           correct_weekday = actual_date.strftime("%A")
 
+          far = (actual_date - @date).abs > WEEKDAY_FIX_MAX_DAYS
           if stated_weekday.downcase == correct_weekday.downcase
             match
-          elsif (actual_date - @date).abs > WEEKDAY_FIX_MAX_DAYS
+          elsif far && candidates.any? { |d| (d - @date).abs <= WEEKDAY_MATCH_WINDOW_DAYS && d.strftime("%A").casecmp?(stated_weekday) }
+            match
+          elsif far
             # About six months out either year may be meant ("Friday,
             # January 1" read on July 1): reported, not rewritten, and not
             # a blocker — a regenerated script would say the same (P16-5).

@@ -31,6 +31,15 @@ class TestTranscriptRenderer < Minitest::Test
     assert_equal "plain text", @r.escape_html("plain text")
   end
 
+  # Q-160 point 14 (pinned): inputs are plain text, never HTML — an
+  # entity typed into a title or transcript displays literally, as the
+  # feed shows it. No unescape-first rule is content-safe: it would turn a
+  # title or transcript that quotes "&amp;" into "&".
+  def test_escape_html_is_not_idempotent_on_entities
+    assert_equal "Q&amp;amp;A", @r.escape_html("Q&amp;A")
+    assert_equal "&amp;lt;b&amp;gt;", @r.escape_html("&lt;b&gt;")
+  end
+
   # --- strip_bold_markers ---
 
   def test_strip_bold_markers_removes_stars

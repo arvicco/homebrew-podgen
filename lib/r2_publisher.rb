@@ -18,9 +18,9 @@ require_relative "publisher_shared"
 class R2Publisher
   include PublisherShared
 
-  # NB: scan_episodes (PublisherShared) is used only by tweet_new_episodes —
-  # the rclone sync runs against INCLUDE_GLOBS wholesale and is intentionally
-  # not episode-scoped.
+  # NB: scan_episodes (PublisherShared) scopes only tweet_new_episodes (and
+  # refuses an episode id that matches nothing) — the rclone sync runs
+  # against INCLUDE_GLOBS wholesale and is intentionally not episode-scoped.
   REQUIRED_ENV = %w[R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT R2_BUCKET].freeze
   INCLUDE_GLOBS = [
     "episodes/*.mp3",
@@ -71,6 +71,12 @@ class R2Publisher
                         errors: [{ type: :missing_env, message: msg }])
     end
 
+    if @episode_id && scan_episodes.empty?
+      msg = "No episode found matching '#{@episode_id}'"
+      $stderr.puts msg
+      return Result.new(synced: false, tweets_posted: 0, errors: [{ type: :no_match, message: msg }]) # a wrong id is a failed run, as on LingQ/YouTube
+    end
+
     RegenCache.ensure_regen(@config) { regenerate! }
 
     success = run_rclone_sync
@@ -82,9 +88,10 @@ class R2Publisher
 
     print_urls
 
+    @tweet_errors = []
     tweets_posted = @options[:dry_run] ? 0 : tweet_new_episodes
 
-    Result.new(synced: true, tweets_posted: tweets_posted, errors: [])
+    Result.new(synced: true, tweets_posted: tweets_posted, errors: @tweet_errors)
   end
 
   private
@@ -149,7 +156,13 @@ class R2Publisher
     cutoff = Date.today - (tc[:since] || 7)
     template = tc[:template]
 
-    eligible = scan_eligible_episodes(cutoff, tc[:languages])
+    begin
+      eligible = scan_eligible_episodes(cutoff, tc[:languages])
+    rescue => e # fatal for the tweets: an unreadable ledger read as {} would re-tweet everything
+      $stderr.puts "uploads ledger unreadable, tweeting nothing: #{e.message}"
+      @tweet_errors << { type: :publisher_crash, error_class: e.class.name, message: e.message }
+      return 0
+    end
     return 0 if eligible.empty?
 
     agent = active_twitter_agent

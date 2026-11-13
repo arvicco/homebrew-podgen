@@ -341,9 +341,10 @@ class TestBlueskySource < Minitest::Test
 
   # CRPR round 1 (P16-4): a 200 session reply without a usable token is a
   # failed login — a JSON body without accessJwt, or an HTML maintenance page
-  # parsed to a String — never a search with an empty bearer token.
+  # parsed to a String, or an empty body (nil) — never a search with an
+  # empty bearer token.
   def test_research_session_without_token_is_a_counted_warning_no_search
-    [{}, "<html>maintenance</html>"].each do |body|
+    [{}, "<html>maintenance</html>", nil].each do |body|
       ENV["BLUESKY_HANDLE"] = "user.bsky.social"
       ENV["BLUESKY_APP_PASSWORD"] = "secret"
       warnings = []

@@ -83,7 +83,6 @@ class TestTopicAgent < Minitest::Test
   # Q-130: a 401 never heals on a retry — one call, the SDK class intact.
   def test_generate_authentication_error_not_retried_class_kept
     agent = build_agent("Guidelines")
-    agent.define_singleton_method(:sleep) { |_| }
     calls = 0
     error = Anthropic::Errors::AuthenticationError.new(url: URI("https://api.anthropic.com/v1/messages"),
       status: 401, headers: {}, body: nil, request: nil, response: nil, message: "invalid x-api-key")

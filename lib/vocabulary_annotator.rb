@@ -74,7 +74,11 @@ class VocabularyAnnotator
     # Stage 2: Filter and cap before enrichment to minimize API work
     unless known_lemmas.empty?
       before = entries.length
-      entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) && !include_words.include?(e[:lemma].to_s.downcase) }
+      # Compared as the ledger's keys (reflexive particle stripped), like
+      # the vocab review report.
+      keys = ledger || VocabLedger.new(language: language)
+      known = known_lemmas.map { keys.lemma_key(it) }.to_set
+      entries.reject! { |e| known.include?(keys.lemma_key(e[:lemma])) && !include_words.include?(e[:lemma].to_s.downcase) }
       filtered = before - entries.length
       log("Filtered #{filtered} known words") if filtered > 0
     end

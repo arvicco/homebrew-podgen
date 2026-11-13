@@ -56,7 +56,7 @@ module PodgenCLI
       if Dir.exist?(old_config.episodes_dir)
         Dir.glob(File.join(old_config.episodes_dir, "*")).each do |src|
           basename = File.basename(src)
-          new_basename = basename.sub(/\A#{Regexp.escape(@podcast_name)}/, @new_name)
+          new_basename = basename.sub(/\A#{Regexp.escape(@podcast_name)}(?=-)/, @new_name)
           FileUtils.cp(src, File.join(new_episodes_dir, new_basename))
           episode_count += 1
         end
@@ -100,7 +100,7 @@ module PodgenCLI
     def copy_history(src, dest)
       entries = YamlLoader.load(src, default: nil)
       if entries.is_a?(Array)
-        prefix = /\A#{Regexp.escape(@podcast_name)}/
+        prefix = /\A#{Regexp.escape(@podcast_name)}(?=-)/
         renamed = entries.map do |entry|
           next entry unless entry.is_a?(Hash) && entry["basename"].is_a?(String)
           entry.merge("basename" => entry["basename"].sub(prefix, @new_name))
@@ -120,11 +120,11 @@ module PodgenCLI
           # Nested: platform → group → { basename → id }
           value.transform_values do |entries|
             next entries unless entries.is_a?(Hash)
-            entries.transform_keys { |k| k.sub(/\A#{Regexp.escape(old_name)}/, new_name) }
+            entries.transform_keys { |k| k.sub(/\A#{Regexp.escape(old_name)}(?=-)/, new_name) }
           end
         else
           # Flat: group → { basename → id } (legacy lingq_uploads.yml)
-          value.transform_keys { |k| k.sub(/\A#{Regexp.escape(old_name)}/, new_name) }
+          value.transform_keys { |k| k.sub(/\A#{Regexp.escape(old_name)}(?=-)/, new_name) }
         end
       end
     end

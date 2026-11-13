@@ -302,7 +302,7 @@ class TestGenerateCommand < Minitest::Test
       assert_equal ["Guidelines: unknown type '#{type}' (known: news, language)"], type_errors, type
       refute(result.passes.any? { it.start_with?("News:") }, "#{type}: news checks ran: #{result.passes.inspect}")
 
-      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :quiet})
+      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :normal})
       cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil } # no network/tools if the refusal regresses
       cmd.define_singleton_method(:preflight_network!) { |_| nil }
       cmd.define_singleton_method(:run_language_pipeline) { raise "language pipeline ran for type #{type}" }
@@ -311,7 +311,13 @@ class TestGenerateCommand < Minitest::Test
       _, err = capture_io { code = cmd.run }
 
       assert_equal 1, code, type
-      assert_includes err, "Error: guidelines.md: unknown type '#{type}' (known: news, language)"
+      # Q-160 point 17: the refusal prints what any failed run prints (the
+      # logged ERROR and the failure line), no extra "Error:" line first.
+      refusal = "guidelines.md: unknown type '#{type}' (known: news, language)"
+      lines = err.lines(chomp: true).grep(/unknown type/)
+      assert_equal 2, lines.size, "#{type}: #{lines.inspect}"
+      assert_match(/\A\[[^\]]*\] ERROR RuntimeError: #{Regexp.escape(refusal)}\z/, lines[0], type)
+      assert_equal "✗ Pipeline failed: #{refusal}", lines[1], type
       # The scheduled run's log ends in the refusal, not the previous run's outcome.
       log_path = config.log_path(Date.today)
       assert File.exist?(log_path), "#{type}: no run log"
@@ -477,6 +483,7 @@ class TestGenerateCommand < Minitest::Test
     links_path = File.join(@tmpdir, "links.yml")
     cmd.instance_variable_set(:@config, Struct.new(:type, :links_path).new("news", links_path))
     PriorityLinks.new(links_path).add("https://dead.example.com/b")
+    cmd.singleton_class.send(:remove_method, :produce_episodes)
     cmd.define_singleton_method(:produce_episodes) { |*| raise "TTS quota" }
     dead = Struct.new(:code, :body) { def [](_) = nil }.new("404", "")
 
@@ -536,6 +543,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_news_with_warnings_ends_log_with_warn_outcome
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :produce_episodes)
     cmd.define_singleton_method(:produce_episodes) do |_script, _research|
       @logger.error("Language es failed: RuntimeError: x")
       @warnings << "Language es failed: RuntimeError: x"
@@ -557,6 +565,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_news_failure_ends_log_with_error_outcome
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |*| raise "TTS quota" }
     code = nil
     capture_io { code = cmd.run }
@@ -669,6 +678,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_outcome_counts_logged_library_warnings
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
     cmd.define_singleton_method(:research_topics) do |_|
       @logger.warning("[ResearchAgent] Warning: Failed to research 'x' after 3 attempts: 401")
       []
@@ -694,11 +704,28 @@ class TestGenerateCommand < Minitest::Test
       cmd.instance_variable_get(:@warnings)
   end
 
+  def test_generate_topics_missing_queue_is_one_counted_error
+    [true, false].each do |dry_run|
+      cmd = runnable_command("news")
+      cmd.singleton_class.send(:remove_method, :generate_topics)
+      cmd.instance_variable_set(:@dry_run, dry_run)
+      cmd.instance_variable_set(:@guidelines, "g")
+      cmd.instance_variable_set(:@history, Struct.new(:recent_topics_summary).new(nil))
+      cmd.instance_variable_set(:@config, Struct.new(:type, :queue_topics).new("news", nil))
+      code = nil
+      TopicAgent.stub(:new, ->(**) { raise "401 revoked" }) { capture_io { code = cmd.run } }
+
+      assert_equal 1, code, "dry_run=#{dry_run}"
+      assert_match(/status=error .* first=RuntimeError: no queue\.yml topics/, last_log_line, "dry_run=#{dry_run}")
+    end
+  end
+
   # --- P8-1: minimum-research guard (Q-69) ---
 
   def test_run_news_topic_without_findings_dropped_from_script_input_with_warning
     cmd = researching_command({ "t1" => [{ title: "A", url: "https://e.x/a", summary: "s" }], "t2" => [] })
     script_input = nil
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |_t, research, _p| (script_input = research) && { title: "T", segments: [] } }
     code = run_with_fake_sources(cmd)
 
@@ -718,6 +745,7 @@ class TestGenerateCommand < Minitest::Test
   def test_run_news_no_findings_for_any_topic_fails_before_script_agent
     cmd = researching_command({ "t1" => [], "t2" => [] })
     script_called = false
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |*| (script_called = true) && { title: "T", segments: [] } }
     code = run_with_fake_sources(cmd)
 
@@ -996,6 +1024,7 @@ class TestGenerateCommand < Minitest::Test
   def researching_command(findings_by_topic, topics: findings_by_topic.keys)
     cmd = runnable_command("news")
     cmd.singleton_class.send(:remove_method, :research_topics)
+    cmd.singleton_class.send(:remove_method, :generate_topics)
     cmd.define_singleton_method(:generate_topics) { topics }
     cmd.instance_variable_set(:@config, Struct.new(:type, :episodes_dir, :sources).new("news", @episodes_dir, {}))
     cmd.instance_variable_set(:@history, Struct.new(:recent_urls).new(Set.new))

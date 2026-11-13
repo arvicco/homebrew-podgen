@@ -80,6 +80,31 @@ class TestUploadsCommand < Minitest::Test
     refute_equal 0, @code, "any failure should produce non-zero exit"
   end
 
+  # Q-152 point 1: a synced show whose tweets hit an unreadable ledger is a
+  # counted failure, not a failed sync — LingQ and YouTube still run (and
+  # refuse on the same ledger themselves).
+  def test_r2_synced_with_ledger_error_counts_failure_and_keeps_pod
+    yt_invocations = []
+    crash = R2Result.new(synced: true, tweets_posted: 0,
+      errors: [{ type: :publisher_crash, error_class: "RuntimeError", message: "uploads.yml unreadable" }])
+    yt_ok = ok_yt_result
+    cmd = stub_cmd(["pod_a"])
+    cmd.define_singleton_method(:run_r2_for) { |_| crash }
+    cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
+    cmd.define_singleton_method(:pending_count_for) { |_| 1 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
+      yt_invocations << pod
+      yt_ok
+    end
+
+    out, err = capture_io { @code = cmd.run }
+
+    assert_equal ["pod_a"], yt_invocations
+    refute_includes err, "R2 sync FAILED"
+    assert_includes out, "pod_a: r2 (uploads.yml unreadable)"
+    assert_equal 1, @code
+  end
+
   def test_r2_success_means_pod_reaches_yt_phase
     yt_invocations = []
     ok = ok_r2_result
@@ -320,6 +345,19 @@ class TestUploadsCommand < Minitest::Test
     assert_empty logs
   end
 
+  # Q-152 point 3: a RuntimeError outside the strict read (the episode
+  # scan) is not relabelled "ledger unreadable" either.
+  def test_yt_pending_count_runtime_error_outside_the_ledger_read_propagates
+    tracker = UploadTracker.new(File.join(@tmpdir, "uploads.yml"))
+    logs = []
+    cmd = PodgenCLI::UploadsCommand.new(%w[pod], { log: ->(m) { logs << m } })
+    cmd.define_singleton_method(:mp3_basenames_with_transcripts) { |_| raise "episode scan failed" }
+
+    error = assert_raises(RuntimeError) { cmd.send(:yt_pending_count, tracker, "PL1", @tmpdir) }
+    assert_equal "episode scan failed", error.message
+    assert_empty logs
+  end
+
   def test_round_robin_skips_pod_with_no_pending_without_yt_call
     yt_calls = []
     pending = { "pod_a" => 0, "pod_b" => 1 }
@@ -506,27 +544,27 @@ class TestUploadsCommand < Minitest::Test
 
   def test_bogus_mode_exits_2_with_no_collaborator_calls
     calls = []
-    publishers = [R2Publisher, LingQPublisher, YouTubePublisher]
-    publishers.each do |k|
-      k.singleton_class.send(:alias_method, :__orig_new, :new)
-      k.define_singleton_method(:new) { |*a, **kw|
+    refuse = lambda do |k|
+      lambda do |*, **|
         calls << k
         raise "must not be constructed"
-      }
+      end
     end
 
     code = nil
     saved = ENV.delete("CLAUDECODE") # else the owner-action guard would also return 2
-    capture_io { code = PodgenCLI.run(%w[uploads --mode bogus pod_a]) }
+    R2Publisher.stub(:new, refuse.call(R2Publisher)) do
+      LingQPublisher.stub(:new, refuse.call(LingQPublisher)) do
+        YouTubePublisher.stub(:new, refuse.call(YouTubePublisher)) do
+          capture_io { code = PodgenCLI.run(%w[uploads --mode bogus pod_a]) }
+        end
+      end
+    end
 
     assert_equal 2, code
     assert_empty calls
   ensure
     ENV["CLAUDECODE"] = saved if saved
-    publishers.each do |k|
-      k.singleton_class.send(:alias_method, :new, :__orig_new)
-      k.singleton_class.send(:remove_method, :__orig_new)
-    end
   end
 
   # ── Q-77 / I-9: YouTube not authorized (no terminal) ends the YT phase once ──
@@ -595,6 +633,7 @@ class TestUploadsCommand < Minitest::Test
 
   def test_run_releases_uploads_lock_when_the_batch_raises
     cmd = wire_cmd(["pod_a"], r2: ok_r2_result, lingq: nil, yt: ok_yt_result)
+    cmd.singleton_class.send(:remove_method, :run_r2_for)
     cmd.define_singleton_method(:run_r2_for) { |_| raise "rclone exploded" }
 
     assert_raises(RuntimeError) { capture_io { cmd.run } }
@@ -607,6 +646,7 @@ class TestUploadsCommand < Minitest::Test
     ok = ok_r2_result
     probe = -> { held_by_other_process?(uploads_lock) }
     cmd = wire_cmd(["pod_a"], r2: ok, lingq: nil, yt: ok_yt_result)
+    cmd.singleton_class.send(:remove_method, :run_r2_for)
     cmd.define_singleton_method(:run_r2_for) do |_|
       held = probe.call
       ok
@@ -635,6 +675,7 @@ class TestUploadsCommand < Minitest::Test
     r2_called = false
     ok = ok_r2_result
     cmd = wire_cmd(["pod_a"], r2: ok, lingq: nil, yt: ok_yt_result)
+    cmd.singleton_class.send(:remove_method, :run_r2_for)
     cmd.define_singleton_method(:run_r2_for) do |_|
       r2_called = true
       ok

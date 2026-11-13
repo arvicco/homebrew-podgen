@@ -89,6 +89,7 @@ class TestListeningArchive < Minitest::Test
         @archive.reject(@source, date: Date.new(2026, 10, 29), record: {title: "New", reason: "listened"})
       end
       assert_equal body, File.read(path), "earlier owner labels must never be replaced"
+      assert_empty Dir.glob(File.join(@root, "rejected", "*")), "no copied download without its row"
     end
   end
 

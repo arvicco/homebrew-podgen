@@ -126,6 +126,10 @@ class TestR2Publisher < Minitest::Test
       assert_empty tweets, "no tweet may go out against an unreadable ledger (#{corrupt.inspect})"
       assert_includes err, @uploads_path
       assert_equal 0, result.tweets_posted
+      assert result.synced, "the sync itself went through"
+      # Q-152 point 1: the same error shape LingQ and YouTube return.
+      assert_equal [:publisher_crash], result.errors.map { it[:type] }
+      assert_includes result.errors.first[:message], @uploads_path
       assert_equal corrupt, File.read(@uploads_path), "the corrupt ledger is never rewritten"
     end
   end
@@ -199,6 +203,22 @@ class TestR2Publisher < Minitest::Test
 
     assert_match(/R2 sync is show-wide .*2026-01-15 scopes the tweets only/, out)
     assert_includes calls.first, "episodes/*.mp3"
+  end
+
+  # Q-160 point 10: a wrong explicit id is a failed run, as on LingQ and
+  # YouTube — refused before the sync, nothing goes up.
+  def test_run_with_unmatched_episode_id_refuses_before_sync
+    seed_ep("ep-2026-01-15")
+    calls = []
+    publisher = build_publisher(config: stub_config, runner: ->(**kw) { calls << kw }, episode_id: "2026-01-16")
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_empty calls, "no sync for an id that matches no episode"
+    refute result.synced
+    assert_equal [:no_match], result.errors.map { it[:type] }
+    assert_includes err, "No episode found matching '2026-01-16'"
   end
 
   def test_run_without_episode_id_prints_no_scope_line

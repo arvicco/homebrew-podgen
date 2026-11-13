@@ -40,17 +40,18 @@ class ListeningArchive
 
   # Copies the rejected download (when there is one) and appends a row.
   def reject(source_path, date:, record:)
+    path = File.join(@root, "rejected.yml")
+    # A file that does not parse as a list is never replaced: raise, so
+    # the earlier rows survive and the caller counts a warning. Read
+    # before the copy, so a refusal leaves no download without its row.
+    rows = YamlLoader.load(path, raise_on_error: true) || []
+    raise "#{path} is not a list; left untouched" unless rows.is_a?(Array)
     file = nil
     if source_path && File.exist?(source_path)
       file = free_name(date, record[:title], File.extname(source_path))
       FileUtils.mkdir_p(File.join(@root, "rejected"))
       FileUtils.cp(source_path, File.join(@root, file))
     end
-    path = File.join(@root, "rejected.yml")
-    # A file that does not parse as a list is never replaced: raise, so
-    # the earlier rows survive and the caller counts a warning.
-    rows = YamlLoader.load(path, raise_on_error: true) || []
-    raise "#{path} is not a list; left untouched" unless rows.is_a?(Array)
     rows << stamp(record.merge(file: file))
     AtomicWriter.write_yaml(path, rows)
   end
