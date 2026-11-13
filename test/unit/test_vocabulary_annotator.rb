@@ -630,8 +630,34 @@ class TestVocabularyAnnotator < Minitest::Test
       assert_equal 39, result.length, "entries before the malformed object survive"
       assert_equal "w39", result.last[:lemma]
     end
-    assert logs.any? { |m| m.include?("WARNING") && m.include?("malformed") && m.include?("39") },
+    assert logs.any? { |m| m.include?("Warning: Enrichment response malformed") && m.include?("39") },
       "expected one warning naming the salvage count, got: #{logs.inspect}"
+  end
+
+  # Q-117: a response that yields no glosses at all is one counted
+  # warning (the no-JSON path logged nothing; the truncated path a plain line).
+  def test_unusable_responses_are_each_one_counted_warning
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens).new(1, 1, 0, 0)
+    msg = ->(text, stop) { Struct.new(:content, :stop_reason, :model, :usage).new([Struct.new(:type, :text).new("text", text)], stop, "m", usage) }
+    replies = [msg.call("Sorry, no list.", "end_turn"), msg.call("[{\"lemma\": \"w", "max_tokens"),
+      msg.call("Sorry, no list.", "end_turn"), msg.call("[{\"lemma\": \"w", "max_tokens")]
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_| replies.shift }
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    annotator = VocabularyAnnotator.new("test-key", model: "m", logger: logger)
+    annotator.instance_variable_get(:@client).stub(:messages, fake_messages) do
+      2.times { assert_equal [], annotator.send(:call_enrich_api, [{ lemma: "w" }], language: "sl", target_language: "Russian", filters: {}) }
+      2.times { assert_equal [], annotator.send(:classify_single, "Besedilo.", "sl", "B1") }
+    end
+
+    assert_equal 4, warnings.size, warnings.inspect
+    assert_match(/\[VocabularyAnnotator\] Warning: Enrichment response held no JSON array/, warnings[0])
+    assert_match(/\[VocabularyAnnotator\] Warning: Enrichment truncated and salvage failed/, warnings[1])
+    assert_match(/\[VocabularyAnnotator\] Warning: Classification response held no JSON array/, warnings[2])
+    assert_match(/\[VocabularyAnnotator\] Warning: Response truncated at max_tokens and salvage failed/, warnings[3])
   end
 
   # --- enrich_entries (merge logic) ---

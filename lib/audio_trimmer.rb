@@ -43,7 +43,7 @@ class AudioTrimmer
       if cut_point > 0 && cut_point < total
         log("Cut: removing #{format_timestamp(cut_point)}-#{format_timestamp(total)}")
       else
-        log("Warning: cut value results in invalid cut point (#{cut_point.round(1)}s of #{total.round(1)}s) — skipping cut")
+        log_warning("cut value results in invalid cut point (#{cut_point.round(1)}s of #{total.round(1)}s) — skipping cut")
       end
     end
 

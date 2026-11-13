@@ -322,6 +322,39 @@ class TestGenerateCommand < Minitest::Test
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-117: a guidelines parser warning is printed before the logger exists;
+  # it is re-emitted through the run logger, so RUN-OUTCOME counts it.
+  def test_guidelines_bare_key_warning_counts_in_run_outcome
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "bkpod")
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), "## Podcast\n- type: news\n- author\n## Format\nf\n## Tone\nt\n")
+    require "podcast_config"
+    log_path = PodcastConfig.new("bkpod").log_path(Date.today)
+
+    cmd = PodgenCLI::GenerateCommand.new(["bkpod"], {verbosity: :quiet})
+    cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil }
+    cmd.define_singleton_method(:preflight_network!) { |_| nil }
+    cmd.define_singleton_method(:generate_topics) { ["t"] }
+    cmd.define_singleton_method(:research_topics) { |_| [] }
+    cmd.define_singleton_method(:inject_priority_links) { |r| [r, []] }
+    cmd.define_singleton_method(:generate_script) { |*| {title: "T", segments: []} }
+    cmd.define_singleton_method(:review_script) { |s, *| s }
+    cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod.mp3"] }
+    cmd.define_singleton_method(:finalize) { |*| nil }
+    code = nil
+    _, err = capture_io { code = cmd.run }
+
+    assert_equal 0, code
+    assert_includes err, "Warning: guidelines.md: Podcast: '- author' is missing a value"
+    assert_equal "RUN-OUTCOME status=warn warnings=1 errors=0 first=Warning: guidelines.md: Podcast: " \
+      "'- author' is missing a value (expected '- author: <value>'); ignored",
+      File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, "")
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success
@@ -791,6 +824,20 @@ class TestGenerateCommand < Minitest::Test
     assert_equal 1, ReviewerRecall.blockers(loaded[:default_issues])
     assert_equal "https://ex.com/a", loaded[:research_data].first[:findings].first[:url]
     assert_includes cmd.instance_variable_get(:@logger).messages, "Review bundle saved: #{path}"
+  end
+
+  # Q-107 (P20-7): unresolved blockers are one degradation, one counted
+  # line; each blocker's message is in the log, not in the count.
+  def test_review_script_unresolved_blockers_count_one_warning
+    cmd, _config = build_sl_en_command
+    two = [BLOCKER_ISSUE, BLOCKER_ISSUE.merge(message: "Wrong weekday")]
+
+    review_with(cmd, [two, two, two])
+
+    assert_equal ["Script review: 2 unresolved blocker(s) after 2 retries"], cmd.instance_variable_get(:@warnings)
+    messages = cmd.instance_variable_get(:@logger).messages
+    assert_includes messages, "  unresolved blocker: Wrong date"
+    assert_includes messages, "  unresolved blocker: Wrong weekday"
   end
 
   def test_review_script_clean_first_review_writes_no_bundle

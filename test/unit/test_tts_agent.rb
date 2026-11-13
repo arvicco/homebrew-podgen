@@ -288,6 +288,34 @@ class TestTTSAgent < Minitest::Test
     refute ffmpeg_called, "Trim must NOT silence audio when alignment claims >5s trailing — alignment is incomplete"
   end
 
+  # Q-117: the dropped dictionary, a truncated alignment and a failed
+  # silence pass are each one counted warning.
+  def test_tts_degradations_each_count_once
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    agent = build_agent
+    agent.instance_variable_set(:@logger, logger)
+    agent.define_singleton_method(:upload_pronunciation_dictionary) { |_p| raise "HTTP 400" }
+    Dir.mktmpdir do |dir|
+      pls = File.join(dir, "pronunciation.pls")
+      File.write(pls, "<lexicon/>")
+      assert_equal [], agent.send(:resolve_pronunciation_dictionary, pls)
+    end
+    agent.define_singleton_method(:probe_duration) { |_| 171.92 }
+    agent.send(:trim_trailing_audio, "/fake/path.mp3", { "character_end_times_seconds" => [10.0, 96.03] })
+    agent.define_singleton_method(:probe_duration) { |_| 12.0 }
+    Open3.stub(:capture3, ->(*_a) { ["", "err", Struct.new(:success?).new(false)] }) do
+      agent.send(:trim_trailing_audio, "/fake/path.mp3", { "character_end_times_seconds" => [10.0, 11.0] })
+    end
+
+    assert_equal 3, warnings.size, warnings.inspect
+    assert_match(/\[TTSAgent\] Warning: Pronunciation dictionary failed, continuing without: RuntimeError: HTTP 400/, warnings[0])
+    assert_match(/\[TTSAgent\] Warning: alignment data appears truncated/, warnings[1])
+    assert_match(/\[TTSAgent\] Warning: ffmpeg silence failed, keeping original: err/, warnings[2])
+  end
+
   # --- pronunciation dictionary upload content-type ---
 
   def test_upload_pronunciation_dictionary_sends_octet_stream_not_pls_xml

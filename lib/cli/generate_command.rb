@@ -139,6 +139,8 @@ module PodgenCLI
       end
       @logger = PodcastAgent::Logger.new(log_path: @config.log_path(@today), verbosity: @options[:verbosity])
       PodcastAgent.logger = @logger
+      # The stderr lines above predate the logger; the run log counts them (Q-117).
+      @config.parser_warnings.each { |w| @logger.warning("Warning: guidelines.md: #{w}") }
       @history = EpisodeHistory.new(@config.history_path, excluded_urls_path: @config.excluded_urls_path)
       @warnings = []
 
@@ -362,7 +364,7 @@ module PodgenCLI
         attempt += 1
         if attempt > MAX_REVIEW_RETRIES
           @warnings << "Script review: #{unfixed_blockers.length} unresolved blocker(s) after #{MAX_REVIEW_RETRIES} retries"
-          unfixed_blockers.each { |b| @warnings << "  - #{b[:message]}" }
+          unfixed_blockers.each { |b| @logger.log("  unresolved blocker: #{b[:message]}") } # one count, detail in the log (Q-107)
           @logger.log("Script review: proceeding with #{unfixed_blockers.length} unresolved blocker(s)")
           break
         end

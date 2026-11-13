@@ -269,9 +269,7 @@ module PodgenCLI
       logger.phase_end("Download Audio")
       url = @episode[:audio_url]
       @episode_source.exclude_url!(url)
-      warning = "Source episode gone (HTTP #{e.status}), excluded: #{url}"
-      @warnings << warning
-      logger.log("Warning: #{warning}")
+      warn!("Source episode gone (HTTP #{e.status}), excluded: #{url}")
       @gone_picks = (@gone_picks || 0) + 1
       raise if @gone_picks >= MAX_GONE_PICKS
       retry
@@ -303,9 +301,10 @@ module PodgenCLI
       max_s = @config.max_length_seconds
       range = "#{format_length(min_s)}–#{format_length(max_s)}"
       actual = format_length(duration)
-      logger.log("Warning: episode duration #{actual} is #{reason} (allowed range #{range})")
+      warning = "Episode duration #{actual} is #{reason} (allowed range #{range})"
 
       if @options[:ask_trim]
+        logger.log("Warning: #{warning}") # the owner decides at the prompt; not counted
         prompt = "Episode is #{reason} (#{actual}, allowed #{range}). [t]rim manually / e[x]clude / [a]bort? "
         $stdout.print(prompt)
         $stdout.flush
@@ -326,8 +325,7 @@ module PodgenCLI
         end
       end
 
-      warning = "Episode duration #{actual} is #{reason} (allowed range #{range})"
-      @warnings << warning # Q-101 (P11-4)
+      warn!(warning) # Q-101 (P11-4)
       raise LengthOutOfRange, warning
     end
 
@@ -616,8 +614,8 @@ module PodgenCLI
     end
 
     def archive_failed(error, action: "write")
-      logger.log("Warning: listening archive #{action} failed: #{error.class}: #{error.message}")
-      @warnings << "Listening archive #{action} failed (#{error.class}: #{error.message})"
+      warn!("Listening archive #{action} failed (#{error.class}: #{error.message})",
+        "listening archive #{action} failed: #{error.class}: #{error.message}")
     end
 
     def discover_transcript
@@ -730,8 +728,8 @@ module PodgenCLI
         logger.log("Subtitles reconciled (#{result.message.delete_prefix("reconciled ")})")
       when :failed # skippable: canonical audio/transcript already produced; raw segments remain usable
         cause = "#{result.error_class}: #{result.message}"
-        logger.log("Warning: Subtitle reconciliation failed: #{cause} (non-fatal, keeping raw segments)")
-        @warnings << "Subtitle reconciliation failed (#{cause})"
+        warn!("Subtitle reconciliation failed (#{cause})",
+          "Subtitle reconciliation failed: #{cause} (non-fatal, keeping raw segments)")
       else
         logger.log("Subtitle reconciliation skipped: #{result.message}")
       end
@@ -812,9 +810,9 @@ module PodgenCLI
       logger.log("Vocabulary annotated (#{@config.vocabulary_level}+ cutoff)")
       logger.phase_end("Vocabulary")
     rescue => e # skippable: annotation enriches the transcript; the unannotated episode is still shippable
-      logger.log("Warning: Vocabulary annotation failed: #{e.class}: #{e.message} (non-fatal, continuing)")
+      warn!("Vocabulary annotation failed (#{e.class}: #{e.message})",
+        "Vocabulary annotation failed: #{e.class}: #{e.message} (non-fatal, continuing)")
       logger.log(e.backtrace.first(3).join("\n"))
-      @warnings << "Vocabulary annotation failed (#{e.class}: #{e.message})"
       logger.phase_end("Vocabulary") rescue nil # skippable: cosmetic phase-timing guard
     end
 
@@ -909,19 +907,26 @@ module PodgenCLI
         # Detect wrong-language description → regenerate from transcript
         if wrong_language?(episode[:description], lang)
           logger.log("Description language doesn't match transcript (#{lang}), regenerating")
-          regenerated = agent.generate(title: episode[:title], transcript: transcript)
+          # The line below counts a failed call too: the agent stays uncounted (Q-107).
+          regenerated = agent.generate(title: episode[:title], transcript: transcript, count_failure: false)
           if regenerated.to_s.strip.empty?
             # Q-101 (P11-4): an empty result never wipes the description.
-            logger.log("Warning: Description regeneration returned nothing — keeping the existing description")
-            @warnings << "Description regeneration returned nothing; kept the existing (wrong-language) description"
+            warn!("Description regeneration returned nothing; kept the existing (wrong-language) description",
+              "Description regeneration returned nothing — keeping the existing description")
           else
             episode[:description] = regenerated
           end
         end
       end
     rescue => e # skippable: LLM cleanup is cosmetic; the original title/description stands
-      logger.log("Warning: Description processing failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
-      @warnings << "Description cleanup failed (#{e.class}: #{e.message})"
+      warn!("Description cleanup failed (#{e.class}: #{e.message})",
+        "Description processing failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
+    end
+
+    # A degradation the run survived: one log line and one RUN-OUTCOME count.
+    def warn!(warning, line = warning)
+      logger.log("Warning: #{line}")
+      @warnings << warning
     end
 
     # Title is generic if it matches the podcast name or is in the wrong language.
@@ -994,7 +999,7 @@ module PodgenCLI
         begin
           image_path, = resolve_episode_cover(episode[:title])
         rescue => e # skippable: episode is already committed; upload proceeds without an image
-          logger.log("Warning: cover resolution for LingQ failed: #{e.class}: #{e.message} (uploading without image)")
+          warn!("cover resolution for LingQ failed: #{e.class}: #{e.message} (uploading without image)")
         end
       end
       uploads = PostPipelineUploads.new(config: @config, logger: logger, dry_run: @dry_run)
@@ -1019,7 +1024,7 @@ module PodgenCLI
           logger.log("Resolved per-feed image: last → #{screenshot}")
           return screenshot
         end
-        logger.log("Warning: per-feed image: last but no screenshots found on ~/Desktop")
+        warn!("per-feed image: last but no screenshots found on ~/Desktop")
         return nil
       end
 
@@ -1028,7 +1033,7 @@ module PodgenCLI
 
       path = File.expand_path(value)
       unless File.exist?(path)
-        logger.log("Warning: per-feed image not found: #{path}")
+        warn!("per-feed image not found: #{path}")
         return nil
       end
       path
@@ -1055,7 +1060,7 @@ module PodgenCLI
       )
       result = resolver.resolve(title)
       @temp_files.concat(resolver.temp_files)
-      @warnings.concat(resolver.warnings)
+      @warnings.concat(resolver.warnings - @warnings) # resolved twice with LingQ on: one count
       result
     end
 
@@ -1068,7 +1073,7 @@ module PodgenCLI
       logger.log("Downloaded episode image: #{(File.size(path) / 1024.0).round(1)} KB")
       path
     rescue => e # skippable: cover chain falls through to the next strategy
-      logger.log("Warning: Failed to download episode image: #{e.class}: #{e.message}")
+      warn!("Failed to download episode image: #{e.class}: #{e.message}")
       nil
     end
 

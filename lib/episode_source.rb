@@ -77,7 +77,7 @@ class EpisodeSource
     known = @history.all_urls.map { |u| UrlCleaner.clean(u) }.to_set # cleaned on both sides (Q-119)
     return false unless known.include?(UrlCleaner.clean(episode[:audio_url]))
 
-    log("Warning: Already processed: #{episode[:audio_url]}")
+    log_warning("Already processed: #{episode[:audio_url]}")
     $stderr.puts "Already processed: \"#{episode[:title]}\" — use --force to re-process"
     true
   end

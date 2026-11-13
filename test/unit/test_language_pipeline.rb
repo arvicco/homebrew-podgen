@@ -54,7 +54,7 @@ class StubDescriptionAgent
 
   def clean_title(title:) = @clean_title_result || title
   def clean(title:, description:) = @clean_result || description
-  def generate(title:, transcript:) = @generate_result || ""
+  def generate(title:, transcript:, count_failure: true) = @generate_result || ""
   def generate_title(transcript:, language:) = @generate_title_result
 end
 
@@ -142,16 +142,63 @@ class TestLanguagePipeline < Minitest::Test
     assert_includes desc, "RSS"
   end
 
+  # Q-117: CoverResolver.generate rescues everything to nil, so the nil
+  # result (not a raise) is what the resolver must count.
   def test_resolve_cover_merges_resolver_warnings_into_pipeline
     pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
 
-    CoverResolver.stub(:generate, ->(**_) { raise "magick exploded" }) do
+    CoverResolver.stub(:generate, ->(**_) {}) do
       pipeline.send(:resolve_episode_cover, "Title")
     end
 
     warnings = pipeline.instance_variable_get(:@warnings)
     assert(warnings.any? { |w| w.include?("Cover generation failed") },
       "resolver warnings must merge into pipeline warnings, got: #{warnings.inspect}")
+  end
+
+  # The cover is resolved twice when LingQ is on (transcript, then upload):
+  # the same fallback is one event, one count.
+  def test_resolve_cover_twice_counts_the_same_fallback_once
+    pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
+
+    CoverResolver.stub(:generate, ->(**_) {}) do
+      2.times { pipeline.send(:resolve_episode_cover, "Title") }
+    end
+
+    assert_equal ["Cover generation failed for /tmp/base.png (falling back)"], pipeline.warnings
+  end
+
+  # Q-117: a feed image that resolves to nothing, a failed RSS image
+  # download and a failed LingQ cover resolution are counted warnings.
+  def test_feed_image_and_download_fallbacks_each_count_once
+    pipeline = build_pipeline
+
+    assert_nil pipeline.send(:resolve_feed_image, File.join(@tmpdir, "missing.jpg"))
+    CoverResolver.stub(:latest_screenshot, nil) { assert_nil pipeline.send(:resolve_feed_image, "last") }
+    HttpDownloader.stub(:new, ->(**_) { raise SocketError, "offline" }) do
+      assert_nil pipeline.send(:download_episode_image, "https://example.com/c.jpg")
+    end
+
+    assert_equal 3, pipeline.warnings.size, pipeline.warnings.inspect
+    assert_equal "per-feed image not found: #{File.join(@tmpdir, "missing.jpg")}", pipeline.warnings[0]
+    assert_equal "per-feed image: last but no screenshots found on ~/Desktop", pipeline.warnings[1]
+    assert_equal "Failed to download episode image: SocketError: offline", pipeline.warnings[2]
+  end
+
+  def test_lingq_cover_resolution_failure_counts_once
+    cfg = StubConfig.new(**@config.to_h.merge(lingq_enabled: true))
+    pipeline = build_pipeline(config: cfg)
+    pipeline.define_singleton_method(:resolve_episode_cover) { |_t| raise "magick exploded" }
+    uploads = Object.new
+    uploads.define_singleton_method(:upload_to_lingq) { |**_| nil }
+    uploads.define_singleton_method(:warnings) { [] }
+
+    PostPipelineUploads.stub(:new, uploads) do
+      pipeline.send(:upload_to_lingq, { title: "T" }, "text", "/tmp/a.mp3", "base")
+    end
+
+    assert_equal ["cover resolution for LingQ failed: RuntimeError: magick exploded (uploading without image)"],
+      pipeline.warnings
   end
 
   # --- skippable-step warnings must name the exception class ---
@@ -720,6 +767,35 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal original, episode[:description]
     assert_equal 1, pipeline.warnings.size
     assert_match(/description/i, pipeline.warnings.first)
+  end
+
+  # Q-107 (P20-7): a regeneration that RAISES is one counted warning — the
+  # pipeline's line naming the effect — not the agent's plus the pipeline's.
+  def test_wrong_language_description_regeneration_raising_counts_one_warning
+    counted = []
+    @logger.define_singleton_method(:warning) { |m| counted << m }
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    original = "Audiobook fairy tales with stories and morals for children and families"
+    episode = { title: "Story Title", description: original }
+    client = Object.new
+    client.define_singleton_method(:messages) { self }
+    client.define_singleton_method(:create) { |**| raise "API down" }
+    agent = DescriptionAgent.allocate
+    agent.instance_variable_set(:@logger, @logger)
+    agent.instance_variable_set(:@client, client)
+    agent.instance_variable_set(:@effort_params, {})
+    agent.define_singleton_method(:clean_title) { |title:| title }
+    agent.define_singleton_method(:clean) { |title:, description:| description }
+
+    DescriptionAgent.stub(:new, agent) do
+      pipeline.send(:clean_or_generate_description, episode, "Dawno temu żył sobie chłopiec")
+    end
+
+    assert_equal original, episode[:description]
+    assert_equal ["Description regeneration returned nothing; kept the existing (wrong-language) description"],
+      pipeline.warnings + counted
+    assert(@logger.messages.any? { |m| m.include?("Description generation failed: RuntimeError: API down") },
+      "the cause stays in the log: #{@logger.messages.inspect}")
   end
 
   def test_correct_language_description_not_regenerated

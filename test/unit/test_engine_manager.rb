@@ -83,6 +83,22 @@ class TestEngineManager < Minitest::Test
     assert_nil output[:cleaned]
   end
 
+  # Q-117: a failed cleanup ships the raw STT text; one counted warning.
+  def test_single_engine_cleanup_failure_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    mock_engine = MockTranscriptionEngine.new(result: { text: "hello", segments: [], speech_start: 0.0, speech_end: 5.0 })
+    manager = Transcription::EngineManager.new(engine_codes: ["open"], language: "sl", logger: logger)
+    stub_engine(manager, "open", mock_engine)
+    stub_reconciler(manager, MockReconciler.new(cleanup_error: RuntimeError.new("API down")))
+
+    manager.transcribe("/fake.mp3")
+
+    assert_equal ["[EngineManager] Warning: Cleanup failed (non-fatal): RuntimeError: API down"], warnings
+  end
+
   def test_comparison_mode_runs_all_engines
     open_result = { text: "open text", segments: [] }
     groq_result = { text: "groq text", segments: [], words: [{ word: "groq", start: 0, end: 1 }] }
