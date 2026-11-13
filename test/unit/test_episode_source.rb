@@ -85,6 +85,21 @@ class TestEpisodeSource < Minitest::Test
     assert s.already_processed?(ep)
   end
 
+  # Q-117: an already-processed pick is a counted warning on the run board.
+  def test_already_processed_known_url_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    config = Struct.new(:sources).new({})
+    history = Struct.new(:all_urls).new(Set.new(["http://example.com/ep.mp3"]))
+    s = EpisodeSource.new(config: config, history: history, logger: logger)
+
+    _out, _err = capture_io { assert s.already_processed?({ audio_url: "http://example.com/ep.mp3", title: "T" }) }
+
+    assert_equal ["[EpisodeSource] Warning: Already processed: http://example.com/ep.mp3"], warnings
+  end
+
   def test_already_processed_returns_false_with_dry_run
     s = source(known_urls: ["http://example.com/ep.mp3"])
     ep = { audio_url: "http://example.com/ep.mp3", title: "T" }

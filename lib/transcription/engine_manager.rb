@@ -100,7 +100,7 @@ module Transcription
       build_reconciler.cleanup(text, captions: captions)
     rescue => e
       # skippable: the raw engine transcript stands in for the cleaned one.
-      log("Cleanup failed (non-fatal): #{e.class}: #{e.message}")
+      log_warning("Cleanup failed (non-fatal): #{e.class}: #{e.message}")
       nil
     end
 

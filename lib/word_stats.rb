@@ -207,9 +207,9 @@ class WordStats
     end
 
     if lang.nil?
-      log("Warning: no transcription_language configured; using lemma + originals only")
+      log_warning("no transcription_language configured; using lemma + originals only")
     elsif !hunspell_ok
-      log("Warning: hunspell dict for '#{lang}' not installed; body_count uses lemma + " \
+      log_warning("hunspell dict for '#{lang}' not installed; body_count uses lemma + " \
           "historical surface forms only.")
       log("  Install: clone github.com/wooorm/dictionaries → " \
           "copy <lang>/index.{dic,aff} to ~/Library/Spelling/<LANG_CODE>.{dic,aff}")
@@ -301,7 +301,7 @@ class WordStats
     save_language_detection(detection_hash, matched) if matched
     matched
   rescue => e # skippable: nil means undetected; the caller proceeds without it
-    log("Warning: language detection failed: #{e.class}: #{e.message}")
+    log_warning("language detection failed: #{e.class}: #{e.message}")
     nil
   end
 

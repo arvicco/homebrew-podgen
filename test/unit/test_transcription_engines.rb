@@ -409,6 +409,21 @@ class TestGroqEngine < Minitest::Test
     assert_equal "groq", @engine.engine_name
   end
 
+  # Q-117: a leftover downsample is a counted warning.
+  def test_cleanup_downsample_failure_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    engine = Transcription::GroqEngine.new(language: "sl", logger: logger)
+    engine.instance_variable_set(:@downsampled_path, @audio.path)
+
+    File.stub(:delete, ->(_p) { raise Errno::EACCES, "locked" }) { engine.send(:cleanup_downsample) }
+
+    assert_equal 1, warnings.size
+    assert_match(/\[GroqEngine\] Warning: failed to cleanup downsample: Errno::EACCES/, warnings.first)
+  end
+
   def test_max_file_size
     assert_equal 25 * 1024 * 1024, Transcription::GroqEngine::MAX_FILE_SIZE
   end

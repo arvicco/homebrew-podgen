@@ -356,6 +356,25 @@ class TestScriptAgent < Minitest::Test
     refute File.exist?(leaked), "raw debug must not leak above the sandbox at #{leaked}"
   end
 
+  # Q-117: a failed opt-in debug write is a counted warning.
+  def test_save_raw_debug_failure_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    ENV[ScriptAgent::RAW_DEBUG_ENV] = "1"
+    FileUtils.mkdir_p(File.join(@tmpdir, "pod", "episodes"))
+    File.write(File.join(@tmpdir, "pod", "debug"), "a file where the directory goes")
+    agent = ScriptAgent.allocate
+    agent.instance_variable_set(:@logger, logger)
+    agent.instance_variable_set(:@script_path, File.join(@tmpdir, "pod", "episodes", "x_script.md"))
+
+    agent.send(:save_raw_debug, {}, nil)
+
+    assert_equal 1, warnings.size
+    assert_match(/\[ScriptAgent\] Warning: failed to save raw debug artifact: Errno::EEXIST/, warnings.first)
+  end
+
   def test_priority_urls_defaults_to_empty
     agent = build_agent
     client = stub_client(agent, title: "T", segments: [])

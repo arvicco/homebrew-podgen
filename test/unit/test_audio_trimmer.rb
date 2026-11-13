@@ -206,6 +206,19 @@ class TestAudioTrimmer < Minitest::Test
     assert_empty @mock_assembler.snip_calls
   end
 
+  # Q-117: a skipped cut is a counted warning (the episode keeps its tail).
+  def test_apply_trim_invalid_cut_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+
+    AudioTrimmer.new(assembler: @mock_assembler, logger: logger).apply_trim("/input.mp3", cut: 200)
+
+    assert_equal 1, warnings.size
+    assert_match(/\[AudioTrimmer\] Warning: cut value results in invalid cut point/, warnings.first)
+  end
+
   def test_apply_trim_removal_covering_everything_raises_nothing_kept
     trimmer = AudioTrimmer.new(assembler: MockAssembler.new(duration: 600.0))
 

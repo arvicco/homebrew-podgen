@@ -173,6 +173,20 @@ class TestImageRanker < Minitest::Test
 
   # P8-2 (Q-64): a thinking-first response truncated at max_tokens carries
   # no text block; the failure is a visible skippable warning, not silence.
+  # Q-117: an unparseable ranking (no auto cover) is a counted warning.
+  def test_rank_malformed_json_is_one_counted_warning
+    response = FakeMsg.new([Struct.new(:text).new("not json at all")], "end_turn", FakeUsage.new(1, 1))
+    logger = RecordingLogger.new
+
+    ranked = with_fake_response(response) do
+      ImageRanker.new(logger: logger).rank(@candidates, title: "T", description: "D")
+    end
+
+    assert_equal [], ranked
+    assert_equal 1, logger.warnings.size
+    assert_match(/\[ImageRanker\] Warning: malformed JSON \(JSON::ParserError\)/, logger.warnings.first)
+  end
+
   def test_rank_thinking_only_truncated_response_logs_no_text_block_warning
     thinking = Struct.new(:type, :thinking).new("thinking", "pondering...")
     response = FakeMsg.new([thinking], "max_tokens", FakeUsage.new(1200, 2000))

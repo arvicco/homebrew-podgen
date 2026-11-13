@@ -67,7 +67,7 @@ class DescriptionAgent
     end
     result
   rescue => e # skippable: cosmetic LLM cleanup; the original title stands
-    log("Warning: Title cleanup failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
+    log_warning("Title cleanup failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
     title
   end
 
@@ -105,7 +105,7 @@ class DescriptionAgent
     log("Description cleaned: #{description.length} → #{result.length} chars")
     result
   rescue => e # skippable: cosmetic LLM cleanup; the original description stands
-    log("Warning: Description cleanup failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
+    log_warning("Description cleanup failed: #{e.class}: #{e.message} (non-fatal, keeping original)")
     description
   end
 
@@ -140,7 +140,7 @@ class DescriptionAgent
     log("Title generated: \"#{result}\"")
     result
   rescue => e # skippable: nil tells the caller to keep its fallback title
-    log("Warning: Title generation failed: #{e.class}: #{e.message} (non-fatal)")
+    log_warning("Title generation failed: #{e.class}: #{e.message} (non-fatal)")
     nil
   end
 

@@ -137,11 +137,11 @@ class LingQAgent
       when *RETRIABLE_CODES
         raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
       else
-        log("Warning: setting tags returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
+        log_warning("setting tags returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
       end
     end
   rescue => e # skippable: the lesson is already uploaded; tags are enrichment
-    log("Warning: setting tags failed: #{e.class}: #{e.message} (non-fatal)")
+    log_warning("setting tags failed: #{e.class}: #{e.message} (non-fatal)")
   end
 
   def generate_timestamps(language, lesson_id)
@@ -165,11 +165,11 @@ class LingQAgent
       when *RETRIABLE_CODES
         raise RetriableError, "HTTP #{response.code}: #{parse_error(response)}"
       else
-        log("Warning: timestamp generation returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
+        log_warning("timestamp generation returned HTTP #{response.code}: #{parse_error(response)} (non-fatal)")
       end
     end
   rescue => e # skippable: the lesson is already uploaded; timestamps are enrichment
-    log("Warning: timestamp generation failed: #{e.class}: #{e.message} (non-fatal)")
+    log_warning("timestamp generation failed: #{e.class}: #{e.message} (non-fatal)")
   end
 
 end

@@ -321,6 +321,26 @@ class TestDescriptionAgent < Minitest::Test
     end
   end
 
+  # Q-117: each failed LLM cleanup/generation is one counted warning.
+  def test_clean_title_clean_and_generate_title_failures_each_count_once
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    agent = DescriptionAgent.new(logger: logger)
+    agent.instance_variable_set(:@client, MockTextClient.new(nil, error: RuntimeError.new("API down")))
+
+    assert_equal "Some Title", agent.clean_title(title: "Some Title")
+    assert_equal "Desc", agent.clean(title: "T", description: "Desc")
+    assert_nil agent.generate_title(transcript: "Some transcript", language: "sl")
+
+    assert_equal [
+      "[DescriptionAgent] Warning: Title cleanup failed: RuntimeError: API down (non-fatal, keeping original)",
+      "[DescriptionAgent] Warning: Description cleanup failed: RuntimeError: API down (non-fatal, keeping original)",
+      "[DescriptionAgent] Warning: Title generation failed: RuntimeError: API down (non-fatal)"
+    ], warnings
+  end
+
   private
 
   def build_agent(response_text)

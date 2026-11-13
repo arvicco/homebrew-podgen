@@ -176,7 +176,7 @@ class ImageRanker
     nil
   rescue JSON::ParserError => e
     # skippable: same as above — an unparseable ranking yields no auto cover.
-    log("malformed JSON (#{e.class}): #{e.message}")
+    log_warning("malformed JSON (#{e.class}): #{e.message}")
     nil
   end
 
