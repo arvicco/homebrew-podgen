@@ -422,6 +422,20 @@ class TestScriptReviewer < Minitest::Test
     end
   end
 
+  # Q-152 point 7 (pinned as accepted): a direction ended by a dash is not
+  # removed — no rule tells "Long pause — " (a direction) from "Long
+  # pause — the Fed's sixth — ended." (content), so both stay.
+  def test_check_stage_directions_dash_ended_phrase_kept
+    ["Long pause — the Fed's sixth — ended.", "Rates held. Long pause — then markets rallied."].each do |text|
+      script = make_script(segments: [{ name: "Opening", text: text }])
+
+      corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+      assert_empty issues.select { |i| i[:check] == "stage_direction" }, text
+      assert_equal text, corrected[:segments].first[:text]
+    end
+  end
+
   def test_check_stage_directions_clean_text_no_issue
     script = make_script(segments: [
       { name: "Opening", text: "Bitcoin rallied to $70,000 on strong ETF inflows." }
