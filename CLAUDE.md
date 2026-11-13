@@ -290,8 +290,9 @@ front page: a killed or setup-failed run never reads OK, dormant and
 unpublished shows named, translated feeds read back, uncounted
 degradations counted once, Phase 16 and 19 residues, the front page
 loads 12 episodes and reveals the rest on demand, feed times in UTC)
-EXECUTING — adopted 2026-11-13 (slate options A+B plus Q-162, Q-161
-riding). 1 open ruling (R9-02, re-presented
+AT GATE 20 — adopted 2026-11-13 (slate options A+B plus Q-162, Q-161
+riding), all ten packets landed, CRPR APPROVED after two rounds
+(refs/cr/reviewed = 4213f60); gate PR open, the owner merges. 1 open ruling (R9-02, re-presented
 2026-11-13); R10-02 returns 11-26. I-11: owner re-consented 2026-11-09
 (expires ≈ 11-16 while the OAuth app is in testing). Doctrine re-synced
 2026-11-13 (docs/DEV-LOOP.md header).
