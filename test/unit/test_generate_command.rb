@@ -610,6 +610,22 @@ class TestGenerateCommand < Minitest::Test
       cmd.instance_variable_get(:@warnings)
   end
 
+  def test_generate_topics_missing_queue_is_one_counted_error
+    [true, false].each do |dry_run|
+      cmd = runnable_command("news")
+      cmd.singleton_class.send(:remove_method, :generate_topics)
+      cmd.instance_variable_set(:@dry_run, dry_run)
+      cmd.instance_variable_set(:@guidelines, "g")
+      cmd.instance_variable_set(:@history, Struct.new(:recent_topics_summary).new(nil))
+      cmd.instance_variable_set(:@config, Struct.new(:type, :queue_topics).new("news", nil))
+      code = nil
+      TopicAgent.stub(:new, ->(**) { raise "401 revoked" }) { capture_io { code = cmd.run } }
+
+      assert_equal 1, code, "dry_run=#{dry_run}"
+      assert_match(/status=error .* first=RuntimeError: no queue\.yml topics/, last_log_line, "dry_run=#{dry_run}")
+    end
+  end
+
   # --- P8-1: minimum-research guard (Q-69) ---
 
   def test_run_news_topic_without_findings_dropped_from_script_input_with_warning
