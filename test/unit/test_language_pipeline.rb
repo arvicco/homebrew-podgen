@@ -974,7 +974,8 @@ class TestLanguagePipeline < Minitest::Test
     $stdin.stub(:gets, "x\n") do
       AudioAssembler.stub(:new, fake_assembler) do
         pipeline.stub(:start_preview, nil) do
-          result = pipeline.send(:trim_source_audio)
+          result = nil
+          capture_io { result = pipeline.send(:trim_source_audio) }
           assert_equal :excluded, result
         end
       end
@@ -1006,7 +1007,8 @@ class TestLanguagePipeline < Minitest::Test
     AudioAssembler.stub(:new, fake_assembler) do
       pipeline.stub(:start_preview, nil) do
         $stdin.stub(:gets, fake_gets) do
-          result = pipeline.send(:trim_source_audio)
+          result = nil
+          capture_io { result = pipeline.send(:trim_source_audio) }
           assert_equal :excluded, result
         end
       end
@@ -1042,7 +1044,8 @@ class TestLanguagePipeline < Minitest::Test
       AudioTrimmer.stub(:new, fake_trimmer) do
         pipeline.stub(:start_preview, nil) do
           $stdin.stub(:gets, fake_gets) do
-            result = pipeline.send(:trim_source_audio)
+            result = nil
+            capture_io { result = pipeline.send(:trim_source_audio) }
             refute_equal :excluded, result
           end
         end
@@ -1076,7 +1079,7 @@ class TestLanguagePipeline < Minitest::Test
     AudioAssembler.stub(:new, fake_assembler) do
       Process.stub(:detach, nil) do
         $stdin.stub(:gets, input) do
-          result = pipeline.send(:ask_trim_interactive)
+          capture_io { result = pipeline.send(:ask_trim_interactive) }
         end
       end
     end
