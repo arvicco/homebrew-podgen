@@ -695,6 +695,21 @@ class TestYouTubePublisher < Minitest::Test
     assert_includes out, "All episodes already uploaded to YouTube"
   end
 
+  # Q-152 point 9: an owed video whose episode is no longer scanned (mp3
+  # gone) is never finished here, so it does not suppress the all-done line.
+  def test_finish_owed_false_owed_video_without_episode_reports_all_done
+    base = "ep-2026-01-15"
+    seed_ep(base)
+    tracker = UploadTracker.new(@uploads_path)
+    tracker.record(:youtube, "default", base, "vid_done")
+    tracker.record(:youtube, "default", "ep-2026-01-10", "vid_gone")
+    tracker.mark_pending(:youtube, "default", "ep-2026-01-10", %w[captions])
+
+    out, _err = capture_io { build_publisher(config: stub_config(youtube_enabled: true), uploader: stub_uploader, options: { finish_owed: false }).run }
+
+    assert_includes out, "All episodes already uploaded to YouTube"
+  end
+
   # CRPR round 1 (P16-1): a 404 on the playlist step names the step; the
   # marker is cleared like a missing video.
   def test_finish_owed_playlist_404_names_the_step_and_clears_the_marker
