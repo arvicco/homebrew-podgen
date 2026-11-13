@@ -444,6 +444,7 @@ class TestGenerateCommand < Minitest::Test
     links_path = File.join(@tmpdir, "links.yml")
     cmd.instance_variable_set(:@config, Struct.new(:type, :links_path).new("news", links_path))
     PriorityLinks.new(links_path).add("https://dead.example.com/b")
+    cmd.singleton_class.send(:remove_method, :produce_episodes)
     cmd.define_singleton_method(:produce_episodes) { |*| raise "TTS quota" }
     dead = Struct.new(:code, :body) { def [](_) = nil }.new("404", "")
 
@@ -503,6 +504,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_news_with_warnings_ends_log_with_warn_outcome
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :produce_episodes)
     cmd.define_singleton_method(:produce_episodes) do |_script, _research|
       @logger.error("Language es failed: RuntimeError: x")
       @warnings << "Language es failed: RuntimeError: x"
@@ -524,6 +526,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_news_failure_ends_log_with_error_outcome
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |*| raise "TTS quota" }
     code = nil
     capture_io { code = cmd.run }
@@ -585,6 +588,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_outcome_counts_logged_library_warnings
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
     cmd.define_singleton_method(:research_topics) do |_|
       @logger.warning("[ResearchAgent] Warning: Failed to research 'x' after 3 attempts: 401")
       []
@@ -631,6 +635,7 @@ class TestGenerateCommand < Minitest::Test
   def test_run_news_topic_without_findings_dropped_from_script_input_with_warning
     cmd = researching_command({ "t1" => [{ title: "A", url: "https://e.x/a", summary: "s" }], "t2" => [] })
     script_input = nil
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |_t, research, _p| (script_input = research) && { title: "T", segments: [] } }
     code = run_with_fake_sources(cmd)
 
@@ -650,6 +655,7 @@ class TestGenerateCommand < Minitest::Test
   def test_run_news_no_findings_for_any_topic_fails_before_script_agent
     cmd = researching_command({ "t1" => [], "t2" => [] })
     script_called = false
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |*| (script_called = true) && { title: "T", segments: [] } }
     code = run_with_fake_sources(cmd)
 
@@ -914,6 +920,7 @@ class TestGenerateCommand < Minitest::Test
   def researching_command(findings_by_topic, topics: findings_by_topic.keys)
     cmd = runnable_command("news")
     cmd.singleton_class.send(:remove_method, :research_topics)
+    cmd.singleton_class.send(:remove_method, :generate_topics)
     cmd.define_singleton_method(:generate_topics) { topics }
     cmd.instance_variable_set(:@config, Struct.new(:type, :episodes_dir, :sources).new("news", @episodes_dir, {}))
     cmd.instance_variable_set(:@history, Struct.new(:recent_urls).new(Set.new))

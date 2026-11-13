@@ -506,27 +506,27 @@ class TestUploadsCommand < Minitest::Test
 
   def test_bogus_mode_exits_2_with_no_collaborator_calls
     calls = []
-    publishers = [R2Publisher, LingQPublisher, YouTubePublisher]
-    publishers.each do |k|
-      k.singleton_class.send(:alias_method, :__orig_new, :new)
-      k.define_singleton_method(:new) { |*a, **kw|
+    refuse = lambda do |k|
+      lambda do |*, **|
         calls << k
         raise "must not be constructed"
-      }
+      end
     end
 
     code = nil
     saved = ENV.delete("CLAUDECODE") # else the owner-action guard would also return 2
-    capture_io { code = PodgenCLI.run(%w[uploads --mode bogus pod_a]) }
+    R2Publisher.stub(:new, refuse.call(R2Publisher)) do
+      LingQPublisher.stub(:new, refuse.call(LingQPublisher)) do
+        YouTubePublisher.stub(:new, refuse.call(YouTubePublisher)) do
+          capture_io { code = PodgenCLI.run(%w[uploads --mode bogus pod_a]) }
+        end
+      end
+    end
 
     assert_equal 2, code
     assert_empty calls
   ensure
     ENV["CLAUDECODE"] = saved if saved
-    publishers.each do |k|
-      k.singleton_class.send(:alias_method, :new, :__orig_new)
-      k.singleton_class.send(:remove_method, :__orig_new)
-    end
   end
 
   # ── Q-77 / I-9: YouTube not authorized (no terminal) ends the YT phase once ──
@@ -595,6 +595,7 @@ class TestUploadsCommand < Minitest::Test
 
   def test_run_releases_uploads_lock_when_the_batch_raises
     cmd = wire_cmd(["pod_a"], r2: ok_r2_result, lingq: nil, yt: ok_yt_result)
+    cmd.singleton_class.send(:remove_method, :run_r2_for)
     cmd.define_singleton_method(:run_r2_for) { |_| raise "rclone exploded" }
 
     assert_raises(RuntimeError) { capture_io { cmd.run } }
@@ -607,6 +608,7 @@ class TestUploadsCommand < Minitest::Test
     ok = ok_r2_result
     probe = -> { held_by_other_process?(uploads_lock) }
     cmd = wire_cmd(["pod_a"], r2: ok, lingq: nil, yt: ok_yt_result)
+    cmd.singleton_class.send(:remove_method, :run_r2_for)
     cmd.define_singleton_method(:run_r2_for) do |_|
       held = probe.call
       ok
@@ -635,6 +637,7 @@ class TestUploadsCommand < Minitest::Test
     r2_called = false
     ok = ok_r2_result
     cmd = wire_cmd(["pod_a"], r2: ok, lingq: nil, yt: ok_yt_result)
+    cmd.singleton_class.send(:remove_method, :run_r2_for)
     cmd.define_singleton_method(:run_r2_for) do |_|
       r2_called = true
       ok
