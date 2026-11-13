@@ -35,16 +35,18 @@ class UploadTracker
   # strict: true (the writers) raises on a corrupt file instead of returning {}
   # that would then be saved over it (Q-108); display reads keep the default.
   def load(strict: false)
-    migrate_legacy_file unless @migrated
+    migrate_legacy_file(strict: strict) unless @migrated
     data = YamlLoader.load(@path, default: {}, raise_on_error: strict)
     normalize_keys(data)
   end
 
   # Strict read of uploads.yml as it is on disk, without the legacy
   # migration (which writes): a preflight that raises on corruption and
-  # never touches a file, dry runs included (Q-140).
+  # never touches a file, dry runs included (Q-140). With only the legacy
+  # file on disk, that file is the ledger and is read the same way.
   def verify!
     YamlLoader.load(@path, default: {}, raise_on_error: true)
+    YamlLoader.load(legacy_path, default: {}, raise_on_error: true) unless File.exist?(@path)
     nil
   end
 
@@ -176,17 +178,20 @@ class UploadTracker
 
   # Migrate from legacy lingq_uploads.yml (flat: collection → { basename → id })
   # to unified uploads.yml (nested: lingq → collection → { basename → id }).
-  def migrate_legacy_file
+  # strict: a corrupt legacy file raises (and the migration stays owed)
+  # instead of reading as {} under a fresh uploads.yml.
+  def migrate_legacy_file(strict: false)
+    return @migrated = true if File.exist?(@path) || !File.exist?(legacy_path)
+
+    legacy_data = YamlLoader.load(legacy_path, default: {}, raise_on_error: strict)
     @migrated = true
-    return if File.exist?(@path)
-
-    legacy_path = File.join(File.dirname(@path), "lingq_uploads.yml")
-    return unless File.exist?(legacy_path)
-
-    legacy_data = YamlLoader.load(legacy_path, default: {})
     return unless legacy_data.is_a?(Hash) && !legacy_data.empty?
 
     save({ "lingq" => legacy_data })
     File.delete(legacy_path)
+  end
+
+  def legacy_path
+    File.join(File.dirname(@path), "lingq_uploads.yml")
   end
 end

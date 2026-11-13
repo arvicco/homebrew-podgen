@@ -31,6 +31,26 @@ class TestUploadTracker < Minitest::Test
     refute File.exist?(@path)
   end
 
+  # Q-160 point 15: with only the legacy ledger on disk, it is the ledger —
+  # the preflight and the writers read it strictly, never as {}.
+  def test_verify_corrupt_legacy_only_ledger_raises
+    legacy = File.join(@tmpdir, "lingq_uploads.yml")
+    File.write(legacy, "123: [unclosed\n")
+
+    error = assert_raises(RuntimeError) { @tracker.verify! }
+    assert_includes error.message, legacy
+  end
+
+  def test_record_corrupt_legacy_only_ledger_raises_and_writes_nothing
+    legacy = File.join(@tmpdir, "lingq_uploads.yml")
+    File.write(legacy, "123: [unclosed\n")
+
+    assert_raises(RuntimeError) { @tracker.record(:lingq, "123", "ep", 1) }
+    assert_raises(RuntimeError) { @tracker.record(:lingq, "123", "ep", 1) }
+    refute File.exist?(@path), "no fresh uploads.yml over an unreadable legacy ledger"
+    assert_equal "123: [unclosed\n", File.read(legacy)
+  end
+
   # --- load ---
 
   def test_load_empty_when_no_file
