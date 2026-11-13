@@ -210,6 +210,37 @@ class TestLanguagePipeline < Minitest::Test
     ENV["ANTHROPIC_API_KEY"] = original_key
   end
 
+  # Q-160 point 3 (pinned): a corrupt known_vocabulary.yml read during the
+  # Vocabulary phase leaves no partial state — no annotation call, the
+  # staged transcript untouched, the file untouched, one counted warning.
+  def test_annotate_vocabulary_corrupt_known_vocabulary_skips_without_partial_state
+    require "known_vocabulary"
+    cfg = @config.dup
+    podcast_dir = @tmpdir
+    {vocabulary_level: "B1", transcription_language: "it", podcast_dir: podcast_dir}.each do |k, v|
+      cfg.define_singleton_method(k) { v }
+    end
+    known_path = File.join(podcast_dir, "known_vocabulary.yml")
+    File.write(known_path, "it: [unclosed\n")
+    transcript = File.join(@tmpdir, "test-2026-03-10_transcript.md")
+    File.write(transcript, "# T\n\n## Transcript\n\nIl gatto.\n")
+    pipeline = build_pipeline(config: cfg)
+    pipeline.instance_variable_set(:@staging_dir, @tmpdir)
+    pipeline.instance_variable_set(:@base_name, "test-2026-03-10")
+    original_key = ENV["ANTHROPIC_API_KEY"]
+    ENV["ANTHROPIC_API_KEY"] = "test-key"
+
+    VocabularyAnnotator.stub(:new, ->(*) { flunk "no paid annotation after a refused read" }) do
+      pipeline.send(:annotate_vocabulary)
+    end
+
+    assert_equal "# T\n\n## Transcript\n\nIl gatto.\n", File.read(transcript)
+    assert_equal "it: [unclosed\n", File.read(known_path)
+    assert_equal 1, pipeline.instance_variable_get(:@warnings).grep(/Vocabulary annotation failed.*known_vocabulary/).size
+  ensure
+    ENV["ANTHROPIC_API_KEY"] = original_key
+  end
+
   # --- reconcile_subtitles (runs through SubtitleReconciliationRunner, P4-2) ---
 
   def test_reconcile_subtitles_already_reconciled_skips_reconciler_and_logs
