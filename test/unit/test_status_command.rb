@@ -178,6 +178,72 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+.*Warning: cover missing/, out)
   end
 
+  # --- generate runs only (Q-118, P20-1) ---
+
+  # render/voice/translate log to the same run-log dir; their logs carry no
+  # generate start line and must not hide the failed generate before them.
+  def test_run_failed_generate_followed_by_newer_render_log_reports_warn
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR RuntimeError: TTS quota",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota"],
+      mtime: Time.new(2026, 10, 10, 6))
+    write_log("alpha", "a-2026-10-10a.log", ["[2026-10-10 09:00:01] Rendered /x/a-2026-10-09_script.md (from JSON)",
+      "[2026-10-10 09:00:01] Re-rendered 1 script(s)"], mtime: Time.new(2026, 10, 10, 9), start: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: RuntimeError: TTS quota/, out)
+  end
+
+  def test_run_repeated_window_counts_generate_runs_only
+    make_pod("alpha", dates: fresh_dates)
+    3.times do |i|
+      write_log("alpha", "a-2026-10-0#{7 + i}.log",
+        ["[2026-10-0#{7 + i} 06:00:01] Warning: Twitter credits depleted",
+          "[2026-10-0#{7 + i} 06:00:09] END done"], mtime: Time.new(2026, 10, 7 + i, 6))
+    end
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] Translate started for 'alpha'",
+      "[2026-10-10 06:00:02] All episodes already translated"], mtime: Time.new(2026, 10, 10, 6), start: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*repeated in last 3 runs: Warning: Twitter credits depleted/, out)
+  end
+
+  # A run killed past every rescue (kill -9, power loss) leaves a start line
+  # and no RUN-OUTCOME; once the show's runs write outcomes, that is a finding.
+  def test_run_log_with_phases_and_no_outcome_reports_did_not_finish
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-09.log", ["[2026-10-09 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"],
+      mtime: Time.new(2026, 10, 9, 6))
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] START Topics",
+      "[2026-10-10 06:00:05] END Topics (4.0s)", "[2026-10-10 06:00:06] START Research"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run did not finish \(last line: START Research\)/, out)
+  end
+
+  # A log from before RUN-OUTCOME existed (no outcome in any of the show's
+  # logs) keeps the line scan: a dormant show's last run is not "unfinished".
+  def test_run_log_without_outcome_before_outcome_era_keeps_line_scan
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] START Topics",
+      "[2026-10-10 06:00:09] ✓ Episode ready"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  # The board judges the run after the last start line: a failed generate
+  # whose log a later command appended to (same slot) still reads failed.
+  def test_run_failed_generate_with_appended_render_lines_reports_run_failed
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR RuntimeError: TTS quota",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota",
+      "[2026-10-10 09:00:01] Re-rendered 1 script(s)"], mtime: Time.new(2026, 10, 10, 9))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: RuntimeError: TTS quota/, out)
+  end
+
   # --- publish stderr (launchd_stderr.log, P3-2) ---
 
   def test_run_twitter_warning_in_three_publishes_reports_warn_with_count_and_since
@@ -1256,10 +1322,13 @@ class TestStatusCommand < Minitest::Test
       "uploads: total YT uploaded 0"]
   end
 
-  def write_log(pod, file, lines, mtime:)
+  # A generate run log opens with its start line (GenerateCommand#run);
+  # start: false writes another command's log (render/voice/translate).
+  def write_log(pod, file, lines, mtime:, start: true)
     dir = File.join(@tmpdir, "logs", pod)
     FileUtils.mkdir_p(dir)
     path = File.join(dir, file)
+    lines = ["#{mtime.strftime("[%Y-%m-%d %H:%M:%S]")} Podcast Agent started for '#{pod}'", *lines] if start
     File.write(path, lines.join("\n") + "\n")
     File.utime(mtime, mtime, path)
   end

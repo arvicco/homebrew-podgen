@@ -17,7 +17,8 @@ require_relative File.join(root, "lib", "youtube_consent")
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
   #   OLD  - newest episode older than the cadence threshold (FreshnessValidator)
-  #   WARN - last run log's RUN-OUTCOME line reports warnings/errors (P7-0),
+  #   WARN - last generate run log's RUN-OUTCOME line reports warnings/errors
+  #          (P7-0), or it has none and did not finish (Q-118),
   #          or it ended in ERROR / has a warning, or the same warning
   #          repeated across the last N run logs (silent-for-weeks failures),
   #          or the same publish warning in the last PUBLISH_REPEAT scheduled
@@ -44,6 +45,7 @@ module PodgenCLI
     REVIEWER_FINDING_RE = /\A(?:\[[^\]]*\] )?\s+WARNING: \[/
     ERROR_RE = /\A(?:\[[^\]]*\]\s*)?ERROR\b/
     STAMP_RE = /\A\[[^\]]*\]\s*/
+    GENERATE_START_RE = /\A(?:\[[^\]]*\]\s*)?Podcast Agent started for '/ # GenerateCommand#run
     STATUS_LABEL = "#{ScheduleCommand::LABEL_PREFIX}.status".freeze
     INSTALL_HINT = "bin/podgen schedule --status-check --time 07:00"
     # Shared stderr of the per-podcast launchd jobs (scripts/run.sh). A dated
@@ -220,29 +222,42 @@ module PodgenCLI
 
     # --- run-log findings ---
 
+    # Generate runs only (Q-118): render/voice/translate log to the same dir
+    # but carry neither the start line nor a RUN-OUTCOME line, so they never
+    # hide a failed generate nor fill the --runs window.
     def log_findings(config)
       logs = Dir.glob(File.join(config.log_dir, "*.log")).sort_by { |f| [File.mtime(f), f] }
+        .map { |f| [f, File.read(f).scrub.lines.map(&:chomp)] }
+        .select { |_, lines| lines.any? { |l| l.match?(GENERATE_START_RE) || RunOutcome.parse(l) } }
       return [] if logs.empty?
 
-      recent = logs.last(@runs).map { |f| File.read(f).scrub.lines.map(&:chomp) }
+      recent = logs.last(@runs).map(&:last)
       repeated = repeated_warnings(recent)
-      findings = latest_run_finding(recent.last, File.basename(logs.last), repeated)
+      outcome_era = logs.any? { |_, lines| lines.any? { |l| RunOutcome.parse(l) } }
+      findings = latest_run_finding(recent.last, File.basename(logs.last.first), repeated, outcome_era)
       repeated.each_value { |raw| findings << "repeated in last #{@runs} runs: #{clip(raw)}" }
       findings
     end
 
-    # A log ending in a RUN-OUTCOME line (P7-0) is judged by it first; an ok
-    # outcome, or an older log without one, falls back to the regex scan.
-    def latest_run_finding(lines, file, repeated)
-      last = lines.reject { |l| l.strip.empty? }.last
-      if (outcome = RunOutcome.parse(last))
+    # A run is judged from its log's last start line on (a later command may
+    # append to the same slot's log): its RUN-OUTCOME line (P7-0) first; an ok
+    # outcome, or an older log without one, falls back to the regex scan. Once
+    # the show's logs carry outcomes, a started run without one did not finish.
+    def latest_run_finding(lines, file, repeated, outcome_era)
+      start = lines.rindex { |l| l.match?(GENERATE_START_RE) }
+      run = start ? lines.drop(start) : lines
+      last = run.reject { |l| l.strip.empty? }.last
+      outcome = run.reverse_each.lazy.filter_map { |l| RunOutcome.parse(l) }.first
+      if outcome
         finding = outcome_finding(outcome, file)
         return [finding] if finding
       elsif last&.match?(ERROR_RE)
         return ["#{file} ends with #{clip(last)}"]
+      elsif start && outcome_era
+        return ["#{file}: run did not finish (last line: #{clip(last)})"]
       end
 
-      first = lines.find { |l| warning?(l) && !repeated.key?(normalize(l)) }
+      first = run.find { |l| warning?(l) && !repeated.key?(normalize(l)) }
       first ? ["#{file}: #{clip(first)}"] : []
     end
 
