@@ -139,6 +139,8 @@ module PodgenCLI
       end
       @logger = PodcastAgent::Logger.new(log_path: @config.log_path(@today), verbosity: @options[:verbosity])
       PodcastAgent.logger = @logger
+      # The stderr lines above predate the logger; the run log counts them (Q-117).
+      @config.parser_warnings.each { |w| @logger.warning("Warning: guidelines.md: #{w}") }
       @history = EpisodeHistory.new(@config.history_path, excluded_urls_path: @config.excluded_urls_path)
       @warnings = []
 

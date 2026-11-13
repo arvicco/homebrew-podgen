@@ -322,6 +322,39 @@ class TestGenerateCommand < Minitest::Test
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-117: a guidelines parser warning is printed before the logger exists;
+  # it is re-emitted through the run logger, so RUN-OUTCOME counts it.
+  def test_guidelines_bare_key_warning_counts_in_run_outcome
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "bkpod")
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), "## Podcast\n- type: news\n- author\n## Format\nf\n## Tone\nt\n")
+    require "podcast_config"
+    log_path = PodcastConfig.new("bkpod").log_path(Date.today)
+
+    cmd = PodgenCLI::GenerateCommand.new(["bkpod"], {verbosity: :quiet})
+    cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil }
+    cmd.define_singleton_method(:preflight_network!) { |_| nil }
+    cmd.define_singleton_method(:generate_topics) { ["t"] }
+    cmd.define_singleton_method(:research_topics) { |_| [] }
+    cmd.define_singleton_method(:inject_priority_links) { |r| [r, []] }
+    cmd.define_singleton_method(:generate_script) { |*| {title: "T", segments: []} }
+    cmd.define_singleton_method(:review_script) { |s, *| s }
+    cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod.mp3"] }
+    cmd.define_singleton_method(:finalize) { |*| nil }
+    code = nil
+    _, err = capture_io { code = cmd.run }
+
+    assert_equal 0, code
+    assert_includes err, "Warning: guidelines.md: Podcast: '- author' is missing a value"
+    assert_equal "RUN-OUTCOME status=warn warnings=1 errors=0 first=Warning: guidelines.md: Podcast: " \
+      "'- author' is missing a value (expected '- author: <value>'); ignored",
+      File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, "")
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success
