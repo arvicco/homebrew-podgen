@@ -2,11 +2,11 @@
 <nav class="lang-switcher">
 <% languages.each do |l| %>
 <% if l[:code] == lang %>
-<span class="current"><%= l[:name] %></span>
+<span class="current"><%= escape_html(l[:name]) %></span>
 <% elsif l[:available] == false %>
-<span class="unavailable" title="Not available for this episode"><%= l[:name] %></span>
+<span class="unavailable" title="Not available for this episode"><%= escape_html(l[:name]) %></span>
 <% else %>
-<a href="<%= l[:index_path] %>"><%= l[:name] %></a>
+<a href="<%= escape_attr(l[:index_path]) %>"><%= escape_html(l[:name]) %></a>
 <% end %>
 <% end %>
 </nav>

@@ -786,6 +786,22 @@ class TestSiteGenerator < Minitest::Test
     refute_includes index, "<b>"
   end
 
+  def test_generate_lang_switcher_name_and_vocab_lang_are_escaped
+    create_mp3("mypod-2026-01-15.mp3")
+    File.write(File.join(@episodes_dir, "mypod-2026-01-15_transcript.md"),
+      "# T\n\n## Transcript\n\nIl gatto.\n\n## Vocabulary (English, R\"<u>)\n\n- **gatto** (A2 noun)\n  - cat\n  - kot\n")
+    write_history([{ "date" => "2026-01-15", "title" => "T" }])
+
+    build_generator(languages: [{ "code" => "en" }, { "code" => "x&<y" }]).generate
+
+    page = File.read(File.join(@podcast_dir, "site", "episodes", "mypod-2026-01-15.html"))
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    assert_includes index, "X&amp;&lt;Y"
+    refute_includes index, "X&<Y"
+    assert_includes page, 'data-vocab-lang="R&quot;&lt;u&gt;">R"</button>'
+    refute_includes page, "<u>"
+  end
+
   def test_generate_history_title_with_ampersand_is_escaped_on_language_page
     create_mp3("mypod-2026-01-15.mp3")
     create_mp3("mypod-2026-01-15-es.mp3")
