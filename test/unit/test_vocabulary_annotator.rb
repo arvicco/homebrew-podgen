@@ -748,6 +748,25 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # Q-160 point 9: known words compare as the ledger's keys — the reflexive
+  # particle is not part of a Slovenian lemma's identity, either side.
+  def test_annotate_known_lemmas_compare_without_reflexive_particle
+    entries = [
+      { word: "bojim", lemma: "bati se", level: "B2", pos: "v.", translation: "to fear", definition: "D." },
+      { word: "smejal", lemma: "smejati", level: "B2", pos: "v.", translation: "to laugh", definition: "D." },
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    [nil, VocabLedger.new(language: "sl")].each do |ledger|
+      stub_classify(entries) do
+        _marked, vocab = @annotator.annotate("bojim smejal zavod", language: "sl", cutoff: "B1",
+          known_lemmas: Set.new(["bati", "smejati se"]), ledger: ledger)
+        refute_includes vocab, "bati", "ledger=#{ledger.inspect}"
+        refute_includes vocab, "smejati", "ledger=#{ledger.inspect}"
+        assert_includes vocab, "zavod"
+      end
+    end
+  end
+
   def test_annotate_known_lemmas_empty_set_no_effect
     entries = [
       { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
