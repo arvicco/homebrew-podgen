@@ -290,6 +290,7 @@ class TestSourceFixtures < Minitest::Test
       out = StringIO.new
       rec = offline_recorder(dir, out, hn: -> { {"hits" => [{"title" => "t"}]} })
       File.write(File.join(dir, "README.md"), "| elevenlabs_scribe | e | `transcription/elevenlabs_scribe_words.json` | OLD | t | c |\n")
+      rec.singleton_class.send(:remove_method, :fetch_elevenlabs_scribe)
       rec.define_singleton_method(:fetch_elevenlabs_scribe) { {"words" => [{"type" => "word", "text" => "Hi"}]} }
       saved = ENV["ELEVENLABS_API_KEY"]
       ENV["ELEVENLABS_API_KEY"] = "recorder-test"

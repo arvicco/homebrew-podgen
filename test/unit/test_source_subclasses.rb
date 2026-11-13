@@ -341,9 +341,10 @@ class TestBlueskySource < Minitest::Test
 
   # CRPR round 1 (P16-4): a 200 session reply without a usable token is a
   # failed login — a JSON body without accessJwt, or an HTML maintenance page
-  # parsed to a String — never a search with an empty bearer token.
+  # parsed to a String, or an empty body (nil) — never a search with an
+  # empty bearer token.
   def test_research_session_without_token_is_a_counted_warning_no_search
-    [{}, "<html>maintenance</html>"].each do |body|
+    [{}, "<html>maintenance</html>", nil].each do |body|
       ENV["BLUESKY_HANDLE"] = "user.bsky.social"
       ENV["BLUESKY_APP_PASSWORD"] = "secret"
       warnings = []
@@ -636,6 +637,21 @@ class TestXSource < Minitest::Test
     ENV["SOCIALDATA_API_KEY"] = "test-key"
     source = XSource.new
     assert source.send(:available?)
+  end
+
+  # Q-117 / Q-152 (4): a failed topic search is one counted warning.
+  def test_search_topic_failure_is_one_counted_warning
+    ENV["SOCIALDATA_API_KEY"] = "test-key"
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    source = XSource.new(logger: logger)
+    source.define_singleton_method(:request_with_retry) { |**_| raise "HTTP 503" }
+
+    assert_equal [], source.send(:search_topic, "AI", Set.new)
+
+    assert_equal ["[XSource] Warning: Failed to search X for 'AI': RuntimeError: HTTP 503"], warnings
   end
 
   def test_unavailable_when_api_key_missing
@@ -1158,5 +1174,36 @@ class TestClaudeWebSource < Minitest::Test
 
     assert_equal 4, calls
     assert_includes lines.last, "(Anthropic::Errors::InternalServerError)"
+  end
+
+  # Q-117 / Q-152 (4): a failed web search is one counted warning.
+  def test_search_topic_api_failure_is_one_counted_warning
+    fake = Object.new
+    fake.define_singleton_method(:messages) { self }
+    fake.define_singleton_method(:create) { |**| raise "boom" }
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    @source.instance_variable_set(:@client, fake)
+    @source.instance_variable_set(:@logger, logger)
+
+    assert_equal [], @source.send(:search_topic, "AI", Set.new)
+
+    assert_equal ["[ClaudeWebSource] Warning: Claude web search failed (RuntimeError): boom"], warnings
+  end
+
+  def test_search_topic_extraction_failure_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    @source.instance_variable_set(:@logger, logger)
+    @source.define_singleton_method(:call_api) { |_t| Object.new }
+
+    assert_equal [], @source.send(:search_topic, "AI", Set.new)
+
+    assert_equal 1, warnings.size
+    assert_match(/\[ClaudeWebSource\] Warning: Failed Claude web search for 'AI': NoMethodError/, warnings.first)
   end
 end

@@ -375,7 +375,7 @@ class TestTimestampPersister < Minitest::Test
     texts = segments.map { |s| s[:text] }
     assert_equal spoken.map { |w| w["text"] }.join(" "), texts.join(" ")
     texts.each { |t| refute_match(/\s{2,}|\A\s|\s\z/, t) }
-    assert_equal ["Hello there.", "This is a short test of the transcription service"], texts
+    assert_equal ["Hello there.", "This is a short test of the transcription service."], texts
     assert_equal spoken.first["start"], segments.first[:start]
     assert_equal spoken.last["end"], segments.last[:end]
   end

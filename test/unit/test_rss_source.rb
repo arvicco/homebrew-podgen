@@ -251,6 +251,30 @@ class TestRSSSource < Minitest::Test
     assert_match(/Failed to fetch https:\/\/example\.com\/dead\.xml: RSSSource::FeedGone: HTTP 404/, logger.warnings.first)
   end
 
+  # Q-117: a malformed feed returns [] inside the retry, so fetch_parsed's
+  # counting rescue never fires; the parse error itself is the one count.
+  def test_research_malformed_feed_records_one_warning
+    logger = WarningLogger.new
+    source = RSSSource.new(feeds: ["https://example.com/bad.xml"], logger: logger)
+    source.define_singleton_method(:http_get_with_redirects) { |_url, _redirects = nil| "<rss><channel><item>" }
+
+    source.research(["Topic"])
+
+    assert_equal 1, logger.warnings.size
+    assert_match(/\[RSSSource\] Warning: RSS parse error: /, logger.warnings.first)
+  end
+
+  def test_fetch_episodes_malformed_feed_records_one_warning
+    logger = WarningLogger.new
+    source = RSSSource.new(feeds: ["https://example.com/bad.xml"], logger: logger)
+    source.define_singleton_method(:http_get_with_redirects) { |_url, _redirects = nil| "<rss><channel><item>" }
+
+    assert_empty source.fetch_episodes
+
+    assert_equal 1, logger.warnings.size
+    assert_match(/\[RSSSource\] Warning: RSS parse error: /, logger.warnings.first)
+  end
+
   def test_fetch_episodes_feed_410_costs_one_request
     logger = WarningLogger.new
     source = failing_source("https://example.com/gone.xml", logger)

@@ -348,9 +348,8 @@ class TestScrapCommand < Minitest::Test
     cmd = build_command(config)
     cmd.send(:remove_upload_tracking, config, "ep-a")
 
-    data = YAML.load_file(tracking_path)
-    refute data["lingq"]["123"].key?("ep-a")
-    refute data["youtube"]["PLabc"].key?("ep-a")
+    # Q-152 point 6: groups and platforms the removal empties go too.
+    assert_equal({}, YAML.load_file(tracking_path))
   end
 
   # --- resolve_from_path ---

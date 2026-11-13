@@ -219,7 +219,7 @@ class RSSSource
       { title: title, url: link, summary: summary }
     end
   rescue RSS::Error, RSS::NotWellFormedError => e
-    log("RSS parse error: #{e.message}")
+    log_warning("RSS parse error: #{e.message}")
     []
   end
 
@@ -334,7 +334,7 @@ class RSSSource
       ep
     end
   rescue RSS::Error, RSS::NotWellFormedError => e
-    log("RSS parse error: #{e.message}")
+    log_warning("RSS parse error: #{e.message}")
     []
   end
 end

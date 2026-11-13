@@ -14,6 +14,34 @@ class TestWordStats < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # Q-117: degraded form resolution / detection is a counted warning.
+  def test_language_detection_failure_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    stats = WordStats.new(config: Struct.new(:transcription_language).new("sl"), logger: logger)
+    stats.define_singleton_method(:load_cache) { nil }
+    stats.define_singleton_method(:ask_claude_for_language) { |*_| raise "API down" }
+    capture_io { assert_nil stats.send(:detect_language_via_claude, "dober dan", %w[Slovenian Croatian]) }
+
+    assert_equal ["[WordStats] Warning: language detection failed: RuntimeError: API down"], warnings
+  end
+
+  def test_resolve_forms_without_language_is_one_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    stats = WordStats.new(config: Struct.new(:transcription_language).new(nil), logger: logger)
+    stats.define_singleton_method(:load_cache) { nil }
+    stats.define_singleton_method(:save_cache) { |**_| nil }
+    capture_io { stats.send(:resolve_forms, {"kot" => {originals: ["kota"]}}, ["kot"]) }
+
+    assert_equal 1, warnings.size
+    assert_match(/\[WordStats\] Warning: no transcription_language configured/, warnings.first)
+  end
+
   def test_language_detection_builds_the_client_with_the_bounded_request_timeout
     captured = nil
     fake_messages = Object.new

@@ -31,6 +31,26 @@ class TestUploadTracker < Minitest::Test
     refute File.exist?(@path)
   end
 
+  # Q-160 point 15: with only the legacy ledger on disk, it is the ledger —
+  # the preflight and the writers read it strictly, never as {}.
+  def test_verify_corrupt_legacy_only_ledger_raises
+    legacy = File.join(@tmpdir, "lingq_uploads.yml")
+    File.write(legacy, "123: [unclosed\n")
+
+    error = assert_raises(RuntimeError) { @tracker.verify! }
+    assert_includes error.message, legacy
+  end
+
+  def test_record_corrupt_legacy_only_ledger_raises_and_writes_nothing
+    legacy = File.join(@tmpdir, "lingq_uploads.yml")
+    File.write(legacy, "123: [unclosed\n")
+
+    assert_raises(RuntimeError) { @tracker.record(:lingq, "123", "ep", 1) }
+    assert_raises(RuntimeError) { @tracker.record(:lingq, "123", "ep", 1) }
+    refute File.exist?(@path), "no fresh uploads.yml over an unreadable legacy ledger"
+    assert_equal "123: [unclosed\n", File.read(legacy)
+  end
+
   # --- load ---
 
   def test_load_empty_when_no_file
@@ -136,7 +156,7 @@ class TestUploadTracker < Minitest::Test
 
     data = @tracker.load
     refute data["lingq"]["12345"].key?("ep-2026-03-01")
-    refute data["youtube"]["PLabc"].key?("ep-2026-03-01")
+    refute data.key?("youtube"), "the platform its only entry emptied is gone (Q-152 point 6)"
     assert_equal 200, data["lingq"]["12345"]["ep-2026-03-02"]
   end
 
@@ -150,6 +170,19 @@ class TestUploadTracker < Minitest::Test
 
     raw = YAML.safe_load_file(@path)
     refute raw.key?("youtube_pending"), "no empty pending group is left: #{raw.inspect}"
+  end
+
+  # Q-152 point 6: a group (and platform) the removal empties goes too;
+  # groups that still hold entries, or were empty before, stay.
+  def test_remove_drops_groups_and_platforms_it_empties
+    File.write(@path, YAML.dump(
+      "lingq" => {"123" => {"ep-2026-03-01" => 1, "ep-2026-03-02" => 2}, "456" => {}},
+      "youtube" => {"PLabc" => {"ep-2026-03-01" => "vid1"}}
+    ))
+
+    assert @tracker.remove("ep-2026-03-01")
+
+    assert_equal({"lingq" => {"123" => {"ep-2026-03-02" => 2}, "456" => {}}}, YAML.safe_load_file(@path))
   end
 
   def test_remove_keeps_other_owed_bases

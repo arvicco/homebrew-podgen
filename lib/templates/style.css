@@ -64,6 +64,10 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 .episode-meta { font-size: 0.875rem; color: var(--fg-muted); margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.25rem; }
 .episode-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; display: block; }
 .episode-item audio { width: 100%; height: 36px; }
+.episode-item[hidden] { display: none; }
+.show-more { display: block; width: 100%; margin-top: 1rem; font: inherit; font-size: 0.9rem; padding: 0.6rem 1rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-alt); color: var(--accent); cursor: pointer; }
+.show-more:hover { border-color: var(--accent); }
+.show-more-noscript { margin-top: 1rem; font-size: 0.875rem; color: var(--fg-muted); }
 
 /* Episode detail */
 .episode-header { margin-bottom: 2rem; }

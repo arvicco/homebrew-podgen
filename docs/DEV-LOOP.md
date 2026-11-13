@@ -3,11 +3,17 @@
 *How this project gets built with maximum unattended automation,
 minimum top-tier spend, and explicit human gates. Instantiated from
 the dev-loop skill (ancestry: nabu → mimir → arbot); synced to
-dev-loop v2.1 (doctrine.md + boards.md) on 2026-10-11 and re-synced
-on 2026-10-28 to origin/main 966b93b (doctrine §17a–§27, the phase
-register, the gate health sweep) — those two files are binding and are
-NOT duplicated here; section 9 maps the sections that need a podgen
-reading.*
+dev-loop v2.1 (doctrine.md + boards.md) on 2026-10-11, re-synced on
+2026-10-28 to origin/main 966b93b (doctrine §17a–§27, the phase
+register, the gate health sweep) and on 2026-11-13 to origin/main
+2e4c0cf (doctrine §28–§32; the §1 one-command rule; the §6
+no-blocking-prompts sharpening; the §7 completion-surface rule with
+its inline check stamp; §13 temporal privacy; §16 one canonical home;
+the §25 action-relay widening; the detached-run / chain-run runner
+pair) — those two files are binding and are NOT duplicated here;
+section 4 is a working copy that CITES them and is checked against
+them at every re-sync (§16); section 9 maps the sections that need a
+podgen reading.*
 
 ## 1. Preconditions the loop needs
 
@@ -76,7 +82,9 @@ labeled bullet groups Shipped / Boards / Incidents / Open, one item
 per line, never fused), phase-clock (the §21 clock: adoption and
 handover timestamps of the running phase) and old-phases/ (closed
 plans; the pre-Phase-2 docs/BACKLOG.md and WORKLOG.md are archived
-there as backlog-2026-10-11.md / worklog-2026-10-11.md).
+there as backlog-2026-10-11.md / worklog-2026-10-11.md). The boards
+are gitignored and keep full timestamps; tracked files carry dates
+only (item 19).
 
 ## 4. Loop mechanics
 
@@ -86,15 +94,20 @@ there as backlog-2026-10-11.md / worklog-2026-10-11.md).
    frame) so the lane can reproduce it, and the lane re-censuses
    before building and reports the delta (§17a). A brief or wrapper
    for a runner that executes a SEQUENCE of live slices (a fixture
-   recording series, a batch of regens, a multi-source sync) carries
-   four lines, none optional (§17b): a timeout of 2× the last measured
-   wall time with a 90-minute floor; a budget stop at which it
-   reports and stops; a first-failure stop; tail verification (the
-   last slice's counts against its expectation) before "done". The
-   review of batch code checks that every rescue path records-and-
-   skips or re-raises. A background rider (a paced crawl, a long
-   fetch) is sized to the phase: it stops at its next clean boundary
-   when the last code lane lands (§24).
+   recording series, a batch of regens, a revocab pass, a multi-source
+   sync) carries four lines, none optional (§17b): a timeout of 2× the
+   last measured wall time with a 90-minute floor; a budget stop at
+   which it reports and stops; a first-failure stop; tail verification
+   (the last slice's counts against its expectation) before "done".
+   The wrapper half is a TOOL, not a convention: the plugin's
+   `scripts/detached-run.sh` (nohup + pidfile + STOP file + hard
+   timeout + a worded verdict with `.exit`/`.FAILED` sentinels) and
+   `scripts/chain-run.sh` (one verdict per step, exit = the OR of its
+   members, a dedicated `.events` signal surface) — never a hand-
+   written nohup dance. The review of batch code checks that every
+   rescue path records-and-skips or re-raises. A background rider (a
+   paced crawl, a long fetch) is sized to the phase: it stops at its
+   next clean boundary when the last code lane lands (§24).
 3. **Implement TDD**: characterization/failing test first, then the
    minimal diff to green.
 4. **Verify**: `bundle exec rake gate` green + self-review checklist;
@@ -146,19 +159,31 @@ there as backlog-2026-10-11.md / worklog-2026-10-11.md).
    the merge): verify the merge with a live query, delete the phase
    branch both ends, stamp the plan CLOSED and archive it, archive the
    queue and remove adopted entries, advance incident rows, APPEND the
-   phase-register entry (the closure checklist's last step), then the
-   next slate. Releases (`gh release create`, Homebrew formula
-   auto-update) are owner gate actions. The next phase is elaborated
-   only after the gate closes, as a FULL plan in `.docs/pXX-plan.md`
-   (scope, packets with goals/acceptance, decision items, risks) that
-   the owner signs off BEFORE execution starts (owner ruling
-   2026-09-01).
-9. **Never idle** (doctrine §6): a turn ends only at the gate or on a
-   genuinely empty workfront; waiting on background work prints
-   "independent items remaining: N" with N = 0; long waits arm the
-   kick/stay waker. **Ring for the owner** when the loop stops on
-   something only the owner can do (gate handoff, all-blocked,
-   decision item) — as the LAST tool call of that turn:
+   phase-register entry (the closure checklist's last step), then
+   present the next slate ON ASK. **The slate never self-adopts**
+   (boards.md lifecycle 1 and 6): no lane, read, census or any other
+   spend starts before the owner names the phase; a refill read of a
+   thin queue is a slate OPTION like any other, never an automatic
+   step (owner correction 2026-11-13, after three review lanes were
+   spawned at a gate close with no slate presented). Releases
+   (`gh release create`, Homebrew formula auto-update) are owner gate
+   actions. The next phase is elaborated only after the gate closes,
+   as a FULL plan in `.docs/pXX-plan.md` (scope, packets with
+   goals/acceptance, decision items, risks) that the owner signs off
+   BEFORE execution starts (owner ruling 2026-09-01).
+9. **Never idle, never block** (doctrine §6): a turn ends only at the
+   gate or on a genuinely empty workfront; waiting on background work
+   prints "independent items remaining: N" with N = 0; long waits arm
+   the kick/stay waker. An adopted phase is an UNATTENDED window: no
+   blocking interactive prompt (AskUserQuestion or any modal) fires
+   during a phase, least of all at adoption; the interaction model is
+   register rows + chat read at will + the turn-end alarm. A slate
+   candidate is adoptable on the adoption word ALONE — "the owner
+   rules X at adoption" is a forbidden pre-condition; mint the ruling
+   when it is identified and register-gate only the dependent
+   packets (§6, sharpened 2026-11-06). **Ring for the owner** when the
+   loop stops on something only the owner can do (gate handoff,
+   all-blocked, decision item) — as the LAST tool call of that turn:
    `nohup "$HOME/.claude/hooks/attention-alarm.sh" sticky >/dev/null 2>&1 &`
    Never for informational turns. The one-line closer that follows
    the alarm opens with the clock line (item 10) and names the one
@@ -180,21 +205,119 @@ there as backlog-2026-10-11.md / worklog-2026-10-11.md).
    hang on nobody and are never reported as owner actions. An adopted
    packet's researched recommendation IS the authorization: execute
    it and report. A genuinely open owner choice mid-work → mint the
-   row at once, never nag the chat.
-12. **Owner-state lines are derived, never copied** (§27): any message
-   carrying an OWNER ACTIONS line or a claim about PR states, drafts
-   or sends is composed by first running the live query bundle
+   row at once, never nag the chat. **No manufactured decisions** (§7,
+   second offense 2026-11-05): the register row form is reserved for
+   items whose OPTIONS are honestly undecidable without the owner; a
+   row whose own text carries a confident recommendation is self-
+   indicting — the loop resolves it from the system's standing
+   patterns, records "resolved by loop ruling" in the plan, and moves
+   on. Only genuine forks, structure-inventing calls, scope, identity,
+   money and listener-visible or frozen-domain choices go up.
+12. **Owner-state lines are derived, never copied** (§27) **and carry
+   their check inline** (§7, 2026-11-05): any message carrying an
+   OWNER ACTIONS line or a claim about PR states, drafts, sends or run
+   outcomes is composed by first running the live query bundle
    (`gh pr view --json state,mergedAt` for every PR it will name;
-   `gh pr list --state open`), then writing the lines only from that
-   output; an unsubstantiated line is dropped, not softened. Boards —
-   and the loop's own prior messages — are never a source for an
-   owner-state line; they are what gets corrected when the query
-   contradicts them, in the same turn.
+   `gh pr list --state open`; the completion record of every other
+   act it will request), then writing the lines only from that output;
+   an unsubstantiated line is dropped, not softened. The query is OF
+   THE SURFACE THE LINE CLAIMS — its COMPLETION RECORD (the merge
+   state, the run log's RUN-OUTCOME line, the batch summary, the
+   consent token's size, the posted URL), never an absence-of-activity
+   surface (process tables, lock files, bare mtimes prove only "not
+   running now"). FORMAT CONTRACT: every owner-action line and
+   external-state claim carries its evidence inline — "(checked HH:MM
+   CST: <surface> → <state>)" — and a line that cannot cite its check
+   does not ship. Boards — and the loop's own prior messages, and a
+   compaction summary — are never a source for an owner-state line;
+   they are what gets corrected when the query contradicts them, in
+   the same turn. The plugin's `nag-guard.sh` Stop hook blocks a
+   turn-ending that hands the owner an unstamped action (not armed on
+   this box until the installed plugin is refreshed — see item 17).
 13. **Surveys end in minted items** (§22): an owner-ordered survey or
    read ends with every adoptable finding as a queue item with the
    verification already done, a register row where an owner call is
    genuinely needed, or an explicit KILLED line; "for the owner's
    consideration" lists are the named failure mode.
+14. **Repeated operations assert their own yield** (§28, 2026-11-09):
+   any loop-fired chain of slices (a regen series, a fixture recording
+   series, a revocab pass over a show, a batch of re-reads) measures
+   its output delta every iteration from the tool's own accounting
+   line (files landed, segments reconciled, entries written); a
+   zero-delta iteration BREAKS the chain and surfaces — log line +
+   stop, never a silent next lap; a tool whose progress line does not
+   print on some path is itself a defect. An anomaly never gets a
+   soothing adjective ("harmless", "benign", "cosmetic", "expected")
+   without the check that earns it quoted in the same turn; the
+   honest form is "anomaly, cause unknown, checking", and on a live
+   surface that means an incident row + investigation item at once.
+15. **A fired long op is MONITORED, not awaited** (§29, 2026-11-11):
+   any loop-fired operation expected to run longer than ~10 minutes
+   gets its watchdog armed in the SAME turn that fires it — exit
+   notification; bounded re-invoke checkpoints (≤ 30 min) that read
+   the op's OWN progress ticks; an overrun deadline from the op's
+   timing ledger (2× measured, never a guess) past which the wake
+   surfaces kill/wait to the owner with the evidence gathered. A
+   stalled tick stream is the alarm condition, not "still running".
+   Podgen's candidates: revocab passes, fixture series, regen chains.
+16. **Owner-fired op outcomes are VERIFIED at first contact; incidents
+   LEAD** (§30, 2026-11-11): at the loop's first contact after any
+   owner-fired long op — a production generate, the 10:30 upload
+   batch, a manual regen, a history rewrite — verify the op's outcome
+   from its durable record (the run log's RUN-OUTCOME line, the batch
+   summary, the git refs) BEFORE building anything on its output; a
+   killed run writes nothing, so silence is what gets audited. An
+   incident-grade discovery opens the next owner report as its FIRST
+   line, named plainly — never a clause inside the answer to
+   something else.
+17. **Compaction is a steered handoff** (§31, 2026-11-12): the plugin's
+   PreCompact hook makes every summary a duty handoff (undelivered
+   verdicts first and marked; every external-state line "snapshot —
+   re-verify"; in-flight ops with ids and watchdogs; the exact next
+   step; standing rules verbatim), and its SessionStart(compact) hook
+   makes the resumed turn deliver undelivered verdicts first and
+   re-earn every external-state line live. Continuity never lives
+   only in context: the plan doc, phase clock, registers and task ids
+   in the worklog are kept current DURING work, so a compaction loses
+   prose, never state. On this box the installed plugin is still
+   cache 1.1.1 (no doctrine.md, no nag-guard, no compaction hooks;
+   the marketplace path is the local clone, 45 commits behind
+   origin/main on 2026-11-13) — the session runs unprotected until
+   the clone is brought to origin/main and the plugin refreshed.
+18. **A chained op's detected failure surfaces itself** (§32,
+   2026-11-12): a chained or multi-step background op gets a
+   failure-line Monitor armed in the same tool turn it is fired,
+   watching a DEDICATED signal surface (the runner's `.events`,
+   `.FAILED` and `.exit` files) — never `tail -f <progress log> |
+   grep`, which turns a watch into a firehose. Chain scripts print
+   one worded verdict per step ("ok exit=0" / "FAILED exit=N"), one
+   ALL-DONE line, and exit with the OR of their members; no neutral
+   "exit=N" lines anywhere, and `|| true` only with a same-line
+   comment naming why that failure is ignorable. Status lines about
+   the loop's own ops are earned like external state: the log or
+   ledger is read immediately before composing, every time.
+19. **Temporal privacy on public surfaces** (§13, 2026-11-03): the
+   clock behind the work is private data. Tracked files, commit
+   messages, PR bodies and site prose carry DATES as the finest time
+   grain — never clock times, zone suffixes or offsets, never
+   day-parts ("overnight", "this morning"), never working-hours
+   narrative; durations ("52m", "1h 5m") measure the work and stay.
+   The gitignored boards keep full timestamps. The CLAUDE.md phase
+   line was stripped of clock times on 2026-11-13; the loop commits
+   with `TZ=UTC`. Upstream's own cadence and listener-facing episode
+   metadata are content, not a leak (the feed's pubDate question is
+   R18-02).
+20. **One command for an owner-run operation; one canonical home per
+   rule** (§1 2026-11-02, §16 2026-11-02): when an identity act
+   genuinely needs the owner to RUN something, it is handed over as
+   ONE packaged command (a rake task or script carrying its preflight,
+   setup and post-verification), never a sequence of incantations.
+   Every process rule lives in exactly one canonical home — doctrine.md
+   / boards.md for the general loop, CLAUDE.md for podgen-specific
+   rules, memory for session-learned nuance; this file is a working
+   copy that cites them and is re-checked against them at every
+   re-sync, and a paraphrase that drifts stronger or weaker than the
+   owner's words is the defect.
 
 ## 5. Execution modes
 
@@ -220,7 +343,9 @@ Freely allowed: file operations inside the repo + scratchpad; the
 gate and test commands; dry-run modes; git on phase branches
 (including push); doc/web lookups.
 
-Hard boundary (deny-listed or owner-only): pushes to `master`, force
+Hard boundary (owner-only, enforced by the dispatcher's `CLAUDECODE=1`
+refusal; the settings.json deny list only catches the literal flags and
+is a convenience layer, not the enforcement): pushes to `master`, force
 pushes, tags, `gh release create`; listener-facing CLI commands
 (`podgen publish/unpublish/uploads/tweet/schedule/analytics`);
 secrets (never Read .env — ENV names only); new dependencies;
@@ -239,7 +364,7 @@ what good/bad looks like).
 | Phase 0 | Review the inventory memo; approve the refactor list; accept README v1 |
 | Fixtures | Run fixture-recording tasks (network); review the diff |
 | Gates | Merge the phase PR; releases/tags; publish runs; visual sign-offs |
-| Always | Rulings on decision items; frozen-domain changes; guidelines.md editorial changes |
+| Always | Rulings on decision items; frozen-domain changes; guidelines.md editorial changes; naming the phase from the slate |
 
 ## 8. Ops pattern
 
@@ -255,9 +380,10 @@ gains an unregistered host. Decommissioning any scheduled job
 follows the inventory rule (CLAUDE.md verification discipline #3).
 Since Phase 7 every generate ends its log with a `RUN-OUTCOME` line
 and `podgen status` reads it, the upload trackers and the served
-feed — that board IS the health-invariant sweep run at every gate.
+feed — that board IS the health-invariant sweep run at every gate,
+and the RUN-OUTCOME line is the completion record §30 reads first.
 
-## 9. Doctrine sections with a podgen reading (re-sync 2026-10-28)
+## 9. Doctrine sections with a podgen reading (re-sync 2026-11-13)
 
 - **§19 axis-mapping is parse work:** a new source or feed intake
   (a podcast's guidelines, a research source) maps upstream metadata
@@ -278,10 +404,33 @@ feed — that board IS the health-invariant sweep run at every gate.
   (`regen --reconcile` is an explicit flavor); any future hours-long
   derived product follows the same rule — its own command, stored
   with provenance, staleness visible on the status board.
-- **§25 the relay runs one direction:** podgen has no relay protocol
-  (no owner-approved sends to external channels); if one appears,
-  every post is the loop's act behind the owner's one send, never a
-  form-filling walkthrough handed back.
+- **§25 the relay runs one direction; action-relays:** podgen has no
+  relay protocol (no owner-approved sends to external channels); if
+  one appears, every post is the loop's act behind the owner's one
+  send, never a form-filling walkthrough handed back, and any
+  automatable act of arguable authority is drafted as "channel:
+  action — what, against which surface, under which ruling, expected
+  result" for the owner's one word.
+- **§7 outbound channels are inbound duties:** the product's own
+  publishers (tweets, Bluesky, YouTube, LingQ) are listener-facing
+  output, not loop-opened channels; the loop opens no channel today.
+  If it ever posts anywhere on the owner's behalf, the return path is
+  enumerated in the same edit that records the post.
+- **§13 temporal privacy, podgen surfaces:** CLAUDE.md's phase line,
+  README, ARCHITECTURE, commit messages and PR bodies carry dates
+  only. Episode `pubDate` and `lastBuildDate` in the served feeds are
+  listener-facing RSS metadata minted at generation time with the
+  Mac's zone offset — a frozen-domain surface, so whether to normalize
+  them is R18-02, not a loop call.
+- **§28–§32 in podgen terms:** the loop's chains are regen series,
+  fixture recording series and revocab passes — each runs under
+  `detached-run.sh` + `chain-run.sh` with a Monitor on the `.events`
+  surface, a yield assertion per slice, and an owner line only after
+  the log is read. The owner's long ops are the production generates,
+  the 10:30 batch and anything done to the repository between
+  sessions; their records (RUN-OUTCOME, the batch summary, `git
+  fetch` + the PR state) are read before any work builds on them, and
+  a found incident leads the next report.
 - **Clock backfill:** the register's historical entries carry phase
   lengths reconstructed from the branch's first and last commits and
   the PR timestamps, marked approximate; from Phase 9 on the clock

@@ -111,7 +111,8 @@ class TestScriptReviewer < Minitest::Test
   # P16-5: a date about six months from the run date may be meant for
   # either year — reported, never rewritten.
   def test_check_weekday_far_from_run_date_reported_not_auto_fixed
-    text = "Friday, January 1, and the new rules take effect."
+    # 2026-01-01 is a Thursday, 2027-01-01 a Friday: Saturday fits neither.
+    text = "Saturday, January 1, and the new rules take effect."
     script = make_script(opening: text)
     reviewer = build_reviewer(date: Date.new(2026, 7, 1))
 
@@ -121,7 +122,20 @@ class TestScriptReviewer < Minitest::Test
     assert_equal 1, weekday_issues.length
     refute weekday_issues.first[:auto_fixed]
     assert_equal ScriptReviewer::WARNING, weekday_issues.first[:severity]
-    assert_includes weekday_issues.first[:message], "Friday, January 1"
+    assert_includes weekday_issues.first[:message], "Saturday, January 1"
+    assert_equal text, corrected[:segments].first[:text]
+  end
+
+  # Q-152 point 2: about six months out, a weekday right for the other
+  # year (2027-01-01 is a Friday, 184 days after 2026-07-01) is no issue.
+  def test_check_weekday_far_matching_other_year_within_window_no_issue
+    text = "Friday, January 1, and the new rules take effect."
+    script = make_script(opening: text)
+    reviewer = build_reviewer(date: Date.new(2026, 7, 1))
+
+    corrected, issues = reviewer.run_deterministic_checks(script)
+
+    assert_empty issues.select { |i| i[:check] == "weekday" }
     assert_equal text, corrected[:segments].first[:text]
   end
 
@@ -405,6 +419,20 @@ class TestScriptReviewer < Minitest::Test
       corrected, _ = build_reviewer.run_deterministic_checks(script)
 
       assert_equal "Markets rose. Then they fell.", corrected[:segments].first[:text], adverb
+    end
+  end
+
+  # Q-152 point 7 (pinned as accepted): a direction ended by a dash is not
+  # removed — no rule tells "Long pause — " (a direction) from "Long
+  # pause — the Fed's sixth — ended." (content), so both stay.
+  def test_check_stage_directions_dash_ended_phrase_kept
+    ["Long pause — the Fed's sixth — ended.", "Rates held. Long pause — then markets rallied."].each do |text|
+      script = make_script(segments: [{ name: "Opening", text: text }])
+
+      corrected, issues = build_reviewer.run_deterministic_checks(script)
+
+      assert_empty issues.select { |i| i[:check] == "stage_direction" }, text
+      assert_equal text, corrected[:segments].first[:text]
     end
   end
 

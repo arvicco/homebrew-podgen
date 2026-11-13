@@ -74,7 +74,11 @@ class VocabularyAnnotator
     # Stage 2: Filter and cap before enrichment to minimize API work
     unless known_lemmas.empty?
       before = entries.length
-      entries.reject! { |e| known_lemmas.include?(e[:lemma].to_s.downcase) && !include_words.include?(e[:lemma].to_s.downcase) }
+      # Compared as the ledger's keys (reflexive particle stripped), like
+      # the vocab review report.
+      keys = ledger || VocabLedger.new(language: language)
+      known = known_lemmas.map { keys.lemma_key(it) }.to_set
+      entries.reject! { |e| known.include?(keys.lemma_key(e[:lemma])) && !include_words.include?(e[:lemma].to_s.downcase) }
       filtered = before - entries.length
       log("Filtered #{filtered} known words") if filtered > 0
     end
@@ -211,11 +215,12 @@ class VocabularyAnnotator
         if json_str
           log("Salvaged partial JSON from truncated response")
         else
-          log("WARNING: Response truncated at max_tokens and salvage failed")
+          log_warning("Response truncated at max_tokens and salvage failed")
         end
       else
         # Extract JSON array from response (may be wrapped in ```json ... ```)
         json_str = raw[/\[.*\]/m]
+        log_warning("Classification response held no JSON array; no vocabulary for this text") unless json_str
       end
 
       return [] unless json_str
@@ -609,10 +614,12 @@ class VocabularyAnnotator
       raw = AnthropicClient.text_of(message).strip
       json_str = if message.stop_reason == "max_tokens"
         salvage_truncated_json(raw).tap do |r|
-          log(r ? "Salvaged partial enrichment" : "WARNING: Enrichment truncated and salvage failed")
+          r ? log("Salvaged partial enrichment") : log_warning("Enrichment truncated and salvage failed")
         end
       else
-        raw[/\[.*\]/m]
+        raw[/\[.*\]/m].tap do |r|
+          log_warning("Enrichment response held no JSON array; no glosses for #{target_language}") unless r
+        end
       end
 
       return [] unless json_str
@@ -632,7 +639,7 @@ class VocabularyAnnotator
   rescue JSON::ParserError => e
     salvaged = salvage_truncated_json(raw)
     entries = salvaged ? JSON.parse(salvaged, symbolize_names: true) : []
-    log("WARNING: Enrichment response malformed (#{e.message[0, 80]}); " \
+    log_warning("Enrichment response malformed (#{e.message[0, 80]}); " \
         "salvaged #{entries.length} entries before the bad object")
     entries
   end

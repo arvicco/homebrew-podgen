@@ -370,6 +370,18 @@ class TestGuidelinesParser < Minitest::Test
     assert_equal({}, parser.site_config)
   end
 
+  def test_site_index_episodes_parses_positive_integer
+    parser = build_parser("## Site\n- index_episodes: 5\n")
+    assert_equal({index_episodes: 5}, parser.site_config)
+  end
+
+  def test_site_index_episodes_ignores_non_positive_value
+    parser = build_parser("## Site\n- index_episodes: 0\n- footer: Hi\n")
+    assert_equal({footer: "Hi"}, parser.site_config)
+    parser = build_parser("## Site\n- index_episodes: many\n")
+    assert_equal({}, parser.site_config)
+  end
+
   # --- sources ---
 
   def test_parses_sources_simple

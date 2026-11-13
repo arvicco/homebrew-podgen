@@ -32,7 +32,7 @@ class TestCharacterizationCLI < Minitest::Test
       publish <podcast>              Publish to Cloudflare R2 (--lingq for LingQ)
       stats <podcast> | --all        Show podcast statistics
       validate <podcast> | --all     Validate podcast config and output
-      status [podcast] [--json]      One-line OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)
+      status [podcast] [--json]      One-line OK/OLD/WARN/DORMANT/UNPUBLISHED verdict per podcast (exit 1 if any OLD/WARN)
       list                           List available podcasts
       test <name> [args]             Run a standalone test script
       schedule <podcast>             Install launchd scheduler (--time, --publish, --telegram)

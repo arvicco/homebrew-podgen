@@ -178,7 +178,7 @@ class TTSAgent
     return unless trailing > TRIM_THRESHOLD
 
     if trailing > MAX_TRIM_SECONDS
-      log("  WARNING: alignment data appears truncated (claims #{trailing.round(2)}s trailing). " \
+      log_warning("alignment data appears truncated (claims #{trailing.round(2)}s trailing). " \
           "Skipping trim to avoid silencing real speech.")
       return
     end
@@ -189,7 +189,7 @@ class TTSAgent
     _out, err, status = Open3.capture3(*cmd)
 
     unless status.success?
-      log("  WARNING: ffmpeg silence failed, keeping original: #{err}")
+      log_warning("ffmpeg silence failed, keeping original: #{err}")
       return
     end
 
@@ -220,7 +220,7 @@ class TTSAgent
 
     [{ pronunciation_dictionary_id: dict[:dictionary_id], version_id: dict[:version_id] }]
   rescue => e # skippable: TTS proceeds without the pronunciation dictionary
-    log("WARNING: Pronunciation dictionary failed, continuing without: #{e.class}: #{e.message}")
+    log_warning("Pronunciation dictionary failed, continuing without: #{e.class}: #{e.message}")
     []
   end
 

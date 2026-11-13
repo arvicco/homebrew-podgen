@@ -50,6 +50,20 @@ class TestReviewerRecall < Minitest::Test
     assert_nil ENV["CLAUDE_EFFORT_REVIEWER"], "the override does not outlive the call"
   end
 
+  # Q-160 point 8: the low run is the AI layer only, so the baseline drops
+  # the deterministic BLOCKERs the production review also counted.
+  def test_measure_baseline_excludes_deterministic_blockers
+    deterministic = %w[weekday title_missing priority_url].map do |check|
+      {severity: "BLOCKER", check: check, segment: "s", message: "m"}
+    end
+    path = write_bundle("d", default_issues: deterministic + [{severity: "BLOCKER", check: "hallucination", segment: "s", message: "m"}])
+    client = FakeClient.new([review])
+
+    rows = ReviewerRecall.measure([path], client: client)
+
+    assert_equal 1, rows.first.default_blockers
+  end
+
   def test_measure_rerun_default_sends_no_effort_first
     path = write_bundle("b", default_issues: [])
     client = FakeClient.new([review("BLOCKER"), review])

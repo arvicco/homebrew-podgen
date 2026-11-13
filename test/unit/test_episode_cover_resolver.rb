@@ -215,6 +215,42 @@ class TestEpisodeCoverResolver < Minitest::Test
       "missing configured base_image must log a warning")
   end
 
+  # Q-117: every cover fallback the run took is one resolver warning (the
+  # pipeline merges them into RUN-OUTCOME).
+  def test_configured_base_image_missing_is_one_warning
+    resolver = build_resolver(cover_base_image: "/nonexistent/base.png")
+    resolver.resolve("Title")
+
+    assert_equal ["Cover base_image configured but not found: /nonexistent/base.png"], resolver.warnings
+  end
+
+  def test_generation_returning_nil_is_one_warning
+    resolver = build_resolver(cli_base_image: "/tmp/base.png", youtube_thumbnail: "/tmp/thumb.jpg")
+
+    path, = CoverResolver.stub(:generate, ->(**_) {}) { resolver.resolve("Title") }
+
+    assert_equal "/tmp/thumb.jpg", path
+    assert_equal ["Cover generation failed for /tmp/base.png (falling back)"], resolver.warnings
+  end
+
+  def test_generation_without_base_image_is_one_warning
+    resolver = build_resolver(cover_generation_enabled: true)
+    resolver.resolve("Title")
+
+    assert_equal ["No base_image configured for cover generation"], resolver.warnings
+  end
+
+  def test_auto_cover_search_failure_is_one_warning
+    resolver = build_resolver(cli_image: "auto")
+    failing = Object.new
+    failing.define_singleton_method(:try) { |**_| raise Errno::ECONNRESET }
+
+    AutoCoverResolver.stub(:new, failing) { resolver.resolve("Title") }
+
+    assert_equal 1, resolver.warnings.size
+    assert_match(/\AAuto cover search failed: Errno::ECONNRESET/, resolver.warnings.first)
+  end
+
   # --- overlay option merging ---
 
   def test_generate_merges_feed_overlay_opts_over_config

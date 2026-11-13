@@ -48,7 +48,8 @@ module PodgenCLI
 
     def run
       code = setup_pipeline
-      return code if code
+      # Q-118: a refusal after the log opened ends it with RUN-OUTCOME too.
+      return @logger ? finish_run(code) : code if code
 
       begin
         @logger.log("Podcast Agent started for '#{@podcast_name}'#{@dry_run ? ' (DRY RUN)' : ''}")
@@ -93,6 +94,10 @@ module PodgenCLI
         @logger.error(e.backtrace.first(5).join("\n"))
         $stderr.puts "\n\u2717 Pipeline failed: #{e.message}" unless @options[:verbosity] == :quiet
         finish_run(1)
+      rescue SignalException, SystemExit => e # fatal: a killed run (bin/podgen's INT/TERM trap exits 130/143) still ends its log (Q-118); re-raised
+        @logger.error("Run killed: #{e.class}#{" #{e.status}" if e.is_a?(SystemExit)}")
+        finish_run(e.is_a?(SystemExit) ? e.status : 128 + e.signo)
+        raise
       ensure
         @lock_file.flock(File::LOCK_UN)
         @lock_file.close
@@ -114,7 +119,8 @@ module PodgenCLI
 
       @config = load_config!
       @config.ensure_directories!
-      surface_guidelines_warnings(@config)
+      guidelines = File.exist?(@config.guidelines_path) # missing: refused below, once the log is open (Q-118)
+      surface_guidelines_warnings(@config) if guidelines
 
       lock_path = File.join(File.dirname(@config.episodes_dir), "run.lock")
       @lock_file = File.open(lock_path, File::RDWR | File::CREAT, 0o644)
@@ -137,12 +143,16 @@ module PodgenCLI
           return 1
         end
       end
-      @logger = PodcastAgent::Logger.new(log_path: @config.log_path(@today), verbosity: @options[:verbosity])
+      # The episode slot reads the guidelines' languages; without them, the bare date's log.
+      log_path = guidelines ? @config.log_path(@today) : File.join(@config.log_dir, "#{@config.name}-#{@today}.log")
+      @logger = PodcastAgent::Logger.new(log_path: log_path, verbosity: @options[:verbosity])
       PodcastAgent.logger = @logger
+      # The stderr lines above predate the logger; the run log counts them (Q-117).
+      @config.parser_warnings.each { |w| @logger.warning("Warning: guidelines.md: #{w}") } if guidelines
       @history = EpisodeHistory.new(@config.history_path, excluded_urls_path: @config.excluded_urls_path)
       @warnings = []
 
-      unless File.exist?(@config.guidelines_path)
+      unless guidelines
         @logger.error("Missing guidelines: #{@config.guidelines_path}")
         return 1
       end
@@ -151,36 +161,37 @@ module PodgenCLI
       @logger.log("Loaded guidelines (#{@guidelines.length} chars)")
 
       if @options[:file] && @config.type != "language"
-        $stderr.puts "Error: --file is only supported for language pipeline podcasts (type: language)"
-        return 1
+        return refuse("--file is only supported for language pipeline podcasts (type: language)")
       end
       if @options[:url] && @config.type != "language"
-        $stderr.puts "Error: --url is only supported for language pipeline podcasts (type: language)"
-        return 1
+        return refuse("--url is only supported for language pipeline podcasts (type: language)")
       end
       if @options[:rss] && @config.type != "language"
-        $stderr.puts "Error: --rss is only supported for language pipeline podcasts (type: language)"
-        return 1
+        return refuse("--rss is only supported for language pipeline podcasts (type: language)")
       end
       if @options[:file] && @options[:url]
-        $stderr.puts "Error: --file and --url are mutually exclusive"
-        return 1
+        return refuse("--file and --url are mutually exclusive")
       end
       if @options[:rss] && (@options[:file] || @options[:url])
-        $stderr.puts "Error: --rss is mutually exclusive with --file and --url"
-        return 1
+        return refuse("--rss is mutually exclusive with --file and --url")
       end
       %w[skip cut autotrim].each do |flag|
         if @options[flag.to_sym] && @options[:"no_#{flag}"]
-          $stderr.puts "Error: --#{flag} and --no-#{flag} are mutually exclusive"
-          return 1
+          return refuse("--#{flag} and --no-#{flag} are mutually exclusive")
         end
       end
       if @options[:ask_trim] && (@options[:skip] || @options[:no_skip] || @options[:cut] || @options[:no_cut])
-        $stderr.puts "Error: --ask-trim is mutually exclusive with --skip/--no-skip/--cut/--no-cut"
-        return 1
+        return refuse("--ask-trim is mutually exclusive with --skip/--no-skip/--cut/--no-cut")
       end
       nil
+    end
+
+    # A setup refusal once the log is open: the stderr line as before, and
+    # the reason named by the run's RUN-OUTCOME line (Q-118).
+    def refuse(message)
+      $stderr.puts "Error: #{message}"
+      @refusal = message
+      1
     end
 
     # Ends the run log with its one machine-readable RUN-OUTCOME line (P7-0)
@@ -190,7 +201,7 @@ module PodgenCLI
     def finish_run(code)
       warnings = (@language_pipeline ? @language_pipeline.warnings : @warnings) + @logger.logged_warnings
       @logger.log(RunOutcome.line(code: code, warnings: warnings, errors: @logger.error_count,
-        first_error: @logger.first_error))
+        first_error: @logger.first_error || @refusal))
       code
     end
 
@@ -203,7 +214,7 @@ module PodgenCLI
     def generate_topics
       @logger.phase_start("Topics")
       topics = if @dry_run
-        t = @config.queue_topics
+        t = queue_topics!
         @logger.log("[dry-run] Using queue.yml topics: #{t.join(', ')}")
         t
       else
@@ -216,13 +227,19 @@ module PodgenCLI
         rescue => e # skippable: queue.yml topics stand in for generated ones
           @logger.log("Topic generation failed (#{e.class}: #{e.message}), falling back to queue.yml")
           @warnings << "Topic generation failed (#{e.class}: #{e.message}), fell back to queue.yml"
-          t = @config.queue_topics
+          t = queue_topics!
           @logger.log("Loaded #{t.length} fallback topics: #{t.join(', ')}")
           t
         end
       end
       @logger.phase_end("Topics")
       topics
+    end
+
+    # A missing queue.yml reads as nil (Q-160 point 1): fail the run with
+    # one clear message instead of a NoMethodError on nil.
+    def queue_topics!
+      @config.queue_topics || raise("no queue.yml topics to use (file missing); add queue.yml with a `topics:` list")
     end
 
     def research_topics(topics)
@@ -362,7 +379,7 @@ module PodgenCLI
         attempt += 1
         if attempt > MAX_REVIEW_RETRIES
           @warnings << "Script review: #{unfixed_blockers.length} unresolved blocker(s) after #{MAX_REVIEW_RETRIES} retries"
-          unfixed_blockers.each { |b| @warnings << "  - #{b[:message]}" }
+          unfixed_blockers.each { |b| @logger.log("  unresolved blocker: #{b[:message]}") } # one count, detail in the log (Q-107)
           @logger.log("Script review: proceeding with #{unfixed_blockers.length} unresolved blocker(s)")
           break
         end
@@ -580,7 +597,6 @@ module PodgenCLI
       type_error = PodcastConfig.type_error(@config.type)
       return unless type_error
 
-      $stderr.puts "Error: guidelines.md: #{type_error}"
       raise "guidelines.md: #{type_error}"
     end
 

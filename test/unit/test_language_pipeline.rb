@@ -54,7 +54,7 @@ class StubDescriptionAgent
 
   def clean_title(title:) = @clean_title_result || title
   def clean(title:, description:) = @clean_result || description
-  def generate(title:, transcript:) = @generate_result || ""
+  def generate(title:, transcript:, count_failure: true) = @generate_result || ""
   def generate_title(transcript:, language:) = @generate_title_result
 end
 
@@ -142,16 +142,63 @@ class TestLanguagePipeline < Minitest::Test
     assert_includes desc, "RSS"
   end
 
+  # Q-117: CoverResolver.generate rescues everything to nil, so the nil
+  # result (not a raise) is what the resolver must count.
   def test_resolve_cover_merges_resolver_warnings_into_pipeline
     pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
 
-    CoverResolver.stub(:generate, ->(**_) { raise "magick exploded" }) do
+    CoverResolver.stub(:generate, ->(**_) {}) do
       pipeline.send(:resolve_episode_cover, "Title")
     end
 
     warnings = pipeline.instance_variable_get(:@warnings)
     assert(warnings.any? { |w| w.include?("Cover generation failed") },
       "resolver warnings must merge into pipeline warnings, got: #{warnings.inspect}")
+  end
+
+  # The cover is resolved twice when LingQ is on (transcript, then upload):
+  # the same fallback is one event, one count.
+  def test_resolve_cover_twice_counts_the_same_fallback_once
+    pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
+
+    CoverResolver.stub(:generate, ->(**_) {}) do
+      2.times { pipeline.send(:resolve_episode_cover, "Title") }
+    end
+
+    assert_equal ["Cover generation failed for /tmp/base.png (falling back)"], pipeline.warnings
+  end
+
+  # Q-117: a feed image that resolves to nothing, a failed RSS image
+  # download and a failed LingQ cover resolution are counted warnings.
+  def test_feed_image_and_download_fallbacks_each_count_once
+    pipeline = build_pipeline
+
+    assert_nil pipeline.send(:resolve_feed_image, File.join(@tmpdir, "missing.jpg"))
+    CoverResolver.stub(:latest_screenshot, nil) { assert_nil pipeline.send(:resolve_feed_image, "last") }
+    HttpDownloader.stub(:new, ->(**_) { raise SocketError, "offline" }) do
+      assert_nil pipeline.send(:download_episode_image, "https://example.com/c.jpg")
+    end
+
+    assert_equal 3, pipeline.warnings.size, pipeline.warnings.inspect
+    assert_equal "per-feed image not found: #{File.join(@tmpdir, "missing.jpg")}", pipeline.warnings[0]
+    assert_equal "per-feed image: last but no screenshots found on ~/Desktop", pipeline.warnings[1]
+    assert_equal "Failed to download episode image: SocketError: offline", pipeline.warnings[2]
+  end
+
+  def test_lingq_cover_resolution_failure_counts_once
+    cfg = StubConfig.new(**@config.to_h.merge(lingq_enabled: true))
+    pipeline = build_pipeline(config: cfg)
+    pipeline.define_singleton_method(:resolve_episode_cover) { |_t| raise "magick exploded" }
+    uploads = Object.new
+    uploads.define_singleton_method(:upload_to_lingq) { |**_| nil }
+    uploads.define_singleton_method(:warnings) { [] }
+
+    PostPipelineUploads.stub(:new, uploads) do
+      pipeline.send(:upload_to_lingq, { title: "T" }, "text", "/tmp/a.mp3", "base")
+    end
+
+    assert_equal ["cover resolution for LingQ failed: RuntimeError: magick exploded (uploading without image)"],
+      pipeline.warnings
   end
 
   # --- skippable-step warnings must name the exception class ---
@@ -206,6 +253,37 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal ["test-2026-03-09"], captured[:ledger].explained("asino")
     assert_equal File.join(File.dirname(@episodes_dir), "vocab_cache.yml"), captured[:cache].path
     assert_equal "test-2026-03-10", captured[:episode]
+  ensure
+    ENV["ANTHROPIC_API_KEY"] = original_key
+  end
+
+  # Q-160 point 3 (pinned): a corrupt known_vocabulary.yml read during the
+  # Vocabulary phase leaves no partial state — no annotation call, the
+  # staged transcript untouched, the file untouched, one counted warning.
+  def test_annotate_vocabulary_corrupt_known_vocabulary_skips_without_partial_state
+    require "known_vocabulary"
+    cfg = @config.dup
+    podcast_dir = @tmpdir
+    {vocabulary_level: "B1", transcription_language: "it", podcast_dir: podcast_dir}.each do |k, v|
+      cfg.define_singleton_method(k) { v }
+    end
+    known_path = File.join(podcast_dir, "known_vocabulary.yml")
+    File.write(known_path, "it: [unclosed\n")
+    transcript = File.join(@tmpdir, "test-2026-03-10_transcript.md")
+    File.write(transcript, "# T\n\n## Transcript\n\nIl gatto.\n")
+    pipeline = build_pipeline(config: cfg)
+    pipeline.instance_variable_set(:@staging_dir, @tmpdir)
+    pipeline.instance_variable_set(:@base_name, "test-2026-03-10")
+    original_key = ENV["ANTHROPIC_API_KEY"]
+    ENV["ANTHROPIC_API_KEY"] = "test-key"
+
+    VocabularyAnnotator.stub(:new, ->(*) { flunk "no paid annotation after a refused read" }) do
+      pipeline.send(:annotate_vocabulary)
+    end
+
+    assert_equal "# T\n\n## Transcript\n\nIl gatto.\n", File.read(transcript)
+    assert_equal "it: [unclosed\n", File.read(known_path)
+    assert_equal 1, pipeline.instance_variable_get(:@warnings).grep(/Vocabulary annotation failed.*known_vocabulary/).size
   ensure
     ENV["ANTHROPIC_API_KEY"] = original_key
   end
@@ -722,6 +800,35 @@ class TestLanguagePipeline < Minitest::Test
     assert_match(/description/i, pipeline.warnings.first)
   end
 
+  # Q-107 (P20-7): a regeneration that RAISES is one counted warning — the
+  # pipeline's line naming the effect — not the agent's plus the pipeline's.
+  def test_wrong_language_description_regeneration_raising_counts_one_warning
+    counted = []
+    @logger.define_singleton_method(:warning) { |m| counted << m }
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    original = "Audiobook fairy tales with stories and morals for children and families"
+    episode = { title: "Story Title", description: original }
+    client = Object.new
+    client.define_singleton_method(:messages) { self }
+    client.define_singleton_method(:create) { |**| raise "API down" }
+    agent = DescriptionAgent.allocate
+    agent.instance_variable_set(:@logger, @logger)
+    agent.instance_variable_set(:@client, client)
+    agent.instance_variable_set(:@effort_params, {})
+    agent.define_singleton_method(:clean_title) { |title:| title }
+    agent.define_singleton_method(:clean) { |title:, description:| description }
+
+    DescriptionAgent.stub(:new, agent) do
+      pipeline.send(:clean_or_generate_description, episode, "Dawno temu żył sobie chłopiec")
+    end
+
+    assert_equal original, episode[:description]
+    assert_equal ["Description regeneration returned nothing; kept the existing (wrong-language) description"],
+      pipeline.warnings + counted
+    assert(@logger.messages.any? { |m| m.include?("Description generation failed: RuntimeError: API down") },
+      "the cause stays in the log: #{@logger.messages.inspect}")
+  end
+
   def test_correct_language_description_not_regenerated
     pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
     episode = { title: "Title", description: "Opowieść o chłopcu który spotkał smoka w lesie" }
@@ -943,7 +1050,8 @@ class TestLanguagePipeline < Minitest::Test
     $stdin.stub(:gets, "x\n") do
       AudioAssembler.stub(:new, fake_assembler) do
         pipeline.stub(:start_preview, nil) do
-          result = pipeline.send(:trim_source_audio)
+          result = nil
+          capture_io { result = pipeline.send(:trim_source_audio) }
           assert_equal :excluded, result
         end
       end
@@ -975,7 +1083,8 @@ class TestLanguagePipeline < Minitest::Test
     AudioAssembler.stub(:new, fake_assembler) do
       pipeline.stub(:start_preview, nil) do
         $stdin.stub(:gets, fake_gets) do
-          result = pipeline.send(:trim_source_audio)
+          result = nil
+          capture_io { result = pipeline.send(:trim_source_audio) }
           assert_equal :excluded, result
         end
       end
@@ -1011,7 +1120,8 @@ class TestLanguagePipeline < Minitest::Test
       AudioTrimmer.stub(:new, fake_trimmer) do
         pipeline.stub(:start_preview, nil) do
           $stdin.stub(:gets, fake_gets) do
-            result = pipeline.send(:trim_source_audio)
+            result = nil
+            capture_io { result = pipeline.send(:trim_source_audio) }
             refute_equal :excluded, result
           end
         end
@@ -1045,7 +1155,7 @@ class TestLanguagePipeline < Minitest::Test
     AudioAssembler.stub(:new, fake_assembler) do
       Process.stub(:detach, nil) do
         $stdin.stub(:gets, input) do
-          result = pipeline.send(:ask_trim_interactive)
+          capture_io { result = pipeline.send(:ask_trim_interactive) }
         end
       end
     end

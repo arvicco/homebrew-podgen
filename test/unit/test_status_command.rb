@@ -178,6 +178,103 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+.*Warning: cover missing/, out)
   end
 
+  # --- generate runs only (Q-118, P20-1) ---
+
+  # render/voice/translate log to the same run-log dir; their logs carry no
+  # generate start line and must not hide the failed generate before them.
+  def test_run_failed_generate_followed_by_newer_render_log_reports_warn
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR RuntimeError: TTS quota",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota"],
+      mtime: Time.new(2026, 10, 10, 6))
+    write_log("alpha", "a-2026-10-10a.log", ["[2026-10-10 09:00:01] Rendered /x/a-2026-10-09_script.md (from JSON)",
+      "[2026-10-10 09:00:01] Re-rendered 1 script(s)"], mtime: Time.new(2026, 10, 10, 9), start: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: RuntimeError: TTS quota/, out)
+  end
+
+  def test_run_repeated_window_counts_generate_runs_only
+    make_pod("alpha", dates: fresh_dates)
+    3.times do |i|
+      write_log("alpha", "a-2026-10-0#{7 + i}.log",
+        ["[2026-10-0#{7 + i} 06:00:01] Warning: Twitter credits depleted",
+          "[2026-10-0#{7 + i} 06:00:09] END done"], mtime: Time.new(2026, 10, 7 + i, 6))
+    end
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] Translate started for 'alpha'",
+      "[2026-10-10 06:00:02] All episodes already translated"], mtime: Time.new(2026, 10, 10, 6), start: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*repeated in last 3 runs: Warning: Twitter credits depleted/, out)
+  end
+
+  # A run killed past every rescue (kill -9, power loss) leaves a start line
+  # and no RUN-OUTCOME; once the show's runs write outcomes, that is a finding.
+  def test_run_log_with_phases_and_no_outcome_reports_did_not_finish
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-09.log", ["[2026-10-09 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"],
+      mtime: Time.new(2026, 10, 9, 6))
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] START Topics",
+      "[2026-10-10 06:00:05] END Topics (4.0s)", "[2026-10-10 06:00:06] START Research"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run did not finish \(last line: START Research\)/, out)
+  end
+
+  # A generate still running holds output/<pod>/run.lock: a started run with
+  # no outcome yet is a note, not a WARN (the owner's 14:4x bajke run).
+  def test_run_started_log_without_outcome_while_lock_held_reports_in_progress
+    unfinished_run_logs
+    lock = File.open(File.join(@tmpdir, "output", "alpha", "run.lock"), File::RDWR | File::CREAT)
+    lock.flock(File::LOCK_EX)
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+run in progress since 06:00 \(started a-2026-10-10\.log\)/, out)
+    refute_includes out, "did not finish"
+  ensure
+    lock&.close
+  end
+
+  def test_run_started_log_without_outcome_lock_free_reports_did_not_finish
+    unfinished_run_logs
+    FileUtils.touch(File.join(@tmpdir, "output", "alpha", "run.lock")) # left behind, not held
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run did not finish/, out)
+  end
+
+  # Second signal (a lock file gone): a log written in the last 10 minutes.
+  def test_run_started_log_without_outcome_written_minutes_ago_reports_in_progress
+    unfinished_run_logs
+    @now = Time.new(2026, 10, 10, 6, 9)
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+run in progress since 06:00 \(started a-2026-10-10\.log\)/, out)
+  end
+
+  # A log from before RUN-OUTCOME existed (no outcome in any of the show's
+  # logs) keeps the line scan: a dormant show's last run is not "unfinished".
+  def test_run_log_without_outcome_before_outcome_era_keeps_line_scan
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] START Topics",
+      "[2026-10-10 06:00:09] ✓ Episode ready"], mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 0, code, out
+  end
+
+  # The board judges the run after the last start line: a failed generate
+  # whose log a later command appended to (same slot) still reads failed.
+  def test_run_failed_generate_with_appended_render_lines_reports_run_failed
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:01] ERROR RuntimeError: TTS quota",
+      "[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=2 first=RuntimeError: TTS quota",
+      "[2026-10-10 09:00:01] Re-rendered 1 script(s)"], mtime: Time.new(2026, 10, 10, 9))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: RuntimeError: TTS quota/, out)
+  end
+
   # --- publish stderr (launchd_stderr.log, P3-2) ---
 
   def test_run_twitter_warning_in_three_publishes_reports_warn_with_count_and_since
@@ -632,6 +729,74 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "stalled"
   end
 
+  # Q-160 (11): N refused ticks inside one running batch, streamed and
+  # buffered stdout: every one is skipped, the running block keeps counting.
+  def test_run_two_refused_ticks_inside_one_streamed_batch_still_count
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin", "uploads: priority mode across alpha, beta",
+      "─── alpha ───", "2026/10/10 10:40:00 podgen uploads alpha,beta begin",
+      "uploads: batch skipped: another batch was running", "  ✓ one",
+      "2026/10/10 10:50:00 podgen uploads alpha,beta begin",
+      "uploads: batch skipped: another batch was running", "─── summary ───", "  alpha: yt-uploaded 3",
+      "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      *refused_tick("2026/10/10 10:40:00", exit: 3), *refused_tick("2026/10/10 10:50:00", exit: 3),
+      "2026/10/10 11:00:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+    assert_includes out, "uploads batch skipped 2026/10/10 10:50:00: another batch was running"
+  end
+
+  def test_run_two_refused_ticks_before_a_buffered_block_still_count
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      "2026/10/10 10:40:00 podgen uploads alpha,beta begin", "uploads: batch skipped: another batch was running",
+      "2026/10/10 10:50:00 podgen uploads alpha,beta begin", "uploads: batch skipped: another batch was running",
+      "uploads: priority mode across alpha, beta", "─── alpha ───", "─── summary ───", "  alpha: yt-uploaded 3",
+      "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      *refused_tick("2026/10/10 10:40:00", exit: 3), *refused_tick("2026/10/10 10:50:00", exit: 3),
+      "2026/10/10 11:00:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+  end
+
+  # Q-160 (11): logs from before the skip line (a refusal exited 1 and
+  # printed nothing to stdout): the stderr refusal line marks the tick, so
+  # its stdout marker no longer cuts the running batch's block, nor does its
+  # begin marker open the latest batch.
+  def test_run_old_refused_tick_without_stdout_skip_line_does_not_cut_the_block
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin", "uploads: priority mode across alpha, beta",
+      "─── alpha ───", "2026/10/10 10:40:00 podgen uploads alpha,beta begin", "─── summary ───",
+      "  alpha: yt-uploaded 3", "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      *refused_tick("2026/10/10 10:40:00", exit: 1),
+      "  ✗ alpha-2026-10-08 failed: uploadLimitExceeded: x",
+      "2026/10/10 11:00:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind; batch stops at the daily quota/, out)
+    assert_includes out, "uploads batch skipped 2026/10/10 10:40:00: another batch was running"
+  end
+
   def test_run_skipped_tick_before_a_newer_batch_is_not_named
     current_youtube_pod
     write_uploads_log(["2026/10/09 10:30:00 podgen uploads alpha,beta begin",
@@ -750,6 +915,21 @@ class TestStatusCommand < Minitest::Test
       stdout_markers: false)
     out, = run_status
     assert_match(/youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+  end
+
+  # Q-160 (11): a refused tick wrote no stdout block, so its stderr marker
+  # takes no part in pairing legacy blocks (today: the 10-01 block's
+  # uploads land on the refused tick's 10-05 and read as recent).
+  def test_run_legacy_pairing_skips_refused_tick_markers
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"),
+      (upload_block(["  alpha: yt-uploaded 3"]) + upload_block(["  alpha: yt-uploaded 0"])).join("\n") + "\n")
+    write_uploads_log(upload_batch("2026/10/01", []) + refused_tick("2026/10/05 10:30:00", exit: 1) +
+      upload_batch("2026/10/09", []), marked: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-21/, out)
   end
 
   def test_run_legacy_blocks_before_first_stdout_marker_pair_with_older_stderr_markers
@@ -912,10 +1092,53 @@ class TestStatusCommand < Minitest::Test
   def test_run_served_feed_http_status_error_reports_code_only
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
     make_episodes("alpha", %w[alpha-2026-10-10])
+    write_tracker("alpha", %w[alpha-2026-10-09]) # published once: a 404 is a failure (Q-155)
     @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
     out, code = run_status
     assert_equal 1, code
     assert_match(/served feed fetch failed: HTTP 404/, out)
+  end
+
+  # --- never-published shows (Q-155, P20-2) ---
+
+  # ruby_world shape: base_url set, served feed 404, nothing in uploads.yml
+  # and no scheduled publish logged: never published, not a failure.
+  def test_run_served_feed_404_without_publish_record_reports_unpublished_exit_zero
+    make_pod("ruby_world", dates: %w[2026-10-08 2026-10-09 2026-10-10],
+      extra: "- base_url: https://media.example.com/ruby_world\n")
+    make_episodes("ruby_world", %w[ruby_world-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/ruby_world\s+UNPUBLISHED\s+served feed HTTP 404 and no publish record \(uploads\.yml empty, no logged publish\)/, out)
+  end
+
+  def test_run_json_unpublished_show_keeps_key_set
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    rows = JSON.parse(run_status("--json").first)
+    assert_equal JSON_KEYS, rows.first.keys.sort
+    assert_equal "UNPUBLISHED", rows.first["verdict"]
+  end
+
+  def test_run_served_feed_404_after_a_logged_publish_reports_warn
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    write_publish_log(marked_publish("alpha", "2026-10-09", nil))
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*served feed fetch failed: HTTP 404/, out)
+  end
+
+  def test_run_served_feed_403_without_publish_record_still_warns
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 403" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*served feed fetch failed: HTTP 403/, out)
   end
 
   def test_run_served_feed_one_day_behind_is_ok
@@ -924,6 +1147,18 @@ class TestStatusCommand < Minitest::Test
     @feed_fetcher = ->(_url) { feed_xml("Fri, 09 Oct 2026 16:31:00 +0200") }
     out, code = run_status
     assert_equal 0, code, out
+  end
+
+  def test_run_served_feed_utc_date_one_day_ahead_of_local_is_ok
+    # An evening episode re-expressed in UTC carries the next day's date
+    # (20:53 -0600 on the 10th = 02:53 +0000 on the 11th).
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>") # scheduled: a lag would WARN
+    make_episodes("alpha", %w[alpha-2026-10-09 alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { feed_xml("Sun, 11 Oct 2026 02:53:27 +0000") }
+    out, code = run_status
+    assert_equal 0, code, out
+    refute_includes out, "served feed"
   end
 
   def test_run_served_feed_ignores_future_dated_local_episodes
@@ -942,6 +1177,62 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- translated feeds (Q-127, P20-3) ---
+
+  def es_feeds = BASE_URL + "- language:\n  - en\n  - es\n"
+
+  def test_run_translated_feed_five_days_behind_reports_warn_naming_it
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds)
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>")
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-05-es alpha-2026-10-10-es])
+    seen = []
+    @feed_fetcher = ->(url) {
+      seen << url
+      feed_xml(url.end_with?("/feed-es.xml") ? "Mon, 05 Oct 2026 06:00:00 +0200" : "Sat, 10 Oct 2026 06:00:00 +0200")
+    }
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal %w[https://media.example.com/alpha/feed.xml https://media.example.com/alpha/feed-es.xml], seen
+    assert_match(/alpha\s+WARN\s+served feed-es\.xml behind local by 5d \(served 2026-10-05, local 2026-10-10\)$/, out)
+  end
+
+  def test_run_every_translated_feed_current_is_ok
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds + "  - it\n")
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>")
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-10-es alpha-2026-10-09-it])
+    seen = []
+    @feed_fetcher = ->(url) { (seen << url) && feed_xml("Fri, 09 Oct 2026 16:31:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_equal 3, seen.size
+  end
+
+  def test_run_translated_feed_fetch_failure_names_the_feed
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds)
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-10-es])
+    @feed_fetcher = ->(url) {
+      raise ServedFeed::StatusError, "HTTP 404" if url.end_with?("/feed-es.xml")
+      feed_xml("Sat, 10 Oct 2026 06:00:00 +0200")
+    }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+served feed-es\.xml fetch failed: HTTP 404$/, out)
+  end
+
+  def test_run_unpublished_show_skips_translated_feeds
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds)
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-10-es])
+    seen = []
+    @feed_fetcher = ->(url) {
+      seen << url
+      raise ServedFeed::StatusError, "HTTP 404"
+    }
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_equal ["https://media.example.com/alpha/feed.xml"], seen
+    assert_match(/alpha\s+UNPUBLISHED\s+/, out)
+  end
+
   def test_run_offline_flag_skips_served_feed_check
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
     make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])
@@ -958,12 +1249,53 @@ class TestStatusCommand < Minitest::Test
 
   # --- dormant shows and configured cadence (P3-4) ---
 
-  def test_run_single_day_show_long_ago_reports_ok_with_dormant_note
+  def test_run_single_day_show_long_ago_reports_dormant_with_exit_zero
     # ruby_world shape: four episodes on one date, months old.
     make_pod("alpha", dates: %w[2026-02-19 2026-02-19 2026-02-19 2026-02-19])
     out, code = run_status
     assert_equal 0, code, out
-    assert_match(/alpha\s+OK\s+newest 2026-02-19 \(234d old; dormant — no cadence\)/, out)
+    assert_match(/alpha\s+DORMANT\s+newest 2026-02-19 \(234d old; dormant — no cadence\)/, out)
+  end
+
+  # Q-155 (P20-2): lahko_noc shape — a daily history (inferred cadence ~1d)
+  # whose newest episode is months old and no cadence_days key: dormant, not
+  # a failure (today: red OLD, exit 1).
+  def test_run_inferred_cadence_show_silent_over_sixty_days_reports_dormant_exit_zero
+    make_pod("lahko_noc", dates: %w[2026-03-17 2026-03-18 2026-03-19 2026-03-20 2026-03-21])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/lahko_noc\s+DORMANT\s+newest 2026-03-21 \(204d old; dormant — no cadence\)$/, out)
+    refute_includes out, "OLD"
+  end
+
+  def test_run_inferred_cadence_show_silent_sixty_days_is_still_old
+    make_pod("alpha", dates: %w[2026-08-09 2026-08-10 2026-08-11 2026-08-12])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+OLD\s+.*2026-08-12 is 60 days old/, out)
+  end
+
+  def test_run_configured_cadence_show_silent_for_months_stays_old
+    make_pod("alpha", dates: %w[2026-03-20 2026-03-21], extra: "- cadence_days: 1\n")
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+OLD\s+.*newest episode 2026-03-21 is 204 days old \(cadence 1d configured/, out)
+  end
+
+  def test_run_configured_cadence_show_late_by_a_day_stays_old
+    make_pod("alpha", dates: %w[2026-10-07 2026-10-08], extra: "- cadence_days: 1\n")
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+OLD\s+.*newest episode 2026-10-08 is 3 days old \(cadence 1d configured, threshold 2d\)/, out)
+  end
+
+  def test_run_dormant_show_with_failed_last_run_still_warns
+    make_pod("alpha", dates: %w[2026-03-20 2026-03-21])
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=1 first=boom"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: boom/, out)
   end
 
   def test_run_single_day_show_yesterday_reports_plain_ok
@@ -1067,7 +1399,7 @@ class TestStatusCommand < Minitest::Test
 
   def test_run_json_key_set_is_pinned
     make_pod("alpha", dates: fresh_dates)
-    make_pod("beta", dates: %w[2026-01-01 2026-01-02 2026-01-03])
+    make_pod("beta", dates: %w[2026-01-01 2026-01-02 2026-01-03], extra: "- cadence_days: 1\n") # keyed: OLD, not dormant
     out, code = run_status("--json")
     rows = JSON.parse(out)
     assert_equal 1, code
@@ -1123,7 +1455,7 @@ class TestStatusCommand < Minitest::Test
     served_feed = ServedFeed.new(fetcher: fetcher)
     served_feed.define_singleton_method(:sleep) { |_| nil } # retry backoff
     PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY, served_feed: served_feed,
-      youtube_token_file: @token_file)
+      youtube_token_file: @token_file, now: @now || Time.new(2026, 10, 11, 7))
   end
 
   def publish_entries = status_command([]).send(:publish_entries)
@@ -1213,6 +1545,24 @@ class TestStatusCommand < Minitest::Test
     File.utime(mtime, mtime, path)
   end
 
+  # An outcome-era show whose newest generate log (10-10 06:00) has a start
+  # line and no RUN-OUTCOME.
+  def unfinished_run_logs
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-09.log", ["[2026-10-09 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"],
+      mtime: Time.new(2026, 10, 9, 6))
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:06] START Research"],
+      mtime: Time.new(2026, 10, 10, 6))
+  end
+
+  # A tick refused by the lock in the stderr: exit 3 since the skip line
+  # existed, exit 1 before (the refusal line is printed by both).
+  def refused_tick(stamp, exit:)
+    ["#{stamp} podgen uploads alpha,beta begin",
+      "uploads: another uploads batch is running (lockfile: /x/output/uploads.lock)",
+      "#{stamp.sub(/:00\z/, ":01")} podgen uploads alpha,beta end exit=#{exit}"]
+  end
+
   def upload_batch(date, lines)
     ["#{date} 17:00:00 podgen uploads alpha,beta begin", *lines, "#{date} 17:20:00 podgen uploads alpha,beta end exit=0"]
   end
@@ -1256,10 +1606,13 @@ class TestStatusCommand < Minitest::Test
       "uploads: total YT uploaded 0"]
   end
 
-  def write_log(pod, file, lines, mtime:)
+  # A generate run log opens with its start line (GenerateCommand#run);
+  # start: false writes another command's log (render/voice/translate).
+  def write_log(pod, file, lines, mtime:, start: true)
     dir = File.join(@tmpdir, "logs", pod)
     FileUtils.mkdir_p(dir)
     path = File.join(dir, file)
+    lines = ["#{mtime.strftime("[%Y-%m-%d %H:%M:%S]")} Podcast Agent started for '#{pod}'", *lines] if start
     File.write(path, lines.join("\n") + "\n")
     File.utime(mtime, mtime, path)
   end

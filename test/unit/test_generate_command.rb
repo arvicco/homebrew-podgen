@@ -302,7 +302,7 @@ class TestGenerateCommand < Minitest::Test
       assert_equal ["Guidelines: unknown type '#{type}' (known: news, language)"], type_errors, type
       refute(result.passes.any? { it.start_with?("News:") }, "#{type}: news checks ran: #{result.passes.inspect}")
 
-      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :quiet})
+      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :normal})
       cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil } # no network/tools if the refusal regresses
       cmd.define_singleton_method(:preflight_network!) { |_| nil }
       cmd.define_singleton_method(:run_language_pipeline) { raise "language pipeline ran for type #{type}" }
@@ -311,13 +311,52 @@ class TestGenerateCommand < Minitest::Test
       _, err = capture_io { code = cmd.run }
 
       assert_equal 1, code, type
-      assert_includes err, "Error: guidelines.md: unknown type '#{type}' (known: news, language)"
+      # Q-160 point 17: the refusal prints what any failed run prints (the
+      # logged ERROR and the failure line), no extra "Error:" line first.
+      refusal = "guidelines.md: unknown type '#{type}' (known: news, language)"
+      lines = err.lines(chomp: true).grep(/unknown type/)
+      assert_equal 2, lines.size, "#{type}: #{lines.inspect}"
+      assert_match(/\A\[[^\]]*\] ERROR RuntimeError: #{Regexp.escape(refusal)}\z/, lines[0], type)
+      assert_equal "✗ Pipeline failed: #{refusal}", lines[1], type
       # The scheduled run's log ends in the refusal, not the previous run's outcome.
       log_path = config.log_path(Date.today)
       assert File.exist?(log_path), "#{type}: no run log"
       assert_match(/\ARUN-OUTCOME status=error .*unknown type '#{type}' \(known: news, language\)\z/,
         File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, ""), type)
     end
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
+  # Q-117: a guidelines parser warning is printed before the logger exists;
+  # it is re-emitted through the run logger, so RUN-OUTCOME counts it.
+  def test_guidelines_bare_key_warning_counts_in_run_outcome
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "bkpod")
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), "## Podcast\n- type: news\n- author\n## Format\nf\n## Tone\nt\n")
+    require "podcast_config"
+    log_path = PodcastConfig.new("bkpod").log_path(Date.today)
+
+    cmd = PodgenCLI::GenerateCommand.new(["bkpod"], {verbosity: :quiet})
+    cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil }
+    cmd.define_singleton_method(:preflight_network!) { |_| nil }
+    cmd.define_singleton_method(:generate_topics) { ["t"] }
+    cmd.define_singleton_method(:research_topics) { |_| [] }
+    cmd.define_singleton_method(:inject_priority_links) { |r| [r, []] }
+    cmd.define_singleton_method(:generate_script) { |*| {title: "T", segments: []} }
+    cmd.define_singleton_method(:review_script) { |s, *| s }
+    cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod.mp3"] }
+    cmd.define_singleton_method(:finalize) { |*| nil }
+    code = nil
+    _, err = capture_io { code = cmd.run }
+
+    assert_equal 0, code
+    assert_includes err, "Warning: guidelines.md: Podcast: '- author' is missing a value"
+    assert_equal "RUN-OUTCOME status=warn warnings=1 errors=0 first=Warning: guidelines.md: Podcast: " \
+      "'- author' is missing a value (expected '- author: <value>'); ignored",
+      File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, "")
   ensure
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
@@ -444,6 +483,7 @@ class TestGenerateCommand < Minitest::Test
     links_path = File.join(@tmpdir, "links.yml")
     cmd.instance_variable_set(:@config, Struct.new(:type, :links_path).new("news", links_path))
     PriorityLinks.new(links_path).add("https://dead.example.com/b")
+    cmd.singleton_class.send(:remove_method, :produce_episodes)
     cmd.define_singleton_method(:produce_episodes) { |*| raise "TTS quota" }
     dead = Struct.new(:code, :body) { def [](_) = nil }.new("404", "")
 
@@ -503,6 +543,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_news_with_warnings_ends_log_with_warn_outcome
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :produce_episodes)
     cmd.define_singleton_method(:produce_episodes) do |_script, _research|
       @logger.error("Language es failed: RuntimeError: x")
       @warnings << "Language es failed: RuntimeError: x"
@@ -524,6 +565,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_news_failure_ends_log_with_error_outcome
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |*| raise "TTS quota" }
     code = nil
     capture_io { code = cmd.run }
@@ -541,6 +583,57 @@ class TestGenerateCommand < Minitest::Test
     assert_equal 0, code
     assert_equal "RUN-OUTCOME status=warn warnings=1 errors=0 first=Vocabulary annotation failed (RuntimeError: v)",
       last_log_line
+  end
+
+  # Q-118 (P20-1): a generate killed by bin/podgen's INT/TERM trap (exit
+  # 130/143 raises SystemExit) still ends its log with RUN-OUTCOME, so the
+  # board does not read the killed run as OK; the exit is re-raised.
+  def test_run_killed_by_term_trap_ends_log_with_error_outcome_and_reraises
+    cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :generate_script) # no redefinition warning
+    cmd.define_singleton_method(:generate_script) { |*| exit 143 }
+    error = nil
+    capture_io { error = assert_raises(SystemExit) { cmd.run } }
+
+    assert_equal 143, error.status
+    assert_equal "RUN-OUTCOME status=error warnings=0 errors=1 first=Run killed: SystemExit 143", last_log_line
+  end
+
+  def test_run_interrupt_without_trap_ends_log_with_error_outcome_and_reraises
+    cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
+    cmd.define_singleton_method(:research_topics) { |_| raise Interrupt }
+    capture_io { assert_raises(Interrupt) { cmd.run } }
+
+    assert_equal "RUN-OUTCOME status=error warnings=0 errors=1 first=Run killed: Interrupt", last_log_line
+  end
+
+  # Q-118 (P20-1): refusals in setup_pipeline after the logger exists end the
+  # log with RUN-OUTCOME status=error (today: an option error exits 1 with no
+  # outcome line, a missing guidelines.md raises ENOENT before any log; the
+  # board keeps reading the previous run).
+  def test_run_missing_guidelines_ends_log_with_error_outcome
+    config = setup_refusal_pod("noguide", guidelines: nil)
+    code = nil
+    capture_io { code = PodgenCLI::GenerateCommand.new(["noguide"], {verbosity: :quiet}).run }
+
+    assert_equal 1, code
+    # Without guidelines the slot is unknowable (it reads the languages): the bare date's log.
+    log_path = File.join(config.log_dir, "noguide-#{Date.today}.log")
+    assert File.exist?(log_path), "no run log"
+    assert_match(/\ARUN-OUTCOME status=error warnings=0 errors=1 first=Missing guidelines: /,
+      File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, ""))
+  end
+
+  def test_run_option_error_ends_log_with_error_outcome
+    config = setup_refusal_pod("newsopt", guidelines: "## Podcast\n- type: news\n## Format\nf\n## Tone\nt\n")
+    code = nil
+    _, err = capture_io { code = PodgenCLI::GenerateCommand.new(["newsopt"], {verbosity: :quiet, file: "/x.mp3"}).run }
+
+    assert_equal 1, code
+    assert_includes err, "Error: --file is only supported for language pipeline podcasts (type: language)"
+    assert_match(/\ARUN-OUTCOME status=error warnings=0 errors=0 first=--file is only supported for language /,
+      refusal_log_last_line(config))
   end
 
   # Q-140 (P19-4): the commit writes history.yml strictly; a corrupt file
@@ -585,6 +678,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_outcome_counts_logged_library_warnings
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
     cmd.define_singleton_method(:research_topics) do |_|
       @logger.warning("[ResearchAgent] Warning: Failed to research 'x' after 3 attempts: 401")
       []
@@ -610,11 +704,28 @@ class TestGenerateCommand < Minitest::Test
       cmd.instance_variable_get(:@warnings)
   end
 
+  def test_generate_topics_missing_queue_is_one_counted_error
+    [true, false].each do |dry_run|
+      cmd = runnable_command("news")
+      cmd.singleton_class.send(:remove_method, :generate_topics)
+      cmd.instance_variable_set(:@dry_run, dry_run)
+      cmd.instance_variable_set(:@guidelines, "g")
+      cmd.instance_variable_set(:@history, Struct.new(:recent_topics_summary).new(nil))
+      cmd.instance_variable_set(:@config, Struct.new(:type, :queue_topics).new("news", nil))
+      code = nil
+      TopicAgent.stub(:new, ->(**) { raise "401 revoked" }) { capture_io { code = cmd.run } }
+
+      assert_equal 1, code, "dry_run=#{dry_run}"
+      assert_match(/status=error .* first=RuntimeError: no queue\.yml topics/, last_log_line, "dry_run=#{dry_run}")
+    end
+  end
+
   # --- P8-1: minimum-research guard (Q-69) ---
 
   def test_run_news_topic_without_findings_dropped_from_script_input_with_warning
     cmd = researching_command({ "t1" => [{ title: "A", url: "https://e.x/a", summary: "s" }], "t2" => [] })
     script_input = nil
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |_t, research, _p| (script_input = research) && { title: "T", segments: [] } }
     code = run_with_fake_sources(cmd)
 
@@ -634,6 +745,7 @@ class TestGenerateCommand < Minitest::Test
   def test_run_news_no_findings_for_any_topic_fails_before_script_agent
     cmd = researching_command({ "t1" => [], "t2" => [] })
     script_called = false
+    cmd.singleton_class.send(:remove_method, :generate_script)
     cmd.define_singleton_method(:generate_script) { |*| (script_called = true) && { title: "T", segments: [] } }
     code = run_with_fake_sources(cmd)
 
@@ -793,6 +905,20 @@ class TestGenerateCommand < Minitest::Test
     assert_includes cmd.instance_variable_get(:@logger).messages, "Review bundle saved: #{path}"
   end
 
+  # Q-107 (P20-7): unresolved blockers are one degradation, one counted
+  # line; each blocker's message is in the log, not in the count.
+  def test_review_script_unresolved_blockers_count_one_warning
+    cmd, _config = build_sl_en_command
+    two = [BLOCKER_ISSUE, BLOCKER_ISSUE.merge(message: "Wrong weekday")]
+
+    review_with(cmd, [two, two, two])
+
+    assert_equal ["Script review: 2 unresolved blocker(s) after 2 retries"], cmd.instance_variable_get(:@warnings)
+    messages = cmd.instance_variable_get(:@logger).messages
+    assert_includes messages, "  unresolved blocker: Wrong date"
+    assert_includes messages, "  unresolved blocker: Wrong weekday"
+  end
+
   def test_review_script_clean_first_review_writes_no_bundle
     cmd, config = build_sl_en_command
 
@@ -898,6 +1024,7 @@ class TestGenerateCommand < Minitest::Test
   def researching_command(findings_by_topic, topics: findings_by_topic.keys)
     cmd = runnable_command("news")
     cmd.singleton_class.send(:remove_method, :research_topics)
+    cmd.singleton_class.send(:remove_method, :generate_topics)
     cmd.define_singleton_method(:generate_topics) { topics }
     cmd.instance_variable_set(:@config, Struct.new(:type, :episodes_dir, :sources).new("news", @episodes_dir, {}))
     cmd.instance_variable_set(:@history, Struct.new(:recent_urls).new(Set.new))
@@ -905,6 +1032,22 @@ class TestGenerateCommand < Minitest::Test
     manager.define_singleton_method(:research) { |_| findings_by_topic.map { |t, f| { topic: t, findings: f } } }
     @fake_sources = manager
     cmd
+  end
+
+  # A podcast dir under a temp PODGEN_ROOT (teardown deletes the variable).
+  def setup_refusal_pod(name, guidelines:)
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", name)
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), guidelines) if guidelines
+    require "podcast_config"
+    PodcastConfig.new(name)
+  end
+
+  def refusal_log_last_line(config)
+    log_path = config.log_path(Date.today)
+    assert File.exist?(log_path), "no run log"
+    File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, "")
   end
 
   def last_log_line

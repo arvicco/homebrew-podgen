@@ -11,7 +11,8 @@
 #
 # Usage: podgen test reviewer_recall [--rerun-default] BUNDLE.json...
 #   --rerun-default  also re-run the default-effort review (else the bundle's
-#                    default_issues are the baseline)
+#                    default_issues, less the deterministic checks, are the
+#                    baseline)
 #
 # A bundle is the input of one first-attempt review, as JSON:
 #   {"name": "fulgur_news-2026-10-17", "date": "2026-10-17",
@@ -36,6 +37,9 @@ module ReviewerRecall
   EFFORT_ENV = "CLAUDE_EFFORT_REVIEWER"
   REQUIRED_KEYS = %i[date script research_data].freeze
   TOKENS_LINE = /Input: (\d+) tokens \| Output: (\d+) tokens/
+  # BLOCKER checks of the reviewer's deterministic layer: the bundle's
+  # default_issues hold them too, the low run (AI layer only) never does.
+  DETERMINISTIC_CHECKS = %w[weekday title_missing priority_url].freeze
 
   Row = Struct.new(:name, :default_blockers, :low_blockers, :input_tokens, :output_tokens, keyword_init: true)
 
@@ -72,6 +76,10 @@ module ReviewerRecall
     Array(issues).count { |i| i[:severity].to_s == ScriptReviewer::BLOCKER }
   end
 
+  def ai_issues(issues)
+    Array(issues).reject { |i| DETERMINISTIC_CHECKS.include?(i[:check].to_s) }
+  end
+
   # One AI review of the bundle's script at effort (nil = API default).
   # Returns [issues, [input_tokens, output_tokens]].
   def review(bundle, effort:, client: nil)
@@ -90,7 +98,7 @@ module ReviewerRecall
   def measure(paths, rerun_default: false, client: nil)
     paths.map do |path|
       bundle = load_bundle(path)
-      default_issues = rerun_default ? review(bundle, effort: nil, client: client).first : bundle[:default_issues]
+      default_issues = rerun_default ? review(bundle, effort: nil, client: client).first : ai_issues(bundle[:default_issues])
       low_issues, (input, output) = review(bundle, effort: "low", client: client)
       Row.new(name: bundle[:name], default_blockers: blockers(default_issues), low_blockers: blockers(low_issues),
         input_tokens: input, output_tokens: output)

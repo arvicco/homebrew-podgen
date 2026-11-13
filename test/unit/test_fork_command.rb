@@ -132,6 +132,42 @@ class TestForkCommand < Minitest::Test
     assert_includes File.read(File.join(@old_output_dir, "history.yml")), "basename: #{@old_name}-2026-03-01"
   end
 
+  # Q-160 point 5: the old name is renamed only as a whole leading token —
+  # `old_pod` never rewrites an `old_pod2-…` basename.
+  def test_fork_renames_only_the_whole_name_before_a_dash
+    File.write(File.join(@old_episodes_dir, "#{@old_name}2-2026-03-03.mp3"), "other")
+    File.write(File.join(@old_output_dir, "history.yml"), [
+      { "date" => "2026-03-01", "title" => "First", "basename" => "#{@old_name}-2026-03-01" },
+      { "date" => "2026-03-03", "title" => "Other", "basename" => "#{@old_name}2-2026-03-03" }
+    ].to_yaml)
+    File.write(File.join(@old_output_dir, "uploads.yml"), {
+      "lingq" => { "12345" => { "#{@old_name}-2026-03-01" => 100, "#{@old_name}2-2026-03-03" => 101 } }
+    }.to_yaml)
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    new_output = File.join(@tmpdir, "output", @new_name)
+    assert File.exist?(File.join(new_output, "episodes", "#{@old_name}2-2026-03-03.mp3"))
+    refute File.exist?(File.join(new_output, "episodes", "#{@new_name}2-2026-03-03.mp3"))
+    assert_equal ["#{@new_name}-2026-03-01", "#{@old_name}2-2026-03-03"],
+      YAML.load_file(File.join(new_output, "history.yml")).map { it["basename"] }
+    assert_equal({ "#{@new_name}-2026-03-01" => 100, "#{@old_name}2-2026-03-03" => 101 },
+      YAML.load_file(File.join(new_output, "uploads.yml"))["lingq"]["12345"])
+  end
+
+  def test_fork_legacy_flat_tracking_renames_only_the_whole_name
+    File.delete(File.join(@old_output_dir, "uploads.yml"))
+    File.write(File.join(@old_output_dir, "lingq_uploads.yml"), {
+      "12345" => { "#{@old_name}-2026-03-01" => 100, "#{@old_name}2-2026-03-03" => 101 }
+    }.to_yaml)
+
+    capture_io { PodgenCLI::ForkCommand.new([@old_name, @new_name], {}).run }
+
+    new_tracking = File.join(@tmpdir, "output", @new_name, "uploads.yml")
+    assert_equal({ "#{@new_name}-2026-03-01" => 100, "#{@old_name}2-2026-03-03" => 101 },
+      YAML.load_file(new_tracking)["lingq"]["12345"])
+  end
+
   def test_fork_history_without_basenames_is_copied_byte_identical
     old_bytes = File.read(File.join(@old_output_dir, "history.yml"))
 

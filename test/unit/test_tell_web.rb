@@ -226,24 +226,24 @@ class TestTellWeb < Minitest::Test
     fake_tts = Object.new
     fake_tts.define_singleton_method(:synthesize) { |*_| "fake_audio" }
 
-    original_build_tts = Tell.method(:build_tts)
-    Tell.define_singleton_method(:build_tts) do |engine, config|
+    build_tts = lambda do |engine, _config|
       captured_engine = engine
       fake_tts
     end
 
-    Tell::Detector.stub(:detect, "en") do
-      Tell.stub(:build_translator_chain, Object.new.tap { |t|
-        t.define_singleton_method(:translate) { |*_args, **_kw| "日本語テキスト" }
-      }) do
-        get "/speak", text: "hello", from: "en", to: "ja"
+    Tell.stub(:build_tts, build_tts) do
+      Tell::Detector.stub(:detect, "en") do
+        Tell.stub(:build_translator_chain, Object.new.tap { |t|
+          t.define_singleton_method(:translate) { |*_args, **_kw| "日本語テキスト" }
+        }) do
+          get "/speak", text: "hello", from: "en", to: "ja"
+        end
       end
     end
 
     assert_equal "elevenlabs", captured_engine
     assert_includes last_response.body, "event: audio"
   ensure
-    Tell.define_singleton_method(:build_tts, original_build_tts) if original_build_tts
     Tell::Web.set :tell_config, Struct.new(:original_language, :target_language, keyword_init: true)
       .new(original_language: "en", target_language: "sl")
       .tap { |c| c.define_singleton_method(:for_language) { |_| self } }

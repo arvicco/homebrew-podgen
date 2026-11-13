@@ -344,6 +344,18 @@ class TestPublishCommand < Minitest::Test
     end
   end
 
+  # Q-160 point 10: a wrong explicit id fails the R2 run like the others.
+  # Q-152 point 1: so does an unreadable ledger behind the tweets.
+  def test_publish_to_r2_returns_1_for_an_unmatched_episode_id
+    %i[no_match publisher_crash].each do |type|
+      code = nil
+      with_publisher_stubs(results: { r2: mk_result(errors: [{ type: type, message: "boom" }]) }) do
+        capture_io { code = build_command.send(:publish_to_r2) }
+      end
+      assert_equal 1, code, "error type #{type}"
+    end
+  end
+
   def test_publish_to_youtube_returns_0_without_errors
     assert_equal 0, youtube_code_for(errors: [])
   end

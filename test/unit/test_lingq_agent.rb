@@ -314,6 +314,26 @@ class TestLingQAgent < Minitest::Test
     assert_includes error.message, "HTTP 400"
   end
 
+  # Q-117: lost tags / timestamps are counted warnings, one per event.
+  def test_tags_and_timestamps_failures_each_count_once
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    agent = LingQAgent.new(logger: logger)
+    bad = Struct.new(:code, :body) { def parsed_response; { "detail" => "bad" }; end }.new(400, "{}")
+    HTTParty.stub(:patch, bad) { agent.send(:patch_tags, "en", 1, ["t"]) }
+    HTTParty.stub(:post, bad) { agent.send(:generate_timestamps, "en", 1) }
+    HTTParty.stub(:patch, ->(*_a) { raise "boom" }) { agent.send(:patch_tags, "en", 1, ["t"]) }
+    HTTParty.stub(:post, ->(*_a) { raise "boom" }) { agent.send(:generate_timestamps, "en", 1) }
+
+    assert_equal 4, warnings.size, warnings.inspect
+    assert_match(/\[LingQAgent\] Warning: setting tags returned HTTP 400/, warnings[0])
+    assert_match(/\[LingQAgent\] Warning: timestamp generation returned HTTP 400/, warnings[1])
+    assert_match(/\[LingQAgent\] Warning: setting tags failed: RuntimeError: boom/, warnings[2])
+    assert_match(/\[LingQAgent\] Warning: timestamp generation failed: RuntimeError: boom/, warnings[3])
+  end
+
   def test_generate_timestamps_sends_empty_array_body
     captured = nil
     fake_response = Struct.new(:code, :body) { def parsed_response; {}; end }.new(200, "{}")

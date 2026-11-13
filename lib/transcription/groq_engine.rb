@@ -134,7 +134,7 @@ module Transcription
 
       File.delete(@downsampled_path) if File.exist?(@downsampled_path)
     rescue => e # skippable: a leftover temp file; the transcript is already produced
-      log("Warning: failed to cleanup downsample: #{e.class}: #{e.message}")
+      log_warning("failed to cleanup downsample: #{e.class}: #{e.message}")
     end
   end
 end

@@ -327,6 +327,8 @@ class GuidelinesParser
         { playback_speed: value.to_f }
       when "show_duration", "show_transcript"
         { key.to_sym => value != "false" }
+      when "index_episodes"
+        { index_episodes: value.to_i } if value.to_i.positive?
       end
     end || {}
   end

@@ -34,9 +34,12 @@ in the public repo; git history + plan docs are the record.
    verified, once the containing packet is adopted; it never hands the
    owner a runbook of commands it could run (dev-loop doctrine rules
    1–2; blast-radius and ~30-min visibility limits apply). Pushing
-   `phase-N` branches is allowed. Owner-only commands are enforced
-   twice: settings.json denies and the dispatcher's `CLAUDECODE=1`
-   refusal (owner override from the `!` prompt: `PODGEN_OWNER=1`).
+   `phase-N` branches is allowed. Owner-only commands are enforced by
+   the dispatcher's `CLAUDECODE=1` refusal (probe table in
+   test/unit/test_owner_guard.rb; owner override from the `!` prompt:
+   `PODGEN_OWNER=1`); the settings.json deny list is a convenience
+   layer that catches only the literal flags (`*--youtube*`,
+   `*--lingq*`), not the enforcement.
    While a production generate holds a run lock, the 10:30 batch
    holds output/uploads.lock (P18-5), or during the 16:25–17:10 launchd
    window, the loop YIELDS: no edits under lib/
@@ -65,29 +68,47 @@ in the public repo; git history + plan docs are the record.
 9. **Pre-existing failing tests are bug signals.** Flag them; never
    skip, dismiss, or treat as background noise.
 10. **The dev-loop doctrine binds this project.** Read the dev-loop
-   repo's `doctrine.md` (owner-ruled working agreements §1–§27 plus
-   §17a/§17b, at origin/main — the local clone lags) and `boards.md`
-   at session start for any substantive work; docs/DEV-LOOP.md §9
-   carries the podgen reading of the sections that need one.
-   Mechanics that bite here: a Bash call containing `git push`,
-   `git commit` or `gh pr create` contains NOTHING else; suites run to
-   a log (`> log 2>&1; echo exit=$?`) and "green" is read from the
-   log, never from a pipe; the gate PR opens ONLY when the phase is
-   reviewed and ready for the owner to merge (owner ruling 2026-10-16:
-   never as a living document, never as a scratchpad); EVERY
-   owner-facing message opens with the phase clock line ("Nh Nm since
-   adoption" / "Nh Nm adoption→gate handover", from .docs/phase-clock;
-   it is the phase's cost figure, §21); a decision exists for the
-   owner only as a minted .docs/DECISIONS.md row — never "awaiting
-   approval" in prose (§26); owner-state lines (PR states, drafts) are
-   written only from a live query run in the same turn, never copied
-   from boards or the loop's own prior messages (§27); the phase
+   repo's `doctrine.md` (owner-ruled working agreements §1–§32 plus
+   §17a/§17b, at origin/main — re-synced 2026-11-13 to 2e4c0cf; the
+   local clone and the installed plugin lag) and `boards.md` at
+   session start for any substantive work; docs/DEV-LOOP.md §4 is the
+   working copy that cites them and §9 carries the podgen reading of
+   the sections that need one. Mechanics that bite here: a Bash call
+   containing `git push`, `git commit` or `gh pr create` contains
+   NOTHING else; suites run to a log (`> log 2>&1; echo exit=$?`) and
+   "green" is read from the log, never from a pipe; the gate PR opens
+   ONLY when the phase is reviewed and ready for the owner to merge
+   (owner ruling 2026-10-16: never as a living document, never as a
+   scratchpad); **the slate never self-adopts** — after the gate-close
+   duties the next slate is presented on ask, and no lane, read or
+   other spend starts before the owner names the phase (owner
+   correction 2026-11-13); no blocking prompt fires during a phase and
+   a slate candidate is adoptable on the adoption word alone (§6);
+   EVERY owner-facing message opens with the phase clock line ("Nh Nm
+   since adoption" / "Nh Nm adoption→gate handover", from
+   .docs/phase-clock; it is the phase's cost figure, §21); a decision
+   exists for the owner only as a minted .docs/DECISIONS.md row —
+   never "awaiting approval" in prose (§26), and never a row with one
+   sane answer (§7, no manufactured decisions); owner-state lines (PR
+   states, run outcomes, consent) are written only from a live query
+   of the COMPLETION record the line claims, run in the same turn,
+   never copied from boards, prior messages or a compaction summary,
+   and each carries its stamp inline — "(checked HH:MM CST: <surface>
+   → <state>)" (§7/§27); a loop-fired operation over ~10 minutes is
+   fired with its watchdog armed in the same turn and its chain emits
+   worded verdicts on a dedicated signal surface (§29/§32); every
+   repeated slice asserts its yield and an anomaly gets the check, not
+   an adjective (§28); an owner-fired operation's outcome is verified
+   from its record at first contact and a found incident leads the
+   report (§30); tracked files, commit messages and PR bodies carry
+   dates only — no clock times, zones or day-parts (§13); the phase
    register is appended at every gate closure; lane briefs state how
    each census was taken (§17a) and batch runners carry timeout /
-   budget-stop / first-failure-stop / tail-verification lines (§17b);
-   a turn waiting on background work states "independent items
-   remaining: N" and N is 0; subagent lanes run on Opus-class models
-   (`model: "opus"`), frontier tokens buy judgment.
+   budget-stop / first-failure-stop / tail-verification lines under
+   the plugin's detached-run / chain-run pair (§17b); a turn waiting
+   on background work states "independent items remaining: N" and N
+   is 0; subagent lanes run on Opus-class models (`model: "opus"`),
+   frontier tokens buy judgment.
 
 ## Commands
 
@@ -203,72 +224,76 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 
 ## Current phase
 
-Gate 0 CLOSED 2026-09-02 (PR #1, merge 4298988). Gate 1 CLOSED 2026-10-11
-(PR #2, merge 6d869e4). Gate 2 CLOSED 2026-10-12 08:50 (PR #3, merge
-494c000). Gate 3 CLOSED 2026-10-12 11:45 (PR #4, merge 35592dd). Gate 4
-CLOSED 2026-10-12 12:55 (PR #5, merge 8e454c6 — the dry-up). Gate 5
-CLOSED 2026-10-12 18:25 (PR #6, merge e3106e2 — correctness and cost
-sweep). Gate 6 CLOSED
-2026-10-14 21:40 (PR #7, merge 2aad556 — spend measured, observability,
-docs refresh, refill, plus the P6-7/P6-8 hotfixes). Gate 7 CLOSED 2026-10-16
-20:05 (PR #8, merge dedd365 — publication observability and YouTube
-hardening). Gate 8 CLOSED 2026-10-28
-15:40 (PR #10, merge 1d3da37 — quality guards, diagnosis, test
-authority; phase clock 56m). Gate 9 CLOSED 2026-10-28 18:04 (PR #11,
-merge a177a33 — vocabulary didactics: ledger, key words, level bands,
+Gate 0 CLOSED 2026-09-02 (PR #1, merge cbee0f4). Gate 1 CLOSED 2026-10-11
+(PR #2, merge 82201da). Gate 2 CLOSED 2026-10-12 (PR #3, merge eda37ed).
+Gate 3 CLOSED 2026-10-12 (PR #4, merge 6c45e55). Gate 4 CLOSED 2026-10-12
+(PR #5, merge fed1339 — the dry-up). Gate 5 CLOSED 2026-10-12 (PR #6,
+merge e8b4f6f — correctness and cost sweep). Gate 6 CLOSED 2026-10-14
+(PR #7, merge 8787e7b — spend measured, observability, docs refresh,
+refill, plus the P6-7/P6-8 hotfixes). Gate 7 CLOSED 2026-10-16 (PR #8,
+merge 22114a6 — publication observability and YouTube hardening). Gate 8
+CLOSED 2026-10-28 (PR #10, merge 0198bc1 — quality guards, diagnosis,
+test authority; phase clock 56m). Gate 9 CLOSED 2026-10-28 (PR #11,
+merge 55f000c — vocabulary didactics: ledger, key words, level bands,
 gloss cache, grouped section, vocab-health measurement, revocab ranges;
-phase clock 1h 42m). Gate 10 CLOSED 2026-10-29 14:59 (PR #12, merge
-82e79e3 — resilience of the scheduled run and a truthful board: re-post
-guard at selection, the intended timeout on every Claude call,
-caffeinate + bounded preflight, upload progress read from the batch
-log, LingQ generate path, placeholder-key lint; phase clock 47m).
-Gate 11 CLOSED 2026-10-29 18:48 (PR #13, merge cc3a9d4 — listening
-archive of untrimmed source audio and rejected candidates, 404 source
-URLs excluded in-run, YouTube rejection reason + consent-age WARN, Exa
-network retries, uncounted content failures counted, trim-prompt
-re-ask; phase clock 1h 33m). Phase 12 (small truthfulness sweep: a
-dead feed costs one attempt, a failed first-generation description is
-counted, periodic dead-code review) CLOSED 2026-10-30 02:26 (PR #14,
-merge 146cca3; phase clock 17m). Refill read 2026-10-30: Q-108…Q-139
-and R12-01…R12-06 minted. Phase 13 (data safety: corrupt owner-data
-files never rewritten, scrap removes the right row, transient 5xx/TLS
-retried, failed site regen keeps the live site, ffmpeg outputs land
-only when complete) CLOSED 2026-10-30 14:40 (PR #15, merge 345336b;
-phase clock 36m). Phase 14 (listener-visible correctness, news and
-YouTube: script-reviewer auto-fixes keep content and right weekdays,
-YouTube captions/playlist retried and caption-less uploads visible,
-subtitle input defects, exclusions compared cleaned, unattended
-length failures excluded in-run, counter-only re-post match)
-CLOSED 2026-11-04 05:30 (PR #16, merge 23f8b2e; phase clock 3d 12h
-wall, ~1h 45m worked — API outage). Phase 15 (incident sweep: loudnorm
-analysis survives ffmpeg's truncated metadata echo, `--date` usage
-error, interactive trim flow defects, corrupt uploads.yml stops the
-YouTube batch before any upload, retry and spend hygiene, archived
-trim record replay) CLOSED 2026-11-09 15:35 CST (PR #17, merge 518f4bd;
-phase clock 48m). Phase 16 (residue sweep: Anthropic 4xx retries at
-the remaining four sites, strict ledger pre-read at the LingQ, R2 and
-tweet publishers, Bluesky authentication retry, YouTube owed-step
-residues, re-post counter rule, stage-direction residues, Phase 15
-small residues) CLOSED 2026-11-09 17:20 CST (PR #18, merge 9b02476;
-phase clock 39m). R12-01…06 ruled or withdrawn 2026-11-10 (0 open
-rulings; R9-02 returns 11-12, R10-02 11-26). Phase 17 (didactics:
-vocabulary section correctness and lemma identity, selection
-calibration measured first, feed guid never reused with
-`isPermaLink="false"`, subtitle reconciler output cap and retries,
-rendering nits) CLOSED 2026-11-09 19:25 CST (PR #19, merge 19526df;
-phase clock 39m; I-12 closed by the post-merge regen). Phase 18
-(latent defects and the small sweep: sources/research defects,
-translate/voice drift, episode-id selection and exit codes, translation
-request timeout, the 10:30 batch lock in the yield, hygiene batch with
-warnings fatal in the gate, Tell nits, Phase 17 residues, blocker-recall
-tool, six DRY extractions) CLOSED 2026-11-09 21:30 CST (PR #20, merge
-8a2939c; phase clock 1h 5m; R18-01 ruled (c)). Phase 19 (owner-data
-and site safety: HTML escaping in site templates, atomic rewrites of
-published files, move/fork history rows, strict-read residues,
-guidelines validation; plus Phase 18 residues and the review-bundle
-capture) AT GATE 19 — adopted 2026-11-09 21:32 CST (options B+C of the
-Gate 18 slate), all eight packets landed, CRPR APPROVED after two rounds
-(refs/cr/reviewed = f41570c); gate PR open, the owner merges. 0 open rulings; R9-02 returns 11-12, R10-02 11-26.
-I-11: owner re-consented 2026-11-09 15:39 (expires ≈ 11-16 while the
-OAuth app is in testing).
+phase clock 1h 42m). Gate 10 CLOSED 2026-10-29 (PR #12, merge 75f3c59 —
+resilience of the scheduled run and a truthful board: re-post guard at
+selection, the intended timeout on every Claude call, caffeinate +
+bounded preflight, upload progress read from the batch log, LingQ
+generate path, placeholder-key lint; phase clock 47m). Gate 11 CLOSED
+2026-10-29 (PR #13, merge 635a089 — listening archive of untrimmed
+source audio and rejected candidates, 404 source URLs excluded in-run,
+YouTube rejection reason + consent-age WARN, Exa network retries,
+uncounted content failures counted, trim-prompt re-ask; phase clock
+1h 33m). Phase 12 (small truthfulness sweep: a dead feed costs one
+attempt, a failed first-generation description is counted, periodic
+dead-code review) CLOSED 2026-10-30 (PR #14, merge c64a6a6; phase clock
+17m). Refill read 2026-10-30: Q-108…Q-139 and R12-01…R12-06 minted.
+Phase 13 (data safety: corrupt owner-data files never rewritten, scrap
+removes the right row, transient 5xx/TLS retried, failed site regen
+keeps the live site, ffmpeg outputs land only when complete) CLOSED
+2026-10-30 (PR #15, merge 782de48; phase clock 36m). Phase 14
+(listener-visible correctness, news and YouTube: script-reviewer
+auto-fixes keep content and right weekdays, YouTube captions/playlist
+retried and caption-less uploads visible, subtitle input defects,
+exclusions compared cleaned, unattended length failures excluded
+in-run, counter-only re-post match) CLOSED 2026-11-04 (PR #16, merge
+2107561; phase clock 3d 12h wall, ~1h 45m worked — API outage). Phase
+15 (incident sweep: loudnorm analysis survives ffmpeg's truncated
+metadata echo, `--date` usage error, interactive trim flow defects,
+corrupt uploads.yml stops the YouTube batch before any upload, retry
+and spend hygiene, archived trim record replay) CLOSED 2026-11-09
+(PR #17, merge 8b5d92f; phase clock 48m). Phase 16 (residue sweep:
+Anthropic 4xx retries at the remaining four sites, strict ledger
+pre-read at the LingQ, R2 and tweet publishers, Bluesky authentication
+retry, YouTube owed-step residues, re-post counter rule,
+stage-direction residues, Phase 15 small residues) CLOSED 2026-11-09
+(PR #18, merge 9f3f9e8; phase clock 39m). R12-01…06 ruled or withdrawn
+2026-11-10. Phase 17 (didactics: vocabulary section correctness and
+lemma identity, selection calibration measured first, feed guid never
+reused with `isPermaLink="false"`, subtitle reconciler output cap and
+retries, rendering nits) CLOSED 2026-11-09 (PR #19, merge 31ce640;
+phase clock 39m; I-12 closed by the post-merge regen). Phase 18 (latent
+defects and the small sweep: sources/research defects, translate/voice
+drift, episode-id selection and exit codes, translation request
+timeout, the 10:30 batch lock in the yield, hygiene batch with warnings
+fatal in the gate, Tell nits, Phase 17 residues, blocker-recall tool,
+six DRY extractions) CLOSED 2026-11-09 (PR #20, merge 1d2c460; phase
+clock 1h 5m; R18-01 ruled (c)). Phase 19 (owner-data and site safety:
+HTML escaping in site templates, atomic rewrites of published files,
+move/fork history rows, strict-read residues, guidelines validation;
+plus Phase 18 residues and the review-bundle capture) CLOSED
+2026-11-09 (PR #21, merge 6ff249c; phase clock 52m; gate closed on the
+boards 2026-11-13). The repository history was rewritten 2026-11-10;
+the merge SHAs above are the current ones. Phase 20 (board truthfulness, residue sweep, site
+front page: a killed or setup-failed run never reads OK, dormant and
+unpublished shows named, translated feeds read back, uncounted
+degradations counted once, Phase 16 and 19 residues, the front page
+loads 12 episodes and reveals the rest on demand, feed times in UTC)
+AT GATE 20 — adopted 2026-11-13 (slate options A+B plus Q-162, Q-161
+riding), all ten packets landed, CRPR APPROVED after two rounds
+(refs/cr/reviewed = 4213f60); gate PR open, the owner merges. 1 open ruling (R9-02, re-presented
+2026-11-13); R10-02 returns 11-26. I-11: owner re-consented 2026-11-09
+(expires ≈ 11-16 while the OAuth app is in testing). Doctrine re-synced
+2026-11-13 (docs/DEV-LOOP.md header).
 Update this line at each gate.

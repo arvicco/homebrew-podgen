@@ -91,7 +91,7 @@ class EpisodeCoverResolver
     else
       bi = @config.cover_base_image
       if bi && !File.exist?(bi)
-        @logger.log("Warning: base_image configured but not found: #{bi}")
+        warn!("Cover base_image configured but not found: #{bi}")
       end
       [@youtube_thumbnail, @youtube_thumbnail ? "YouTube thumbnail fallback" : nil]
     end
@@ -113,7 +113,7 @@ class EpisodeCoverResolver
     )
     result[:winner_path]
   rescue => e # skippable: cover chain falls through to the next strategy
-    @logger.log("Warning: auto cover search failed: #{e.class}: #{e.message}")
+    warn!("Auto cover search failed: #{e.class}: #{e.message}")
     nil
   end
 
@@ -122,7 +122,7 @@ class EpisodeCoverResolver
   def generate_cover_image(title, base_image = nil)
     base_image ||= @config.cover_base_image
     unless base_image
-      @logger.log("Warning: No base_image configured for cover generation")
+      warn!("No base_image configured for cover generation")
       return nil
     end
 
@@ -134,10 +134,18 @@ class EpisodeCoverResolver
       logger: @logger
     )
     @temp_files << path if path
+    # CoverResolver.generate logs its own cause and answers nil (Q-117).
+    warn!("Cover generation failed for #{base_image} (falling back)") unless path
     path
   rescue => e # skippable: cover chain falls through to the next strategy
-    @logger.log("Warning: Cover generation failed: #{e.class}: #{e.message} (falling back)")
-    @warnings << "Cover generation failed (#{e.class}: #{e.message})"
+    warn!("Cover generation failed (#{e.class}: #{e.message})")
     nil
+  end
+
+  # A cover fallback the run took: logged and kept for the pipeline's
+  # RUN-OUTCOME count (one entry per event).
+  def warn!(message)
+    @logger.log("Warning: #{message}")
+    @warnings << message
   end
 end

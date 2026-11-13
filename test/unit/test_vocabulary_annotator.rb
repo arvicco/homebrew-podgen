@@ -630,8 +630,34 @@ class TestVocabularyAnnotator < Minitest::Test
       assert_equal 39, result.length, "entries before the malformed object survive"
       assert_equal "w39", result.last[:lemma]
     end
-    assert logs.any? { |m| m.include?("WARNING") && m.include?("malformed") && m.include?("39") },
+    assert logs.any? { |m| m.include?("Warning: Enrichment response malformed") && m.include?("39") },
       "expected one warning naming the salvage count, got: #{logs.inspect}"
+  end
+
+  # Q-117: a response that yields no glosses at all is one counted
+  # warning (the no-JSON path logged nothing; the truncated path a plain line).
+  def test_unusable_responses_are_each_one_counted_warning
+    usage = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens).new(1, 1, 0, 0)
+    msg = ->(text, stop) { Struct.new(:content, :stop_reason, :model, :usage).new([Struct.new(:type, :text).new("text", text)], stop, "m", usage) }
+    replies = [msg.call("Sorry, no list.", "end_turn"), msg.call("[{\"lemma\": \"w", "max_tokens"),
+      msg.call("Sorry, no list.", "end_turn"), msg.call("[{\"lemma\": \"w", "max_tokens")]
+    fake_messages = Object.new
+    fake_messages.define_singleton_method(:create) { |**_| replies.shift }
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    annotator = VocabularyAnnotator.new("test-key", model: "m", logger: logger)
+    annotator.instance_variable_get(:@client).stub(:messages, fake_messages) do
+      2.times { assert_equal [], annotator.send(:call_enrich_api, [{ lemma: "w" }], language: "sl", target_language: "Russian", filters: {}) }
+      2.times { assert_equal [], annotator.send(:classify_single, "Besedilo.", "sl", "B1") }
+    end
+
+    assert_equal 4, warnings.size, warnings.inspect
+    assert_match(/\[VocabularyAnnotator\] Warning: Enrichment response held no JSON array/, warnings[0])
+    assert_match(/\[VocabularyAnnotator\] Warning: Enrichment truncated and salvage failed/, warnings[1])
+    assert_match(/\[VocabularyAnnotator\] Warning: Classification response held no JSON array/, warnings[2])
+    assert_match(/\[VocabularyAnnotator\] Warning: Response truncated at max_tokens and salvage failed/, warnings[3])
   end
 
   # --- enrich_entries (merge logic) ---
@@ -745,6 +771,25 @@ class TestVocabularyAnnotator < Minitest::Test
       _marked, vocab = @annotator.annotate("Beseda", language: "sl", cutoff: "B1",
                                            known_lemmas: Set.new(["beseda"]))
       assert_equal "", vocab
+    end
+  end
+
+  # Q-160 point 9: known words compare as the ledger's keys — the reflexive
+  # particle is not part of a Slovenian lemma's identity, either side.
+  def test_annotate_known_lemmas_compare_without_reflexive_particle
+    entries = [
+      { word: "bojim", lemma: "bati se", level: "B2", pos: "v.", translation: "to fear", definition: "D." },
+      { word: "smejal", lemma: "smejati", level: "B2", pos: "v.", translation: "to laugh", definition: "D." },
+      { word: "zavod", lemma: "zavod", level: "B2", pos: "n.", translation: "institute", definition: "An org." }
+    ]
+    [nil, VocabLedger.new(language: "sl")].each do |ledger|
+      stub_classify(entries) do
+        _marked, vocab = @annotator.annotate("bojim smejal zavod", language: "sl", cutoff: "B1",
+          known_lemmas: Set.new(["bati", "smejati se"]), ledger: ledger)
+        refute_includes vocab, "bati", "ledger=#{ledger.inspect}"
+        refute_includes vocab, "smejati", "ledger=#{ledger.inspect}"
+        assert_includes vocab, "zavod"
+      end
     end
   end
 

@@ -1,155 +1,154 @@
 {
   "language_code": "eng",
   "language_probability": 1.0,
-  "text": "Hello there. This is a short test of the transcription service",
+  "text": "Hello there. This is a short test of the transcription service.",
   "words": [
     {
       "text": "Hello",
       "start": 0.04,
-      "end": 0.3,
+      "end": 0.38,
       "type": "word",
-      "logprob": -0.000014305012882687151
+      "logprob": -0.000004529942543740617
     },
     {
       "text": " ",
-      "start": 0.3,
-      "end": 0.36,
+      "start": 0.38,
+      "end": 0.48,
       "type": "spacing",
-      "logprob": -0.000058530047681415454
+      "logprob": -0.00003135155202471651
     },
     {
       "text": "there.",
-      "start": 0.36,
-      "end": 0.6,
+      "start": 0.48,
+      "end": 0.76,
       "type": "word",
-      "logprob": -0.0005196416053270999
+      "logprob": -0.0005992120695736958
     },
     {
       "text": " ",
-      "start": 0.6,
-      "end": 0.82,
+      "start": 0.76,
+      "end": 1.0,
       "type": "spacing",
-      "logprob": -0.00000011920928244535389
+      "logprob": 0.0
     },
     {
       "text": "This",
-      "start": 0.82,
-      "end": 0.96,
+      "start": 1.0,
+      "end": 1.14,
       "type": "word",
-      "logprob": -0.00000011920928244535389
+      "logprob": 0.0
     },
     {
       "text": " ",
-      "start": 0.96,
-      "end": 1.02,
+      "start": 1.14,
+      "end": 1.2,
       "type": "spacing",
       "logprob": 0.0
     },
     {
       "text": "is",
-      "start": 1.02,
-      "end": 1.1,
+      "start": 1.2,
+      "end": 1.28,
       "type": "word",
       "logprob": 0.0
     },
     {
       "text": " ",
-      "start": 1.1,
-      "end": 1.14,
+      "start": 1.28,
+      "end": 1.32,
       "type": "spacing",
       "logprob": 0.0
     },
     {
       "text": "a",
-      "start": 1.14,
-      "end": 1.2,
+      "start": 1.32,
+      "end": 1.4,
       "type": "word",
       "logprob": 0.0
     },
     {
       "text": " ",
-      "start": 1.2,
-      "end": 1.26,
+      "start": 1.4,
+      "end": 1.46,
       "type": "spacing",
       "logprob": 0.0
     },
     {
       "text": "short",
-      "start": 1.26,
-      "end": 1.5,
+      "start": 1.46,
+      "end": 1.7,
       "type": "word",
       "logprob": 0.0
     },
     {
       "text": " ",
-      "start": 1.5,
-      "end": 1.56,
+      "start": 1.7,
+      "end": 1.76,
       "type": "spacing",
       "logprob": 0.0
     },
     {
       "text": "test",
-      "start": 1.56,
-      "end": 1.9,
+      "start": 1.76,
+      "end": 1.98,
       "type": "word",
       "logprob": 0.0
     },
     {
       "text": " ",
-      "start": 1.9,
-      "end": 2.24,
+      "start": 1.98,
+      "end": 2.02,
       "type": "spacing",
       "logprob": 0.0
     },
     {
       "text": "of",
-      "start": 2.24,
-      "end": 2.3,
+      "start": 2.02,
+      "end": 2.08,
       "type": "word",
       "logprob": 0.0
     },
     {
       "text": " ",
-      "start": 2.3,
-      "end": 2.34,
+      "start": 2.08,
+      "end": 2.12,
       "type": "spacing",
       "logprob": 0.0
     },
     {
       "text": "the",
-      "start": 2.34,
-      "end": 2.4,
+      "start": 2.12,
+      "end": 2.18,
       "type": "word",
       "logprob": 0.0
     },
     {
       "text": " ",
-      "start": 2.4,
-      "end": 2.44,
+      "start": 2.18,
+      "end": 2.22,
       "type": "spacing",
-      "logprob": -0.000025748875486897305
+      "logprob": -0.000014066597032069694
     },
     {
       "text": "transcription",
-      "start": 2.44,
-      "end": 3.0,
+      "start": 2.22,
+      "end": 2.78,
       "type": "word",
-      "logprob": -0.000025748875486897305
+      "logprob": -0.000014066597032069694
     },
     {
       "text": " ",
-      "start": 3.0,
-      "end": 3.1,
+      "start": 2.78,
+      "end": 2.88,
       "type": "spacing",
       "logprob": -0.00000011920928244535389
     },
     {
-      "text": "service",
-      "start": 3.1,
-      "end": 3.5,
+      "text": "service.",
+      "start": 2.88,
+      "end": 3.3,
       "type": "word",
-      "logprob": -0.00000011920928244535389
+      "logprob": -0.0029057851061162765
     }
-  ],
-  "audio_duration_secs": 3.5679375
+  ]
 }

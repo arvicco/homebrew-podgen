@@ -19,7 +19,7 @@ module PodgenCLI
     "publish"   => ["Publish to Cloudflare R2 (--lingq for LingQ)",                      "cli/publish_command",   "PublishCommand",   "<podcast>"],
     "stats"     => ["Show podcast statistics",                                           "cli/stats_command",     "StatsCommand",     "<podcast> | --all"],
     "validate"  => ["Validate podcast config and output",                                "cli/validate_command",  "ValidateCommand",  "<podcast> | --all"],
-    "status"    => ["One-line OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN)", "cli/status_command",    "StatusCommand",    "[podcast] [--json]"],
+    "status"    => ["One-line OK/OLD/WARN/DORMANT/UNPUBLISHED verdict per podcast (exit 1 if any OLD/WARN)", "cli/status_command",    "StatusCommand",    "[podcast] [--json]"],
     "list"      => ["List available podcasts",                                           "cli/list_command",      "ListCommand",      ""],
     "test"      => ["Run a standalone test script",                                      "cli/test_command",      "TestCommand",      "<name> [args]"],
     "schedule"  => ["Install launchd scheduler (--time, --publish, --telegram)",         "cli/schedule_command",  "ScheduleCommand",  "<podcast>"],
