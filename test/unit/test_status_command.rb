@@ -1051,6 +1051,62 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- translated feeds (Q-127, P20-3) ---
+
+  def es_feeds = BASE_URL + "- language:\n  - en\n  - es\n"
+
+  def test_run_translated_feed_five_days_behind_reports_warn_naming_it
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds)
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>")
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-05-es alpha-2026-10-10-es])
+    seen = []
+    @feed_fetcher = ->(url) {
+      seen << url
+      feed_xml(url.end_with?("/feed-es.xml") ? "Mon, 05 Oct 2026 06:00:00 +0200" : "Sat, 10 Oct 2026 06:00:00 +0200")
+    }
+    out, code = run_status
+    assert_equal 1, code
+    assert_equal %w[https://media.example.com/alpha/feed.xml https://media.example.com/alpha/feed-es.xml], seen
+    assert_match(/alpha\s+WARN\s+served feed-es\.xml behind local by 5d \(served 2026-10-05, local 2026-10-10\)$/, out)
+  end
+
+  def test_run_every_translated_feed_current_is_ok
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds + "  - it\n")
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>")
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-10-es alpha-2026-10-09-it])
+    seen = []
+    @feed_fetcher = ->(url) { (seen << url) && feed_xml("Fri, 09 Oct 2026 16:31:00 +0200") }
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_equal 3, seen.size
+  end
+
+  def test_run_translated_feed_fetch_failure_names_the_feed
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds)
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-10-es])
+    @feed_fetcher = ->(url) {
+      raise ServedFeed::StatusError, "HTTP 404" if url.end_with?("/feed-es.xml")
+      feed_xml("Sat, 10 Oct 2026 06:00:00 +0200")
+    }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+served feed-es\.xml fetch failed: HTTP 404$/, out)
+  end
+
+  def test_run_unpublished_show_skips_translated_feeds
+    make_pod("alpha", dates: fresh_dates, extra: es_feeds)
+    make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-10-es])
+    seen = []
+    @feed_fetcher = ->(url) {
+      seen << url
+      raise ServedFeed::StatusError, "HTTP 404"
+    }
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_equal ["https://media.example.com/alpha/feed.xml"], seen
+    assert_match(/alpha\s+UNPUBLISHED\s+/, out)
+  end
+
   def test_run_offline_flag_skips_served_feed_check
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
     make_episodes("alpha", %w[alpha-2026-10-05 alpha-2026-10-10])

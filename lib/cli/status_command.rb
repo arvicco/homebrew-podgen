@@ -27,7 +27,7 @@ module PodgenCLI
   #          uploads stalled the same way or holed mid-range (P10-4), or the upload batch's stderr
   #          names a not-authorized / quota condition (P7-1), or the YouTube
   #          consent is 6+ days old (testing-status OAuth app), or the served
-  #          base_url/feed.xml of a scheduled show lags the newest local
+  #          base_url/feed.xml (or a translated feed-<code>.xml, Q-127) of a scheduled show lags the newest local
   #          episode, or cannot be fetched (P7-2; the one network read,
   #          skipped with --offline)
   #   UNPUBLISHED - the served feed answers 404 and the show has no publish
@@ -422,29 +422,45 @@ module PodgenCLI
     # future episodes are not expected to be served yet). Fetch errors name
     # the exception class or the HTTP code only, never a body. The lag
     # escalates only for a show with an installed launchd scheduler; an
-    # unscheduled show is published by the owner's hand (P10-3).
+    # unscheduled show is published by the owner's hand (P10-3). Every
+    # translated feed (base_url/feed-<code>.xml) is read back by the same rule
+    # against that language's newest episode, named in its lines (Q-127);
+    # an unpublished show (primary 404, no record) reads no further feed.
     def served_feed_findings(config, inform, escalate)
       return [] if @offline || config.base_url.to_s.strip.empty?
 
-      local = announced_episode_dates(config, []).select { |d| d <= @today }.max
+      codes = config.language_codes
+      codes = [config.primary_language] if codes.empty?
+      codes.each_with_index.flat_map do |code, i|
+        findings = served_feed_finding(config, code, i.zero?, inform, escalate)
+        return [] if findings == :unpublished
+
+        findings
+      end
+    end
+
+    def served_feed_finding(config, code, primary, inform, escalate)
+      file = config.feed_file_name(code)
+      label = primary ? "served feed" : "served #{file}"
+      local = announced_episode_dates(config, [code]).select { |d| d <= @today }.max
       return [] unless local
 
-      served = @served_feed.newest_date("#{config.base_url.to_s.chomp("/")}/feed.xml")
-      return ["served feed has no dated items (local #{local})"] unless served
+      served = @served_feed.newest_date("#{config.base_url.to_s.chomp("/")}/#{file}")
+      return ["#{label} has no dated items (local #{local})"] unless served
 
       behind = (local - served).to_i
       return [] unless behind > SERVED_FEED_SLACK
-      return ["served feed behind local by #{behind}d (served #{served}, local #{local})"] if scheduled?(config.name)
+      return ["#{label} behind local by #{behind}d (served #{served}, local #{local})"] if scheduled?(config.name)
 
-      inform.call("local ahead of served by #{behind}d (owner-paced)")
+      inform.call("#{"#{file}: " unless primary}local ahead of served by #{behind}d (owner-paced)")
       []
     rescue => e # skippable: a failed read-back is itself the finding (WARN); the other checks still run
       root = e.cause || e
-      if root.is_a?(ServedFeed::StatusError) && root.message == "HTTP 404" && !publish_record?(config)
+      if primary && root.is_a?(ServedFeed::StatusError) && root.message == "HTTP 404" && !publish_record?(config)
         escalate.call("UNPUBLISHED", "served feed HTTP 404 and no publish record (uploads.yml empty, no logged publish)")
-        return []
+        return :unpublished
       end
-      ["served feed fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
+      ["#{label} fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
     end
 
     # Q-155: evidence the show was ever published — any tracked upload or
