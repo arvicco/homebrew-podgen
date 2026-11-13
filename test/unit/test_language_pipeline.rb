@@ -147,7 +147,7 @@ class TestLanguagePipeline < Minitest::Test
   def test_resolve_cover_merges_resolver_warnings_into_pipeline
     pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
 
-    CoverResolver.stub(:generate, ->(**_) { nil }) do
+    CoverResolver.stub(:generate, ->(**_) {}) do
       pipeline.send(:resolve_episode_cover, "Title")
     end
 
@@ -161,11 +161,44 @@ class TestLanguagePipeline < Minitest::Test
   def test_resolve_cover_twice_counts_the_same_fallback_once
     pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
 
-    CoverResolver.stub(:generate, ->(**_) { nil }) do
+    CoverResolver.stub(:generate, ->(**_) {}) do
       2.times { pipeline.send(:resolve_episode_cover, "Title") }
     end
 
     assert_equal ["Cover generation failed for /tmp/base.png (falling back)"], pipeline.warnings
+  end
+
+  # Q-117: a feed image that resolves to nothing, a failed RSS image
+  # download and a failed LingQ cover resolution are counted warnings.
+  def test_feed_image_and_download_fallbacks_each_count_once
+    pipeline = build_pipeline
+
+    assert_nil pipeline.send(:resolve_feed_image, File.join(@tmpdir, "missing.jpg"))
+    CoverResolver.stub(:latest_screenshot, nil) { assert_nil pipeline.send(:resolve_feed_image, "last") }
+    HttpDownloader.stub(:new, ->(**_) { raise SocketError, "offline" }) do
+      assert_nil pipeline.send(:download_episode_image, "https://example.com/c.jpg")
+    end
+
+    assert_equal 3, pipeline.warnings.size, pipeline.warnings.inspect
+    assert_equal "per-feed image not found: #{File.join(@tmpdir, "missing.jpg")}", pipeline.warnings[0]
+    assert_equal "per-feed image: last but no screenshots found on ~/Desktop", pipeline.warnings[1]
+    assert_equal "Failed to download episode image: SocketError: offline", pipeline.warnings[2]
+  end
+
+  def test_lingq_cover_resolution_failure_counts_once
+    cfg = StubConfig.new(**@config.to_h.merge(lingq_enabled: true))
+    pipeline = build_pipeline(config: cfg)
+    pipeline.define_singleton_method(:resolve_episode_cover) { |_t| raise "magick exploded" }
+    uploads = Object.new
+    uploads.define_singleton_method(:upload_to_lingq) { |**_| nil }
+    uploads.define_singleton_method(:warnings) { [] }
+
+    PostPipelineUploads.stub(:new, uploads) do
+      pipeline.send(:upload_to_lingq, { title: "T" }, "text", "/tmp/a.mp3", "base")
+    end
+
+    assert_equal ["cover resolution for LingQ failed: RuntimeError: magick exploded (uploading without image)"],
+      pipeline.warnings
   end
 
   # --- skippable-step warnings must name the exception class ---
