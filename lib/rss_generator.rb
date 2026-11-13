@@ -125,22 +125,15 @@ class RssGenerator
       add_text(rss_image, "link", @base_url)
     end
     add_text(channel, "itunes:explicit", "false")
-    add_text(channel, "lastBuildDate", Time.now.strftime("%a, %d %b %Y %H:%M:%S %z"))
+    add_text(channel, "lastBuildDate", Time.now.utc.strftime("%a, %d %b %Y %H:%M:%S %z"))
 
+    pub_dates = pub_dates_for(episodes)
     episodes.each do |ep|
       item = channel.add_element("item")
       ep_title = extract_title_from_episode(ep[:filename]) || @title_map[ep[:filename]]
       title = ep_title || "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
       add_text(item, "title", title)
-      # Use episode date for pubDate. If a processing timestamp exists,
-      # borrow only its time-of-day component (for stable ordering within a day).
-      pub_date = if (ts = @timestamp_map[ep[:filename]])
-        t = Time.parse(ts)
-        ep[:date].to_time.strftime("%a, %d %b %Y") + t.strftime(" %H:%M:%S %z")
-      else
-        ep[:date].to_time.strftime("%a, %d %b %Y 06:00:00 %z")
-      end
-      add_text(item, "pubDate", pub_date)
+      add_text(item, "pubDate", pub_dates[ep[:filename]])
       add_text(item, "itunes:author", @author)
       add_text(item, "itunes:duration", format_duration(ep))
 
@@ -171,6 +164,26 @@ class RssGenerator
     end
 
     doc
+  end
+
+  # pubDate per filename, all in UTC (owner ruling: every time detail in
+  # UTC). The date part is the EPISODE date; the time-of-day is the
+  # processing timestamp's, converted to UTC (06:00:00 without one). The
+  # conversion can wrap a same-day episode past UTC midnight, putting a later
+  # slot before an earlier one; such an item takes the previous item's time
+  # plus one second, so pubDate order still follows the feed's item order.
+  def pub_dates_for(episodes)
+    episodes.reverse.group_by { |ep| ep[:date] }.each_with_object({}) do |(date, day), out|
+      prev = nil
+      day.each do |ep|
+        ts = @timestamp_map[ep[:filename]]
+        t = ts ? Time.parse(ts).utc : nil
+        secs = t ? t.hour * 3600 + t.min * 60 + t.sec : 6 * 3600
+        secs = [prev + 1, 86_399].min if prev && secs < prev
+        prev = secs
+        out[ep[:filename]] = (Time.utc(date.year, date.month, date.day) + secs).strftime("%a, %d %b %Y %H:%M:%S %z")
+      end
+    end
   end
 
   def strip_markdown_links(text)

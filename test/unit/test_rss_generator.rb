@@ -340,6 +340,64 @@ class TestRssGenerator < Minitest::Test
     refute_match(/23 Apr 2026/, xml.split("lastBuildDate").last)
   end
 
+  # --- every time detail in UTC (P20-9, ruling R18-02) ---
+
+  def test_generate_pubdate_negative_offset_timestamp_is_converted_to_utc
+    create_mp3("test-2026-01-15.mp3", 1000)
+    history_path = write_rss_history([{"date" => "2026-01-15", "basename" => "test-2026-01-15", "timestamp" => "2026-01-15T20:53:27-06:00"}])
+
+    with_tz("America/Chicago") { build_generator(history_path: history_path).generate }
+
+    assert_equal ["Thu, 15 Jan 2026 02:53:27 +0000"], pub_dates
+  end
+
+  def test_generate_last_build_date_is_utc
+    with_tz("America/Chicago") { build_generator.generate }
+
+    last_build = REXML::Document.new(File.read(@feed_path)).root.elements["channel/lastBuildDate"].text
+    assert last_build.end_with?(" +0000"), last_build
+    assert_in_delta Time.now.to_i, Time.rfc2822(last_build).to_i, 60
+  end
+
+  def test_generate_pubdate_fallback_is_six_utc
+    create_mp3("test-2026-03-01.mp3", 1000)
+
+    with_tz("Europe/Ljubljana") { build_generator.generate }
+
+    assert_equal ["Sun, 01 Mar 2026 06:00:00 +0000"], pub_dates
+  end
+
+  def test_generate_same_day_items_keep_order_when_utc_wraps_midnight
+    # 17:00 and 19:30 at -06:00 are 23:00 and 01:30 UTC: the later slot would
+    # sort before the earlier one, so it takes the next second instead.
+    create_mp3("test-2026-01-15.mp3", 1000)
+    create_mp3("test-2026-01-15a.mp3", 1000)
+    history_path = write_rss_history([
+      {"date" => "2026-01-15", "basename" => "test-2026-01-15", "timestamp" => "2026-01-15T17:00:00-06:00"},
+      {"date" => "2026-01-15", "basename" => "test-2026-01-15a", "timestamp" => "2026-01-15T19:30:00-06:00"}
+    ])
+
+    build_generator(history_path: history_path).generate
+
+    assert_equal ["Thu, 15 Jan 2026 23:00:01 +0000", "Thu, 15 Jan 2026 23:00:00 +0000"], pub_dates
+  end
+
+  def test_generate_same_day_items_in_order_keep_converted_times
+    create_mp3("test-2026-01-15.mp3", 1000)
+    create_mp3("test-2026-01-15a.mp3", 1000)
+    create_mp3("test-2026-01-16.mp3", 1000)
+    history_path = write_rss_history([
+      {"date" => "2026-01-15", "basename" => "test-2026-01-15", "timestamp" => "2026-01-15T08:00:00-06:00"},
+      {"date" => "2026-01-15", "basename" => "test-2026-01-15a", "timestamp" => "2026-01-15T09:15:00-06:00"},
+      {"date" => "2026-01-16", "basename" => "test-2026-01-16", "timestamp" => "2026-01-16T01:00:00-06:00"}
+    ])
+
+    build_generator(history_path: history_path).generate
+
+    assert_equal ["Fri, 16 Jan 2026 07:00:00 +0000", "Thu, 15 Jan 2026 15:15:00 +0000",
+      "Thu, 15 Jan 2026 14:00:00 +0000"], pub_dates
+  end
+
   def test_generate_includes_transcript_link
     create_mp3("test-2026-01-15.mp3", 1000)
     File.write(File.join(@episodes_dir, "test-2026-01-15_transcript.html"), "<html></html>")
@@ -650,6 +708,24 @@ class TestRssGenerator < Minitest::Test
     path = File.join(@episodes_dir, name)
     File.write(path, "x" * size)
     path
+  end
+
+  def write_rss_history(rows)
+    path = File.join(@dir, "history.yml")
+    File.write(path, rows.to_yaml)
+    path
+  end
+
+  def pub_dates
+    REXML::Document.new(File.read(@feed_path)).root.get_elements("channel/item").map { |i| i.elements["pubDate"].text }
+  end
+
+  def with_tz(zone)
+    saved = ENV["TZ"]
+    ENV["TZ"] = zone
+    yield
+  ensure
+    ENV["TZ"] = saved
   end
 
   def build_generator(language: "en", base_url: nil, image: nil, history_path: nil)

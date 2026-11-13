@@ -177,8 +177,8 @@ class TestFrozenContracts < Minitest::Test
     assert_equal "pod-2026-01-15.mp3", item.elements["guid"].text,
       "guid IS the bare mp3 filename — changing this re-downloads every episode for every subscriber"
 
-    assert_match(/\AThu, 15 Jan 2026 07:30:05/, item.elements["pubDate"].text,
-      "pubDate = episode date + processing time-of-day")
+    assert_equal("Thu, 15 Jan 2026 06:30:05 +0000", item.elements["pubDate"].text,
+      "pubDate = episode date + processing time-of-day in UTC (07:30:05+01:00)")
 
     assert_equal "2.0", doc.root.attributes["version"]
     %w[title description link language generator itunes:author itunes:explicit lastBuildDate].each do |el|
