@@ -54,7 +54,7 @@ class StubDescriptionAgent
 
   def clean_title(title:) = @clean_title_result || title
   def clean(title:, description:) = @clean_result || description
-  def generate(title:, transcript:) = @generate_result || ""
+  def generate(title:, transcript:, count_failure: true) = @generate_result || ""
   def generate_title(transcript:, language:) = @generate_title_result
 end
 
@@ -767,6 +767,35 @@ class TestLanguagePipeline < Minitest::Test
     assert_equal original, episode[:description]
     assert_equal 1, pipeline.warnings.size
     assert_match(/description/i, pipeline.warnings.first)
+  end
+
+  # Q-107 (P20-7): a regeneration that RAISES is one counted warning — the
+  # pipeline's line naming the effect — not the agent's plus the pipeline's.
+  def test_wrong_language_description_regeneration_raising_counts_one_warning
+    counted = []
+    @logger.define_singleton_method(:warning) { |m| counted << m }
+    pipeline = build_pipeline(name: "Basnie", transcription_language: "pl")
+    original = "Audiobook fairy tales with stories and morals for children and families"
+    episode = { title: "Story Title", description: original }
+    client = Object.new
+    client.define_singleton_method(:messages) { self }
+    client.define_singleton_method(:create) { |**| raise "API down" }
+    agent = DescriptionAgent.allocate
+    agent.instance_variable_set(:@logger, @logger)
+    agent.instance_variable_set(:@client, client)
+    agent.instance_variable_set(:@effort_params, {})
+    agent.define_singleton_method(:clean_title) { |title:| title }
+    agent.define_singleton_method(:clean) { |title:, description:| description }
+
+    DescriptionAgent.stub(:new, agent) do
+      pipeline.send(:clean_or_generate_description, episode, "Dawno temu żył sobie chłopiec")
+    end
+
+    assert_equal original, episode[:description]
+    assert_equal ["Description regeneration returned nothing; kept the existing (wrong-language) description"],
+      pipeline.warnings + counted
+    assert(@logger.messages.any? { |m| m.include?("Description generation failed: RuntimeError: API down") },
+      "the cause stays in the log: #{@logger.messages.inspect}")
   end
 
   def test_correct_language_description_not_regenerated

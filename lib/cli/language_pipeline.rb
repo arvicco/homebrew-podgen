@@ -907,7 +907,8 @@ module PodgenCLI
         # Detect wrong-language description → regenerate from transcript
         if wrong_language?(episode[:description], lang)
           logger.log("Description language doesn't match transcript (#{lang}), regenerating")
-          regenerated = agent.generate(title: episode[:title], transcript: transcript)
+          # The line below counts a failed call too: the agent stays uncounted (Q-107).
+          regenerated = agent.generate(title: episode[:title], transcript: transcript, count_failure: false)
           if regenerated.to_s.strip.empty?
             # Q-101 (P11-4): an empty result never wipes the description.
             warn!("Description regeneration returned nothing; kept the existing (wrong-language) description",

@@ -146,7 +146,9 @@ class DescriptionAgent
 
   # Generates a short description from the transcript for local file episodes.
   # Returns generated description string, or empty string on failure.
-  def generate(title:, transcript:)
+  # count_failure: false is for a caller that counts the empty result itself
+  # (the failure is then a plain log line: one count per event, Q-107).
+  def generate(title:, transcript:, count_failure: true)
     return "" if transcript.to_s.strip.empty?
 
     truncated = transcript[0, TRANSCRIPT_LIMIT]
@@ -173,7 +175,8 @@ class DescriptionAgent
     log("Description generated: #{result.length} chars")
     result
   rescue => e # skippable (non-fatal): callers keep or fall back (title, or the existing description); counted (Q-106)
-    log_warning("Description generation failed: #{e.class}: #{e.message}")
+    message = "Description generation failed: #{e.class}: #{e.message}"
+    count_failure ? log_warning(message) : log(message)
     ""
   end
 
