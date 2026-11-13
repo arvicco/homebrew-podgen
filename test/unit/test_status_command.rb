@@ -222,6 +222,37 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run did not finish \(last line: START Research\)/, out)
   end
 
+  # A generate still running holds output/<pod>/run.lock: a started run with
+  # no outcome yet is a note, not a WARN (the owner's 14:4x bajke run).
+  def test_run_started_log_without_outcome_while_lock_held_reports_in_progress
+    unfinished_run_logs
+    lock = File.open(File.join(@tmpdir, "output", "alpha", "run.lock"), File::RDWR | File::CREAT)
+    lock.flock(File::LOCK_EX)
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+run in progress since 06:00 \(started a-2026-10-10\.log\)/, out)
+    refute_includes out, "did not finish"
+  ensure
+    lock&.close
+  end
+
+  def test_run_started_log_without_outcome_lock_free_reports_did_not_finish
+    unfinished_run_logs
+    FileUtils.touch(File.join(@tmpdir, "output", "alpha", "run.lock")) # left behind, not held
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run did not finish/, out)
+  end
+
+  # Second signal (a lock file gone): a log written in the last 10 minutes.
+  def test_run_started_log_without_outcome_written_minutes_ago_reports_in_progress
+    unfinished_run_logs
+    @now = Time.new(2026, 10, 10, 6, 9)
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+run in progress since 06:00 \(started a-2026-10-10\.log\)/, out)
+  end
+
   # A log from before RUN-OUTCOME existed (no outcome in any of the show's
   # logs) keeps the line scan: a dormant show's last run is not "unfinished".
   def test_run_log_without_outcome_before_outcome_era_keeps_line_scan
@@ -1412,7 +1443,7 @@ class TestStatusCommand < Minitest::Test
     served_feed = ServedFeed.new(fetcher: fetcher)
     served_feed.define_singleton_method(:sleep) { |_| nil } # retry backoff
     PodgenCLI::StatusCommand.new(args, {}, plist_dir: @plist_dir, today: TODAY, served_feed: served_feed,
-      youtube_token_file: @token_file)
+      youtube_token_file: @token_file, now: @now || Time.new(2026, 10, 11, 7))
   end
 
   def publish_entries = status_command([]).send(:publish_entries)
@@ -1500,6 +1531,16 @@ class TestStatusCommand < Minitest::Test
     lines = upload_batch(mtime.strftime("%Y/%m/%d"), lines) if marked
     File.write(path, lines.join("\n") + "\n")
     File.utime(mtime, mtime, path)
+  end
+
+  # An outcome-era show whose newest generate log (10-10 06:00) has a start
+  # line and no RUN-OUTCOME.
+  def unfinished_run_logs
+    make_pod("alpha", dates: fresh_dates)
+    write_log("alpha", "a-2026-10-09.log", ["[2026-10-09 06:00:09] RUN-OUTCOME status=ok warnings=0 errors=0"],
+      mtime: Time.new(2026, 10, 9, 6))
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:06] START Research"],
+      mtime: Time.new(2026, 10, 10, 6))
   end
 
   # A tick refused by the lock in the stderr: exit 3 since the skip line

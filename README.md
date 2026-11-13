@@ -117,7 +117,7 @@ ruby bin/podgen <command> [options]
 | `podgen stats <podcast>`              | Show podcast statistics and download analytics           |
 | `podgen analytics <sub>`              | Manage Cloudflare analytics Worker                       |
 | `podgen validate <podcast>`           | Validate config and output                               |
-| `podgen status [podcast]`             | One-line OK/OLD/WARN verdict per podcast (exit 1 if any OLD/WARN) |
+| `podgen status [podcast]`             | One-line OK/OLD/WARN/DORMANT/UNPUBLISHED verdict per podcast (exit 1 if any OLD/WARN) |
 | `podgen list`                         | List available podcasts                                  |
 | `podgen add <podcast> <url>`          | Queue a priority link for the next episode               |
 | `podgen links <podcast>`              | List or manage queued priority links                     |
@@ -1240,7 +1240,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `RUN-OUTCOME` line): the `render`, `voice` and `translate` logs in the same
   directory are ignored. Once the podcast's logs carry `RUN-OUTCOME` lines, a
   started run without one reads `<log>: run did not finish (last line: …)`
-  (killed past every handler, or still running).
+  (killed past every handler). A run still going — its `output/<podcast>/run.lock` held, or its log written in the last 10 minutes — is an OK note instead: `run in progress since 14:31 (started <log>)`.
   Indented reviewer findings (`  WARNING: [COVERAGE] …`, the script review's
   own output) are not pipeline warnings and are ignored. A newest episode
   dated up to `freshness_lead_days` ahead (`## Podcast` key, default 3) is OK
