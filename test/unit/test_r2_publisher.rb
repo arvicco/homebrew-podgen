@@ -201,6 +201,22 @@ class TestR2Publisher < Minitest::Test
     assert_includes calls.first, "episodes/*.mp3"
   end
 
+  # Q-160 point 10: a wrong explicit id is a failed run, as on LingQ and
+  # YouTube — refused before the sync, nothing goes up.
+  def test_run_with_unmatched_episode_id_refuses_before_sync
+    seed_ep("ep-2026-01-15")
+    calls = []
+    publisher = build_publisher(config: stub_config, runner: ->(**kw) { calls << kw }, episode_id: "2026-01-16")
+
+    result = nil
+    _out, err = capture_io { result = publisher.run }
+
+    assert_empty calls, "no sync for an id that matches no episode"
+    refute result.synced
+    assert_equal [:no_match], result.errors.map { it[:type] }
+    assert_includes err, "No episode found matching '2026-01-16'"
+  end
+
   def test_run_without_episode_id_prints_no_scope_line
     seed_ep("ep-2026-01-15")
     out, = capture_io { build_publisher(config: stub_config, runner: ->(*) { true }).run }

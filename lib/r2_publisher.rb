@@ -18,9 +18,9 @@ require_relative "publisher_shared"
 class R2Publisher
   include PublisherShared
 
-  # NB: scan_episodes (PublisherShared) is used only by tweet_new_episodes —
-  # the rclone sync runs against INCLUDE_GLOBS wholesale and is intentionally
-  # not episode-scoped.
+  # NB: scan_episodes (PublisherShared) scopes only tweet_new_episodes (and
+  # refuses an episode id that matches nothing) — the rclone sync runs
+  # against INCLUDE_GLOBS wholesale and is intentionally not episode-scoped.
   REQUIRED_ENV = %w[R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_ENDPOINT R2_BUCKET].freeze
   INCLUDE_GLOBS = [
     "episodes/*.mp3",
@@ -69,6 +69,12 @@ class R2Publisher
       $stderr.puts "Set them in .env or podcasts/#{@config.name}/.env"
       return Result.new(synced: false, tweets_posted: 0,
                         errors: [{ type: :missing_env, message: msg }])
+    end
+
+    if @episode_id && scan_episodes.empty?
+      msg = "No episode found matching '#{@episode_id}'"
+      $stderr.puts msg
+      return Result.new(synced: false, tweets_posted: 0, errors: [{ type: :no_match, message: msg }]) # a wrong id is a failed run, as on LingQ/YouTube
     end
 
     RegenCache.ensure_regen(@config) { regenerate! }

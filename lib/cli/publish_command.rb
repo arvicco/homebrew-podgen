@@ -121,8 +121,7 @@ module PodgenCLI
     def publish_to_r2
       result = R2Publisher.new(config: @config, options: @options, episode_id: @episode_id).run
       return 2 if result.errors.any? { |e| %i[rclone_missing missing_env].include?(e[:type]) }
-      return 1 if result.errors.any? { |e| e[:type] == :rclone_failed }
-      0
+      result.errors.any? ? 1 : 0 # a failed sync, a wrong id or an unreadable ledger is a failed run
     end
 
     def publish_to_lingq
