@@ -13,6 +13,7 @@ require_relative File.join(root, "lib", "upload_tracker")
 require_relative File.join(root, "lib", "run_outcome")
 require_relative File.join(root, "lib", "served_feed")
 require_relative File.join(root, "lib", "youtube_consent")
+require_relative File.join(root, "lib", "production_run")
 
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
@@ -53,6 +54,7 @@ module PodgenCLI
     ERROR_RE = /\A(?:\[[^\]]*\]\s*)?ERROR\b/
     STAMP_RE = /\A\[[^\]]*\]\s*/
     GENERATE_START_RE = /\A(?:\[[^\]]*\]\s*)?Podcast Agent started for '/ # GenerateCommand#run
+    RUNNING_LOG_SECONDS = 600 # a started run's log written this recently is still running
     STATUS_LABEL = "#{ScheduleCommand::LABEL_PREFIX}.status".freeze
     INSTALL_HINT = "bin/podgen schedule --status-check --time 07:00"
     # Shared stderr of the per-podcast launchd jobs (scripts/run.sh). A dated
@@ -103,8 +105,10 @@ module PodgenCLI
     UPLOAD_COUNT_RE = /\A\s+(\S+): yt-uploaded (\d+)\b/
 
     def initialize(args, options, plist_dir: ScheduleCommand::LAUNCH_AGENTS_DIR, today: Date.today, publish_log: nil,
-      uploads_log: nil, served_feed: nil, uploads_stdout_log: nil, youtube_token_file: YouTubeConsent::TOKEN_FILE)
+      uploads_log: nil, served_feed: nil, uploads_stdout_log: nil, youtube_token_file: YouTubeConsent::TOKEN_FILE,
+      now: Time.now)
       @options = options
+      @now = now
       @youtube_token_file = youtube_token_file
       @plist_dir = plist_dir
       @today = today
@@ -195,10 +199,10 @@ module PodgenCLI
       else
         reasons << "(freshness off)"
       end
-      log_findings(config).each { |reason| escalate.call("WARN", reason) }
+      inform = ->(reason) { reasons << reason } # an OK-level note, never escalates
+      log_findings(config, inform).each { |reason| escalate.call("WARN", reason) }
       publish_findings(config).each { |reason| escalate.call("WARN", reason) }
       announcements = announcement_progress(config, escalate)
-      inform = ->(reason) { reasons << reason } # an OK-level note, never escalates
       uploads = upload_progress(config, escalate, inform)
       consent = youtube_consent_finding(config)
       escalate.call("WARN", consent) if consent
@@ -236,7 +240,7 @@ module PodgenCLI
     # Generate runs only (Q-118): render/voice/translate log to the same dir
     # but carry neither the start line nor a RUN-OUTCOME line, so they never
     # hide a failed generate nor fill the --runs window.
-    def log_findings(config)
+    def log_findings(config, inform)
       logs = Dir.glob(File.join(config.log_dir, "*.log")).sort_by { |f| [File.mtime(f), f] }
         .map { |f| [f, File.read(f).scrub.lines.map(&:chomp)] }
         .select { |_, lines| lines.any? { |l| l.match?(GENERATE_START_RE) || RunOutcome.parse(l) } }
@@ -245,7 +249,8 @@ module PodgenCLI
       recent = logs.last(@runs).map(&:last)
       repeated = repeated_warnings(recent)
       outcome_era = logs.any? { |_, lines| lines.any? { |l| RunOutcome.parse(l) } }
-      findings = latest_run_finding(recent.last, File.basename(logs.last.first), repeated, outcome_era)
+      in_progress = -> { run_in_progress?(config, logs.last.first) }
+      findings = latest_run_finding(recent.last, File.basename(logs.last.first), repeated, outcome_era, in_progress, inform)
       repeated.each_value { |raw| findings << "repeated in last #{@runs} runs: #{clip(raw)}" }
       findings
     end
@@ -253,13 +258,18 @@ module PodgenCLI
     # A run is judged from its log's last start line on (a later command may
     # append to the same slot's log): its RUN-OUTCOME line (P7-0) first; an ok
     # outcome, or an older log without one, falls back to the regex scan. Once
-    # the show's logs carry outcomes, a started run without one did not finish.
-    def latest_run_finding(lines, file, repeated, outcome_era)
+    # the show's logs carry outcomes, a started run without one did not finish
+    # — unless it is still running: an OK-level note, its log judged later.
+    def latest_run_finding(lines, file, repeated, outcome_era, in_progress, inform)
       start = lines.rindex { |l| l.match?(GENERATE_START_RE) }
       run = start ? lines.drop(start) : lines
       last = run.reject { |l| l.strip.empty? }.last
       outcome = run.reverse_each.lazy.filter_map { |l| RunOutcome.parse(l) }.first
-      if outcome
+      if !outcome && start && in_progress.call
+        since = lines[start][/\A\[\d{4}-\d{2}-\d{2} (\d{2}:\d{2})/, 1]
+        inform.call("run in progress#{" since #{since}" if since} (started #{file})")
+        return []
+      elsif outcome
         finding = outcome_finding(outcome, file)
         return [finding] if finding
       elsif last&.match?(ERROR_RE)
@@ -270,6 +280,15 @@ module PodgenCLI
 
       first = run.find { |l| warning?(l) && !repeated.key?(normalize(l)) }
       first ? ["#{file}: #{clip(first)}"] : []
+    end
+
+    # The generate holds output/<pod>/run.lock for its whole run
+    # (ProductionRun's non-blocking probe, released at once); a log written in
+    # the last RUNNING_LOG_SECONDS is the second signal (lock file gone).
+    def run_in_progress?(config, log)
+      return true if ProductionRun.locked?(File.join(File.dirname(config.episodes_dir), "run.lock"))
+
+      @now - File.mtime(log) < RUNNING_LOG_SECONDS
     end
 
     def outcome_finding(outcome, file)
