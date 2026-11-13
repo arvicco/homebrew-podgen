@@ -305,6 +305,7 @@ class TestTTSAgent < Minitest::Test
     end
     agent.define_singleton_method(:probe_duration) { |_| 171.92 }
     agent.send(:trim_trailing_audio, "/fake/path.mp3", { "character_end_times_seconds" => [10.0, 96.03] })
+    agent.singleton_class.send(:remove_method, :probe_duration) # redefine without a runtime warning
     agent.define_singleton_method(:probe_duration) { |_| 12.0 }
     Open3.stub(:capture3, ->(*_a) { ["", "err", Struct.new(:success?).new(false)] }) do
       agent.send(:trim_trailing_audio, "/fake/path.mp3", { "character_end_times_seconds" => [10.0, 11.0] })
