@@ -1201,8 +1201,8 @@ Once started, the wrappers (`scripts/run.sh`, `scripts/run_uploads.sh`) hold the
 ### podgen status (content-progress check)
 
 `podgen status` prints one line per podcast (podcasts with an installed launchd
-scheduler first). It is read-only; its one network call reads back each
-podcast's served `base_url/feed.xml` (skipped with `--offline` or without a
+scheduler first). It is read-only; its one network read fetches each
+podcast's served `base_url/feed.xml` and translated `feed-<code>.xml` (skipped with `--offline` or without a
 `base_url`).
 
 ```
@@ -1220,16 +1220,31 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   With no cadence (episodes on a single date and no `cadence_days`) there is no
   threshold: the show stays OK, and once its newest episode is more than 30
   days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
-  Set `cadence_days` to make such a show go OLD, or `freshness: off` if it has
-  concluded.
-- **WARN** - the latest run log in `logs/<podcast>/` ends with a
+- **DORMANT** - no `cadence_days` key and no episode for more than 60 days
+  (inferred cadence or none): a resting show, not a failure -
+  `lahko_noc DORMANT newest 2026-03-21 (204d old; dormant — no cadence)`.
+  Set `cadence_days` to make such a show go OLD instead, or `freshness: off` if it has
+  concluded. Any WARN finding (a failed last run, say) still shows as WARN.
+- **UNPUBLISHED** - the served `base_url/feed.xml` answers HTTP 404 and the
+  show has no publish record (no entry in `output/<podcast>/uploads.yml` and
+  no scheduled publish of it in `logs/launchd_stderr.log`):
+  `served feed HTTP 404 and no publish record (uploads.yml empty, no logged publish)`.
+  With a publish record the 404 is a WARN (`served feed fetch failed: HTTP 404`).
+  A publish run by hand from a terminal leaves no record the board can read.
+- **WARN** - the latest generate run log in `logs/<podcast>/` ends with a
   `RUN-OUTCOME status=warn|error warnings=N errors=M first=…` line (every
-  generate writes one; it counts the end-of-run warnings, library warnings
+  generate writes one, also when it refuses a bad option or a missing
+  `guidelines.md`, or is stopped by Ctrl-C / `kill`; it counts the end-of-run warnings, library warnings
   such as a failed source or skipped AI review, and `ERROR` entries) - shown
   as `<log>: <first warning>` or `<log>: run failed: <first error>`; or
   (older logs, or an `ok` outcome) it ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
-  the last 3 run logs (`--runs N` to change), or there is no history yet.
+  the last 3 generate run logs (`--runs N` to change), or there is no history yet.
+  Only generate runs count (a log with the `Podcast Agent started` line or a
+  `RUN-OUTCOME` line): the `render`, `voice` and `translate` logs in the same
+  directory are ignored. Once the podcast's logs carry `RUN-OUTCOME` lines, a
+  started run without one reads `<log>: run did not finish (last line: …)`
+  (killed past every handler, or still running).
   Indented reviewer findings (`  WARNING: [COVERAGE] …`, the script review's
   own output) are not pipeline warnings and are ignored. A newest episode
   dated up to `freshness_lead_days` ahead (`## Podcast` key, default 3) is OK
@@ -1325,10 +1340,16 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   podcast without one is published by hand, so its lag is an OK note:
   `local ahead of served by 3d (owner-paced)`. A
   failed fetch (5s connect / 10s read timeout, one retry) names only the
-  error class or HTTP code: `served feed fetch failed: SocketError`.
+  error class or HTTP code: `served feed fetch failed: SocketError`. Each
+  translated feed (`base_url/feed-<code>.xml`, one per non-primary
+  `language`) is read back by the same rule against that language's newest
+  episode, one line per lagging feed:
+  `served feed-es.xml behind local by 5d (served 2026-10-05, local 2026-10-10)`,
+  `served feed-es.xml fetch failed: HTTP 404`, or the note
+  `feed-es.xml: local ahead of served by 3d (owner-paced)`.
 - **OK** - otherwise.
 
-Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
+Exit code is `0` when every podcast is OK, DORMANT or UNPUBLISHED, `1` otherwise (`2` for an unknown
 podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
 array; keys are only ever added, never renamed or removed:
 
@@ -1338,7 +1359,7 @@ array; keys are only ever added, never renamed or removed:
   "uploads": {"youtube": {"last_uploaded": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}}]
 ```
 
-`verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
+`verdict` is `OK`, `OLD`, `WARN`, `DORMANT` or `UNPUBLISHED`; `newest` (ISO date) and `age_days` are `null`
 when unknown (`age_days` is negative for a scheduled, future-dated episode);
 `reasons` is an array of short strings. `announcements` is `null` without a
 `## Twitter` section; otherwise `last_tweeted` and `newest_episode` are ISO
@@ -1382,7 +1403,7 @@ Failure rules:
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
 - **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
-- **Another batch running** (it holds `output/uploads.lock`): the tick is skipped before any upload and exits `3`, printing `uploads: batch skipped: another batch was running` (stdout) and the lockfile path (stderr). `podgen status` reads it as a skipped tick, not a failure: `uploads batch skipped <begin stamp>: another batch was running` (OK level), and the running batch's counts still apply.
+- **Another batch running** (it holds `output/uploads.lock`): the tick is skipped before any upload and exits `3`, printing `uploads: batch skipped: another batch was running` (stdout) and the lockfile path (stderr). `podgen status` reads it as a skipped tick, not a failure: `uploads batch skipped <begin stamp>: another batch was running` (OK level), and the running batch's counts still apply — for any number of skipped ticks inside one batch, and for older logs where a refused tick exited `1` with only the stderr line.
 
 Run ad-hoc (no schedule) with the same semantics:
 

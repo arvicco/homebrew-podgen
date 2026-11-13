@@ -576,6 +576,57 @@ class TestGenerateCommand < Minitest::Test
       last_log_line
   end
 
+  # Q-118 (P20-1): a generate killed by bin/podgen's INT/TERM trap (exit
+  # 130/143 raises SystemExit) still ends its log with RUN-OUTCOME, so the
+  # board does not read the killed run as OK; the exit is re-raised.
+  def test_run_killed_by_term_trap_ends_log_with_error_outcome_and_reraises
+    cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :generate_script) # no redefinition warning
+    cmd.define_singleton_method(:generate_script) { |*| exit 143 }
+    error = nil
+    capture_io { error = assert_raises(SystemExit) { cmd.run } }
+
+    assert_equal 143, error.status
+    assert_equal "RUN-OUTCOME status=error warnings=0 errors=1 first=Run killed: SystemExit 143", last_log_line
+  end
+
+  def test_run_interrupt_without_trap_ends_log_with_error_outcome_and_reraises
+    cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
+    cmd.define_singleton_method(:research_topics) { |_| raise Interrupt }
+    capture_io { assert_raises(Interrupt) { cmd.run } }
+
+    assert_equal "RUN-OUTCOME status=error warnings=0 errors=1 first=Run killed: Interrupt", last_log_line
+  end
+
+  # Q-118 (P20-1): refusals in setup_pipeline after the logger exists end the
+  # log with RUN-OUTCOME status=error (today: an option error exits 1 with no
+  # outcome line, a missing guidelines.md raises ENOENT before any log; the
+  # board keeps reading the previous run).
+  def test_run_missing_guidelines_ends_log_with_error_outcome
+    config = setup_refusal_pod("noguide", guidelines: nil)
+    code = nil
+    capture_io { code = PodgenCLI::GenerateCommand.new(["noguide"], {verbosity: :quiet}).run }
+
+    assert_equal 1, code
+    # Without guidelines the slot is unknowable (it reads the languages): the bare date's log.
+    log_path = File.join(config.log_dir, "noguide-#{Date.today}.log")
+    assert File.exist?(log_path), "no run log"
+    assert_match(/\ARUN-OUTCOME status=error warnings=0 errors=1 first=Missing guidelines: /,
+      File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, ""))
+  end
+
+  def test_run_option_error_ends_log_with_error_outcome
+    config = setup_refusal_pod("newsopt", guidelines: "## Podcast\n- type: news\n## Format\nf\n## Tone\nt\n")
+    code = nil
+    _, err = capture_io { code = PodgenCLI::GenerateCommand.new(["newsopt"], {verbosity: :quiet, file: "/x.mp3"}).run }
+
+    assert_equal 1, code
+    assert_includes err, "Error: --file is only supported for language pipeline podcasts (type: language)"
+    assert_match(/\ARUN-OUTCOME status=error warnings=0 errors=0 first=--file is only supported for language /,
+      refusal_log_last_line(config))
+  end
+
   # Q-140 (P19-4): the commit writes history.yml strictly; a corrupt file
   # stops the run before any paid step, not after the episode is produced
   # and moved into place (today: the run proceeds and reads it as empty).
@@ -952,6 +1003,22 @@ class TestGenerateCommand < Minitest::Test
     manager.define_singleton_method(:research) { |_| findings_by_topic.map { |t, f| { topic: t, findings: f } } }
     @fake_sources = manager
     cmd
+  end
+
+  # A podcast dir under a temp PODGEN_ROOT (teardown deletes the variable).
+  def setup_refusal_pod(name, guidelines:)
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", name)
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), guidelines) if guidelines
+    require "podcast_config"
+    PodcastConfig.new(name)
+  end
+
+  def refusal_log_last_line(config)
+    log_path = config.log_path(Date.today)
+    assert File.exist?(log_path), "no run log"
+    File.readlines(log_path, chomp: true).last.sub(/\A\[[^\]]*\] /, "")
   end
 
   def last_log_line

@@ -17,7 +17,8 @@ require_relative File.join(root, "lib", "youtube_consent")
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
   #   OLD  - newest episode older than the cadence threshold (FreshnessValidator)
-  #   WARN - last run log's RUN-OUTCOME line reports warnings/errors (P7-0),
+  #   WARN - last generate run log's RUN-OUTCOME line reports warnings/errors
+  #          (P7-0), or it has none and did not finish (Q-118),
   #          or it ended in ERROR / has a warning, or the same warning
   #          repeated across the last N run logs (silent-for-weeks failures),
   #          or the same publish warning in the last PUBLISH_REPEAT scheduled
@@ -26,16 +27,23 @@ module PodgenCLI
   #          uploads stalled the same way or holed mid-range (P10-4), or the upload batch's stderr
   #          names a not-authorized / quota condition (P7-1), or the YouTube
   #          consent is 6+ days old (testing-status OAuth app), or the served
-  #          base_url/feed.xml of a scheduled show lags the newest local
+  #          base_url/feed.xml (or a translated feed-<code>.xml, Q-127) of a scheduled show lags the newest local
   #          episode, or cannot be fetched (P7-2; the one network read,
   #          skipped with --offline)
+  #   UNPUBLISHED - the served feed answers 404 and the show has no publish
+  #          record (Q-155)
+  #   DORMANT - no cadence_days key and no episode for over 60 days (Q-155)
   #   OK   - otherwise; a show with no cadence whose newest episode is old is
   #          noted "dormant — no cadence" (P3-4); YouTube behind but uploading
   #          in the batch log's window is noted "catching up", an unscheduled
   #          show's served-feed lag "owner-paced" (P10-3)
-  # Exit 0 when every podcast is OK, 1 otherwise, so a scheduled run can alert.
+  # Exit 0 when every podcast is OK, DORMANT or UNPUBLISHED, 1 otherwise, so a
+  # scheduled run can alert.
   class StatusCommand
-    VERDICT_RANK = {"OK" => 0, "WARN" => 1, "OLD" => 2}.freeze
+    # DORMANT / UNPUBLISHED (Q-155) are not failures: excluded from the exit
+    # status; any WARN or OLD finding outranks them.
+    VERDICT_RANK = {"OK" => 0, "DORMANT" => 1, "UNPUBLISHED" => 2, "WARN" => 3, "OLD" => 4}.freeze
+    QUIET_VERDICTS = %w[OK DORMANT UNPUBLISHED].freeze
     DEFAULT_RUNS = 3
     LINE_MAX = 100
     WARNING_RE = /Warning:|WARNING/
@@ -44,6 +52,7 @@ module PodgenCLI
     REVIEWER_FINDING_RE = /\A(?:\[[^\]]*\] )?\s+WARNING: \[/
     ERROR_RE = /\A(?:\[[^\]]*\]\s*)?ERROR\b/
     STAMP_RE = /\A\[[^\]]*\]\s*/
+    GENERATE_START_RE = /\A(?:\[[^\]]*\]\s*)?Podcast Agent started for '/ # GenerateCommand#run
     STATUS_LABEL = "#{ScheduleCommand::LABEL_PREFIX}.status".freeze
     INSTALL_HINT = "bin/podgen schedule --status-check --time 07:00"
     # Shared stderr of the per-podcast launchd jobs (scripts/run.sh). A dated
@@ -77,6 +86,7 @@ module PodgenCLI
     # running batch's stdout block.
     UPLOAD_SKIP_END_RE = %r{\A\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} podgen uploads \S* end exit=3\b}
     UPLOAD_SKIP_RE = /\Auploads: batch skipped\b/
+    UPLOAD_REFUSED_RE = /\Auploads: another uploads batch is running\b/ # stderr, before and since exit=3
     QUOTA_CONDITION = "YouTube upload quota exceeded"
     CONSENT_WARN_DAYS = 6 # a testing-status OAuth app's refresh token dies on day 7
     UPLOAD_CONDITIONS = {
@@ -132,7 +142,7 @@ module PodgenCLI
       else
         print_table(rows)
       end
-      (rows.all? { |r| r[:verdict] == "OK" }) ? 0 : 1
+      (rows.all? { |r| QUIET_VERDICTS.include?(r[:verdict]) }) ? 0 : 1
     end
 
     private
@@ -148,9 +158,10 @@ module PodgenCLI
         return
       end
       width = rows.map { |r| r[:podcast].length }.max
+      verdict_width = [4, *rows.map { |r| r[:verdict].length }].max
       rows.each do |r|
         detail = r[:reasons].join("; ")
-        puts format("%-#{width}s  %-4s  %s", r[:podcast], r[:verdict], detail)
+        puts format("%-#{width}s  %-#{verdict_width}s  %s", r[:podcast], r[:verdict], detail)
       end
       puts "\nDaily check not scheduled. Owner command: #{INSTALL_HINT}" unless status_check_scheduled?
     end
@@ -171,14 +182,16 @@ module PodgenCLI
       verdict = "OK"
       reasons = []
       newest = age = note = nil
+      promote = ->(v) { verdict = v if VERDICT_RANK[v] > VERDICT_RANK[verdict] }
       escalate = ->(v, reason) {
-        verdict = v if VERDICT_RANK[v] > VERDICT_RANK[verdict]
+        promote.call(v)
         reasons << reason
       }
 
       config = PodcastConfig.new(name)
       if config.freshness_enabled?
-        newest, age, note = freshness(config, escalate)
+        newest, age, note, dormant = freshness(config, escalate)
+        promote.call("DORMANT") if dormant # Q-155: shown by the newest line below
       else
         reasons << "(freshness off)"
       end
@@ -189,8 +202,8 @@ module PodgenCLI
       uploads = upload_progress(config, escalate, inform)
       consent = youtube_consent_finding(config)
       escalate.call("WARN", consent) if consent
-      served_feed_findings(config, inform).each { |reason| escalate.call("WARN", reason) }
-      if verdict == "OK" && newest
+      served_feed_findings(config, inform, escalate).each { |reason| escalate.call("WARN", reason) }
+      if QUIET_VERDICTS.include?(verdict) && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
       end
 
@@ -215,34 +228,47 @@ module PodgenCLI
         escalate.call(w.include?("OLD") ? "OLD" : "WARN", w.delete_prefix("Freshness: "))
       end
       escalate.call("WARN", "no dated episodes in history") if validator.newest.nil?
-      [validator.newest, validator.age_days, validator.note]
+      [validator.newest, validator.age_days, validator.note, validator.dormant?]
     end
 
     # --- run-log findings ---
 
+    # Generate runs only (Q-118): render/voice/translate log to the same dir
+    # but carry neither the start line nor a RUN-OUTCOME line, so they never
+    # hide a failed generate nor fill the --runs window.
     def log_findings(config)
       logs = Dir.glob(File.join(config.log_dir, "*.log")).sort_by { |f| [File.mtime(f), f] }
+        .map { |f| [f, File.read(f).scrub.lines.map(&:chomp)] }
+        .select { |_, lines| lines.any? { |l| l.match?(GENERATE_START_RE) || RunOutcome.parse(l) } }
       return [] if logs.empty?
 
-      recent = logs.last(@runs).map { |f| File.read(f).scrub.lines.map(&:chomp) }
+      recent = logs.last(@runs).map(&:last)
       repeated = repeated_warnings(recent)
-      findings = latest_run_finding(recent.last, File.basename(logs.last), repeated)
+      outcome_era = logs.any? { |_, lines| lines.any? { |l| RunOutcome.parse(l) } }
+      findings = latest_run_finding(recent.last, File.basename(logs.last.first), repeated, outcome_era)
       repeated.each_value { |raw| findings << "repeated in last #{@runs} runs: #{clip(raw)}" }
       findings
     end
 
-    # A log ending in a RUN-OUTCOME line (P7-0) is judged by it first; an ok
-    # outcome, or an older log without one, falls back to the regex scan.
-    def latest_run_finding(lines, file, repeated)
-      last = lines.reject { |l| l.strip.empty? }.last
-      if (outcome = RunOutcome.parse(last))
+    # A run is judged from its log's last start line on (a later command may
+    # append to the same slot's log): its RUN-OUTCOME line (P7-0) first; an ok
+    # outcome, or an older log without one, falls back to the regex scan. Once
+    # the show's logs carry outcomes, a started run without one did not finish.
+    def latest_run_finding(lines, file, repeated, outcome_era)
+      start = lines.rindex { |l| l.match?(GENERATE_START_RE) }
+      run = start ? lines.drop(start) : lines
+      last = run.reject { |l| l.strip.empty? }.last
+      outcome = run.reverse_each.lazy.filter_map { |l| RunOutcome.parse(l) }.first
+      if outcome
         finding = outcome_finding(outcome, file)
         return [finding] if finding
       elsif last&.match?(ERROR_RE)
         return ["#{file} ends with #{clip(last)}"]
+      elsif start && outcome_era
+        return ["#{file}: run did not finish (last line: #{clip(last)})"]
       end
 
-      first = lines.find { |l| warning?(l) && !repeated.key?(normalize(l)) }
+      first = run.find { |l| warning?(l) && !repeated.key?(normalize(l)) }
       first ? ["#{file}: #{clip(first)}"] : []
     end
 
@@ -397,25 +423,57 @@ module PodgenCLI
     # future episodes are not expected to be served yet). Fetch errors name
     # the exception class or the HTTP code only, never a body. The lag
     # escalates only for a show with an installed launchd scheduler; an
-    # unscheduled show is published by the owner's hand (P10-3).
-    def served_feed_findings(config, inform)
+    # unscheduled show is published by the owner's hand (P10-3). Every
+    # translated feed (base_url/feed-<code>.xml) is read back by the same rule
+    # against that language's newest episode, named in its lines (Q-127);
+    # an unpublished show (primary 404, no record) reads no further feed.
+    def served_feed_findings(config, inform, escalate)
       return [] if @offline || config.base_url.to_s.strip.empty?
 
-      local = announced_episode_dates(config, []).select { |d| d <= @today }.max
+      codes = config.language_codes
+      codes = [config.primary_language] if codes.empty?
+      codes.each_with_index.flat_map do |code, i|
+        findings = served_feed_finding(config, code, i.zero?, inform, escalate)
+        return [] if findings == :unpublished
+
+        findings
+      end
+    end
+
+    def served_feed_finding(config, code, primary, inform, escalate)
+      file = config.feed_file_name(code)
+      label = primary ? "served feed" : "served #{file}"
+      local = announced_episode_dates(config, [code]).select { |d| d <= @today }.max
       return [] unless local
 
-      served = @served_feed.newest_date("#{config.base_url.to_s.chomp("/")}/feed.xml")
-      return ["served feed has no dated items (local #{local})"] unless served
+      served = @served_feed.newest_date("#{config.base_url.to_s.chomp("/")}/#{file}")
+      return ["#{label} has no dated items (local #{local})"] unless served
 
       behind = (local - served).to_i
       return [] unless behind > SERVED_FEED_SLACK
-      return ["served feed behind local by #{behind}d (served #{served}, local #{local})"] if scheduled?(config.name)
+      return ["#{label} behind local by #{behind}d (served #{served}, local #{local})"] if scheduled?(config.name)
 
-      inform.call("local ahead of served by #{behind}d (owner-paced)")
+      inform.call("#{"#{file}: " unless primary}local ahead of served by #{behind}d (owner-paced)")
       []
     rescue => e # skippable: a failed read-back is itself the finding (WARN); the other checks still run
       root = e.cause || e
-      ["served feed fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
+      if primary && root.is_a?(ServedFeed::StatusError) && root.message == "HTTP 404" && !publish_record?(config)
+        escalate.call("UNPUBLISHED", "served feed HTTP 404 and no publish record (uploads.yml empty, no logged publish)")
+        return :unpublished
+      end
+      ["#{label} fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
+    end
+
+    # Q-155: evidence the show was ever published — any tracked upload or
+    # announcement in uploads.yml, or a scheduled publish of it in the shared
+    # launchd stderr (scripts/run.sh markers). A hand-run publish leaves
+    # neither, so its 404 reads UNPUBLISHED too.
+    def publish_record?(config)
+      path = File.join(File.dirname(config.episodes_dir), "uploads.yml") # UploadTracker.for_config
+      tracked = File.exist?(path) && UploadTracker.new(path).load.any? do |_platform, groups|
+        groups.is_a?(Hash) && groups.any? { |_group, entries| entries.is_a?(Hash) && !entries.empty? }
+      end
+      tracked || publish_entries.any? { |e| e[:podcast] == config.name }
     end
 
     # --- upload progress (YouTube, LingQ; P7-1) ---
@@ -545,9 +603,16 @@ module PodgenCLI
       legacy = []
       dated = []
       pending = first_stamp = current = previous = previous_pending = nil
+      tick = false
       File.foreach(@uploads_stdout_log) do |raw|
         line = raw.scrub
-        if (m = line.match(UPLOAD_MARKER_RE))
+        if (m = line.match(UPLOAD_MARKER_RE)) && refused_tick_stamps.include?(line[0, 19])
+          # Q-160 (11): the stderr names this marker a refused tick's (logs
+          # from before the skip line have none): it neither cuts nor dates.
+          first_stamp ||= line[0, 19]
+          tick = true
+        elsif m
+          tick = false
           previous_pending = pending
           pending = marker_date(m)
           first_stamp ||= line[0, 19]
@@ -556,9 +621,13 @@ module PodgenCLI
         elsif line.match?(UPLOAD_SKIP_RE)
           # Q-159 (12): the marker was a skipped tick's; the running batch's
           # block continues, or (stdout buffered to its exit) is still to come
-          # under its own marker's date.
-          current = previous
-          pending = previous_pending
+          # under its own marker's date. Already handled when the stderr
+          # named the tick.
+          unless tick
+            current = previous
+            pending = previous_pending
+          end
+          tick = false
         elsif line.match?(UPLOAD_BLOCK_RE)
           current = [line]
           first_stamp ? dated << [pending, current] : legacy << current
@@ -571,14 +640,11 @@ module PodgenCLI
       legacy.reverse.zip(legacy_dates.reverse).map { |block, date| [date, block] } + dated
     end
 
-    # [["YYYY/MM/DD HH:MM:SS", Date]] for the stderr begin markers, oldest first.
+    # [["YYYY/MM/DD HH:MM:SS", Date]] for the stderr begin markers of the
+    # batches that ran, oldest first (a refused tick wrote no stdout block).
     def stderr_upload_markers
-      return [] unless File.exist?(@uploads_log)
-
-      File.readlines(@uploads_log).filter_map do |line|
-        m = line.scrub.match(UPLOAD_MARKER_RE)
-        [line[0, 19], marker_date(m)] if m
-      end
+      lines, begins, = upload_stderr_ticks
+      begins.map { |i| [lines[i][0, 19], marker_date(lines[i].match(UPLOAD_MARKER_RE))] }
     end
 
     def marker_date(match) = Date.new(match[1].to_i, match[2].to_i, match[3].to_i)
@@ -614,18 +680,46 @@ module PodgenCLI
       return [] unless File.exist?(@uploads_log)
       return [] if (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
 
-      lines = File.readlines(@uploads_log).map(&:scrub)
-      begins = []
-      skipped = nil
-      lines.each_with_index do |l, i|
-        if l.match?(UPLOAD_MARKER_RE)
-          begins << i
-          skipped = nil
-        elsif l.match?(UPLOAD_SKIP_END_RE) && begins.any?
-          skipped = lines[begins.pop][0, 19]
+      lines, begins, refused = upload_stderr_ticks
+      skipped = refused.last if refused.any? && (begins.empty? || refused.last > begins.last)
+      [begins.empty? ? nil : lines.drop(begins.last + 1), skipped && lines[skipped][0, 19]]
+    end
+
+    # [stderr lines, begin indices of the batches that ran, begin indices of
+    # the refused ticks], oldest first. Any number of ticks may be refused
+    # inside one running batch (Q-160 (11)): each one's refusal line (printed
+    # before and since the skip line existed) or exit=3 end closes the begin
+    # right before it, once.
+    def upload_stderr_ticks
+      @upload_stderr_ticks ||= begin
+        lines = File.exist?(@uploads_log) ? File.readlines(@uploads_log).map(&:scrub) : []
+        begins = []
+        refused = []
+        closed = false
+        lines.each_with_index do |l, i|
+          if l.match?(UPLOAD_MARKER_RE)
+            begins << i
+            closed = false
+          elsif (l.match?(UPLOAD_REFUSED_RE) || l.match?(UPLOAD_SKIP_END_RE)) && begins.any? && !closed
+            refused << begins.pop
+            closed = true
+          end
         end
+        [lines, begins, refused]
       end
-      begins.empty? ? [nil, skipped] : [lines.drop(begins.last + 1), skipped]
+    end
+
+    # Begin stamps of the refused ticks, with the second before each: the
+    # stdout copy of a marker is echoed first and may read one second earlier.
+    def refused_tick_stamps
+      @refused_tick_stamps ||= begin
+        lines, _, refused = upload_stderr_ticks
+        refused.flat_map do |i|
+          stamp = lines[i][0, 19]
+          y, mo, d, h, mi, s = stamp.scan(/\d+/).map(&:to_i)
+          [stamp, (Time.utc(y, mo, d, h, mi, s) - 1).strftime("%Y/%m/%d %H:%M:%S")]
+        end.to_set
+      end
     end
 
     def announced_episode_dates(config, languages)
