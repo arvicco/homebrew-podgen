@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require_relative "../support/fakes"
 require "site_generator"
 
 class TestSiteGenerator < Minitest::Test
@@ -203,6 +204,22 @@ class TestSiteGenerator < Minitest::Test
   end
 
   # --- generate ---
+
+  def test_generate_writes_pages_through_atomic_writer
+    create_mp3("mypod-2026-01-15.mp3")
+    create_mp3("mypod-2026-01-15-es.mp3")
+    write_history([{"date" => "2026-01-15", "title" => "Ep"}])
+    site = File.join(@podcast_dir, "site")
+
+    written = record_atomic_writes { build_generator(languages: [{"code" => "en"}, {"code" => "es"}]).generate }
+
+    assert_equal [
+      File.join(site, "index.html"), File.join(site, "episodes", "mypod-2026-01-15.html"),
+      File.join(site, "es", "index.html"), File.join(site, "es", "episodes", "mypod-2026-01-15-es.html")
+    ], written
+    assert File.read(File.join(site, "index.html")).end_with?("</html>\n")
+    assert_empty Dir.glob(File.join(site, "**", "*.tmp.*"))
+  end
 
   def test_generate_creates_site_directory
     create_mp3("mypod-2026-01-15.mp3")

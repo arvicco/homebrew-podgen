@@ -34,7 +34,7 @@ class RssGenerator
       end
       content = renderer.render_body_html(body, vocab: false)
       html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n#{content}\n</body></html>\n"
-      File.write(html_path, html)
+      AtomicWriter.write(html_path, html)
     end
   end
 

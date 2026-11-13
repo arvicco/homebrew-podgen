@@ -19,6 +19,7 @@ require_relative "transcript_parser"
 require_relative "transcript_renderer"
 require_relative "history_maps"
 require_relative "podcast_config"
+require_relative "atomic_writer"
 
 class SiteGenerator
   include Loggable
@@ -150,7 +151,7 @@ class SiteGenerator
         feed_url: feed_url(lang_code)
       )
     )
-    File.write(File.join(lang_dir, "index.html"), index_html)
+    AtomicWriter.write(File.join(lang_dir, "index.html"), index_html)
 
     # Render episode pages
     episodes.each do |ep|
@@ -188,7 +189,7 @@ class SiteGenerator
           vocab_languages: ep[:vocab_languages]
         )
       )
-      File.write(File.join(episodes_html_dir, page_name), ep_html)
+      AtomicWriter.write(File.join(episodes_html_dir, page_name), ep_html)
     end
 
     log("  #{lang_code}: #{episodes.length} episodes")

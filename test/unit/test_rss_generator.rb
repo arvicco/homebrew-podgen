@@ -123,6 +123,19 @@ class TestRssGenerator < Minitest::Test
     refute_includes html, "vocab-beseda", "No vocab anchors in RSS transcript"
   end
 
+  def test_convert_transcripts_writes_html_through_atomic_writer_with_same_bytes
+    md = File.join(@episodes_dir, "test-2026-01-01_transcript.md")
+    File.write(md, "# T\n\n## Transcript\n\nOnly paragraph.")
+
+    written = record_atomic_writes { RssGenerator.convert_transcripts(@episodes_dir) }
+
+    html_path = md.sub(/\.md$/, ".html")
+    assert_equal [html_path], written
+    assert_equal "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n<p>Only paragraph.</p>\n</body></html>\n",
+      File.read(html_path)
+    assert_empty Dir.glob(File.join(@episodes_dir, "*.tmp.*"))
+  end
+
   def test_convert_transcripts_renders_markdown_links
     md = File.join(@episodes_dir, "test-2026-01-01_script.md")
     File.write(md, "# Title\n\nMeta\n\n## More info\n\n- [Example](https://example.com)\n- [Other](https://other.com)")
