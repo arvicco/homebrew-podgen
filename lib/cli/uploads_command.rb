@@ -317,17 +317,20 @@ module PodgenCLI
     # A corrupt ledger counts 0 (the publisher uploads nothing against it)
     # with one warning naming the file.
     def yt_pending_count(tracker, playlist, episodes_dir)
-      uploaded = tracker.entries_for(:youtube, playlist, strict: true)
-      episodes = mp3_basenames_with_transcripts(episodes_dir)
-      owed = tracker.pending_steps(:youtube, playlist, strict: true).keys.count { |b| uploaded.key?(b) }
-      episodes.count { |b| !uploaded.key?(b) } + owed
-    rescue RuntimeError => e # skippable (YamlLoader's strict-read error only): the pod's YT phase is skipped; the status board names the corrupt file too
-      warning = "uploads: uploads ledger unreadable, counting 0 pending: #{e.message}"
-      unless @warnings.include?(warning)
-        @warnings << warning
-        @log.call warning
+      begin
+        uploaded = tracker.entries_for(:youtube, playlist, strict: true)
+        owed_bases = tracker.pending_steps(:youtube, playlist, strict: true).keys
+      rescue RuntimeError => e # skippable (YamlLoader's strict-read error only): the pod's YT phase is skipped; the status board names the corrupt file too
+        warning = "uploads: uploads ledger unreadable, counting 0 pending: #{e.message}"
+        unless @warnings.include?(warning)
+          @warnings << warning
+          @log.call warning
+        end
+        return 0
       end
-      0
+      episodes = mp3_basenames_with_transcripts(episodes_dir)
+      owed = owed_bases.count { |b| uploaded.key?(b) }
+      episodes.count { |b| !uploaded.key?(b) } + owed
     end
 
     def mp3_basenames_with_transcripts(episodes_dir)
