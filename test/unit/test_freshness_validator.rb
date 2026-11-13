@@ -174,6 +174,46 @@ class TestFreshnessValidator < Minitest::Test
     end
   end
 
+  # Q-155 (P20-2): no cadence_days and no episode for more than 60 days is a
+  # dormant show — a pass with the dormant note, not OLD.
+  def test_check_inferred_cadence_silent_over_sixty_days_is_dormant_not_old
+    with_history(%w[2026-06-20 2026-06-21 2026-06-22 2026-06-23 2026-06-24]) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      result = validator.validate
+      assert_empty result[:warnings], result.inspect
+      assert_includes result[:passes], "Freshness: dormant — no cadence, newest 2026-06-24 is 62d old " \
+        "(no episode for over 60 days and no cadence_days)"
+      assert validator.dormant?
+      assert_equal "dormant — no cadence", validator.note
+    end
+  end
+
+  def test_check_inferred_cadence_silent_sixty_days_is_still_old
+    with_history(%w[2026-06-23 2026-06-24 2026-06-25 2026-06-26]) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      result = validator.validate
+      assert result[:warnings].any? { |w| w.include?("OLD") }, result.inspect
+      refute validator.dormant?
+    end
+  end
+
+  def test_check_single_date_over_sixty_days_is_dormant
+    with_history(%w[2026-06-24]) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      assert_empty validator.validate[:warnings]
+      assert validator.dormant?
+    end
+  end
+
+  def test_check_configured_cadence_silent_for_months_is_old_not_dormant
+    with_history(%w[2026-03-20 2026-03-21], cadence_days: 7) do |config|
+      validator = Validators::FreshnessValidator.new(config, today: Date.new(2026, 8, 25))
+      result = validator.validate
+      assert result[:warnings].any? { |w| w.include?("OLD") }, result.inspect
+      refute validator.dormant?
+    end
+  end
+
   def test_check_configured_cadence_trips_old_flag
     # Weekly history: inferred threshold 14d would pass at 10d; configured
     # cadence 2d gives threshold 4d.

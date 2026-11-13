@@ -30,13 +30,20 @@ module PodgenCLI
   #          base_url/feed.xml of a scheduled show lags the newest local
   #          episode, or cannot be fetched (P7-2; the one network read,
   #          skipped with --offline)
+  #   UNPUBLISHED - the served feed answers 404 and the show has no publish
+  #          record (Q-155)
+  #   DORMANT - no cadence_days key and no episode for over 60 days (Q-155)
   #   OK   - otherwise; a show with no cadence whose newest episode is old is
   #          noted "dormant — no cadence" (P3-4); YouTube behind but uploading
   #          in the batch log's window is noted "catching up", an unscheduled
   #          show's served-feed lag "owner-paced" (P10-3)
-  # Exit 0 when every podcast is OK, 1 otherwise, so a scheduled run can alert.
+  # Exit 0 when every podcast is OK, DORMANT or UNPUBLISHED, 1 otherwise, so a
+  # scheduled run can alert.
   class StatusCommand
-    VERDICT_RANK = {"OK" => 0, "WARN" => 1, "OLD" => 2}.freeze
+    # DORMANT / UNPUBLISHED (Q-155) are not failures: excluded from the exit
+    # status; any WARN or OLD finding outranks them.
+    VERDICT_RANK = {"OK" => 0, "DORMANT" => 1, "UNPUBLISHED" => 2, "WARN" => 3, "OLD" => 4}.freeze
+    QUIET_VERDICTS = %w[OK DORMANT UNPUBLISHED].freeze
     DEFAULT_RUNS = 3
     LINE_MAX = 100
     WARNING_RE = /Warning:|WARNING/
@@ -134,7 +141,7 @@ module PodgenCLI
       else
         print_table(rows)
       end
-      (rows.all? { |r| r[:verdict] == "OK" }) ? 0 : 1
+      (rows.all? { |r| QUIET_VERDICTS.include?(r[:verdict]) }) ? 0 : 1
     end
 
     private
@@ -150,9 +157,10 @@ module PodgenCLI
         return
       end
       width = rows.map { |r| r[:podcast].length }.max
+      verdict_width = [4, *rows.map { |r| r[:verdict].length }].max
       rows.each do |r|
         detail = r[:reasons].join("; ")
-        puts format("%-#{width}s  %-4s  %s", r[:podcast], r[:verdict], detail)
+        puts format("%-#{width}s  %-#{verdict_width}s  %s", r[:podcast], r[:verdict], detail)
       end
       puts "\nDaily check not scheduled. Owner command: #{INSTALL_HINT}" unless status_check_scheduled?
     end
@@ -173,14 +181,16 @@ module PodgenCLI
       verdict = "OK"
       reasons = []
       newest = age = note = nil
+      promote = ->(v) { verdict = v if VERDICT_RANK[v] > VERDICT_RANK[verdict] }
       escalate = ->(v, reason) {
-        verdict = v if VERDICT_RANK[v] > VERDICT_RANK[verdict]
+        promote.call(v)
         reasons << reason
       }
 
       config = PodcastConfig.new(name)
       if config.freshness_enabled?
-        newest, age, note = freshness(config, escalate)
+        newest, age, note, dormant = freshness(config, escalate)
+        promote.call("DORMANT") if dormant # Q-155: shown by the newest line below
       else
         reasons << "(freshness off)"
       end
@@ -191,8 +201,8 @@ module PodgenCLI
       uploads = upload_progress(config, escalate, inform)
       consent = youtube_consent_finding(config)
       escalate.call("WARN", consent) if consent
-      served_feed_findings(config, inform).each { |reason| escalate.call("WARN", reason) }
-      if verdict == "OK" && newest
+      served_feed_findings(config, inform, escalate).each { |reason| escalate.call("WARN", reason) }
+      if QUIET_VERDICTS.include?(verdict) && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
       end
 
@@ -217,7 +227,7 @@ module PodgenCLI
         escalate.call(w.include?("OLD") ? "OLD" : "WARN", w.delete_prefix("Freshness: "))
       end
       escalate.call("WARN", "no dated episodes in history") if validator.newest.nil?
-      [validator.newest, validator.age_days, validator.note]
+      [validator.newest, validator.age_days, validator.note, validator.dormant?]
     end
 
     # --- run-log findings ---
@@ -413,7 +423,7 @@ module PodgenCLI
     # the exception class or the HTTP code only, never a body. The lag
     # escalates only for a show with an installed launchd scheduler; an
     # unscheduled show is published by the owner's hand (P10-3).
-    def served_feed_findings(config, inform)
+    def served_feed_findings(config, inform, escalate)
       return [] if @offline || config.base_url.to_s.strip.empty?
 
       local = announced_episode_dates(config, []).select { |d| d <= @today }.max
@@ -430,7 +440,23 @@ module PodgenCLI
       []
     rescue => e # skippable: a failed read-back is itself the finding (WARN); the other checks still run
       root = e.cause || e
+      if root.is_a?(ServedFeed::StatusError) && root.message == "HTTP 404" && !publish_record?(config)
+        escalate.call("UNPUBLISHED", "served feed HTTP 404 and no publish record (uploads.yml empty, no logged publish)")
+        return []
+      end
       ["served feed fetch failed: #{root.is_a?(ServedFeed::StatusError) ? root.message : root.class.name}"]
+    end
+
+    # Q-155: evidence the show was ever published — any tracked upload or
+    # announcement in uploads.yml, or a scheduled publish of it in the shared
+    # launchd stderr (scripts/run.sh markers). A hand-run publish leaves
+    # neither, so its 404 reads UNPUBLISHED too.
+    def publish_record?(config)
+      path = File.join(File.dirname(config.episodes_dir), "uploads.yml") # UploadTracker.for_config
+      tracked = File.exist?(path) && UploadTracker.new(path).load.any? do |_platform, groups|
+        groups.is_a?(Hash) && groups.any? { |_group, entries| entries.is_a?(Hash) && !entries.empty? }
+      end
+      tracked || publish_entries.any? { |e| e[:podcast] == config.name }
     end
 
     # --- upload progress (YouTube, LingQ; P7-1) ---

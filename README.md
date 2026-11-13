@@ -1216,8 +1216,17 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   With no cadence (episodes on a single date and no `cadence_days`) there is no
   threshold: the show stays OK, and once its newest episode is more than 30
   days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
-  Set `cadence_days` to make such a show go OLD, or `freshness: off` if it has
-  concluded.
+- **DORMANT** - no `cadence_days` key and no episode for more than 60 days
+  (inferred cadence or none): a resting show, not a failure -
+  `lahko_noc DORMANT newest 2026-03-21 (204d old; dormant — no cadence)`.
+  Set `cadence_days` to make such a show go OLD instead, or `freshness: off` if it has
+  concluded. Any WARN finding (a failed last run, say) still shows as WARN.
+- **UNPUBLISHED** - the served `base_url/feed.xml` answers HTTP 404 and the
+  show has no publish record (no entry in `output/<podcast>/uploads.yml` and
+  no scheduled publish of it in `logs/launchd_stderr.log`):
+  `served feed HTTP 404 and no publish record (uploads.yml empty, no logged publish)`.
+  With a publish record the 404 is a WARN (`served feed fetch failed: HTTP 404`).
+  A publish run by hand from a terminal leaves no record the board can read.
 - **WARN** - the latest generate run log in `logs/<podcast>/` ends with a
   `RUN-OUTCOME status=warn|error warnings=N errors=M first=…` line (every
   generate writes one, also when it refuses a bad option or a missing
@@ -1330,7 +1339,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   error class or HTTP code: `served feed fetch failed: SocketError`.
 - **OK** - otherwise.
 
-Exit code is `0` when every podcast is OK, `1` otherwise (`2` for an unknown
+Exit code is `0` when every podcast is OK, DORMANT or UNPUBLISHED, `1` otherwise (`2` for an unknown
 podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
 array; keys are only ever added, never renamed or removed:
 
@@ -1340,7 +1349,7 @@ array; keys are only ever added, never renamed or removed:
   "uploads": {"youtube": {"last_uploaded": "2026-10-10", "newest_episode": "2026-10-10", "stalled": false}}}]
 ```
 
-`verdict` is `OK`, `OLD` or `WARN`; `newest` (ISO date) and `age_days` are `null`
+`verdict` is `OK`, `OLD`, `WARN`, `DORMANT` or `UNPUBLISHED`; `newest` (ISO date) and `age_days` are `null`
 when unknown (`age_days` is negative for a scheduled, future-dated episode);
 `reasons` is an array of short strings. `announcements` is `null` without a
 `## Twitter` section; otherwise `last_tweeted` and `newest_episode` are ISO

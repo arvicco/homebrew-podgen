@@ -978,10 +978,53 @@ class TestStatusCommand < Minitest::Test
   def test_run_served_feed_http_status_error_reports_code_only
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
     make_episodes("alpha", %w[alpha-2026-10-10])
+    write_tracker("alpha", %w[alpha-2026-10-09]) # published once: a 404 is a failure (Q-155)
     @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
     out, code = run_status
     assert_equal 1, code
     assert_match(/served feed fetch failed: HTTP 404/, out)
+  end
+
+  # --- never-published shows (Q-155, P20-2) ---
+
+  # ruby_world shape: base_url set, served feed 404, nothing in uploads.yml
+  # and no scheduled publish logged: never published, not a failure.
+  def test_run_served_feed_404_without_publish_record_reports_unpublished_exit_zero
+    make_pod("ruby_world", dates: %w[2026-10-08 2026-10-09 2026-10-10],
+      extra: "- base_url: https://media.example.com/ruby_world\n")
+    make_episodes("ruby_world", %w[ruby_world-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/ruby_world\s+UNPUBLISHED\s+served feed HTTP 404 and no publish record \(uploads\.yml empty, no logged publish\)/, out)
+  end
+
+  def test_run_json_unpublished_show_keeps_key_set
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    rows = JSON.parse(run_status("--json").first)
+    assert_equal JSON_KEYS, rows.first.keys.sort
+    assert_equal "UNPUBLISHED", rows.first["verdict"]
+  end
+
+  def test_run_served_feed_404_after_a_logged_publish_reports_warn
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    write_publish_log(marked_publish("alpha", "2026-10-09", nil))
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*served feed fetch failed: HTTP 404/, out)
+  end
+
+  def test_run_served_feed_403_without_publish_record_still_warns
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    make_episodes("alpha", %w[alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 403" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*served feed fetch failed: HTTP 403/, out)
   end
 
   def test_run_served_feed_one_day_behind_is_ok
@@ -1024,12 +1067,53 @@ class TestStatusCommand < Minitest::Test
 
   # --- dormant shows and configured cadence (P3-4) ---
 
-  def test_run_single_day_show_long_ago_reports_ok_with_dormant_note
+  def test_run_single_day_show_long_ago_reports_dormant_with_exit_zero
     # ruby_world shape: four episodes on one date, months old.
     make_pod("alpha", dates: %w[2026-02-19 2026-02-19 2026-02-19 2026-02-19])
     out, code = run_status
     assert_equal 0, code, out
-    assert_match(/alpha\s+OK\s+newest 2026-02-19 \(234d old; dormant — no cadence\)/, out)
+    assert_match(/alpha\s+DORMANT\s+newest 2026-02-19 \(234d old; dormant — no cadence\)/, out)
+  end
+
+  # Q-155 (P20-2): lahko_noc shape — a daily history (inferred cadence ~1d)
+  # whose newest episode is months old and no cadence_days key: dormant, not
+  # a failure (today: red OLD, exit 1).
+  def test_run_inferred_cadence_show_silent_over_sixty_days_reports_dormant_exit_zero
+    make_pod("lahko_noc", dates: %w[2026-03-17 2026-03-18 2026-03-19 2026-03-20 2026-03-21])
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/lahko_noc\s+DORMANT\s+newest 2026-03-21 \(204d old; dormant — no cadence\)$/, out)
+    refute_includes out, "OLD"
+  end
+
+  def test_run_inferred_cadence_show_silent_sixty_days_is_still_old
+    make_pod("alpha", dates: %w[2026-08-09 2026-08-10 2026-08-11 2026-08-12])
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+OLD\s+.*2026-08-12 is 60 days old/, out)
+  end
+
+  def test_run_configured_cadence_show_silent_for_months_stays_old
+    make_pod("alpha", dates: %w[2026-03-20 2026-03-21], extra: "- cadence_days: 1\n")
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+OLD\s+.*newest episode 2026-03-21 is 204 days old \(cadence 1d configured/, out)
+  end
+
+  def test_run_configured_cadence_show_late_by_a_day_stays_old
+    make_pod("alpha", dates: %w[2026-10-07 2026-10-08], extra: "- cadence_days: 1\n")
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+OLD\s+.*newest episode 2026-10-08 is 3 days old \(cadence 1d configured, threshold 2d\)/, out)
+  end
+
+  def test_run_dormant_show_with_failed_last_run_still_warns
+    make_pod("alpha", dates: %w[2026-03-20 2026-03-21])
+    write_log("alpha", "a-2026-10-10.log", ["[2026-10-10 06:00:09] RUN-OUTCOME status=error warnings=0 errors=1 first=boom"],
+      mtime: Time.new(2026, 10, 10, 6))
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+a-2026-10-10\.log: run failed: boom/, out)
   end
 
   def test_run_single_day_show_yesterday_reports_plain_ok
@@ -1133,7 +1217,7 @@ class TestStatusCommand < Minitest::Test
 
   def test_run_json_key_set_is_pinned
     make_pod("alpha", dates: fresh_dates)
-    make_pod("beta", dates: %w[2026-01-01 2026-01-02 2026-01-03])
+    make_pod("beta", dates: %w[2026-01-01 2026-01-02 2026-01-03], extra: "- cadence_days: 1\n") # keyed: OLD, not dormant
     out, code = run_status("--json")
     rows = JSON.parse(out)
     assert_equal 1, code

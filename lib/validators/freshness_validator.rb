@@ -20,10 +20,17 @@ module Validators
     # noted as dormant - still a pass, but visible on `podgen status`.
     DORMANT_DAYS = 30
     DORMANT_NOTE = "dormant — no cadence"
+    # Q-155: without cadence_days, no episode for more than this many days is
+    # a dormant show (a pass; `podgen status` reads DORMANT), never OLD.
+    DORMANT_STALE_DAYS = 60
 
     # Set by #validate once history has dated entries (used by `podgen status`).
     # note is DORMANT_NOTE for a dormant show, nil otherwise.
     attr_reader :newest, :age_days, :note
+
+    # True once #validate found no cadence_days and the newest episode older
+    # than DORMANT_STALE_DAYS.
+    def dormant? = @dormant == true
 
     def initialize(config, today: Date.today)
       super(config)
@@ -48,7 +55,13 @@ module Validators
       @newest = dates.last
       @age_days = (@today - @newest).to_i if @newest
       configured = @config.cadence_days
-      if configured && @newest
+      @dormant = !configured && @age_days.to_i > DORMANT_STALE_DAYS
+      if @dormant && dates.size >= 2
+        @note = DORMANT_NOTE
+        @passes << "Freshness: #{DORMANT_NOTE}, newest #{@newest} is #{@age_days}d old " \
+          "(no episode for over #{DORMANT_STALE_DAYS} days and no cadence_days)"
+        return
+      elsif configured && @newest
         cadence = configured
         cadence_label = "#{cadence}d configured"
       elsif dates.size < 2
