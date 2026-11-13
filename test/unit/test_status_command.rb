@@ -926,6 +926,18 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  def test_run_served_feed_utc_date_one_day_ahead_of_local_is_ok
+    # An evening episode re-expressed in UTC carries the next day's date
+    # (20:53 -0600 on the 10th = 02:53 +0000 on the 11th).
+    make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
+    File.write(File.join(@plist_dir, "com.podcastagent.alpha.plist"), "<plist/>") # scheduled: a lag would WARN
+    make_episodes("alpha", %w[alpha-2026-10-09 alpha-2026-10-10])
+    @feed_fetcher = ->(_url) { feed_xml("Sun, 11 Oct 2026 02:53:27 +0000") }
+    out, code = run_status
+    assert_equal 0, code, out
+    refute_includes out, "served feed"
+  end
+
   def test_run_served_feed_ignores_future_dated_local_episodes
     make_pod("alpha", dates: fresh_dates, extra: BASE_URL)
     make_episodes("alpha", %w[alpha-2026-10-10 alpha-2026-10-13])

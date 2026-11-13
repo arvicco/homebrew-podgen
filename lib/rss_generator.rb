@@ -127,13 +127,12 @@ class RssGenerator
     add_text(channel, "itunes:explicit", "false")
     add_text(channel, "lastBuildDate", Time.now.utc.strftime("%a, %d %b %Y %H:%M:%S %z"))
 
-    pub_dates = pub_dates_for(episodes)
     episodes.each do |ep|
       item = channel.add_element("item")
       ep_title = extract_title_from_episode(ep[:filename]) || @title_map[ep[:filename]]
       title = ep_title || "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
       add_text(item, "title", title)
-      add_text(item, "pubDate", pub_dates[ep[:filename]])
+      add_text(item, "pubDate", pub_date_for(ep))
       add_text(item, "itunes:author", @author)
       add_text(item, "itunes:duration", format_duration(ep))
 
@@ -166,24 +165,21 @@ class RssGenerator
     doc
   end
 
-  # pubDate per filename, all in UTC (owner ruling: every time detail in
-  # UTC). The date part is the EPISODE date; the time-of-day is the
-  # processing timestamp's, converted to UTC (06:00:00 without one). The
-  # conversion can wrap a same-day episode past UTC midnight, putting a later
-  # slot before an earlier one; such an item takes the previous item's time
-  # plus one second, so pubDate order still follows the feed's item order.
-  def pub_dates_for(episodes)
-    episodes.reverse.group_by { |ep| ep[:date] }.each_with_object({}) do |(date, day), out|
-      prev = nil
-      day.each do |ep|
-        ts = @timestamp_map[ep[:filename]]
-        t = ts ? Time.parse(ts).utc : nil
-        secs = t ? t.hour * 3600 + t.min * 60 + t.sec : 6 * 3600
-        secs = [prev + 1, 86_399].min if prev && secs < prev
-        prev = secs
-        out[ep[:filename]] = (Time.utc(date.year, date.month, date.day) + secs).strftime("%a, %d %b %Y %H:%M:%S %z")
-      end
+  # pubDate in UTC (owner ruling: every time detail in UTC) without moving
+  # the instant: the EPISODE date plus the processing timestamp's
+  # time-of-day in the timestamp's own offset, then the whole instant
+  # converted to UTC (its date may become the next UTC day). Without a
+  # timestamp: the episode date at 06:00:00 UTC.
+  def pub_date_for(ep)
+    date = ep[:date]
+    ts = @timestamp_map[ep[:filename]]
+    instant = if ts
+      t = Time.parse(ts)
+      Time.new(date.year, date.month, date.day, t.hour, t.min, t.sec, t.utc_offset)
+    else
+      Time.utc(date.year, date.month, date.day, 6)
     end
+    instant.utc.strftime("%a, %d %b %Y %H:%M:%S %z")
   end
 
   def strip_markdown_links(text)

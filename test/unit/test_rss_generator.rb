@@ -361,7 +361,9 @@ class TestRssGenerator < Minitest::Test
 
     with_tz("America/Chicago") { build_generator(history_path: history_path).generate }
 
-    assert_equal ["Thu, 15 Jan 2026 02:53:27 +0000"], pub_dates
+    # Same instant as the old "Thu, 15 Jan 2026 20:53:27 -0600", re-expressed in UTC.
+    assert_equal ["Fri, 16 Jan 2026 02:53:27 +0000"], pub_dates
+    assert_equal Time.rfc2822("Thu, 15 Jan 2026 20:53:27 -0600"), Time.rfc2822(pub_dates.first)
   end
 
   def test_generate_last_build_date_is_utc
@@ -381,8 +383,8 @@ class TestRssGenerator < Minitest::Test
   end
 
   def test_generate_same_day_items_keep_order_when_utc_wraps_midnight
-    # 17:00 and 19:30 at -06:00 are 23:00 and 01:30 UTC: the later slot would
-    # sort before the earlier one, so it takes the next second instead.
+    # 17:00 and 19:30 at -06:00 are 23:00 UTC that day and 01:30 UTC the next:
+    # whole instants are converted, so the order holds by itself.
     create_mp3("test-2026-01-15.mp3", 1000)
     create_mp3("test-2026-01-15a.mp3", 1000)
     history_path = write_rss_history([
@@ -392,7 +394,9 @@ class TestRssGenerator < Minitest::Test
 
     build_generator(history_path: history_path).generate
 
-    assert_equal ["Thu, 15 Jan 2026 23:00:01 +0000", "Thu, 15 Jan 2026 23:00:00 +0000"], pub_dates
+    assert_equal ["Fri, 16 Jan 2026 01:30:00 +0000", "Thu, 15 Jan 2026 23:00:00 +0000"], pub_dates
+    times = pub_dates.map { |d| Time.rfc2822(d) }
+    assert_operator times[0], :>, times[1]
   end
 
   def test_generate_same_day_items_in_order_keep_converted_times
