@@ -113,11 +113,13 @@ module PodgenCLI
       pods.each do |pod|
         puts "─── #{pod} ───"
         r2 = run_r2_for(pod)
-        if r2.failed?
+        if r2.failed? && !r2.synced
           $stderr.puts "uploads: #{pod} R2 sync FAILED — skipping LingQ + YT for this pod"
           failures << { pod: pod, phase: :r2, errors: r2.errors }
           next
         end
+        # Synced, but the tweets refused an unreadable ledger: counted.
+        failures << { pod: pod, phase: :r2, errors: r2.errors } if r2.failed?
 
         lingq = run_lingq_for(pod)
         # :not_configured isn't a failure — pod just doesn't use LingQ.

@@ -126,6 +126,10 @@ class TestR2Publisher < Minitest::Test
       assert_empty tweets, "no tweet may go out against an unreadable ledger (#{corrupt.inspect})"
       assert_includes err, @uploads_path
       assert_equal 0, result.tweets_posted
+      assert result.synced, "the sync itself went through"
+      # Q-152 point 1: the same error shape LingQ and YouTube return.
+      assert_equal [:publisher_crash], result.errors.map { it[:type] }
+      assert_includes result.errors.first[:message], @uploads_path
       assert_equal corrupt, File.read(@uploads_path), "the corrupt ledger is never rewritten"
     end
   end

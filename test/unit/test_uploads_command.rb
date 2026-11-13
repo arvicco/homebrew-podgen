@@ -80,6 +80,31 @@ class TestUploadsCommand < Minitest::Test
     refute_equal 0, @code, "any failure should produce non-zero exit"
   end
 
+  # Q-152 point 1: a synced show whose tweets hit an unreadable ledger is a
+  # counted failure, not a failed sync — LingQ and YouTube still run (and
+  # refuse on the same ledger themselves).
+  def test_r2_synced_with_ledger_error_counts_failure_and_keeps_pod
+    yt_invocations = []
+    crash = R2Result.new(synced: true, tweets_posted: 0,
+      errors: [{ type: :publisher_crash, error_class: "RuntimeError", message: "uploads.yml unreadable" }])
+    yt_ok = ok_yt_result
+    cmd = stub_cmd(["pod_a"])
+    cmd.define_singleton_method(:run_r2_for) { |_| crash }
+    cmd.define_singleton_method(:run_lingq_for) { |_| LQResult.new(uploaded: 0, attempted: 0, errors: []) }
+    cmd.define_singleton_method(:pending_count_for) { |_| 1 }
+    cmd.define_singleton_method(:run_yt_for) do |pod, max:, **|
+      yt_invocations << pod
+      yt_ok
+    end
+
+    out, err = capture_io { @code = cmd.run }
+
+    assert_equal ["pod_a"], yt_invocations
+    refute_includes err, "R2 sync FAILED"
+    assert_includes out, "pod_a: r2 (uploads.yml unreadable)"
+    assert_equal 1, @code
+  end
+
   def test_r2_success_means_pod_reaches_yt_phase
     yt_invocations = []
     ok = ok_r2_result

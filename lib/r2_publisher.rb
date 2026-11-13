@@ -88,9 +88,10 @@ class R2Publisher
 
     print_urls
 
+    @tweet_errors = []
     tweets_posted = @options[:dry_run] ? 0 : tweet_new_episodes
 
-    Result.new(synced: true, tweets_posted: tweets_posted, errors: [])
+    Result.new(synced: true, tweets_posted: tweets_posted, errors: @tweet_errors)
   end
 
   private
@@ -155,7 +156,13 @@ class R2Publisher
     cutoff = Date.today - (tc[:since] || 7)
     template = tc[:template]
 
-    eligible = scan_eligible_episodes(cutoff, tc[:languages])
+    begin
+      eligible = scan_eligible_episodes(cutoff, tc[:languages])
+    rescue => e # fatal for the tweets: an unreadable ledger read as {} would re-tweet everything
+      $stderr.puts "uploads ledger unreadable, tweeting nothing: #{e.message}"
+      @tweet_errors << { type: :publisher_crash, error_class: e.class.name, message: e.message }
+      return 0
+    end
     return 0 if eligible.empty?
 
     agent = active_twitter_agent
