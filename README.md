@@ -1419,7 +1419,7 @@ Generate a podcast RSS feed from your episodes:
 podgen rss ruby_world
 ```
 
-Every time in the feed is written with the UTC offset (`+0000`). An item's `pubDate` is the same instant as before: the episode date plus the generation time of day, re-expressed in UTC, so an evening episode can carry the next UTC date. Podcast apps still show the same local time. An episode without a recorded generation time is dated 06:00:00 UTC on its episode date. `lastBuildDate` is the UTC clock.
+Every time in the feed is written with the UTC offset (`+0000`). An item's `pubDate` is the same instant as before for every episode with a recorded generation time: the episode date plus that time of day, re-expressed in UTC, so an evening episode can carry the next UTC date. Podcast apps still show the same local time. An episode without a recorded generation time is dated 06:00:00 UTC on its episode date. `lastBuildDate` is the UTC clock.
 
 Serve locally:
 
