@@ -282,8 +282,13 @@ move/fork history rows, strict-read residues, guidelines validation;
 plus Phase 18 residues and the review-bundle capture) CLOSED
 2026-11-09 (PR #21, merge 6ff249c; phase clock 52m; gate closed on the
 boards 2026-11-13). The repository history was rewritten 2026-11-10;
-the merge SHAs above are the current ones. No phase is executing: the
-Phase 20 slate awaits adoption. 1 open ruling (R9-02, re-presented
+the merge SHAs above are the current ones. Phase 20 (board truthfulness, residue sweep, site
+front page: a killed or setup-failed run never reads OK, dormant and
+unpublished shows named, translated feeds read back, uncounted
+degradations counted once, Phase 16 and 19 residues, the front page
+loads 12 episodes and reveals the rest on demand, feed times in UTC)
+EXECUTING — adopted 2026-11-13 (slate options A+B plus Q-162, Q-161
+riding). 1 open ruling (R9-02, re-presented
 2026-11-13); R10-02 returns 11-26. I-11: owner re-consented 2026-11-09
 (expires ≈ 11-16 while the OAuth app is in testing). Doctrine re-synced
 2026-11-13 (docs/DEV-LOOP.md header).
