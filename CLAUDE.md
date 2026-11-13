@@ -34,9 +34,12 @@ in the public repo; git history + plan docs are the record.
    verified, once the containing packet is adopted; it never hands the
    owner a runbook of commands it could run (dev-loop doctrine rules
    1–2; blast-radius and ~30-min visibility limits apply). Pushing
-   `phase-N` branches is allowed. Owner-only commands are enforced
-   twice: settings.json denies and the dispatcher's `CLAUDECODE=1`
-   refusal (owner override from the `!` prompt: `PODGEN_OWNER=1`).
+   `phase-N` branches is allowed. Owner-only commands are enforced by
+   the dispatcher's `CLAUDECODE=1` refusal (probe table in
+   test/unit/test_owner_guard.rb; owner override from the `!` prompt:
+   `PODGEN_OWNER=1`); the settings.json deny list is a convenience
+   layer that catches only the literal flags (`*--youtube*`,
+   `*--lingq*`), not the enforcement.
    While a production generate holds a run lock, the 10:30 batch
    holds output/uploads.lock (P18-5), or during the 16:25–17:10 launchd
    window, the loop YIELDS: no edits under lib/

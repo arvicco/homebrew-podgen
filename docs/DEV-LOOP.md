@@ -343,7 +343,9 @@ Freely allowed: file operations inside the repo + scratchpad; the
 gate and test commands; dry-run modes; git on phase branches
 (including push); doc/web lookups.
 
-Hard boundary (deny-listed or owner-only): pushes to `master`, force
+Hard boundary (owner-only, enforced by the dispatcher's `CLAUDECODE=1`
+refusal; the settings.json deny list only catches the literal flags and
+is a convenience layer, not the enforcement): pushes to `master`, force
 pushes, tags, `gh release create`; listener-facing CLI commands
 (`podgen publish/unpublish/uploads/tweet/schedule/analytics`);
 secrets (never Read .env — ENV names only); new dependencies;
