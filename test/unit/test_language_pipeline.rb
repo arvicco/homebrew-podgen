@@ -142,16 +142,30 @@ class TestLanguagePipeline < Minitest::Test
     assert_includes desc, "RSS"
   end
 
+  # Q-117: CoverResolver.generate rescues everything to nil, so the nil
+  # result (not a raise) is what the resolver must count.
   def test_resolve_cover_merges_resolver_warnings_into_pipeline
     pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
 
-    CoverResolver.stub(:generate, ->(**_) { raise "magick exploded" }) do
+    CoverResolver.stub(:generate, ->(**_) { nil }) do
       pipeline.send(:resolve_episode_cover, "Title")
     end
 
     warnings = pipeline.instance_variable_get(:@warnings)
     assert(warnings.any? { |w| w.include?("Cover generation failed") },
       "resolver warnings must merge into pipeline warnings, got: #{warnings.inspect}")
+  end
+
+  # The cover is resolved twice when LingQ is on (transcript, then upload):
+  # the same fallback is one event, one count.
+  def test_resolve_cover_twice_counts_the_same_fallback_once
+    pipeline = build_pipeline(options: { base_image: "/tmp/base.png" })
+
+    CoverResolver.stub(:generate, ->(**_) { nil }) do
+      2.times { pipeline.send(:resolve_episode_cover, "Title") }
+    end
+
+    assert_equal ["Cover generation failed for /tmp/base.png (falling back)"], pipeline.warnings
   end
 
   # --- skippable-step warnings must name the exception class ---

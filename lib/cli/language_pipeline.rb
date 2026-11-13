@@ -1055,7 +1055,7 @@ module PodgenCLI
       )
       result = resolver.resolve(title)
       @temp_files.concat(resolver.temp_files)
-      @warnings.concat(resolver.warnings)
+      @warnings.concat(resolver.warnings - @warnings) # resolved twice with LingQ on: one count
       result
     end
 
