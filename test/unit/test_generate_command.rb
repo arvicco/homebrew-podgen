@@ -548,6 +548,7 @@ class TestGenerateCommand < Minitest::Test
   # board does not read the killed run as OK; the exit is re-raised.
   def test_run_killed_by_term_trap_ends_log_with_error_outcome_and_reraises
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :generate_script) # no redefinition warning
     cmd.define_singleton_method(:generate_script) { |*| exit 143 }
     error = nil
     capture_io { error = assert_raises(SystemExit) { cmd.run } }
@@ -558,6 +559,7 @@ class TestGenerateCommand < Minitest::Test
 
   def test_run_interrupt_without_trap_ends_log_with_error_outcome_and_reraises
     cmd = runnable_command("news")
+    cmd.singleton_class.send(:remove_method, :research_topics)
     cmd.define_singleton_method(:research_topics) { |_| raise Interrupt }
     capture_io { assert_raises(Interrupt) { cmd.run } }
 
