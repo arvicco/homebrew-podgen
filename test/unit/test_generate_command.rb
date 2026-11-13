@@ -302,7 +302,7 @@ class TestGenerateCommand < Minitest::Test
       assert_equal ["Guidelines: unknown type '#{type}' (known: news, language)"], type_errors, type
       refute(result.passes.any? { it.start_with?("News:") }, "#{type}: news checks ran: #{result.passes.inspect}")
 
-      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :quiet})
+      cmd = PodgenCLI::GenerateCommand.new(["typod"], {verbosity: :normal})
       cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil } # no network/tools if the refusal regresses
       cmd.define_singleton_method(:preflight_network!) { |_| nil }
       cmd.define_singleton_method(:run_language_pipeline) { raise "language pipeline ran for type #{type}" }
@@ -311,7 +311,13 @@ class TestGenerateCommand < Minitest::Test
       _, err = capture_io { code = cmd.run }
 
       assert_equal 1, code, type
-      assert_includes err, "Error: guidelines.md: unknown type '#{type}' (known: news, language)"
+      # Q-160 point 17: the refusal prints what any failed run prints (the
+      # logged ERROR and the failure line), no extra "Error:" line first.
+      refusal = "guidelines.md: unknown type '#{type}' (known: news, language)"
+      lines = err.lines(chomp: true).grep(/unknown type/)
+      assert_equal 2, lines.size, "#{type}: #{lines.inspect}"
+      assert_match(/\A\[[^\]]*\] ERROR RuntimeError: #{Regexp.escape(refusal)}\z/, lines[0], type)
+      assert_equal "✗ Pipeline failed: #{refusal}", lines[1], type
       # The scheduled run's log ends in the refusal, not the previous run's outcome.
       log_path = config.log_path(Date.today)
       assert File.exist?(log_path), "#{type}: no run log"

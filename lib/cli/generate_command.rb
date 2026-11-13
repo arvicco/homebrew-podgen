@@ -586,7 +586,6 @@ module PodgenCLI
       type_error = PodcastConfig.type_error(@config.type)
       return unless type_error
 
-      $stderr.puts "Error: guidelines.md: #{type_error}"
       raise "guidelines.md: #{type_error}"
     end
 
