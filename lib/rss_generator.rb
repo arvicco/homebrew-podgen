@@ -34,7 +34,7 @@ class RssGenerator
       end
       content = renderer.render_body_html(body, vocab: false)
       html = "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head>\n<body>\n#{content}\n</body></html>\n"
-      File.write(html_path, html)
+      AtomicWriter.write(html_path, html)
     end
   end
 
@@ -125,22 +125,14 @@ class RssGenerator
       add_text(rss_image, "link", @base_url)
     end
     add_text(channel, "itunes:explicit", "false")
-    add_text(channel, "lastBuildDate", Time.now.strftime("%a, %d %b %Y %H:%M:%S %z"))
+    add_text(channel, "lastBuildDate", Time.now.utc.strftime("%a, %d %b %Y %H:%M:%S %z"))
 
     episodes.each do |ep|
       item = channel.add_element("item")
       ep_title = extract_title_from_episode(ep[:filename]) || @title_map[ep[:filename]]
       title = ep_title || "#{@title} — #{ep[:date].strftime('%B %d, %Y')}"
       add_text(item, "title", title)
-      # Use episode date for pubDate. If a processing timestamp exists,
-      # borrow only its time-of-day component (for stable ordering within a day).
-      pub_date = if (ts = @timestamp_map[ep[:filename]])
-        t = Time.parse(ts)
-        ep[:date].to_time.strftime("%a, %d %b %Y") + t.strftime(" %H:%M:%S %z")
-      else
-        ep[:date].to_time.strftime("%a, %d %b %Y 06:00:00 %z")
-      end
-      add_text(item, "pubDate", pub_date)
+      add_text(item, "pubDate", pub_date_for(ep))
       add_text(item, "itunes:author", @author)
       add_text(item, "itunes:duration", format_duration(ep))
 
@@ -171,6 +163,23 @@ class RssGenerator
     end
 
     doc
+  end
+
+  # pubDate in UTC (owner ruling: every time detail in UTC) without moving
+  # the instant: the EPISODE date plus the processing timestamp's
+  # time-of-day in the timestamp's own offset, then the whole instant
+  # converted to UTC (its date may become the next UTC day). Without a
+  # timestamp: the episode date at 06:00:00 UTC.
+  def pub_date_for(ep)
+    date = ep[:date]
+    ts = @timestamp_map[ep[:filename]]
+    instant = if ts
+      t = Time.parse(ts)
+      Time.new(date.year, date.month, date.day, t.hour, t.min, t.sec, t.utc_offset)
+    else
+      Time.utc(date.year, date.month, date.day, 6)
+    end
+    instant.utc.strftime("%a, %d %b %Y %H:%M:%S %z")
   end
 
   def strip_markdown_links(text)
