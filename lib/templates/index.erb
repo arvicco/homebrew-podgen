@@ -13,10 +13,11 @@
   </div>
 </header>
 <ul class="episode-list">
-<% episodes.each do |ep| %>
+<% episodes.each_with_index do |ep, i| %>
+<% if i < index_episodes %>
   <li class="episode-item">
 <% if ep[:thumb_url] %>
-    <a href="<%= ep[:page_path] %>"><img class="episode-thumb" src="<%= ep[:thumb_url] %>" alt=""></a>
+    <a href="<%= ep[:page_path] %>"><img class="episode-thumb" loading="lazy" src="<%= ep[:thumb_url] %>" alt=""></a>
 <% end %>
     <div class="episode-content">
       <div class="episode-meta"><%= ep[:date] %><% if ep[:duration] && site_config.fetch(:show_duration, true) %> &middot; <%= ep[:duration] %><% end %> <select class="speed-selector"></select></div>
@@ -24,5 +25,59 @@
       <audio controls preload="metadata" src="<%= ep[:audio_url] %>"></audio>
     </div>
   </li>
+<% else %>
+  <li class="episode-item" hidden data-audio="<%= ep[:audio_url] %>"<% if ep[:thumb_url] %> data-thumb="<%= ep[:thumb_url] %>"<% end %>>
+    <div class="episode-content">
+      <div class="episode-meta"><%= ep[:date] %><% if ep[:duration] && site_config.fetch(:show_duration, true) %> &middot; <%= ep[:duration] %><% end %> <select class="speed-selector"></select></div>
+      <a class="episode-title" href="<%= ep[:page_path] %>"><%= escape_html(ep[:title]) %></a>
+    </div>
+  </li>
+<% end %>
 <% end %>
 </ul>
+<% remaining = episodes.length - index_episodes %>
+<% if remaining > 0 %>
+<button class="show-more" type="button" data-batch="<%= index_episodes %>">Show more episodes (<%= remaining %> remaining)</button>
+<noscript><p class="show-more-noscript">Older episodes are listed in the <% if feed_url %><a href="<%= feed_url %>">RSS feed</a><% else %>RSS feed<% end %> and on their own episode pages.</p></noscript>
+<script>
+document.querySelector('.show-more').addEventListener('click', function() {
+  // Reveal the next batch; media are created only now, so nothing below
+  // the fold is fetched until asked.
+  var btn = this;
+  var batch = parseInt(btn.getAttribute('data-batch'), 10);
+  var items = document.querySelectorAll('.episode-list li[hidden]');
+  for (var i = 0; i < items.length && i < batch; i++) {
+    var li = items[i];
+    var content = li.querySelector('.episode-content');
+    var thumb = li.getAttribute('data-thumb');
+    if (thumb) {
+      var link = document.createElement('a');
+      link.href = li.querySelector('.episode-title').getAttribute('href');
+      var img = document.createElement('img');
+      img.className = 'episode-thumb';
+      img.loading = 'lazy';
+      img.src = thumb;
+      img.alt = '';
+      link.appendChild(img);
+      li.insertBefore(link, content);
+    }
+    var audio = document.createElement('audio');
+    audio.controls = true;
+    audio.preload = 'none';
+    audio.src = li.getAttribute('data-audio');
+    // Same speed as the players already on the page (the layout script
+    // filled every speed selector on load).
+    var rate = parseFloat(li.querySelector('.speed-selector').value);
+    if (!isNaN(rate)) { audio.defaultPlaybackRate = rate; audio.playbackRate = rate; }
+    content.appendChild(audio);
+    li.hidden = false;
+  }
+  var left = items.length - Math.min(items.length, batch);
+  if (left > 0) {
+    btn.textContent = 'Show more episodes (' + left + ' remaining)';
+  } else {
+    btn.remove();
+  }
+});
+</script>
+<% end %>

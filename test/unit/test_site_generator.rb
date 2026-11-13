@@ -1139,6 +1139,115 @@ class TestSiteGenerator < Minitest::Test
     assert_equal INDEX_12_EPISODES_LIST, index_episode_list.gsub(' loading="lazy"', "")
   end
 
+  # --- index paging (P20-8) ---
+
+  def test_generate_index_30_episodes_renders_12_players_and_defers_18
+    write_paging_fixture(older: 18)
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    assert_equal 12, index.scan("<audio").size
+    assert_equal 18, index.scan("data-audio=").size
+    assert_equal 18, index.scan('<li class="episode-item" hidden').size
+    assert_equal 1, index.scan('<button class="show-more"').size
+    assert_includes index, "Show more episodes (18 remaining)"
+  end
+
+  def test_generate_index_deferred_item_has_links_and_data_but_no_media
+    write_paging_fixture(older: 1)
+    File.write(File.join(@episodes_dir, "mypod-2025-12-01_cover.jpg"), "img")
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    hidden = index_episode_list[%r{  <li class="episode-item" hidden.*?</li>\n}m]
+    assert_includes hidden, 'data-audio="https://ex.com/pod/episodes/mypod-2025-12-01.mp3"'
+    assert_includes hidden, 'data-thumb="episodes/mypod-2025-12-01_cover.jpg"'
+    assert_includes hidden, 'href="episodes/mypod-2025-12-01.html">Old 1</a>'
+    assert_includes hidden, "December 01, 2025 &middot; 0:30"
+    assert_includes hidden, '<select class="speed-selector"></select>'
+    refute_includes hidden, "<audio"
+    refute_includes hidden, "<img"
+  end
+
+  def test_generate_index_with_deferred_items_keeps_first_12_markup
+    write_paging_fixture(older: 2)
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    item = %r{  <li class="episode-item">\n.*?</li>\n}m
+    shown = index_episode_list.gsub(' loading="lazy"', "").scan(item)
+    assert_equal INDEX_12_EPISODES_LIST.scan(item), shown
+  end
+
+  def test_generate_index_12_or_fewer_episodes_has_no_show_more
+    write_paging_fixture
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    refute_includes index, "show-more"
+    refute_includes index, "data-audio="
+    refute_includes index, "<noscript>"
+  end
+
+  def test_generate_index_episodes_key_sets_page_size
+    write_paging_fixture(older: 18)
+
+    build_generator(base_url: "https://ex.com/pod", site_config: {index_episodes: 5}).generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    assert_equal 5, index.scan("<audio").size
+    assert_equal 25, index.scan("data-audio=").size
+    assert_includes index, "Show more episodes (25 remaining)"
+    assert_includes index, 'data-batch="5"'
+  end
+
+  def test_generate_index_every_episode_thumb_is_lazy
+    write_paging_fixture
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    thumbs = File.read(File.join(@podcast_dir, "site", "index.html")).scan(/<img class="episode-thumb"[^>]*>/)
+    assert_equal 6, thumbs.size
+    assert(thumbs.all? { |t| t.include?('loading="lazy"') }, thumbs.inspect)
+  end
+
+  def test_generate_index_deferred_items_have_noscript_feed_line
+    write_paging_fixture(older: 1)
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    noscript = index[%r{<noscript>.*?</noscript>}m]
+    assert noscript, "noscript line expected"
+    assert_includes noscript, 'href="https://ex.com/pod/feed.xml"'
+  end
+
+  def test_generate_stylesheet_keeps_deferred_items_hidden_over_flex_display
+    write_paging_fixture
+
+    build_generator.generate
+
+    css = File.read(File.join(@podcast_dir, "site", "style.css"))
+    assert_includes css, ".episode-item[hidden] { display: none; }"
+  end
+
+  def test_generate_index_reveal_script_builds_lazy_media
+    write_paging_fixture(older: 1)
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    script = index[%r{<script>(?:(?!</script>).)*show-more.*?</script>}m]
+    assert script, "reveal script expected"
+    assert_includes script, "data-audio"
+    assert_includes script, "data-thumb"
+    assert_includes script, "'lazy'"
+    assert_includes script, "'none'"
+    assert_includes script, "playbackRate"
+  end
+
   private
 
   # Episodes 2026-01-01..12 (odd days carry a cover, day 3 has no duration,
