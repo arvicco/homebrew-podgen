@@ -1032,7 +1032,137 @@ class TestSiteGenerator < Minitest::Test
     assert_equal "es/index.html", es_entry[:index_path]
   end
 
+  # --- index paging (P20-8): characterisation of the pre-change list ---
+
+  # The episode list a 12-episode show rendered BEFORE the index paging change
+  # (captured at master 6ff249c). Paging may only add loading="lazy" to it.
+  INDEX_12_EPISODES_LIST = <<~HTML
+    <ul class="episode-list">
+      <li class="episode-item">
+        <div class="episode-content">
+          <div class="episode-meta">January 12, 2026 &middot; 12:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-12.html">Episode 12</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-12.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <a href="episodes/mypod-2026-01-11.html"><img class="episode-thumb" src="episodes/mypod-2026-01-11_cover.jpg" alt=""></a>
+        <div class="episode-content">
+          <div class="episode-meta">January 11, 2026 &middot; 11:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-11.html">Episode 11</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-11.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <div class="episode-content">
+          <div class="episode-meta">January 10, 2026 &middot; 10:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-10.html">Episode 10</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-10.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <a href="episodes/mypod-2026-01-09.html"><img class="episode-thumb" src="episodes/mypod-2026-01-09_cover.jpg" alt=""></a>
+        <div class="episode-content">
+          <div class="episode-meta">January 09, 2026 &middot; 9:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-09.html">Episode 9</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-09.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <div class="episode-content">
+          <div class="episode-meta">January 08, 2026 &middot; 8:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-08.html">Episode 8</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-08.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <a href="episodes/mypod-2026-01-07.html"><img class="episode-thumb" src="episodes/mypod-2026-01-07_cover.jpg" alt=""></a>
+        <div class="episode-content">
+          <div class="episode-meta">January 07, 2026 &middot; 7:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-07.html">Episode 7</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-07.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <div class="episode-content">
+          <div class="episode-meta">January 06, 2026 &middot; 6:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-06.html">Episode 6</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-06.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <a href="episodes/mypod-2026-01-05.html"><img class="episode-thumb" src="episodes/mypod-2026-01-05_cover.jpg" alt=""></a>
+        <div class="episode-content">
+          <div class="episode-meta">January 05, 2026 &middot; 5:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-05.html">Tom &amp; Jerry &lt;5&gt;</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-05.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <div class="episode-content">
+          <div class="episode-meta">January 04, 2026 &middot; 4:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-04.html">Episode 4</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-04.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <a href="episodes/mypod-2026-01-03.html"><img class="episode-thumb" src="episodes/mypod-2026-01-03_cover.jpg" alt=""></a>
+        <div class="episode-content">
+          <div class="episode-meta">January 03, 2026 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-03.html">Episode 3</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-03.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <div class="episode-content">
+          <div class="episode-meta">January 02, 2026 &middot; 2:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-02.html">Episode 2</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-02.mp3"></audio>
+        </div>
+      </li>
+      <li class="episode-item">
+        <a href="episodes/mypod-2026-01-01.html"><img class="episode-thumb" src="episodes/mypod-2026-01-01_cover.jpg" alt=""></a>
+        <div class="episode-content">
+          <div class="episode-meta">January 01, 2026 &middot; 1:07 <select class="speed-selector"></select></div>
+          <a class="episode-title" href="episodes/mypod-2026-01-01.html">Episode 1</a>
+          <audio controls preload="metadata" src="https://ex.com/pod/episodes/mypod-2026-01-01.mp3"></audio>
+        </div>
+      </li>
+    </ul>
+  HTML
+
+  def test_generate_index_12_episodes_list_matches_pre_paging_markup
+    write_paging_fixture
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    assert_equal INDEX_12_EPISODES_LIST, index_episode_list.gsub(' loading="lazy"', "")
+  end
+
   private
+
+  # Episodes 2026-01-01..12 (odd days carry a cover, day 3 has no duration,
+  # day 5 has markup characters) plus `older` episodes dated December 2025.
+  def write_paging_fixture(older: 0)
+    rows = (1..older).map do |d|
+      date = format("2025-12-%02d", d)
+      create_mp3("mypod-#{date}.mp3")
+      {"date" => date, "title" => "Old #{d}", "duration" => 30.0}
+    end
+    (1..12).each do |d|
+      date = format("2026-01-%02d", d)
+      create_mp3("mypod-#{date}.mp3")
+      File.write(File.join(@episodes_dir, "mypod-#{date}_cover.jpg"), "img") if d.odd?
+      row = {"date" => date, "title" => ((d == 5) ? "Tom & Jerry <#{d}>" : "Episode #{d}")}
+      row["duration"] = 60.0 * d + 7 unless d == 3
+      rows << row
+    end
+    write_history(rows)
+  end
+
+  def index_episode_list(path = File.join(@podcast_dir, "site", "index.html"))
+    File.read(path)[%r{<ul class="episode-list">.*?</ul>\n}m]
+  end
 
   def create_mp3(name)
     path = File.join(@episodes_dir, name)
