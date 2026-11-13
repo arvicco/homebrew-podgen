@@ -156,7 +156,7 @@ class TestUploadTracker < Minitest::Test
 
     data = @tracker.load
     refute data["lingq"]["12345"].key?("ep-2026-03-01")
-    refute data["youtube"]["PLabc"].key?("ep-2026-03-01")
+    refute data.key?("youtube"), "the platform its only entry emptied is gone (Q-152 point 6)"
     assert_equal 200, data["lingq"]["12345"]["ep-2026-03-02"]
   end
 
@@ -170,6 +170,19 @@ class TestUploadTracker < Minitest::Test
 
     raw = YAML.safe_load_file(@path)
     refute raw.key?("youtube_pending"), "no empty pending group is left: #{raw.inspect}"
+  end
+
+  # Q-152 point 6: a group (and platform) the removal empties goes too;
+  # groups that still hold entries, or were empty before, stay.
+  def test_remove_drops_groups_and_platforms_it_empties
+    File.write(@path, YAML.dump(
+      "lingq" => {"123" => {"ep-2026-03-01" => 1, "ep-2026-03-02" => 2}, "456" => {}},
+      "youtube" => {"PLabc" => {"ep-2026-03-01" => "vid1"}}
+    ))
+
+    assert @tracker.remove("ep-2026-03-01")
+
+    assert_equal({"lingq" => {"123" => {"ep-2026-03-02" => 2}, "456" => {}}}, YAML.safe_load_file(@path))
   end
 
   def test_remove_keeps_other_owed_bases

@@ -96,17 +96,23 @@ class UploadTracker
   end
 
   # Remove all entries for a basename across all platforms and groups.
-  # Returns true if anything was removed.
+  # Returns true if anything was removed. A group (and then a platform) that
+  # this removal empties is dropped; one that was empty before stays.
   def remove(base_name)
     tracking = load(strict: true)
     changed = false
-    tracking.each_value do |groups|
-      next unless groups.is_a?(Hash)
-      groups.each_value do |entries|
-        next unless entries.is_a?(Hash)
-        changed = true if entries.delete(base_name)
+    emptied_platforms = tracking.select do |_platform, groups|
+      next false unless groups.is_a?(Hash)
+      emptied = groups.select do |_group, entries|
+        next false unless entries.is_a?(Hash) && entries.key?(base_name)
+        entries.delete(base_name)
+        changed = true
+        entries.empty?
       end
+      emptied.each_key { groups.delete(it) }
+      !emptied.empty? && groups.empty?
     end
+    emptied_platforms.each_key { tracking.delete(it) }
     prune_empty_pending(tracking)
     save(tracking) if changed
     changed
