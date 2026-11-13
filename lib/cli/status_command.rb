@@ -86,6 +86,7 @@ module PodgenCLI
     # running batch's stdout block.
     UPLOAD_SKIP_END_RE = %r{\A\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} podgen uploads \S* end exit=3\b}
     UPLOAD_SKIP_RE = /\Auploads: batch skipped\b/
+    UPLOAD_REFUSED_RE = /\Auploads: another uploads batch is running\b/ # stderr, before and since exit=3
     QUOTA_CONDITION = "YouTube upload quota exceeded"
     CONSENT_WARN_DAYS = 6 # a testing-status OAuth app's refresh token dies on day 7
     UPLOAD_CONDITIONS = {
@@ -602,9 +603,16 @@ module PodgenCLI
       legacy = []
       dated = []
       pending = first_stamp = current = previous = previous_pending = nil
+      tick = false
       File.foreach(@uploads_stdout_log) do |raw|
         line = raw.scrub
-        if (m = line.match(UPLOAD_MARKER_RE))
+        if (m = line.match(UPLOAD_MARKER_RE)) && refused_tick_stamps.include?(line[0, 19])
+          # Q-160 (11): the stderr names this marker a refused tick's (logs
+          # from before the skip line have none): it neither cuts nor dates.
+          first_stamp ||= line[0, 19]
+          tick = true
+        elsif m
+          tick = false
           previous_pending = pending
           pending = marker_date(m)
           first_stamp ||= line[0, 19]
@@ -613,9 +621,13 @@ module PodgenCLI
         elsif line.match?(UPLOAD_SKIP_RE)
           # Q-159 (12): the marker was a skipped tick's; the running batch's
           # block continues, or (stdout buffered to its exit) is still to come
-          # under its own marker's date.
-          current = previous
-          pending = previous_pending
+          # under its own marker's date. Already handled when the stderr
+          # named the tick.
+          unless tick
+            current = previous
+            pending = previous_pending
+          end
+          tick = false
         elsif line.match?(UPLOAD_BLOCK_RE)
           current = [line]
           first_stamp ? dated << [pending, current] : legacy << current
@@ -628,14 +640,11 @@ module PodgenCLI
       legacy.reverse.zip(legacy_dates.reverse).map { |block, date| [date, block] } + dated
     end
 
-    # [["YYYY/MM/DD HH:MM:SS", Date]] for the stderr begin markers, oldest first.
+    # [["YYYY/MM/DD HH:MM:SS", Date]] for the stderr begin markers of the
+    # batches that ran, oldest first (a refused tick wrote no stdout block).
     def stderr_upload_markers
-      return [] unless File.exist?(@uploads_log)
-
-      File.readlines(@uploads_log).filter_map do |line|
-        m = line.scrub.match(UPLOAD_MARKER_RE)
-        [line[0, 19], marker_date(m)] if m
-      end
+      lines, begins, = upload_stderr_ticks
+      begins.map { |i| [lines[i][0, 19], marker_date(lines[i].match(UPLOAD_MARKER_RE))] }
     end
 
     def marker_date(match) = Date.new(match[1].to_i, match[2].to_i, match[3].to_i)
@@ -671,18 +680,46 @@ module PodgenCLI
       return [] unless File.exist?(@uploads_log)
       return [] if (@today - File.mtime(@uploads_log).to_date).to_i > UPLOAD_SINCE
 
-      lines = File.readlines(@uploads_log).map(&:scrub)
-      begins = []
-      skipped = nil
-      lines.each_with_index do |l, i|
-        if l.match?(UPLOAD_MARKER_RE)
-          begins << i
-          skipped = nil
-        elsif l.match?(UPLOAD_SKIP_END_RE) && begins.any?
-          skipped = lines[begins.pop][0, 19]
+      lines, begins, refused = upload_stderr_ticks
+      skipped = refused.last if refused.any? && (begins.empty? || refused.last > begins.last)
+      [begins.empty? ? nil : lines.drop(begins.last + 1), skipped && lines[skipped][0, 19]]
+    end
+
+    # [stderr lines, begin indices of the batches that ran, begin indices of
+    # the refused ticks], oldest first. Any number of ticks may be refused
+    # inside one running batch (Q-160 (11)): each one's refusal line (printed
+    # before and since the skip line existed) or exit=3 end closes the begin
+    # right before it, once.
+    def upload_stderr_ticks
+      @upload_stderr_ticks ||= begin
+        lines = File.exist?(@uploads_log) ? File.readlines(@uploads_log).map(&:scrub) : []
+        begins = []
+        refused = []
+        closed = false
+        lines.each_with_index do |l, i|
+          if l.match?(UPLOAD_MARKER_RE)
+            begins << i
+            closed = false
+          elsif (l.match?(UPLOAD_REFUSED_RE) || l.match?(UPLOAD_SKIP_END_RE)) && begins.any? && !closed
+            refused << begins.pop
+            closed = true
+          end
         end
+        [lines, begins, refused]
       end
-      begins.empty? ? [nil, skipped] : [lines.drop(begins.last + 1), skipped]
+    end
+
+    # Begin stamps of the refused ticks, with the second before each: the
+    # stdout copy of a marker is echoed first and may read one second earlier.
+    def refused_tick_stamps
+      @refused_tick_stamps ||= begin
+        lines, _, refused = upload_stderr_ticks
+        refused.flat_map do |i|
+          stamp = lines[i][0, 19]
+          y, mo, d, h, mi, s = stamp.scan(/\d+/).map(&:to_i)
+          [stamp, (Time.utc(y, mo, d, h, mi, s) - 1).strftime("%Y/%m/%d %H:%M:%S")]
+        end.to_set
+      end
     end
 
     def announced_episode_dates(config, languages)

@@ -698,6 +698,74 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "stalled"
   end
 
+  # Q-160 (11): N refused ticks inside one running batch, streamed and
+  # buffered stdout: every one is skipped, the running block keeps counting.
+  def test_run_two_refused_ticks_inside_one_streamed_batch_still_count
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin", "uploads: priority mode across alpha, beta",
+      "─── alpha ───", "2026/10/10 10:40:00 podgen uploads alpha,beta begin",
+      "uploads: batch skipped: another batch was running", "  ✓ one",
+      "2026/10/10 10:50:00 podgen uploads alpha,beta begin",
+      "uploads: batch skipped: another batch was running", "─── summary ───", "  alpha: yt-uploaded 3",
+      "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      *refused_tick("2026/10/10 10:40:00", exit: 3), *refused_tick("2026/10/10 10:50:00", exit: 3),
+      "2026/10/10 11:00:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+    assert_includes out, "uploads batch skipped 2026/10/10 10:50:00: another batch was running"
+  end
+
+  def test_run_two_refused_ticks_before_a_buffered_block_still_count
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      "2026/10/10 10:40:00 podgen uploads alpha,beta begin", "uploads: batch skipped: another batch was running",
+      "2026/10/10 10:50:00 podgen uploads alpha,beta begin", "uploads: batch skipped: another batch was running",
+      "uploads: priority mode across alpha, beta", "─── alpha ───", "─── summary ───", "  alpha: yt-uploaded 3",
+      "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      *refused_tick("2026/10/10 10:40:00", exit: 3), *refused_tick("2026/10/10 10:50:00", exit: 3),
+      "2026/10/10 11:00:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+  end
+
+  # Q-160 (11): logs from before the skip line (a refusal exited 1 and
+  # printed nothing to stdout): the stderr refusal line marks the tick, so
+  # its stdout marker no longer cuts the running batch's block, nor does its
+  # begin marker open the latest batch.
+  def test_run_old_refused_tick_without_stdout_skip_line_does_not_cut_the_block
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"), [
+      "2026/10/10 10:30:00 podgen uploads alpha,beta begin", "uploads: priority mode across alpha, beta",
+      "─── alpha ───", "2026/10/10 10:40:00 podgen uploads alpha,beta begin", "─── summary ───",
+      "  alpha: yt-uploaded 3", "uploads: total YT uploaded 3"
+    ].join("\n") + "\n")
+    write_uploads_log(["2026/10/10 10:30:00 podgen uploads alpha,beta begin",
+      *refused_tick("2026/10/10 10:40:00", exit: 1),
+      "  ✗ alpha-2026-10-08 failed: uploadLimitExceeded: x",
+      "2026/10/10 11:00:00 podgen uploads alpha,beta end exit=0"], marked: false)
+
+    out, code = run_status
+
+    assert_equal 0, code, out
+    assert_match(/alpha\s+OK\s+.*youtube catching up: 3 uploaded in the last 7 d, 4 behind; batch stops at the daily quota/, out)
+    assert_includes out, "uploads batch skipped 2026/10/10 10:40:00: another batch was running"
+  end
+
   def test_run_skipped_tick_before_a_newer_batch_is_not_named
     current_youtube_pod
     write_uploads_log(["2026/10/09 10:30:00 podgen uploads alpha,beta begin",
@@ -816,6 +884,21 @@ class TestStatusCommand < Minitest::Test
       stdout_markers: false)
     out, = run_status
     assert_match(/youtube catching up: 3 uploaded in the last 7 d, 4 behind/, out)
+  end
+
+  # Q-160 (11): a refused tick wrote no stdout block, so its stderr marker
+  # takes no part in pairing legacy blocks (today: the 10-01 block's
+  # uploads land on the refused tick's 10-05 and read as recent).
+  def test_run_legacy_pairing_skips_refused_tick_markers
+    catching_up_pod
+    FileUtils.mkdir_p(File.join(@tmpdir, "logs"))
+    File.write(File.join(@tmpdir, "logs", "uploads_stdout.log"),
+      (upload_block(["  alpha: yt-uploaded 3"]) + upload_block(["  alpha: yt-uploaded 0"])).join("\n") + "\n")
+    write_uploads_log(upload_batch("2026/10/01", []) + refused_tick("2026/10/05 10:30:00", exit: 1) +
+      upload_batch("2026/10/09", []), marked: false)
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*youtube uploads stalled since 2026-09-21/, out)
   end
 
   def test_run_legacy_blocks_before_first_stdout_marker_pair_with_older_stderr_markers
@@ -1417,6 +1500,14 @@ class TestStatusCommand < Minitest::Test
     lines = upload_batch(mtime.strftime("%Y/%m/%d"), lines) if marked
     File.write(path, lines.join("\n") + "\n")
     File.utime(mtime, mtime, path)
+  end
+
+  # A tick refused by the lock in the stderr: exit 3 since the skip line
+  # existed, exit 1 before (the refusal line is printed by both).
+  def refused_tick(stamp, exit:)
+    ["#{stamp} podgen uploads alpha,beta begin",
+      "uploads: another uploads batch is running (lockfile: /x/output/uploads.lock)",
+      "#{stamp.sub(/:00\z/, ":01")} podgen uploads alpha,beta end exit=#{exit}"]
   end
 
   def upload_batch(date, lines)
