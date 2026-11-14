@@ -149,6 +149,14 @@ class TestInitCommand < Minitest::Test
     assert_includes guidelines, "<!--"
   end
 
+  def test_init_skeleton_site_comment_names_index_episodes
+    capture_io { PodgenCLI::InitCommand.new(["brand_new"], {}).run }
+
+    guidelines = File.read(File.join(@tmpdir, "podcasts", "brand_new", "guidelines.md"))
+    site = guidelines[/<!-- ## Site -->.*?\n\n/m]
+    assert_includes site, "<!-- - index_episodes: 12"
+  end
+
   def test_init_skeleton_returns_zero
     _, = capture_io do
       code = PodgenCLI::InitCommand.new(["brand_new"], {}).run

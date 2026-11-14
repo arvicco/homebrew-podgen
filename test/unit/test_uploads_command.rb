@@ -24,6 +24,19 @@ class TestUploadsCommand < Minitest::Test
     FileUtils.rm_rf(@tmpdir)
   end
 
+  # ── publisher crash fallbacks ──
+
+  def test_run_lingq_for_crash_records_error_class_like_youtube
+    cmd = stub_cmd(["pod_a"])
+    result = nil
+    PodcastConfig.stub(:new, ->(_) { raise Errno::ENOENT, "guidelines.md" }) do
+      capture_io { result = cmd.send(:run_lingq_for, "pod_a") }
+    end
+
+    assert_equal [{type: :publisher_crash, error_class: "Errno::ENOENT", message: "No such file or directory - guidelines.md"}],
+      result.errors
+  end
+
   # ── parsing ──
 
   def test_parses_comma_separated_pods

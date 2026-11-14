@@ -71,16 +71,17 @@ module PodcastAgent
       @logged_warnings = []
     end
 
-    def log(message)
+    # echo: false writes the file only (a line the terminal already showed).
+    def log(message, echo: true)
       entry = "[#{Time.now.strftime('%Y-%m-%d %H:%M:%S')}] #{message}"
-      puts entry unless @verbosity == :quiet
+      puts entry if echo && @verbosity != :quiet
       FILE_MUTEX.synchronize { File.open(@log_file, "a") { |f| f.puts(entry) } }
     end
 
     # A degradation the run survived (a source down, a fallback taken): logged
     # like any line and counted as a warning in RUN-OUTCOME.
-    def warning(message)
-      log(message)
+    def warning(message, echo: true)
+      log(message, echo: echo)
       FILE_MUTEX.synchronize { @logged_warnings << message }
     end
 

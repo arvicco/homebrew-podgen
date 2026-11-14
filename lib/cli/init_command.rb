@@ -191,6 +191,7 @@ module PodgenCLI
         <!-- - footer: My Podcast    # Footer text -->
         <!-- - show_duration: true -->
         <!-- - show_transcript: true -->
+        <!-- - index_episodes: 12    # Episodes the front page shows with a player -->
 
         <!-- ## Twitter -->
         <!-- Auto-tweet after publishing -->

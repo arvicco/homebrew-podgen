@@ -33,7 +33,9 @@ module PodgenCLI
   #          skipped with --offline)
   #   UNPUBLISHED - the served feed answers 404 and the show has no publish
   #          record (Q-155)
-  #   DORMANT - no cadence_days key and no episode for over 60 days (Q-155)
+  #   DORMANT - no cadence_days key and no episode for over 60 days (Q-155);
+  #          its upload findings, and its run-log findings while every log is
+  #          over 60 days old, are notes after the newest line, not WARN
   #   OK   - otherwise; a show with no cadence whose newest episode is old is
   #          noted "dormant — no cadence" (P3-4); YouTube behind but uploading
   #          in the batch log's window is noted "catching up", an unscheduled
@@ -200,16 +202,22 @@ module PodgenCLI
         reasons << "(freshness off)"
       end
       inform = ->(reason) { reasons << reason } # an OK-level note, never escalates
-      log_findings(config, inform).each { |reason| escalate.call("WARN", reason) }
+      # A dormant show's upload findings and a run log as old as the dormancy
+      # are notes after the verdict text, not WARN (Q-164).
+      notes = []
+      demote = ->(_verdict, reason) { notes << reason }
+      log_escalate = (dormant && logs_stale?(config)) ? demote : escalate
+      log_findings(config, inform).each { |reason| log_escalate.call("WARN", reason) }
       publish_findings(config).each { |reason| escalate.call("WARN", reason) }
       announcements = announcement_progress(config, escalate)
-      uploads = upload_progress(config, escalate, inform)
+      uploads = upload_progress(config, dormant ? demote : escalate, inform)
       consent = youtube_consent_finding(config)
       escalate.call("WARN", consent) if consent
       served_feed_findings(config, inform, escalate).each { |reason| escalate.call("WARN", reason) }
       if QUIET_VERDICTS.include?(verdict) && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
       end
+      reasons.concat(notes)
 
       {podcast: name, verdict: verdict, newest: newest&.to_s, age_days: age, reasons: reasons,
        announcements: announcements, uploads: uploads}
@@ -236,6 +244,12 @@ module PodgenCLI
     end
 
     # --- run-log findings ---
+
+    # The newest log in logs/<pod>/ is older than the dormancy threshold.
+    def logs_stale?(config)
+      newest = Dir.glob(File.join(config.log_dir, "*.log")).map { |f| File.mtime(f).to_date }.max
+      newest.nil? || (@today - newest).to_i > Validators::FreshnessValidator::DORMANT_STALE_DAYS
+    end
 
     # Generate runs only (Q-118): render/voice/translate log to the same dir
     # but carry neither the start line nor a RUN-OUTCOME line, so they never

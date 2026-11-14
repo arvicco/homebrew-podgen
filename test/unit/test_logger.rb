@@ -73,6 +73,16 @@ class TestPodcastAgentLogger < Minitest::Test
     assert_includes File.read(@log_path), "] [X] Warning: degraded"
   end
 
+  def test_warning_echo_false_counts_and_logs_without_terminal_line
+    logger = PodcastAgent::Logger.new(log_path: @log_path, verbosity: :normal)
+
+    out, _err = capture_io { logger.warning("Warning: shown already", echo: false) }
+
+    assert_empty out
+    assert_equal ["Warning: shown already"], logger.logged_warnings
+    assert_includes File.read(@log_path), "] Warning: shown already"
+  end
+
   # --- phase timing ---
 
   def test_phase_start_and_end_logs_elapsed

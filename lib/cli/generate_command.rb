@@ -148,7 +148,9 @@ module PodgenCLI
       @logger = PodcastAgent::Logger.new(log_path: log_path, verbosity: @options[:verbosity])
       PodcastAgent.logger = @logger
       # The stderr lines above predate the logger; the run log counts them (Q-117).
-      @config.parser_warnings.each { |w| @logger.warning("Warning: guidelines.md: #{w}") } if guidelines
+      # On an interactive terminal they were already shown there: log, no echo.
+      echo = !($stderr.tty? && $stdout.tty?)
+      @config.parser_warnings.each { |w| @logger.warning("Warning: guidelines.md: #{w}", echo: echo) } if guidelines
       @history = EpisodeHistory.new(@config.history_path, excluded_urls_path: @config.excluded_urls_path)
       @warnings = []
 
@@ -411,7 +413,9 @@ module PodgenCLI
       AtomicWriter.write(path, JSON.pretty_generate(bundle))
       @logger.log("Review bundle saved: #{path}")
     rescue => e # skippable: a measurement artifact; the review loop goes on
-      @logger.log("Warning: review bundle not saved: #{e.class}: #{e.message}")
+      msg = "Warning: review bundle not saved: #{e.class}: #{e.message}"
+      @logger.log(msg)
+      @warnings << msg
     end
 
     def regenerate_script_with_feedback(research_data, priority_urls, feedback)
