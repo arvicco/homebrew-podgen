@@ -1224,7 +1224,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   (inferred cadence or none): a resting show, not a failure -
   `lahko_noc DORMANT newest 2026-03-21 (204d old; dormant — no cadence)`.
   Set `cadence_days` to make such a show go OLD instead, or `freshness: off` if it has
-  concluded. Any WARN finding (a failed last run, say) still shows as WARN.
+  concluded. Its YouTube/LingQ upload findings, and its run-log findings while
+  every log in `logs/<podcast>/` is more than 60 days old, follow the newest line
+  as notes instead of turning the row WARN - `...dormant — no cadence); lingq
+  uploads never made (newest episode 2026-03-21)`. Any other WARN finding (a
+  failed run in the last 60 days, a served feed that 404s after a publish) still
+  shows as WARN.
 - **UNPUBLISHED** - the served `base_url/feed.xml` answers HTTP 404 and the
   show has no publish record (no entry in `output/<podcast>/uploads.yml` and
   no scheduled publish of it in `logs/launchd_stderr.log`):
