@@ -41,6 +41,7 @@ module PodgenCLI
           @last = n
         end
         opts.on("--split DATE", "Compare --vocab-health before / from DATE (YYYY-MM-DD)") do |d|
+          raise Date::Error unless d.match?(/\A\d{4}-\d{2}-\d{2}\z/)
           @split = Date.iso8601(d)
         rescue Date::Error
           raise OptionParser::InvalidArgument, "--split #{d} (expected YYYY-MM-DD)"

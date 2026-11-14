@@ -180,6 +180,28 @@ class TestVocabHealth < Minitest::Test
 
   # --- --split: before / after / before, last N (P21-1) ---
 
+  def test_split_report_undated_transcripts_are_named_and_left_out_of_every_cohort
+    write_ep("p-2026-01-01", "Uno due.", ["- **uno** (B1): one"])
+    write_ep("p-2026-01-03", "Tre quattro.", ["- **tre** (B1): three"])
+    write_ep("p-special", "Cinque sei.", ["- **cinque** (B1): five"])
+
+    s = health.split_report(split: Date.new(2026, 1, 2))
+    out = health.split_lines("p", split: Date.new(2026, 1, 2))
+
+    assert_equal [1, 1, 1], [s[:before], s[:after], s[:before_last]].map(&:episodes)
+    assert_equal 1, s[:undated]
+    assert_includes out, "  (1 transcripts without a date in the name left out of every cohort)"
+  end
+
+  def test_split_report_all_undated_prints_the_header_and_the_note_not_no_transcripts
+    write_ep("p-special", "Cinque sei.", ["- **cinque** (B1): five"])
+
+    out = health.split_lines("p", split: Date.new(2026, 1, 2))
+
+    refute_includes out, "p: no transcripts"
+    assert_includes out, "  (1 transcripts without a date in the name left out of every cohort)"
+  end
+
   def test_split_report_cohorts_have_the_right_episode_counts
     split_fixture
 

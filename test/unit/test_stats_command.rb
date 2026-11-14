@@ -251,6 +251,12 @@ class TestStatsCommand < Minitest::Test
     end
   end
 
+  def test_vocab_health_split_partial_date_is_parse_error
+    assert_raises(OptionParser::InvalidArgument) do
+      PodgenCLI::StatsCommand.new(["--vocab-health", "lang", "--split", "2026-10"], {})
+    end
+  end
+
   def test_vocab_health_split_with_last_is_usage_error
     _, code = run_stats(vocab_root, ["--vocab-health", "lang", "--split", "2026-01-02", "--last", "1"])
 
