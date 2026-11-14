@@ -1268,6 +1268,26 @@ class TestStatusCommand < Minitest::Test
     refute_includes out, "OLD"
   end
 
+  # Q-164(30): lahko_noc shape — no cadence key, 237 d silent, its last run
+  # log (March) carries a Warning line and the LingQ ledger group was never
+  # written: findings as old as the dormancy are notes after the verdict text.
+  def test_run_dormant_show_stale_log_and_upload_findings_are_notes_exit_zero
+    lahko_noc_pod
+    out, code = run_status
+    assert_equal 0, code, out
+    assert_match(/lahko_noc\s+DORMANT\s+newest 2026-02-16 \(237d old; dormant — no cadence\); /, out)
+    assert_includes out, "; lahko-2026-03-01.log: Warning: Already processed: 2026-02-16 episode"
+    assert_includes out, "; lingq uploads never made (newest episode 2026-02-16)"
+  end
+
+  def test_run_dormant_show_served_feed_404_with_publish_record_still_warns
+    lahko_noc_pod(extra: "- base_url: https://media.example.com/lahko_noc\n")
+    @feed_fetcher = ->(_url) { raise ServedFeed::StatusError, "HTTP 404" }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/lahko_noc\s+WARN\s+.*served feed fetch failed: HTTP 404/, out)
+  end
+
   def test_run_inferred_cadence_show_silent_sixty_days_is_still_old
     make_pod("alpha", dates: %w[2026-08-09 2026-08-10 2026-08-11 2026-08-12])
     out, code = run_status
@@ -1446,6 +1466,19 @@ class TestStatusCommand < Minitest::Test
   end
 
   private
+
+  # lahko_noc as found 2026-11-13: daily history ending 237 d before TODAY,
+  # no cadence_days key, LingQ configured but no lingq group in uploads.yml
+  # (its YouTube group is the publish record), a March generate log with a
+  # Warning line.
+  def lahko_noc_pod(extra: "")
+    dates = %w[2026-02-13 2026-02-14 2026-02-15 2026-02-16]
+    make_pod("lahko_noc", dates: dates, extra: extra, sections: LINGQ)
+    make_episodes("lahko_noc", dates.map { |d| "lahko_noc-#{d}" })
+    write_uploads("lahko_noc", "youtube" => {"default" => {"lahko_noc-2026-02-16" => "v1"}})
+    write_log("lahko_noc", "lahko-2026-03-01.log", ["[2026-03-01 06:00:05] Warning: Already processed: 2026-02-16 episode"],
+      mtime: Time.new(2026, 3, 1, 6))
+  end
 
   def fresh_dates = %w[2026-10-07 2026-10-08 2026-10-09 2026-10-10]
 

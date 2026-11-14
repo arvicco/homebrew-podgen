@@ -285,7 +285,7 @@ module PodgenCLI
     rescue => e # skippable per-podcast: recorded as a publisher_crash error; other podcasts continue
       $stderr.puts "uploads: LingQ publisher crash for #{pod} (#{e.class}: #{e.message})"
       LingQPublisher::Result.new(uploaded: 0, attempted: 0,
-                                 errors: [{ type: :publisher_crash, message: e.message }])
+                                 errors: [{ type: :publisher_crash, error_class: e.class.name, message: e.message }])
     end
 
     def run_yt_for(pod, max:, finish_owed: true)

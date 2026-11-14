@@ -237,6 +237,32 @@ class TestStatsCommand < Minitest::Test
     refute_includes out, "news"
   end
 
+  def test_vocab_health_split_renders_before_and_after_columns
+    out, code = run_stats(vocab_root, ["--vocab-health", "lang", "--split", "2026-01-02"])
+
+    assert_equal 0, code
+    assert_match(/^metric\s+before\s+after\s+before, last 1$/, out)
+    assert_match(/^episodes\s+1\s+1\s+1$/, out)
+  end
+
+  def test_vocab_health_split_invalid_date_is_parse_error
+    assert_raises(OptionParser::InvalidArgument) do
+      PodgenCLI::StatsCommand.new(["--vocab-health", "lang", "--split", "2026-13-01"], {})
+    end
+  end
+
+  def test_vocab_health_split_partial_date_is_parse_error
+    assert_raises(OptionParser::InvalidArgument) do
+      PodgenCLI::StatsCommand.new(["--vocab-health", "lang", "--split", "2026-10"], {})
+    end
+  end
+
+  def test_vocab_health_split_with_last_is_usage_error
+    _, code = run_stats(vocab_root, ["--vocab-health", "lang", "--split", "2026-01-02", "--last", "1"])
+
+    assert_equal 2, code
+  end
+
   def test_vocab_health_without_pod_or_all_is_usage_error
     _, code = run_stats(vocab_root, ["--vocab-health"])
 

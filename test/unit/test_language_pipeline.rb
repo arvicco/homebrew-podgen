@@ -955,7 +955,10 @@ class TestLanguagePipeline < Minitest::Test
   def test_validate_image_options_thumb_without_url_returns_error
     pipeline = build_pipeline(options: { image: "thumb" })
     # No @youtube_url set
-    result = pipeline.send(:validate_image_options)
+    result = nil
+    assert_output(nil, "Error: --image thumb is only valid with --url (YouTube)\n") do
+      result = pipeline.send(:validate_image_options)
+    end
     assert_equal 1, result
   end
 
@@ -976,7 +979,10 @@ class TestLanguagePipeline < Minitest::Test
     pipeline = build_pipeline(options: { image: "last" })
     # Stub Dir.glob to return empty
     Dir.stub(:glob, []) do
-      result = pipeline.send(:validate_image_options)
+      result = nil
+      assert_output(nil, "Error: no screenshots found on ~/Desktop\n") do
+        result = pipeline.send(:validate_image_options)
+      end
       assert_equal 1, result
     end
   end

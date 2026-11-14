@@ -57,8 +57,8 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 
 /* Episode list */
 .episode-list { list-style: none; }
-.episode-item { padding: 1rem 0; border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: flex-start; }
-.episode-item:last-child { border-bottom: none; }
+.episode-item { padding: 1rem 0; display: flex; gap: 1rem; align-items: flex-start; }
+.episode-item + .episode-item { border-top: 1px solid var(--border); }
 .episode-thumb { width: 92px; height: 92px; border-radius: var(--radius); object-fit: cover; flex-shrink: 0; }
 .episode-content { flex: 1; min-width: 0; }
 .episode-meta { font-size: 0.875rem; color: var(--fg-muted); margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.25rem; }

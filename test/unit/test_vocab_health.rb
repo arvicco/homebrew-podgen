@@ -178,7 +178,166 @@ class TestVocabHealth < Minitest::Test
     assert_includes health.lines("p").join("\n"), "no transcripts"
   end
 
+  # --- --split: before / after / before, last N (P21-1) ---
+
+  def test_split_report_undated_transcripts_are_named_and_left_out_of_every_cohort
+    write_ep("p-2026-01-01", "Uno due.", ["- **uno** (B1): one"])
+    write_ep("p-2026-01-03", "Tre quattro.", ["- **tre** (B1): three"])
+    write_ep("p-special", "Cinque sei.", ["- **cinque** (B1): five"])
+
+    s = health.split_report(split: Date.new(2026, 1, 2))
+    out = health.split_lines("p", split: Date.new(2026, 1, 2))
+
+    assert_equal [1, 1, 1], [s[:before], s[:after], s[:before_last]].map(&:episodes)
+    assert_equal 1, s[:undated]
+    assert_includes out, "  (1 transcripts without a date in the name left out of every cohort)"
+  end
+
+  def test_split_report_all_undated_prints_the_header_and_the_note_not_no_transcripts
+    write_ep("p-special", "Cinque sei.", ["- **cinque** (B1): five"])
+
+    out = health.split_lines("p", split: Date.new(2026, 1, 2))
+
+    refute_includes out, "p: no transcripts"
+    assert_includes out, "  (1 transcripts without a date in the name left out of every cohort)"
+  end
+
+  def test_split_report_cohorts_have_the_right_episode_counts
+    split_fixture
+
+    s = health.split_report(split: Date.new(2026, 1, 3))
+
+    assert_equal [2, 2, 2], [s[:before], s[:after], s[:before_last]].map(&:episodes)
+  end
+
+  def test_split_report_after_cohort_metrics_hand_computed
+    split_fixture
+
+    r = health.split_report(split: Date.new(2026, 1, 3))[:after]
+
+    assert_equal 4, r.entries
+    assert_equal 3, r.unique_lemmas                # casa fiume lupo
+    assert_equal 2, r.repeat_entries               # fiume (ep3) and lupo (ep1, ep2), both in ep4
+    assert_equal 1, r.within_repeats               # fiume: explained in ep3, again in ep4
+    assert_equal({below: 1, at: 2, plus1: 0, plus2: 1}, r.levels)
+    assert_equal 1, r.median_gloss_words           # house, big river, river, wolf
+    assert_equal 1, r.prominent_entries            # fiume ×3 in ep4's body
+    assert_equal 1, r.drift                        # fiume: big river vs river
+  end
+
+  def test_split_report_title_occurrence_makes_an_entry_prominent
+    write_raw("p-2026-01-01", "Nothing here.", "## Vocabulary\n\n- **lupo** (B1 noun) — wolf\n", title: "Il lupo")
+
+    r = health.split_report(split: Date.new(2026, 1, 1))[:after]
+
+    assert_equal 1, r.prominent_entries
+  end
+
+  def test_split_report_would_have_re_explained_per_after_episode
+    split_fixture
+
+    s = health.split_report(split: Date.new(2026, 1, 3))
+
+    # ep3: lupo (B1, ep1) in its body; ep4: bosco (B2, ep1) and fiume (B1, ep3); mela and casa are A2
+    assert_equal [["p-2026-01-03", 1], ["p-2026-01-04", 2]], s[:would_have]
+  end
+
+  def test_split_lines_render_identical_labels_for_the_three_cohorts
+    split_fixture
+
+    out = health.split_lines("p", split: Date.new(2026, 1, 3))
+    header = out.find { |l| l.start_with?("metric") }
+
+    assert_match(/before\s+after\s+before, last 2/, header)
+    assert_match(/^episodes\s+2\s+2\s+2$/, out.find { |l| l.start_with?("episodes") })
+    rows = out.drop_while { |l| l != header }.drop(1).take_while { |l| !l.empty? }
+    assert_equal VocabHealth.split_labels("B1"), rows.map { |l| l[/\A.+?(?=\s{2,})/] }
+  end
+
+  def test_split_lines_per_minute_is_na_without_durations
+    split_fixture
+
+    out = health.split_lines("p", split: Date.new(2026, 1, 3))
+
+    assert_match(%r{^entries per minute \(median\)\s+n/a\s+n/a\s+n/a$}, out.find { |l| l.include?("per minute") })
+  end
+
+  def test_split_lines_after_side_empty_names_it_and_renders_before
+    split_fixture
+
+    out = health.split_lines("p", split: Date.new(2026, 2, 1))
+
+    assert_includes out, "  no episodes on or after 2026-02-01"
+    assert_match(/^episodes\s+4$/, out.find { |l| l.start_with?("episodes") })
+  end
+
+  def test_split_lines_before_side_empty_names_it_and_renders_after
+    split_fixture
+
+    out = health.split_lines("p", split: Date.new(2025, 1, 1))
+
+    assert_includes out, "  no episodes before 2025-01-01"
+    assert_match(/^episodes\s+4$/, out.find { |l| l.start_with?("episodes") })
+  end
+
+  def test_split_report_would_have_matches_whole_lemma_or_form_exactly
+    write_ep("p-2026-01-01", "x", ["- **salire** (B1 verb) — to climb",
+      "- **lupo** (B1 noun) *lupi* — wolf",
+      "- **avere paura** (B2 verb) — to be afraid"])
+    write_ep("p-2026-01-02", "Salirono. I Lupi, avere paura.", [])
+
+    s = health.split_report(split: Date.new(2026, 1, 2))
+
+    # salirono shares salire's first 5 letters but is not the lemma or a form;
+    # lupi is a recorded form (case-insensitive); avere paura matches as a phrase
+    assert_equal [["p-2026-01-02", 2]], s[:would_have]
+  end
+
+  def test_split_lines_interpretation_note_prints_would_have_counts
+    split_fixture
+
+    text = health.split_lines("p", split: Date.new(2026, 1, 3)).join("\n")
+
+    assert_includes text, "partly by construction"
+    assert_includes text, "exact lemma/form match in the body"
+    assert_includes text, "p-2026-01-03 1, p-2026-01-04 2"
+    assert_includes text, "2 of 2 after-episodes"
+  end
+
+  def test_split_lines_without_cutoff_say_would_have_cannot_be_derived
+    split_fixture
+
+    text = VocabHealth.new(episodes_dir: @tmpdir).split_lines("p", split: Date.new(2026, 1, 3)).join("\n")
+
+    assert_includes text, "cannot be derived"
+  end
+
+  def test_split_lines_seeded_sample_is_deterministic
+    6.times do |i|
+      write_ep("p-2026-03-0#{i + 1}", "x", (1..4).map { |j| "- **w#{i}#{j}** (B1 noun) — gloss #{i}#{j}. More" })
+    end
+    sample = ->(seed) { health.split_lines("p", split: Date.new(2026, 3, 4), seed: seed).grep(/ · /) }
+
+    first = sample.call(1)
+
+    assert_equal first, sample.call(1)
+    assert_equal 30, first.size # 10 per cohort
+    assert(first.all? { |l| l.match?(/\A    w\d\d · B1 · gloss \d\d\z/) }, first.inspect)
+    refute_equal first, sample.call(2)
+  end
+
   private
+
+  def split_fixture
+    write_ep("p-2026-01-01", "Il lupo nel bosco.", ["- **lupo** (B1 noun) — wolf. An animal",
+      "- **bosco** (B2 noun) — wood"])
+    write_ep("p-2026-01-02", "Il lupo e la mela.", ["- **lupo** (B1 noun) — wolf",
+      "- **mela** (A2 noun) — apple"])
+    write_ep("p-2026-01-03", "La casa, il lupo, il fiume.", ["- **casa** (A2 noun) — house",
+      "- **fiume** (B1 noun) — big river"])
+    write_ep("p-2026-01-04", "Il bosco e il fiume, il fiume, il fiume.", ["- **fiume** (B1 noun) — river",
+      "- **lupo** (C1 noun) — wolf"])
+  end
 
   def health(durations: {})
     VocabHealth.new(episodes_dir: @tmpdir, cutoff: "B1", durations: durations)
@@ -199,8 +358,8 @@ class TestVocabHealth < Minitest::Test
     write_raw(basename, body, "## Vocabulary\n\n#{vocab_lines.join("\n")}\n")
   end
 
-  def write_raw(basename, body, vocab)
+  def write_raw(basename, body, vocab, title: "Title")
     File.write(File.join(@tmpdir, "#{basename}_transcript.md"),
-      "# Title\n\n## Transcript\n\n#{body}\n\n#{vocab}")
+      "# #{title}\n\n## Transcript\n\n#{body}\n\n#{vocab}")
   end
 end

@@ -361,6 +361,42 @@ class TestGenerateCommand < Minitest::Test
     prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
   end
 
+  # Q-164(12): on an interactive terminal the pre-logger stderr line is the
+  # one the owner sees; the run log still records and counts it.
+  def test_guidelines_warning_shows_once_on_an_interactive_terminal
+    prev_root = ENV["PODGEN_ROOT"]
+    ENV["PODGEN_ROOT"] = @tmpdir
+    podcast_dir = File.join(@tmpdir, "podcasts", "bkpod")
+    FileUtils.mkdir_p(podcast_dir)
+    File.write(File.join(podcast_dir, "guidelines.md"), "## Podcast\n- type: news\n- author\n## Format\nf\n## Tone\nt\n")
+    require "podcast_config"
+    log_path = PodcastConfig.new("bkpod").log_path(Date.today)
+
+    cmd = PodgenCLI::GenerateCommand.new(["bkpod"], {})
+    cmd.define_singleton_method(:verify_ffmpeg!) { |_| nil }
+    cmd.define_singleton_method(:preflight_network!) { |_| nil }
+    cmd.define_singleton_method(:generate_topics) { ["t"] }
+    cmd.define_singleton_method(:research_topics) { |_| [] }
+    cmd.define_singleton_method(:inject_priority_links) { |r| [r, []] }
+    cmd.define_singleton_method(:generate_script) { |*| {title: "T", segments: []} }
+    cmd.define_singleton_method(:review_script) { |s, *| s }
+    cmd.define_singleton_method(:produce_episodes) { |*| ["/x/pod.mp3"] }
+    cmd.define_singleton_method(:finalize) { |*| nil }
+    out, err = capture_io do
+      [$stdout, $stderr].each { |io| io.define_singleton_method(:tty?) { true } }
+      cmd.run
+    end
+
+    line = "Warning: guidelines.md: Podcast: '- author' is missing a value"
+    shown = (out + err).lines.reject { |l| l.include?("RUN-OUTCOME") }
+    assert_equal 1, shown.grep(/#{Regexp.escape(line)}/).size
+    assert_includes err, line
+    assert_equal 1, File.readlines(log_path).reject { |l| l.include?("RUN-OUTCOME") }.grep(/#{Regexp.escape(line)}/).size
+    assert_match(/RUN-OUTCOME status=warn warnings=1 /, File.readlines(log_path).last)
+  ensure
+    prev_root ? ENV["PODGEN_ROOT"] = prev_root : ENV.delete("PODGEN_ROOT")
+  end
+
   # --- verify_ffmpeg! ---
 
   def test_verify_ffmpeg_success
@@ -917,6 +953,18 @@ class TestGenerateCommand < Minitest::Test
     messages = cmd.instance_variable_get(:@logger).messages
     assert_includes messages, "  unresolved blocker: Wrong date"
     assert_includes messages, "  unresolved blocker: Wrong weekday"
+  end
+
+  def test_review_script_bundle_save_failure_counts_one_warning
+    cmd, _config = build_sl_en_command
+
+    AtomicWriter.stub(:write, ->(*) { raise Errno::EACCES, "debug" }) do
+      review_with(cmd, [[BLOCKER_ISSUE], []])
+    end
+
+    msg = "Warning: review bundle not saved: Errno::EACCES: Permission denied - debug"
+    assert_equal [msg], cmd.instance_variable_get(:@warnings)
+    assert_equal 1, cmd.instance_variable_get(:@logger).messages.count(msg)
   end
 
   def test_review_script_clean_first_review_writes_no_bundle

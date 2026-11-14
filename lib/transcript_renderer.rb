@@ -182,7 +182,7 @@ module TranscriptRenderer
             d = entry[:definitions][lang]
             next unless d && !d.empty?
             cls = lang == entry[:languages].first ? "vocab-tip-def active" : "vocab-tip-def"
-            "<span class=\"#{cls}\" data-vocab-lang=\"#{escape_html(lang)}\">#{escape_html(d)}</span>"
+            "<span class=\"#{cls}\" data-vocab-lang=\"#{escape_attr(lang)}\">#{escape_html(d)}</span>"
           end.compact.join
         elsif entry[:definition] && !entry[:definition].empty?
           "<span class=\"vocab-tip-def\">#{escape_html(entry[:definition])}</span>"
@@ -206,7 +206,7 @@ module TranscriptRenderer
     heading = if languages
       switcher = languages.map.with_index do |lang, i|
         cls = i == 0 ? "class=\"active\" " : ""
-        "<button #{cls}data-vocab-lang=\"#{escape_html(lang)}\">#{escape_html(lang)}</button>"
+        "<button #{cls}data-vocab-lang=\"#{escape_attr(lang)}\">#{escape_html(lang)}</button>"
       end.join
       "<h2>Vocabulary <span class=\"vocab-lang-switcher\">#{switcher}</span></h2>"
     else
@@ -264,7 +264,7 @@ module TranscriptRenderer
           d = entry[:definitions][lang]
           next unless d && !d.empty?
           cls = i == 0 ? ' class="active"' : ""
-          lines << "<dd data-vocab-lang=\"#{escape_html(lang)}\"#{cls}>#{escape_html(d)}</dd>"
+          lines << "<dd data-vocab-lang=\"#{escape_attr(lang)}\"#{cls}>#{escape_html(d)}</dd>"
         end
       elsif entry[:definition] && !entry[:definition].empty?
         lines << "<dd>#{escape_html(entry[:definition])}</dd>"
