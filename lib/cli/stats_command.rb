@@ -40,6 +40,12 @@ module PodgenCLI
           raise OptionParser::InvalidArgument, "--last #{n} (must be positive)" unless n.positive?
           @last = n
         end
+        opts.on("--split DATE", "Compare --vocab-health before / from DATE (YYYY-MM-DD)") do |d|
+          @split = Date.iso8601(d)
+        rescue Date::Error
+          raise OptionParser::InvalidArgument, "--split #{d} (expected YYYY-MM-DD)"
+        end
+        opts.on("--seed N", Integer, "Sample seed for --split (default 1)") { |n| @seed = n }
       end.parse!(args)
       @podcast_name = args.shift
       unless args.empty?
@@ -114,7 +120,11 @@ module PodgenCLI
       elsif @podcast_name
         [@podcast_name]
       else
-        $stderr.puts "Usage: podgen stats --vocab-health <podcast> | --all [--last N]"
+        $stderr.puts "Usage: podgen stats --vocab-health <podcast> | --all [--last N | --split YYYY-MM-DD [--seed N]]"
+        return 2
+      end
+      if @split && @last
+        $stderr.puts "stats: --split and --last cannot be combined"
         return 2
       end
 
@@ -124,7 +134,8 @@ module PodgenCLI
         durations = build_duration_map(config).transform_keys { |f| File.basename(f, ".mp3") }
         health = VocabHealth.new(episodes_dir: config.episodes_dir, cutoff: config.vocabulary_level,
           durations: durations)
-        health.lines(name, last: @last).each { |line| puts line }
+        lines = @split ? health.split_lines(name, split: @split, seed: @seed || 1) : health.lines(name, last: @last)
+        lines.each { |line| puts line }
       end
       0
     end
