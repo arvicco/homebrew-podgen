@@ -294,9 +294,10 @@ CLOSED 2026-11-13 (PR #22, merge 43a6f60; phase clock 49m). Phase 21
 (R9-02 measurement — `stats --vocab-health --split`; Phase 20 residues:
 template attribute escaping, truthful noscript, counted review-bundle
 failure, parser warning once on a terminal, DORMANT keeps its verdict
-over stale findings) EXECUTING — adopted 2026-11-13 (slate options A+B
-of the Gate 20 close). 0 open rulings (R9-02 HELD for the Q-163
-measurement; R10-02 returns 11-26). I-11: owner re-consented 2026-11-09
+over stale findings) AT GATE 21 — adopted 2026-11-13 (slate options A+B
+of the Gate 20 close), all six packets landed, CRPR APPROVED after two
+rounds (refs/cr/reviewed = 5475066); gate PR open, the owner merges. 1 open ruling (R9-02, re-presented
+2026-11-13 with the Q-163 measurement); R10-02 returns 11-26. I-11: owner re-consented 2026-11-09
 (expires ≈ 11-16 while the OAuth app is in testing). I-14: a merged
 gate reaches the Mac only when the live checkout is pulled.
 Update this line at each gate.
