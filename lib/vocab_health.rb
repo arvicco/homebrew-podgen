@@ -212,15 +212,16 @@ class VocabHealth
           next
         end
         lemma = e[:lemma].to_s.downcase.strip
-        prefixes = by_key.select { |_, v| v.equal?(e) }.keys.map { |k| k[0, COVER_PREFIX] }.to_set
+        forms = by_key.select { |_, v| v.equal?(e) }.keys
+        prefixes = forms.map { |k| k[0, COVER_PREFIX] }.to_set
         gloss = first_sentence(e[:definition])
         entries << {lemma: lemma, level: level, key: keys.include?(lemma),
                      definition: gloss&.downcase, gloss: gloss,
-                     prefixes: prefixes,
+                     forms: forms.map { |k| word_list(k).join(" ") }.reject(&:empty?),
                      prominent: prefixes.intersect?(title_prefixes) || prefixes.sum { |p| body_prefixes.fetch(p, 0) } >= PROMINENT_MIN}
       end
       basename = File.basename(path, "_transcript.md")
-      {basename: basename, body: parsed.body.to_s, covers: by_key.keys, body_prefixes: body_prefixes,
+      {basename: basename, body: parsed.body.to_s, covers: by_key.keys,
        entries: entries.uniq { |e| e[:lemma] }, unlevelled: unlevelled}
     end
   end
@@ -232,7 +233,12 @@ class VocabHealth
 
   # COVER_PREFIX-char prefixes of the letter words of text, downcased.
   def word_prefixes(text)
-    text.to_s.downcase.scan(/\p{L}+/).map { |w| w[0, COVER_PREFIX] }
+    word_list(text).map { |w| w[0, COVER_PREFIX] }
+  end
+
+  # The letter words of text, downcased, in order.
+  def word_list(text)
+    text.to_s.downcase.scan(/\p{L}+/)
   end
 
   # Lemmas listed under the `### Key words` sub-heading (the annotator's
@@ -285,9 +291,10 @@ class VocabHealth
   end
 
   # Per after-episode, the lemmas explained in an earlier episode at or above
-  # the cutoff whose lemma or recorded form (COVER_PREFIX rule) occurs in its
-  # body: the approximate count the pre-ledger selector would have
-  # re-explained. nil without a CEFR cutoff (nothing to compare against).
+  # the cutoff whose lemma or a recorded form occurs in its body as whole
+  # words (case-insensitive; a multi-word lemma as the same word sequence):
+  # the approximate count the pre-ledger selector would have re-explained.
+  # nil without a CEFR cutoff (nothing to compare against).
   def would_have(eps, after)
     cut = LEVELS.index(@cutoff.to_s.upcase)
     return nil unless cut
@@ -296,10 +303,13 @@ class VocabHealth
     after_set = after.to_set
     eps.each_with_index.filter_map do |ep, i|
       row = if after_set.include?(i)
-        [ep[:basename], ledger.count { |_, prefixes| prefixes.any? { |p| ep[:body_prefixes].key?(p) } }]
+        words = word_list(ep[:body])
+        text = " #{words.join(" ")} "
+        set = words.to_set
+        [ep[:basename], ledger.count { |_, forms| forms.any? { |f| f.include?(" ") ? text.include?(" #{f} ") : set.include?(f) } }]
       end
       ep[:entries].each do |e|
-        (ledger[e[:lemma]] ||= Set.new).merge(e[:prefixes]) if LEVELS.index(e[:level]) >= cut
+        (ledger[e[:lemma]] ||= Set.new).merge(e[:forms]) if LEVELS.index(e[:level]) >= cut
       end
       row
     end
@@ -338,7 +348,7 @@ class VocabHealth
     end
 
     out << "  would have re-explained under the old rule (approximation: lemmas explained in an earlier episode"
-    out << "  at #{@cutoff.upcase} or above whose lemma or recorded form, by its first #{COVER_PREFIX} letters, occurs in the body):"
+    out << "  at #{@cutoff.upcase} or above, by exact lemma/form match in the body, whole words, case-insensitive):"
     out << "  #{rows.map { |b, n| "#{b} #{n}" }.join(", ")}"
     out << "  #{rows.count { |_, n| n.positive? }} of #{rows.size} after-episodes have at least one; median #{format_number(median(rows.map(&:last)))} per episode"
   end
