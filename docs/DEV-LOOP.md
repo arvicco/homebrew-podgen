@@ -431,6 +431,16 @@ and the RUN-OUTCOME line is the completion record §30 reads first.
   sessions; their records (RUN-OUTCOME, the batch summary, `git
   fetch` + the PR state) are read before any work builds on them, and
   a found incident leads the next report.
+- **The merge is the owner's long op the live checkout runs on** (I-14,
+  2026-11-13): the owner's commands execute the live checkout, so a
+  merged gate changes nothing on the Mac until that checkout is
+  fast-forwarded. On "merged" the loop pulls the live checkout FIRST
+  — before boards, cleanup or the slate; a fast-forward of the merged
+  PR with no bin/podgen process running is not a lib/ edit in the
+  §28 yield sense — verifies `git log -1` against the merge sha, and
+  says so in the first line of the close message. The gate handoff
+  names the lag: "after merging, wait for the loop's checkout-updated
+  line before running any podgen command."
 - **Clock backfill:** the register's historical entries carry phase
   lengths reconstructed from the branch's first and last commits and
   the PR timestamps, marked approximate; from Phase 9 on the clock

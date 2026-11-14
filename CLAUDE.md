@@ -290,10 +290,13 @@ front page: a killed or setup-failed run never reads OK, dormant and
 unpublished shows named, translated feeds read back, uncounted
 degradations counted once, Phase 16 and 19 residues, the front page
 loads 12 episodes and reveals the rest on demand, feed times in UTC)
-AT GATE 20 — adopted 2026-11-13 (slate options A+B plus Q-162, Q-161
-riding), all ten packets landed, CRPR APPROVED after two rounds
-(refs/cr/reviewed = 4213f60); gate PR open, the owner merges. 1 open ruling (R9-02, re-presented
-2026-11-13); R10-02 returns 11-26. I-11: owner re-consented 2026-11-09
-(expires ≈ 11-16 while the OAuth app is in testing). Doctrine re-synced
-2026-11-13 (docs/DEV-LOOP.md header).
+CLOSED 2026-11-13 (PR #22, merge 43a6f60; phase clock 49m). Phase 21
+(R9-02 measurement — `stats --vocab-health --split`; Phase 20 residues:
+template attribute escaping, truthful noscript, counted review-bundle
+failure, parser warning once on a terminal, DORMANT keeps its verdict
+over stale findings) EXECUTING — adopted 2026-11-13 (slate options A+B
+of the Gate 20 close). 0 open rulings (R9-02 HELD for the Q-163
+measurement; R10-02 returns 11-26). I-11: owner re-consented 2026-11-09
+(expires ≈ 11-16 while the OAuth app is in testing). I-14: a merged
+gate reaches the Mac only when the live checkout is pulled.
 Update this line at each gate.
