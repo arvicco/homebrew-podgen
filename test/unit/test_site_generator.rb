@@ -1281,6 +1281,43 @@ class TestSiteGenerator < Minitest::Test
     assert_includes script, "playbackRate"
   end
 
+  def test_generate_index_quote_in_urls_is_escaped_in_visible_and_hidden_items
+    write_paging_fixture(older: 1)
+    File.write(File.join(@episodes_dir, "mypod-2025-12-01_cover.jpg"), "img")
+    File.write(File.join(@podcast_dir, "cover.jpg"), "img")
+
+    build_generator(base_url: 'https://ex.com/p"o&d', image: "cover.jpg").generate
+
+    index = File.read(File.join(@podcast_dir, "site", "index.html"))
+    list = index_episode_list
+    hidden = list[%r{  <li class="episode-item" hidden.*?</li>\n}m]
+    assert_includes list, 'src="https://ex.com/p&quot;o&amp;d/episodes/mypod-2026-01-12.mp3"'
+    assert_includes hidden, 'data-audio="https://ex.com/p&quot;o&amp;d/episodes/mypod-2025-12-01.mp3"'
+    assert_includes index, 'class="header-cover" src="https://ex.com/p&quot;o&amp;d/'
+    assert_includes index, 'href="https://ex.com/p&quot;o&amp;d/feed.xml"'
+    refute_includes index, 'p"o'
+  end
+
+  def test_generate_index_noscript_line_names_only_the_feed
+    write_paging_fixture(older: 1)
+
+    build_generator(base_url: "https://ex.com/pod").generate
+
+    noscript = File.read(File.join(@podcast_dir, "site", "index.html"))[%r{<noscript>.*?</noscript>}m]
+    assert_includes noscript, 'Older episodes are in the <a href="https://ex.com/pod/feed.xml">RSS feed</a>.'
+    refute_includes noscript, "episode pages"
+  end
+
+  def test_generate_stylesheet_last_visible_item_has_no_bottom_border
+    write_paging_fixture
+
+    build_generator.generate
+
+    css = File.read(File.join(@podcast_dir, "site", "style.css"))
+    refute_includes css, ".episode-item:last-child"
+    assert_includes css, ".episode-item + .episode-item { border-top: 1px solid var(--border); }"
+  end
+
   private
 
   # Episodes 2026-01-01..12 (odd days carry a cover, day 3 has no duration,

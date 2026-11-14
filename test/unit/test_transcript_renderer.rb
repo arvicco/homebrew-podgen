@@ -556,6 +556,13 @@ class TestTranscriptRenderer < Minitest::Test
     assert_includes html, "кот. Домашнее животное."
   end
 
+  def test_render_body_html_quote_in_language_name_is_escaped_in_every_vocab_lang_attribute
+    body = "Il **gatto** dorme.\n\n## Vocabulary (English, R\"x)\n\n- **gatto** (A2 noun)\n  - cat\n  - kot"
+    html = @r.render_body_html(body, vocab: true)
+    assert_equal 3, html.scan('data-vocab-lang="R&quot;x"').size
+    refute_includes html, 'data-vocab-lang="R"'
+  end
+
   # --- parse_vocab_line (characterization, private) ---
 
   def test_parse_vocab_line_canonical_form

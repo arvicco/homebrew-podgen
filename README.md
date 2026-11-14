@@ -950,7 +950,7 @@ For full CSS control, drop a `site.css` file in your podcast directory (`podcast
 
 **Favicon:** Drop `favicon.ico`, `favicon.png`, or `favicon.svg` in `podcasts/<name>/` — auto-detected and linked (priority: ico > png > svg).
 
-**Front page paging:** The index renders the newest `index_episodes` episodes with their player and cover; every older episode is listed in the same page (title, date, duration, link) but hidden, with no player or image until a **Show more episodes (N remaining)** button reveals the next batch. Revealed players use `preload="none"` and covers load lazily, so opening the front page fetches at most `index_episodes` audio headers however long the archive is. Without JavaScript the older episodes stay hidden and a note points to the RSS feed and the per-episode pages.
+**Front page paging:** The index renders the newest `index_episodes` episodes with their player and cover; every older episode is listed in the same page (title, date, duration, link) but hidden, with no player or image until a **Show more episodes (N remaining)** button reveals the next batch. Revealed players use `preload="none"` and covers load lazily, so opening the front page fetches at most `index_episodes` audio headers however long the archive is. Without JavaScript the older episodes stay hidden and a note points to the RSS feed.
 
 **RSS icon:** When `base_url` is configured, a small feed icon appears next to the podcast title linking to the RSS feed.
 
