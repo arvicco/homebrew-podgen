@@ -1520,6 +1520,7 @@ podgen stats fiabe --words --top 100             # top 100
 podgen stats fiabe --words --top 0               # all
 podgen stats fiabe --words --sort vocab          # sort by per-episode vocab frequency instead
 podgen stats fiabe --vocab-health [--last 10]    # census: repeat share, levels vs cutoff, key-term misses, drift (--all: every show)
+podgen stats bajke --vocab-health --split 2026-10-29 [--seed 1]  # same census side by side: before / from the date / the N episodes just before it; seeded 10-entry samples
 ```
 
 Two columns: `BODY` is the number of times the lemma (or any inflected form) appears across all transcript bodies; `VOCAB` is the number of episodes that listed the lemma in their `## Vocabulary` section.
