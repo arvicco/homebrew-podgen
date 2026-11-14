@@ -258,12 +258,26 @@ class TestVocabHealth < Minitest::Test
     assert_match(/^episodes\s+4$/, out.find { |l| l.start_with?("episodes") })
   end
 
+  def test_split_report_would_have_matches_whole_lemma_or_form_exactly
+    write_ep("p-2026-01-01", "x", ["- **salire** (B1 verb) — to climb",
+      "- **lupo** (B1 noun) *lupi* — wolf",
+      "- **avere paura** (B2 verb) — to be afraid"])
+    write_ep("p-2026-01-02", "Salirono. I Lupi, avere paura.", [])
+
+    s = health.split_report(split: Date.new(2026, 1, 2))
+
+    # salirono shares salire's first 5 letters but is not the lemma or a form;
+    # lupi is a recorded form (case-insensitive); avere paura matches as a phrase
+    assert_equal [["p-2026-01-02", 2]], s[:would_have]
+  end
+
   def test_split_lines_interpretation_note_prints_would_have_counts
     split_fixture
 
     text = health.split_lines("p", split: Date.new(2026, 1, 3)).join("\n")
 
     assert_includes text, "partly by construction"
+    assert_includes text, "exact lemma/form match in the body"
     assert_includes text, "p-2026-01-03 1, p-2026-01-04 2"
     assert_includes text, "2 of 2 after-episodes"
   end
