@@ -120,6 +120,74 @@ class TestHunspell < Minitest::Test
     refute stems_called
   end
 
+  # --- P24-1 (Q-168): a non-verb lemma whose root is a different word ---
+
+  # Recorded from `hunspell -d it_IT -s`: "nuovamente nuovo",
+  # "farcela fare", "moltissimo molto", "casa caso". unmunch of the root's
+  # entry prints the root's forms, which the prefix filter narrows to the
+  # root itself, so the lemma never appears in its own expansion.
+  def test_expand_non_verb_lemma_whose_root_differs_excludes_root_forms
+    forms = expand_stubbed("nuovamente", roots: %w[nuovo],
+      unmunched: %w[nuovo nuova nuovi nuove nuovamente], stems: {})
+    refute_includes forms, "nuovo"
+    assert_equal [], forms
+  end
+
+  def test_expand_non_verb_clitic_lemma_excludes_the_bare_verb
+    forms = expand_stubbed("farcela", roots: %w[fare],
+      unmunched: %w[fare farei faremo fatto], stems: {})
+    assert_equal [], forms
+  end
+
+  def test_expand_non_verb_lemma_among_its_root_forms_keeps_them
+    forms = expand_stubbed("lupina", roots: %w[lupin], unmunched: %w[lupina lupino lupini], stems: {})
+    assert_equal %w[lupina lupino lupini], forms
+  end
+
+  # --- P24-1 (Q-168): the .aff SET line decides the dictionary encoding ---
+
+  # it_IT.aff carries `SET UTF-8` on line 36, after a comment block.
+  def test_utf8_paths_set_line_after_100_bytes_uses_original_files
+    in_dict_dir("#{"# comment line of the licence header\n" * 5}SET UTF-8\n") do |dic, aff, cache|
+      assert_equal [dic, aff], Tell::Hunspell.send(:utf8_paths, "xx_XX")
+      assert_empty Dir.children(cache)
+    end
+  end
+
+  def test_utf8_paths_converts_legacy_encoding_into_versioned_cache
+    in_dict_dir("# header\nSET ISO8859-1\nTRY abc\n", dic_body: "1\ncitt\xE0/A\n".b) do |_dic, _aff, cache|
+      utf8_dic, utf8_aff = Tell::Hunspell.send(:utf8_paths, "xx_XX")
+      assert_equal File.join(cache, "hunspell_xx_XX_utf8_v#{Tell::Hunspell::CACHE_VERSION}.dic"), utf8_dic
+      assert_includes File.read(utf8_dic, encoding: "UTF-8"), "città"
+      assert_includes File.read(utf8_aff), "SET UTF-8"
+      assert_equal 2, Dir.children(cache).length, "no temp files left behind"
+    end
+  end
+
+  def test_utf8_paths_ignores_cache_written_by_the_old_path
+    in_dict_dir("SET ISO8859-1\n", dic_body: "1\ncitt\xE0/A\n".b) do |_dic, _aff, cache|
+      File.write(File.join(cache, "hunspell_xx_XX_utf8.dic"), "1\ncittĂ /A\n")
+      File.write(File.join(cache, "hunspell_xx_XX_utf8.aff"), "SET UTF-8\n")
+      utf8_dic, _ = Tell::Hunspell.send(:utf8_paths, "xx_XX")
+      refute_equal File.join(cache, "hunspell_xx_XX_utf8.dic"), utf8_dic
+      assert_includes File.read(utf8_dic, encoding: "UTF-8"), "città"
+    end
+  end
+
+  def test_utf8_paths_failed_iconv_writes_no_cache_and_returns_nil
+    in_dict_dir("SET ISO8859-1\n") do |_dic, _aff, cache|
+      paths = nil
+      _out, err = capture_io do
+        paths = Open3.stub(:capture3, ["partial", "iconv: bad", Status.new(false)]) do
+          Tell::Hunspell.send(:utf8_paths, "xx_XX")
+        end
+      end
+      assert_equal [nil, nil], paths
+      assert_empty Dir.children(cache)
+      assert_includes err, "iconv"
+    end
+  end
+
   # --- P18-8 (5): the batch `hunspell -s` parser ---
 
   # Recorded from `printf 'letim\nleta\nburkla\n' | hunspell -d sl_SI -s`
@@ -155,6 +223,22 @@ class TestHunspell < Minitest::Test
   end
 
   private
+
+  # A dictionary dir holding xx_XX.aff (aff_body) and xx_XX.dic, plus an
+  # empty conversion cache dir; yields [dic_path, aff_path, cache_dir].
+  def in_dict_dir(aff_body, dic_body: "1\nparola/A\n")
+    Dir.mktmpdir("hunspell_test") do |dir|
+      dic = File.join(dir, "xx_XX.dic")
+      aff = File.join(dir, "xx_XX.aff")
+      File.binwrite(dic, dic_body)
+      File.binwrite(aff, aff_body)
+      cache = File.join(dir, "cache")
+      Dir.mkdir(cache)
+      Tell::Hunspell.stub(:find_dic_path, dic) do
+        Tell::Hunspell.stub(:cache_dir, cache) { yield dic, aff, cache }
+      end
+    end
+  end
 
   Status = Struct.new(:success?)
 
