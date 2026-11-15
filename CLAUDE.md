@@ -313,9 +313,13 @@ boards), R23-01 re-presented. Phase 24 (Q-168: the vocabulary expansion
 bolds a different word and the Italian dictionary is mis-encoded — fixed
 first; then the held basnie and fiabe re-annotation and the bajke
 re-check with the fixed code, loop work over owner data; ruled R22-05
-(a)) EXECUTING — adopted 2026-11-15 on the ruling, cut ahead of the Gate
-23 merge. 1 open ruling (R23-01); R10-02 returns 11-26. I-11: owner
-re-consented 2026-11-09 (expires ≈ 11-16 while the OAuth app is in
-testing). I-15: since the 2026-11-08 zone change the launchd jobs fire
-seven hours earlier than their plists say (R22-03).
+(a)) AT GATE 24 — adopted 2026-11-15 on the ruling, cut ahead of the
+Gate 23 merge; the fix landed (P24-1), the re-annotation pass is loop
+work that continues across the gate (basnie 32 of 35 done; paused on the
+exhausted API credit balance, I-24; the Spanish dictionary was missing
+since cuentos began, I-23, Q-217); gate PR open, the owner merges. 1
+open ruling (R23-01); R10-02 returns 11-26. I-11: owner re-consented
+2026-11-09 (expires ≈ 11-16 while the OAuth app is in testing). I-15:
+since the 2026-11-08 zone change the launchd jobs fire seven hours
+earlier than their plists say (R22-03).
 Update this line at each gate.
