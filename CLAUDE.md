@@ -307,9 +307,15 @@ and spend, publishing surfaces, operator experience, code health, data
 durability — distilled into dev items Q-190…Q-210, decision rows
 R23-01…R23-07 and incident I-22; no code change) AT GATE 23 — adopted
 2026-11-15 on the owner's words with the Gate 22 merge, all six lanes
-and the consolidation reported; gate PR open, the owner merges. 12 open
-rulings (R22-01…R22-05, R23-01…R23-07); R10-02 returns 11-26. I-11:
-owner re-consented 2026-11-09 (expires ≈ 11-16 while the OAuth app is in
+and the consolidation reported; gate PR open, the owner merges; the
+owner ruled R22-01…R22-05 and R23-02…R23-07 on 2026-11-15 (record in the
+boards), R23-01 re-presented. Phase 24 (Q-168: the vocabulary expansion
+bolds a different word and the Italian dictionary is mis-encoded — fixed
+first; then the held basnie and fiabe re-annotation and the bajke
+re-check with the fixed code, loop work over owner data; ruled R22-05
+(a)) EXECUTING — adopted 2026-11-15 on the ruling, cut ahead of the Gate
+23 merge. 1 open ruling (R23-01); R10-02 returns 11-26. I-11: owner
+re-consented 2026-11-09 (expires ≈ 11-16 while the OAuth app is in
 testing). I-15: since the 2026-11-08 zone change the launchd jobs fire
 seven hours earlier than their plists say (R22-03).
 Update this line at each gate.
