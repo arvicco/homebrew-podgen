@@ -196,7 +196,7 @@ module Tell
           return @utf8_cache[dict] = [nil, nil] unless dic_content && aff_content
 
           AtomicWriter.write(utf8_dic, dic_content)
-          AtomicWriter.write(utf8_aff, aff_content.sub(/SET\s+\S+/, "SET UTF-8"))
+          AtomicWriter.write(utf8_aff, aff_content.sub(/^SET\s+\S+/, "SET UTF-8"))
         end
 
         @utf8_cache[dict] = [utf8_dic, utf8_aff]

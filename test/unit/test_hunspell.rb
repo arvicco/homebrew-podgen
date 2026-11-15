@@ -164,6 +164,17 @@ class TestHunspell < Minitest::Test
     end
   end
 
+  def test_utf8_paths_rewrites_the_set_directive_not_a_comment_that_contains_set
+    aff = "# RESET note\n# SET ISO8859-1 (old header)\nSET ISO8859-1\nTRY abc\n"
+    in_dict_dir(aff, dic_body: "1\ncitt\xE0/A\n".b) do |_dic, _aff, _cache|
+      _utf8_dic, utf8_aff = Tell::Hunspell.send(:utf8_paths, "xx_XX")
+      converted = File.read(utf8_aff, encoding: "UTF-8")
+      assert_match(/^SET UTF-8$/, converted, "the SET directive line is rewritten")
+      refute_match(/^SET ISO8859-1/, converted, "the old directive must not survive")
+      assert_includes converted, "# RESET note", "comment text is untouched"
+    end
+  end
+
   def test_utf8_paths_ignores_cache_written_by_the_old_path
     in_dict_dir("SET ISO8859-1\n", dic_body: "1\ncitt\xE0/A\n".b) do |_dic, _aff, cache|
       File.write(File.join(cache, "hunspell_xx_XX_utf8.dic"), "1\ncittĂ /A\n")
