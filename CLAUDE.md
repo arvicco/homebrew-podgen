@@ -299,17 +299,17 @@ clock 29m). Phase 22 (refill read: seven read-only lanes over the code,
 tests, logs and served surfaces, consolidated into Q-165…Q-189,
 R22-01…R22-05 and I-15…I-21, no code change; plus P22-9, the R9-02
 (b)+(d) vocabulary re-annotation of the last 30 older episodes per story
-show, loop work over owner data — bajke and cuentos done, basnie and
-fiabe held under R22-05) CLOSED 2026-11-15 (PR #24, merge 9194c95; phase
-clock 51m). Phase 23 (improvement read: six read-only lanes over the
-existing functionality — learner experience, news pipeline quality and
-spend, publishing surfaces, operator experience, code health, data
+show, loop work over owner data — bajke done, cuentos 29 of 30, basnie
+and fiabe held under R22-05) CLOSED 2026-11-15 (PR #24, merge 9194c95;
+phase clock 51m). Phase 23 (improvement read: six read-only lanes over
+the existing functionality — learner experience, news pipeline quality
+and spend, publishing surfaces, operator experience, code health, data
 durability — distilled into dev items Q-190…Q-210, decision rows
 R23-01…R23-07 and incident I-22; no code change) AT GATE 23 — adopted
-2026-11-15 on the owner's words with the Gate 22 merge, all seven
-packets done; gate PR open, the owner merges. 12 open rulings
-(R22-01…R22-05, R23-01…R23-07); R10-02 returns 11-26. I-11: owner
-re-consented 2026-11-09 (expires ≈ 11-16 while the OAuth app is in
+2026-11-15 on the owner's words with the Gate 22 merge, all six lanes
+and the consolidation reported; gate PR open, the owner merges. 12 open
+rulings (R22-01…R22-05, R23-01…R23-07); R10-02 returns 11-26. I-11:
+owner re-consented 2026-11-09 (expires ≈ 11-16 while the OAuth app is in
 testing). I-15: since the 2026-11-08 zone change the launchd jobs fire
 seven hours earlier than their plists say (R22-03).
 Update this line at each gate.
