@@ -37,6 +37,53 @@ class TestUploadsCommand < Minitest::Test
       result.errors
   end
 
+  # ── a missing ledger with evidence of past uploads ──
+
+  def test_batch_refuses_pod_with_missing_ledger_and_past_videos
+    episodes_dir = File.join(@tmpdir, "output", "pod_a", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    FileUtils.touch(File.join(episodes_dir, "pod_a-2026-01-16.mp4"))
+    calls = []
+    cmd = stub_cmd(["pod_a"])
+    cmd.define_singleton_method(:run_r2_for) { |pod|
+      calls << [:r2, pod]
+      R2Result.new(synced: true, tweets_posted: 0, errors: [])
+    }
+    cmd.define_singleton_method(:run_lingq_for) { |pod|
+      calls << [:lingq, pod]
+      LQResult.new(uploaded: 0, attempted: 0, errors: [])
+    }
+    cmd.define_singleton_method(:pending_count_for) { |_| 1 }
+    cmd.define_singleton_method(:run_yt_for) { |pod, max:, **|
+      calls << [:yt, pod]
+      YTResult.new(uploaded: 1, attempted: 1, rate_limited: false, errors: [])
+    }
+
+    out = err = nil
+    PodcastConfig.stub(:new, ->(_) { Struct.new(:episodes_dir).new(episodes_dir) }) do
+      out, err = capture_io { @code = cmd.run }
+    end
+
+    assert_empty calls, "no phase may run against a missing ledger"
+    assert_includes err, "uploads ledger missing for pod_a — refusing; restore it or run the first upload interactively"
+    assert_includes err, File.join(@tmpdir, "output", "pod_a", "uploads.yml")
+    assert_includes out, "pod_a: ledger"
+    assert_equal 1, @code
+  end
+
+  def test_batch_runs_pod_with_missing_ledger_and_no_past_uploads
+    episodes_dir = File.join(@tmpdir, "output", "pod_a", "episodes")
+    FileUtils.mkdir_p(episodes_dir)
+    FileUtils.touch(File.join(episodes_dir, "pod_a-2026-01-16.mp3"))
+    cmd = wire_cmd(["pod_a"], r2: ok_r2_result, lingq: nil, yt: ok_yt_result)
+
+    PodcastConfig.stub(:new, ->(_) { Struct.new(:episodes_dir).new(episodes_dir) }) do
+      capture_io { @code = cmd.run }
+    end
+
+    assert_equal 0, @code, "a new show's first batch uploads as before"
+  end
+
   # ── parsing ──
 
   def test_parses_comma_separated_pods

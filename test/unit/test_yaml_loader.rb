@@ -58,6 +58,20 @@ class TestYamlLoader < Minitest::Test
     assert_equal [], YamlLoader.load(path, default: [])
   end
 
+  def test_load_strict_existing_empty_file_raises
+    ["", "---\n"].each do |content|
+      path = File.join(@dir, "empty.yml")
+      File.write(path, content)
+      err = assert_raises(RuntimeError) { YamlLoader.load(path, default: {}, raise_on_error: true) }
+      assert_includes err.message, path
+      assert_includes err.message, "empty"
+    end
+  end
+
+  def test_load_strict_missing_file_returns_default
+    assert_equal({}, YamlLoader.load(File.join(@dir, "nope.yml"), default: {}, raise_on_error: true))
+  end
+
   # --- syntax errors ---
 
   def test_load_syntax_error_returns_default

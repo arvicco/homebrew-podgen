@@ -50,6 +50,12 @@ class UploadTracker
     nil
   end
 
+  # True when a ledger file (uploads.yml or the legacy file it migrates
+  # from) is on disk, whatever its content.
+  def on_disk?
+    File.exist?(@path) || File.exist?(legacy_path)
+  end
+
   # Save tracking data atomically.
   def save(tracking)
     AtomicWriter.write_yaml(@path, tracking)

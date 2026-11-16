@@ -112,6 +112,11 @@ module PodgenCLI
 
       pods.each do |pod|
         puts "─── #{pod} ───"
+        if (refusal = missing_ledger_refusal(pod))
+          $stderr.puts refusal
+          failures << { pod: pod, phase: :ledger, errors: [{ type: :ledger_missing, message: refusal }] }
+          next
+        end
         r2 = run_r2_for(pod)
         if r2.failed? && !r2.synced
           $stderr.puts "uploads: #{pod} R2 sync FAILED — skipping LingQ + YT for this pod"
@@ -266,6 +271,23 @@ module PodgenCLI
     def parse_pods(arg)
       return [] if arg.nil? || arg.empty?
       arg.split(",").map(&:strip).reject(&:empty?)
+    end
+
+    # An absent uploads.yml reads as "nothing uploaded yet", so every
+    # publisher would upload (and tweet) the whole catalogue again. Videos
+    # or captions in the episodes dir prove earlier uploads: the unattended
+    # batch then refuses the pod; a new show (no such files) runs as before.
+    def missing_ledger_refusal(pod)
+      config = PodcastConfig.new(pod)
+      tracker = UploadTracker.for_config(config)
+      return nil if tracker.on_disk?
+      return nil if Dir.glob(File.join(config.episodes_dir, "*.{mp4,srt}")).empty?
+
+      ledger = File.join(File.dirname(config.episodes_dir), "uploads.yml")
+      "uploads ledger missing for #{pod} — refusing; restore it or run the first upload interactively " \
+        "(#{ledger}; podgen publish #{pod} --youtube / --lingq from a terminal)"
+    rescue # skippable: a pod whose config does not load fails in its publishers below, as before
+      nil
     end
 
     # Phase-1 hooks (override-able in tests)

@@ -1245,7 +1245,8 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   as `<log>: <first warning>` or `<log>: run failed: <first error>`; or
   (older logs, or an `ok` outcome) it ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
-  the last 3 generate run logs (`--runs N` to change), or there is no history yet.
+  the last 3 generate run logs (`--runs N` to change), or there is no history yet
+  (`history.yml missing — N episodes on disk` when mp3s exist without it).
   Only generate runs count (a log with the `Podcast Agent started` line or a
   `RUN-OUTCOME` line): the `render`, `voice` and `translate` logs in the same
   directory are ignored. Once the podcast's logs carry `RUN-OUTCOME` lines, a
@@ -1406,6 +1407,7 @@ Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, up
 Failure rules:
 
 - **R2 sync fail** for a pod is fatal — that pod is skipped from LingQ + YouTube for the tick.
+- **Missing `uploads.yml`** while the pod's `episodes/` holds `.mp4`/`.srt` files (past uploads): the pod is skipped entirely and the batch exits non-zero — `uploads ledger missing for <pod> — refusing; restore it or run the first upload interactively`. An `uploads.yml` that exists but is empty is read as corrupt.
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
 - **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
@@ -1491,8 +1493,11 @@ podgen publish lahko_noc --youtube
 | `--newest`  | Process newest episodes first (useful with quota limits)      |
 | `--force`   | Re-upload even if already tracked in `uploads.yml`            |
 | `--dry-run` | Show what would be published without uploading                |
+| `--max-delete N` | Let the R2 sync delete up to N files (default 25, `-1` = no bound), for a deliberate bulk removal |
 
 Syncs only public-facing files: MP3 episodes, HTML transcripts, feed XML, site pages, and cover image. Internal files (history, research cache, markdown sources) are excluded.
+
+A sync deleting more than 25 files stops and fails ("rclone failed"). The R2 publish refuses before rebuilding the feed when `episodes/` holds mp3s for fewer dates than `history.yml` lists, or when `history.yml` exists but is empty: restore the files first.
 
 ### Download analytics
 

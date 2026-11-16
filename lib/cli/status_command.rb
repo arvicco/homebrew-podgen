@@ -230,7 +230,8 @@ module PodgenCLI
     # Delegates the staleness rule to Validators::FreshnessValidator.
     def freshness(config, escalate)
       unless File.exist?(config.history_path.to_s)
-        escalate.call("WARN", "no history (no episodes yet)")
+        on_disk = EpisodeFiltering.all_episodes(config.episodes_dir.to_s).length
+        escalate.call("WARN", on_disk.zero? ? "no history (no episodes yet)" : "history.yml missing — #{on_disk} episodes on disk")
         return [nil, nil, nil]
       end
 

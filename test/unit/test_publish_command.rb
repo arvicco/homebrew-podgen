@@ -96,6 +96,11 @@ class TestPublishCommand < Minitest::Test
     assert_equal 2, cmd.instance_variable_get(:@options)[:max]
   end
 
+  def test_max_delete_flag_parsed_from_cli
+    cmd = PodgenCLI::PublishCommand.new(["testpod", "--max-delete", "400"], {})
+    assert_equal 400, cmd.instance_variable_get(:@options)[:max_delete]
+  end
+
   def test_publish_to_youtube_requires_youtube_uploader_before_building
     # Regression: build_youtube_uploader does YouTubeUploader.new — the
     # production code MUST require_relative "youtube_uploader" itself

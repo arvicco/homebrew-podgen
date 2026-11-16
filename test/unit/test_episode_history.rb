@@ -24,6 +24,17 @@ class TestEpisodeHistory < Minitest::Test
     assert_equal ["AI"], entries[0]["topics"]
   end
 
+  def test_record_refuses_existing_empty_history
+    File.write(@history_path, "")
+
+    err = assert_raises(RuntimeError) do
+      @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
+    end
+
+    assert_includes err.message, @history_path
+    assert_equal "", File.read(@history_path), "an emptied history is never rewritten as a fresh one"
+  end
+
   def test_record_multiple_entries
     @history.record!(date: Date.today, title: "Ep 1", topics: ["AI"], urls: [])
     @history.record!(date: Date.today, title: "Ep 2", topics: ["Ruby"], urls: [])

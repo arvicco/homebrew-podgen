@@ -1384,6 +1384,17 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+no history/, out)
   end
 
+  def test_run_missing_history_with_episodes_on_disk_names_the_count
+    make_pod("alpha", dates: nil)
+    episodes = File.join(@tmpdir, "output", "alpha", "episodes")
+    FileUtils.mkdir_p(episodes)
+    %w[alpha-2026-10-10 alpha-2026-10-11].each { |b| FileUtils.touch(File.join(episodes, "#{b}.mp3")) }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+history\.yml missing — 2 episodes on disk/, out)
+    refute_includes out, "no episodes yet"
+  end
+
   # --- ordering, scheduling, hint ---
 
   def test_run_scheduled_podcasts_listed_first

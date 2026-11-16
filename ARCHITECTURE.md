@@ -76,6 +76,8 @@ History (`episode_history.rb`), caches (`research_cache.rb`), and upload trackin
 
 **Implication.** Any new persistent state file that the pipeline depends on for correctness should use the same pattern. Import `AtomicWriter` rather than rolling a new one.
 
+**Lost files are not empty ones (P25-4).** A strict read (`YamlLoader.load(..., raise_on_error: true)`, used by every writer) raises on a file that exists but is empty or a bare `---`, as it does on a corrupt one, so a writer never rewrites a lost history or ledger as a fresh one. A missing file still reads as the default, so new shows start as before; the places where a missing file would do public damage check for it themselves: the unattended `uploads` batch refuses a pod whose `uploads.yml` is absent while its episodes dir holds `.mp4`/`.srt` files, and `R2Publisher` refuses the sync when the episodes dir holds mp3s for fewer dates than `history.yml` lists, and bounds every sync with `rclone --max-delete 25` (`publish --max-delete N` overrides it).
+
 ---
 
 ## Error severity: fatal / retryable / skippable
