@@ -158,6 +158,8 @@ Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|
 
 **Implication.** A new gitignored file class an installation needs to run is added to `BackupArchive::CLASSES` (and to `SECRET_CLASSES` when it holds keys, which forces `0600` on restore), with the fixture tree in `test/unit/test_backup_command.rb` extended in the same commit. `restore --force` is the only overwriting path and is owner-only in the guard (`PodgenCLI.restore_force?`, probe rows in `test/unit/test_owner_guard.rb`).
 
+---
+
 ## Schedules are UTC, read back from the installed plists
 
 `podgen schedule --time HH:MM` takes the time as UTC. launchd's `StartCalendarInterval` has no zone field and reads Hour/Minute in the device's zone, so the command converts the UTC time to the device's Hour/Minute at install and records the UTC time and the zone offset it was written for in an XML comment in the plist (`<!-- podgen-schedule utc=HH:MM zone=+HH:MM -->`, `ProductionRun.schedule_note`). `ProductionRun.schedules` reads every installed `com.podcastagent.*.plist` back: the recorded UTC time and the UTC time its Hour/Minute fire at in the current zone. `schedule --status` and `podgen status` print the UTC time and WARN when the two differ (the device zone changed; re-install) or when a plist carries no note. The dev-loop's yield guard (`scripts/prod_guard.sh` → `ProductionRun.yield_reason`) holds a window of 5 minutes before to 40 after each job's times, both of them when they differ; the read-only status check job gets none.
