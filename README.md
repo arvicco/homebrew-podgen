@@ -1783,6 +1783,8 @@ podgen/
 │   ├── serve.rb              # WEBrick static file server
 │   ├── tell_web.rb           # Tell Web UI launcher
 │   ├── install_hunspell_dicts.rb # Hunspell dictionaries for vocabulary frequency
+│   ├── install_hooks.sh      # Installs the commit-msg guard hook
+│   ├── commit_msg_guard.rb   # commit-msg hook: refuses private ids, clock times, listed terms
 │   └── test_*.rb             # Manual component tests (most dispatched by `podgen test`)
 ├── test/
 │   ├── unit/                 # Fast tier, no I/O (in the gate)
@@ -1844,6 +1846,21 @@ the scanner — register those hosts manually). `podgen validate` includes a fre
 check: a podcast whose newest episode is older than ~2× its usual
 cadence is flagged OLD (a stalled scheduled pipeline shows up here
 rather than silently).
+
+### Public-surface guards
+
+The repository is public. `scripts/install_hooks.sh` installs
+`scripts/commit_msg_guard.rb` as the `commit-msg` hook (once per clone; a
+worktree shares it; it refuses to replace a hook it did not write unless
+`--force`). The hook refuses a commit message whose subject or body carries an
+id of a private register (`Q-<n>`, `I-<n>`, `R<n>-<n>`; packet ids
+`P<n>-<m>` are fine), a clock time (`H:MM`/`HH:MM` outside backticks — put a
+duration in a code example in backticks; a time with a zone word is refused
+everywhere), a day-part ("overnight", "this morning", "tonight", …), an
+assistant attribution line, or a term from an optional local list (one term
+per line, case-insensitive; `$PODGEN_PUBLIC_TERMS` or the gitignored
+`.docs/public-terms.txt`). Pull request bodies start from
+`.github/pull_request_template.md`.
 
 ## Testing Individual Components
 
