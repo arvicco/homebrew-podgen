@@ -59,7 +59,7 @@ module PodgenCLI
     GENERATE_START_RE = /\A(?:\[[^\]]*\]\s*)?Podcast Agent started for '/ # GenerateCommand#run
     RUNNING_LOG_SECONDS = 600 # a started run's log written this recently is still running
     STATUS_LABEL = "#{ScheduleCommand::LABEL_PREFIX}.status".freeze
-    INSTALL_HINT = "bin/podgen schedule --status-check --time 07:00"
+    INSTALL_HINT = "bin/podgen schedule --status-check --time HH:MM" # HH:MM in UTC
     # Shared stderr of the per-podcast launchd jobs (scripts/run.sh). A dated
     # rclone line ("2026/09/20 16:52:04 NOTICE: ...") opens a publish entry;
     # undated "Warning:" lines after it belong to that publish. Generate
@@ -170,7 +170,20 @@ module PodgenCLI
         detail = r[:reasons].join("; ")
         puts format("%-#{width}s  %-#{verdict_width}s  %s", r[:podcast], r[:verdict], detail)
       end
+      print_schedules
       puts "\nDaily check not scheduled. Owner command: #{INSTALL_HINT}" unless status_check_scheduled?
+    end
+
+    # P25-1: each installed job's UTC time, WARN when its plist no longer
+    # fires then (device zone changed, or written before the UTC note).
+    def print_schedules
+      jobs = ProductionRun.schedules(plist_dir: @plist_dir, now: @now)
+      puts unless jobs.empty?
+      jobs.each do |job|
+        name = job[:label].delete_prefix("#{ScheduleCommand::LABEL_PREFIX}.")
+        warning = ProductionRun.schedule_warning(utc: job[:utc], fires_utc: job[:fires_utc])
+        puts(warning ? "WARN schedule #{name}: #{warning}" : "schedule #{name}: #{job[:utc]} UTC")
+      end
     end
 
     def status_check_scheduled?

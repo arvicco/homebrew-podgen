@@ -7,6 +7,8 @@ require_relative "../../lib/production_run"
 class TestProductionRun < Minitest::Test
   def setup
     @root = Dir.mktmpdir("production_run_test")
+    @plist_dir = File.join(@root, "LaunchAgents")
+    FileUtils.mkdir_p(@plist_dir)
     @holder = nil
   end
 
@@ -52,7 +54,37 @@ class TestProductionRun < Minitest::Test
 
   def at(hhmm)
     h, m = hhmm.split(":").map(&:to_i)
-    Time.new(2026, 10, 11, h, m, 0)
+    Time.utc(2026, 10, 11, h, m, 0)
+  end
+
+  def with_tz(zone)
+    saved = ENV["TZ"]
+    ENV["TZ"] = zone
+    yield
+  ensure
+    ENV["TZ"] = saved
+  end
+
+  # A plist as `podgen schedule` writes it: local Hour/Minute plus the
+  # schedule note (UTC time and zone offset), or none for an older install.
+  def write_plist(name, hour, minute, note: nil)
+    body = <<~PLIST
+      <plist version="1.0"><dict>
+      #{ProductionRun.schedule_note(*note) if note}
+      <key>StartCalendarInterval</key>
+      <dict>
+        <key>Hour</key>
+        <integer>#{hour}</integer>
+        <key>Minute</key>
+        <integer>#{minute}</integer>
+      </dict>
+      </dict></plist>
+    PLIST
+    File.write(File.join(@plist_dir, "com.podcastagent.#{name}.plist"), body)
+  end
+
+  def yield_at(hhmm)
+    ProductionRun.yield_reason(output_root: @root, now: at(hhmm), plist_dir: @plist_dir)
   end
 
   def test_running_held_lock_returns_podcast
@@ -82,29 +114,100 @@ class TestProductionRun < Minitest::Test
     assert_equal [], ProductionRun.running(output_root: File.join(@root, "nope"))
   end
 
-  def test_launchd_window_edges
-    refute ProductionRun.launchd_window?(now: at("16:24"))
-    assert ProductionRun.launchd_window?(now: at("16:25"))
-    assert ProductionRun.launchd_window?(now: at("16:30"))
-    assert ProductionRun.launchd_window?(now: at("17:10"))
-    refute ProductionRun.launchd_window?(now: at("17:11"))
-    refute ProductionRun.launchd_window?(now: at("03:00"))
+  # P25-1: the recorded UTC time governs, whatever the device zone is.
+  def test_yield_window_is_evaluated_in_utc
+    write_plist("my_show", 15, 0, note: ["14:00", "+01:00"])
+
+    ["Etc/GMT-1", "Asia/Tokyo"].each do |zone|
+      with_tz(zone) do
+        assert_equal "launchd window 13:55–14:40 UTC (my_show)", yield_at("14:00"), zone
+        assert_nil yield_at("12:00"), zone
+      end
+    end
+  end
+
+  def test_launchd_window_edges_in_utc
+    with_tz("UTC") do
+      write_plist("my_show", 14, 0, note: ["14:00", "+00:00"])
+
+      assert_nil yield_at("13:54")
+      assert yield_at("13:55")
+      assert yield_at("14:40")
+      assert_nil yield_at("14:41")
+    end
+  end
+
+  def test_launchd_window_wraps_midnight
+    with_tz("UTC") do
+      write_plist("my_show", 0, 2, note: ["00:02", "+00:00"])
+
+      assert_equal "launchd window 23:57–00:42 UTC (my_show)", yield_at("23:58")
+      assert yield_at("00:30")
+    end
+  end
+
+  # After a zone change launchd may keep the recorded instant or move to the
+  # plist's Hour/Minute in the new zone: both are guarded.
+  def test_launchd_window_covers_the_plist_time_in_the_current_zone_too
+    write_plist("my_show", 15, 0, note: ["14:00", "+01:00"])
+
+    with_tz("Etc/GMT-2") do
+      assert yield_at("14:10")
+      assert yield_at("13:10")
+      assert_nil yield_at("12:00")
+    end
+  end
+
+  def test_launchd_window_older_plist_without_note_uses_its_hour_in_the_current_zone
+    with_tz("Etc/GMT+3") do
+      write_plist("my_show", 5, 0)
+
+      assert_equal "launchd window 07:55–08:40 UTC (my_show)", yield_at("08:00")
+    end
+  end
+
+  def test_launchd_window_skips_the_status_check_job
+    write_plist("status", 14, 0, note: ["14:00", "+00:00"])
+
+    with_tz("UTC") { assert_nil yield_at("14:00") }
+  end
+
+  def test_yield_reason_no_schedule_installed_has_no_window
+    FileUtils.rm_rf(@plist_dir)
+
+    assert_nil yield_at("14:00")
+  end
+
+  def test_schedules_reads_note_and_current_zone_time
+    write_plist("my_show", 15, 0, note: ["14:00", "+01:00"])
+    File.write(File.join(@plist_dir, "com.podcastagent.other.plist"), "<plist/>")
+
+    with_tz("Etc/GMT-2") do
+      assert_equal [{label: "com.podcastagent.my_show", utc: "14:00", zone: "+01:00", fires_utc: "13:00"}],
+        ProductionRun.schedules(plist_dir: @plist_dir, now: at("12:00"))
+    end
+  end
+
+  def test_schedule_warning_names_zone_change_and_missing_note
+    assert_nil ProductionRun.schedule_warning(utc: "14:00", fires_utc: "14:00")
+    assert_equal "fires 13:00 UTC, written for 14:00 UTC — re-install: the device zone changed",
+      ProductionRun.schedule_warning(utc: "14:00", fires_utc: "13:00")
+    assert_match(/no UTC time recorded/, ProductionRun.schedule_warning(utc: nil, fires_utc: "13:00"))
   end
 
   def test_yield_reason_free_outside_window_is_nil
     lock_path("podx")
 
-    assert_nil ProductionRun.yield_reason(output_root: @root, now: at("12:00"))
+    assert_nil yield_at("12:00")
   end
 
   def test_yield_reason_active_run_names_podcast
-    hold_lock(lock_path("fulgur_news"))
+    hold_lock(lock_path("my_show"))
 
-    assert_equal "production run active: fulgur_news",
-      ProductionRun.yield_reason(output_root: @root, now: at("12:00"))
+    assert_equal "production run active: my_show", yield_at("12:00")
   end
 
-  # P18-5 (Q-128): the 10:30 uploads batch holds output/uploads.lock for its
+  # P18-5 (Q-128): the uploads batch holds output/uploads.lock for its
   # lifetime and loads YouTube code lazily — the yield covers it too.
   def uploads_lock_path
     path = File.join(@root, ProductionRun::UPLOADS_LOCK)
@@ -115,14 +218,13 @@ class TestProductionRun < Minitest::Test
   def test_yield_reason_uploads_batch_held_names_batch
     hold_lock(uploads_lock_path)
 
-    assert_equal "uploads batch active",
-      ProductionRun.yield_reason(output_root: @root, now: at("10:40"))
+    assert_equal "uploads batch active", yield_at("12:00")
   end
 
   def test_yield_reason_uploads_lock_free_is_nil
     uploads_lock_path
 
-    assert_nil ProductionRun.yield_reason(output_root: @root, now: at("10:40"))
+    assert_nil yield_at("12:00")
   end
 
   def test_running_ignores_uploads_lock
@@ -132,8 +234,9 @@ class TestProductionRun < Minitest::Test
   end
 
   def test_yield_reason_inside_window_names_window
-    assert_equal "launchd window 16:25–17:10",
-      ProductionRun.yield_reason(output_root: @root, now: at("16:40"))
+    write_plist("my_show", 14, 0, note: ["14:00", "+00:00"])
+
+    with_tz("UTC") { assert_equal "launchd window 13:55–14:40 UTC (my_show)", yield_at("14:10") }
   end
 
   # CRPR Gate 2 W1: inside the launchd window the probe must not touch the
@@ -141,13 +244,14 @@ class TestProductionRun < Minitest::Test
   # abort). Observable contract: the window reason wins even when a lock is
   # held, and ProductionRun.running is never called.
   def test_yield_reason_inside_window_reports_window_without_probing
+    write_plist("my_show", 14, 0, note: ["14:00", "+00:00"])
     hold_lock(lock_path("podx"))
     probed = false
     ProductionRun.stub(:running, ->(**) {
       probed = true
       []
     }) do
-      reason = ProductionRun.yield_reason(output_root: @root, now: Time.new(2026, 10, 11, 16, 31))
+      reason = with_tz("UTC") { yield_at("14:01") }
 
       assert_match(/launchd window/, reason)
       refute probed, "running must not be called inside the window"

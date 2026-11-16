@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # P2-0 PreToolUse hook: the dev-loop YIELDS while a production generate holds
 # output/<podcast>/run.lock, while the uploads batch holds output/uploads.lock
-# (P18-5), or during the 16:25–17:10 launchd window.
+# (P18-5), or in the window around each installed launchd job's UTC time
+# (5 min before to 40 min after; times read from the installed plists by
+# ProductionRun — no plist installed, no window).
 # Blocks Edit/Write/MultiEdit under lib/ bin/ scripts/ .claude/, and Bash
 # branch moves/merges/history rewrites or writes into lib/ bin/ scripts/
 # (redirect, tee, sed/ruby/perl -i, patch, cp/mv/rm). Exit 2 = blocked.
@@ -11,7 +13,8 @@
 # Heredoc bodies (commit messages, file contents) are NOT scanned — only
 # the command lines around them.
 # Safe by default: no output/ dir under cwd -> no-op.
-# PROD_GUARD_NOW (ISO time) overrides the clock, for tests.
+# PROD_GUARD_NOW (ISO time) overrides the clock and PROD_GUARD_PLIST_DIR the
+# LaunchAgents directory, for tests.
 # Fails OPEN: missing jq/ruby, bad JSON or a bad PROD_GUARD_NOW allow the call
 # (only exit 2 blocks). `ruby` is whatever is first on the hook's PATH; the
 # probe needs only stdlib and runs on Ruby 2.6+.
@@ -99,7 +102,9 @@ lib_dir="$script_dir/../lib"
 
 ruby -I"$lib_dir" -r production_run -r time -e '
   now = ENV["PROD_GUARD_NOW"].to_s.empty? ? Time.now : Time.parse(ENV["PROD_GUARD_NOW"])
-  r = ProductionRun.yield_reason(output_root: ARGV[0], now: now)
+  dir = ENV["PROD_GUARD_PLIST_DIR"].to_s
+  dir = ProductionRun.default_plist_dir if dir.empty?
+  r = ProductionRun.yield_reason(output_root: ARGV[0], now: now, plist_dir: dir)
   if r
     warn("YIELD: #{r} — dev-loop defers to the production run")
     exit 2

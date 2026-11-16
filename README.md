@@ -1155,10 +1155,10 @@ podgen tweet fulgur_news 2026-03-15 --force   # re-tweet even if already posted
 Install a daily launchd scheduler:
 
 ```bash
-# Default: generate at 06:00
+# Default: generate at 06:00 UTC
 podgen schedule ruby_world
 
-# Custom time (24h format)
+# Custom time (24h format, UTC)
 podgen schedule ruby_world --time 18:00
 
 # Generate + publish, with Telegram alerts on failure
@@ -1167,13 +1167,19 @@ podgen schedule fulgur_news --time 18:00 --publish --telegram
 
 | Flag           | Description                                            |
 | -------------- | ------------------------------------------------------ |
-| `--time HH:MM` | Time to run in 24h format (default: `06:00`)           |
+| `--time HH:MM` | UTC time to run in 24h format (default: `06:00`)       |
 | `--publish`    | Run `podgen publish` after a successful generate       |
 | `--telegram`   | Send Telegram alert on generate or publish failure     |
 | `--test`       | Send a test Telegram message and exit                  |
 | `--remove`     | Unload and delete the scheduler for this podcast       |
 | `--status`     | Report scheduled time, loaded/running state, last run  |
 | `--status-check` | Schedule the daily `podgen status` check (no podcast arg) |
+
+Times are UTC. launchd reads a plist's Hour/Minute in the device's zone, so the
+install converts the UTC time for the current zone and records the UTC time and
+zone in the plist (`<!-- podgen-schedule utc=HH:MM zone=+HH:MM -->`). If the
+device zone changes, `--status` and `podgen status` WARN (`re-install: the device
+zone changed`); re-run the same install command.
 
 `--remove`, `--status`, and `--test` are mutually exclusive. `--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast). Use `--test` after setup to verify alerts are working.
 
@@ -1182,7 +1188,7 @@ Check status of an installed scheduler:
 ```bash
 podgen schedule ruby_world --status
 # ruby_world:
-#   scheduled:       06:00 daily
+#   scheduled:       06:00 UTC daily
 #   loaded:          yes
 #   running:         yes (PID 12345)
 #   last run:        2026-04-23 06:00:14 (1d 5h ago)
@@ -1359,6 +1365,11 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `feed-es.xml: local ahead of served by 3d (owner-paced)`.
 - **OK** - otherwise.
 
+After the rows, one line per installed launchd job gives its UTC time
+(`schedule my_show: HH:MM UTC`), or `WARN schedule my_show: ...` when the plist
+no longer fires at the UTC time it was written for (the device zone changed) or
+was written without one; re-install it. These lines do not change the exit code.
+
 Exit code is `0` when every podcast is OK, DORMANT or UNPUBLISHED, `1` otherwise (`2` for an unknown
 podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
 array; keys are only ever added, never renamed or removed:
@@ -1400,7 +1411,7 @@ Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, up
 | Flag                 | Description                                                                  |
 | -------------------- | ---------------------------------------------------------------------------- |
 | `--uploads <pods>`   | Comma-separated pod list                                                     |
-| `--time HH:MM`       | Time to run daily (default `06:00`)                                           |
+| `--time HH:MM`       | UTC time to run daily (default `06:00`)                                       |
 | `--mode priority`    | (default) Drain pods in list order; later pods only run when earlier are done |
 | `--mode round-robin` | One YT episode per pod per round, looping until drained / `--max` / rate-limited |
 | `--max N`            | Cap TOTAL YouTube uploads across the tick (LingQ always drains)              |
@@ -1779,7 +1790,7 @@ podgen/
 │   ├── run.sh                # launchd wrapper: generate, optional publish + Telegram alert
 │   ├── run_uploads.sh        # launchd wrapper: podgen uploads
 │   ├── run_status.sh         # launchd wrapper: podgen status → Telegram on non-zero
-│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate or the uploads batch runs
+│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate or the uploads batch runs, or near an installed job's UTC time
 │   ├── serve.rb              # WEBrick static file server
 │   ├── tell_web.rb           # Tell Web UI launcher
 │   ├── install_hunspell_dicts.rb # Hunspell dictionaries for vocabulary frequency

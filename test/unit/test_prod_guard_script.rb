@@ -3,13 +3,14 @@
 require_relative "../test_helper"
 require "json"
 require "open3"
+require_relative "../../lib/production_run"
 
 # P2-0: scripts/prod_guard.sh — PreToolUse hook that blocks code edits and
 # branch moves while a production generate holds its run lock.
 class TestProdGuardScript < Minitest::Test
   SCRIPT = File.expand_path("../../scripts/prod_guard.sh", __dir__)
-  OUTSIDE_WINDOW = "2026-10-11T12:00:00"
-  INSIDE_WINDOW = "2026-10-11T16:40:00"
+  OUTSIDE_WINDOW = "2026-10-11T12:00:00Z"
+  INSIDE_WINDOW = "2026-10-11T14:10:00Z"
 
   def setup
     skip "jq missing" unless system("command -v jq >/dev/null 2>&1")
@@ -17,6 +18,13 @@ class TestProdGuardScript < Minitest::Test
     @lock = File.join(@cwd, "output", "podx", "run.lock")
     FileUtils.mkdir_p(File.dirname(@lock))
     File.write(@lock, "")
+    # P25-1: the schedule comes from the plists in PROD_GUARD_PLIST_DIR; one
+    # example job at 14:00 UTC (TZ pinned to UTC for the run).
+    @plist_dir = File.join(@cwd, "LaunchAgents")
+    FileUtils.mkdir_p(@plist_dir)
+    File.write(File.join(@plist_dir, "com.podcastagent.my_show.plist"),
+      "#{ProductionRun.schedule_note("14:00", "+00:00")}\n" \
+      "<key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer>\n")
     @holder = nil
   end
 
@@ -53,8 +61,12 @@ class TestProdGuardScript < Minitest::Test
 
   def run_guard(tool, input, now: OUTSIDE_WINDOW)
     payload = JSON.generate(tool_name: tool, tool_input: input, cwd: @cwd)
-    _out, err, status = Open3.capture3({"PROD_GUARD_NOW" => now}, SCRIPT, stdin_data: payload)
+    _out, err, status = Open3.capture3(guard_env(now), SCRIPT, stdin_data: payload)
     [status.exitstatus, err]
+  end
+
+  def guard_env(now)
+    {"PROD_GUARD_NOW" => now, "PROD_GUARD_PLIST_DIR" => @plist_dir, "TZ" => "UTC"}
   end
 
   def test_edit_under_lib_while_active_yields
@@ -71,7 +83,7 @@ class TestProdGuardScript < Minitest::Test
     uploads_lock = File.join(@cwd, "output", "uploads.lock")
     File.write(uploads_lock, "")
     hold_lock(uploads_lock)
-    code, err = run_guard("Edit", {file_path: File.join(@cwd, "lib", "x.rb")}, now: "2026-10-11T10:40:00")
+    code, err = run_guard("Edit", {file_path: File.join(@cwd, "lib", "x.rb")})
 
     assert_equal 2, code
     assert_includes err, "uploads batch active"
@@ -87,7 +99,15 @@ class TestProdGuardScript < Minitest::Test
     code, err = run_guard("Write", {file_path: File.join(@cwd, "lib", "x.rb")}, now: INSIDE_WINDOW)
 
     assert_equal 2, code
-    assert_includes err, "launchd window"
+    assert_includes err, "launchd window 13:55–14:40 UTC (my_show)"
+  end
+
+  # P25-1: no installed schedule → no time window; the locks still yield.
+  def test_write_under_lib_no_schedule_installed_allowed_in_any_minute
+    FileUtils.rm_rf(@plist_dir)
+    code, _err = run_guard("Write", {file_path: File.join(@cwd, "lib", "x.rb")}, now: INSIDE_WINDOW)
+
+    assert_equal 0, code
   end
 
   def test_edit_under_docs_while_active_allowed
@@ -167,7 +187,7 @@ class TestProdGuardScript < Minitest::Test
 
   # CRPR Gate 2 NIT 9: the guard fails OPEN on malformed input.
   def test_malformed_json_allowed
-    _out, _err, status = Open3.capture3({"PROD_GUARD_NOW" => OUTSIDE_WINDOW}, SCRIPT, stdin_data: "not json")
+    _out, _err, status = Open3.capture3(guard_env(OUTSIDE_WINDOW), SCRIPT, stdin_data: "not json")
 
     assert_equal 0, status.exitstatus
   end
@@ -183,7 +203,7 @@ class TestProdGuardScript < Minitest::Test
   # heredocs with absolute paths) and tee at command start.
   def test_bash_heredoc_to_absolute_lib_path_while_active_yields
     hold_lock
-    code, _err = run_guard("Bash", {command: "cat > /Users/vb/Dev/podgen/lib/x.rb <<'EOF'\nputs 1\nEOF"})
+    code, _err = run_guard("Bash", {command: "cat > #{File.join(@cwd, "lib", "x.rb")} <<'EOF'\nputs 1\nEOF"})
 
     assert_equal 2, code
   end

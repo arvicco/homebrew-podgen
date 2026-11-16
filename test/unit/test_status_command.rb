@@ -1451,6 +1451,43 @@ class TestStatusCommand < Minitest::Test
     assert_match(%r{bin/podgen schedule --status-check}, out)
   end
 
+  # --- installed schedules in UTC (P25-1) ---
+
+  def write_schedule_plist(name, hour, minute, note: nil)
+    File.write(File.join(@plist_dir, "com.podcastagent.#{name}.plist"),
+      "#{note && ProductionRun.schedule_note(*note)}\n" \
+      "<key>Hour</key><integer>#{hour}</integer><key>Minute</key><integer>#{minute}</integer>\n")
+  end
+
+  def with_tz(zone)
+    saved = ENV["TZ"]
+    ENV["TZ"] = zone
+    yield
+  ensure
+    ENV["TZ"] = saved
+  end
+
+  def test_run_prints_each_schedule_in_utc
+    make_pod("alpha", dates: fresh_dates)
+    write_schedule_plist("alpha", 9, 15, note: ["07:15", "+02:00"])
+    out, code = with_tz("Etc/GMT-2") { run_status }
+
+    assert_equal 0, code
+    assert_includes out, "schedule alpha: 07:15 UTC"
+    refute_includes out, "WARN schedule"
+  end
+
+  def test_run_warns_when_device_zone_differs_from_the_plists
+    make_pod("alpha", dates: fresh_dates)
+    write_schedule_plist("alpha", 9, 15, note: ["08:15", "+01:00"])
+    write_schedule_plist("uploads", 3, 0)
+    out, = with_tz("Etc/GMT-2") { run_status }
+
+    assert_includes out,
+      "WARN schedule alpha: fires 07:15 UTC, written for 08:15 UTC — re-install: the device zone changed"
+    assert_includes out, "WARN schedule uploads: no UTC time recorded"
+  end
+
   # --- --json (frozen shape, CLAUDE.md rule 5) ---
 
   def test_run_json_key_set_is_pinned
