@@ -133,7 +133,7 @@ class TestLingQPublisher < Minitest::Test
     seed_ep("fiabe-2026-05-14")
     body = { "originalUrl" => [
       "A lesson with the same URL already exists", "Il Re dei Gamberetti",
-      "https://www.lingq.com/en/learn/it/web/editor/44553346"
+      "https://www.lingq.com/en/learn/it/web/editor/7654321"
     ] }.to_json
     publisher = build_publisher(config: stub_config(lingq_enabled: true), agent: real_agent)
 
@@ -146,8 +146,8 @@ class TestLingQPublisher < Minitest::Test
     assert_equal 1, result.attempted
     assert_equal 0, result.uploaded, "nothing new was uploaded"
     data = YAML.load_file(@uploads_path)
-    assert_equal({"lingq" => {"mycollection" => {"fiabe-2026-05-14" => 44553346}}}, data)
-    assert_includes out, "LingQ: lesson already exists (44553346) — recorded"
+    assert_equal({"lingq" => {"mycollection" => {"fiabe-2026-05-14" => 7654321}}}, data)
+    assert_includes out, "LingQ: lesson already exists (7654321) — recorded"
   end
 
   def test_upload_loop_other_400_is_still_an_upload_error_and_records_nothing

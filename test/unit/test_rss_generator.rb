@@ -357,17 +357,17 @@ class TestRssGenerator < Minitest::Test
 
   def test_generate_pubdate_negative_offset_timestamp_is_converted_to_utc
     create_mp3("test-2026-01-15.mp3", 1000)
-    history_path = write_rss_history([{"date" => "2026-01-15", "basename" => "test-2026-01-15", "timestamp" => "2026-01-15T20:53:27-06:00"}])
+    history_path = write_rss_history([{"date" => "2026-01-15", "basename" => "test-2026-01-15", "timestamp" => "2026-01-15T20:53:27-10:00"}])
 
-    with_tz("America/Chicago") { build_generator(history_path: history_path).generate }
+    with_tz("Pacific/Honolulu") { build_generator(history_path: history_path).generate }
 
-    # Same instant as the old "Thu, 15 Jan 2026 20:53:27 -0600", re-expressed in UTC.
-    assert_equal ["Fri, 16 Jan 2026 02:53:27 +0000"], pub_dates
-    assert_equal Time.rfc2822("Thu, 15 Jan 2026 20:53:27 -0600"), Time.rfc2822(pub_dates.first)
+    # Same instant as the old "Thu, 15 Jan 2026 20:53:27 -1000", re-expressed in UTC.
+    assert_equal ["Fri, 16 Jan 2026 06:53:27 +0000"], pub_dates
+    assert_equal Time.rfc2822("Thu, 15 Jan 2026 20:53:27 -1000"), Time.rfc2822(pub_dates.first)
   end
 
   def test_generate_last_build_date_is_utc
-    with_tz("America/Chicago") { build_generator.generate }
+    with_tz("Pacific/Honolulu") { build_generator.generate }
 
     last_build = REXML::Document.new(File.read(@feed_path)).root.elements["channel/lastBuildDate"].text
     assert last_build.end_with?(" +0000"), last_build

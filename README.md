@@ -1102,7 +1102,7 @@ Known words are stored as lemmas (dictionary forms) in `podcasts/<name>/known_vo
 
 ```markdown
 ## LingQ
-- collection: 2629430
+- collection: 1234567
 - level: 3
 - tags: otroci, pravljice
 - status: private
@@ -1216,7 +1216,7 @@ podcast's served `base_url/feed.xml` and translated `feed-<code>.xml` (skipped w
 
 ```
 ruby_world  OK    newest 2026-10-10 (1d old)
-fulgur_news WARN  announcements stalled since 2026-08-19 (newest episode 2026-10-11)
+my_show     WARN  announcements stalled since 2026-08-19 (newest episode 2026-10-11)
 old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, threshold 2d)
 ```
 
@@ -1231,7 +1231,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
 - **DORMANT** - no `cadence_days` key and no episode for more than 60 days
   (inferred cadence or none): a resting show, not a failure -
-  `lahko_noc DORMANT newest 2026-03-21 (204d old; dormant — no cadence)`.
+  `resting_show DORMANT newest 2026-03-21 (204d old; dormant — no cadence)`.
   Set `cadence_days` to make such a show go OLD instead, or `freshness: off` if it has
   concluded. Its YouTube/LingQ upload findings (including the shared batch-log
   conditions), and its run-log findings while
@@ -1318,12 +1318,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   batch dated by the begin marker `scripts/run_uploads.sh` writes before it;
   older batches without one pair with the markers in `uploads_stderr.log`): the backlog is
   draining oldest first, so the line is a note, not a WARN —
-  `youtube catching up: 10 uploaded in the last 7 d, 112 behind` (behind =
+  `youtube catching up: 8 uploaded in the last 7 d, 40 behind` (behind =
   eligible episodes not yet tracked). A quota stop in the latest batch joins
   that line as `; batch stops at the daily quota` instead of its own WARN.
   When this show uploaded nothing but another show did in the window, the
   batch's priority order is the cause and the line is a note without the
-  quota WARN: `youtube queued behind bajke (priority mode): 0 uploaded in the last 7 d, 120 behind`.
+  quota WARN: `youtube queued behind other_show (priority mode): 0 uploaded in the last 7 d, 50 behind`.
   The quota condition is a WARN only while no YouTube show uploaded anything
   in the window (the batch is stuck); once some show progressed it is the
   daily cap, so a current show gets no quota line at all (`not authorized`
@@ -1332,7 +1332,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
 - **WARN (upload holes)** - per upload platform, eligible episodes dated
   strictly between the oldest and the newest tracked upload, untracked and
   older than 7 days (a stuck episode while newer uploads keep landing):
-  `youtube: 1 untracked episode(s) inside the uploaded range, oldest fiabe-2026-05-14`
+  `youtube: 1 untracked episode(s) inside the uploaded range, oldest my_show-2026-05-14`
   (same for `lingq`). A backlog after the newest tracked upload is never a
   hole.
 - **WARN (YouTube consent)** - for podcasts with a `## YouTube` section: the
@@ -1393,7 +1393,7 @@ entry per platform (`youtube`, `lingq`) of the same shape, with
 it waits behind, or `null`).
 
 The daily check is installed by the owner only (`podgen status --install-hint`
-prints the command): `bin/podgen schedule --status-check --time 07:00` writes
+prints the command): `bin/podgen schedule --status-check --time HH:MM` (UTC) writes
 and loads `com.podcastagent.status`, which runs `scripts/run_status.sh`. That
 wrapper sends the summary to Telegram (`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`
 in `.env`) only when the exit code is non-zero.
@@ -1403,7 +1403,7 @@ in `.env`) only when the exit code is non-zero.
 For households running several podcasts, install a single daily upload job that walks every pod through `regen → R2 → LingQ → YouTube` in one tick:
 
 ```bash
-podgen schedule --uploads bajke,fiabe,basnie --time 10:30
+podgen schedule --uploads <pod1>,<pod2>,<pod3> --time HH:MM
 ```
 
 Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, upload pending LingQ episodes (if configured). YouTube uploads then run across all pods that survived the front-end phase, capped by `--max` if set.
@@ -1814,7 +1814,7 @@ podgen/
 │   ├── research_cache/       # Cached source results (24h)
 │   ├── debug/                # First-attempt review bundles (BLOCKER runs); raw script responses (opt-in)
 │   ├── run.lock              # Held while a generate runs
-│   └── uploads.lock          # Held while the 10:30 batch runs (output/ level, one per install)
+│   └── uploads.lock          # Held while the uploads batch runs (output/ level, one per install)
 └── logs/
     ├── <name>/               # Run logs per podcast (token usage, warnings, phase timings)
     └── launchd_stderr.log    # Shared stderr of the scheduled jobs (publish markers, warnings)
@@ -1830,6 +1830,13 @@ bundle exec rake health    # probe every registered external endpoint (network; 
 bundle exec rake fixtures:record  # re-record the network sources' test fixtures (network + keys; owner-run, never in the gate)
 bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check sends this output to Telegram, so log lines must stay secret-free
 ```
+
+The repository is public, so the gate also scans every tracked file
+(`test/unit/test_tracked_tree_hygiene.rb`): no home directory path, no 7–8 digit
+id outside its placeholder allow-list (recorded fixtures exempt), and no clock
+time written as a schedule in `lib/`, `scripts/`, `bin/` or the README's batch
+lines. Use `HH:MM`, `<pod>` and placeholder ids in examples; schedule times
+live only in the installed plists.
 
 Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
 `analytics`, and `generate --youtube/--lingq`) refuse to run inside a Claude
