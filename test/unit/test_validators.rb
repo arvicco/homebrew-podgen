@@ -230,6 +230,51 @@ class TestValidators < Minitest::Test
     refute result[:warnings].any? { |w| w.include?("tails/") }
   end
 
+  # --- P25-2: the transcription language's hunspell dictionary ---
+
+  def test_validate_fails_when_the_show_language_has_no_dictionary_installed
+    Dir.mktmpdir do |dicts|
+      Tell::Hunspell.stub(:dict_dirs, [dicts]) do
+        config = stub_config(type: "language", transcription_language: "es", vocabulary_level: "B1")
+        errors = Validators::LanguagePipelineValidator.new(config).validate[:errors]
+        assert_equal 1, errors.size, errors.inspect
+        assert_includes errors.first, "no hunspell dictionary for 'es' (es_ES)"
+        assert_includes errors.first, "es_ES.dic + es_ES.aff"
+        assert_includes errors.first, "run scripts/install_hunspell_dicts.rb es"
+
+        result = Validators::LanguagePipelineValidator.new(config, allow_missing_dictionary: true).validate
+        assert_empty result[:errors]
+        assert(result[:warnings].any? { it.include?("no hunspell dictionary for 'es'") })
+
+        refute PodcastValidator.validate(config).errors.grep(/hunspell/).empty?
+        assert PodcastValidator.validate(config, allow_missing_dictionary: true).errors.grep(/hunspell/).empty?
+      end
+    end
+  end
+
+  def test_validate_passes_when_the_show_language_dictionary_is_installed
+    Dir.mktmpdir do |dicts|
+      %w[es_ES.dic es_ES.aff].each { File.write(File.join(dicts, it), "") }
+      Tell::Hunspell.stub(:dict_dirs, [dicts]) do
+        result = validate(Validators::LanguagePipelineValidator, transcription_language: "es", vocabulary_level: "B1")
+        assert_empty result[:errors]
+        assert(result[:passes].any? { it.include?("hunspell dictionary for 'es' installed") })
+      end
+    end
+  end
+
+  def test_validate_unmapped_language_names_the_missing_mapping
+    result = validate(Validators::LanguagePipelineValidator, transcription_language: "xx", vocabulary_level: "B1")
+    assert_equal ["Vocabulary: no dictionary mapping for 'xx': inflections are not expanded"], result[:errors]
+  end
+
+  def test_validate_without_vocabulary_section_skips_the_dictionary_check
+    Tell::Hunspell.stub(:dict_dirs, []) do
+      result = validate(Validators::LanguagePipelineValidator, transcription_language: "es")
+      assert_empty result[:errors]
+    end
+  end
+
   def test_language_pipeline_lingq_image_missing
     result = validate(Validators::LanguagePipelineValidator,
       transcription_engines: ["openai"],
@@ -411,7 +456,7 @@ class TestValidators < Minitest::Test
     :name, :type, :guidelines_path, :guidelines, :episodes_dir,
     :feed_path, :history_path, :queue_path, :podcast_dir,
     :base_url, :image, :languages, :sources, :cover_base_image,
-    :transcription_engines, :lingq_config,
+    :transcription_engines, :lingq_config, :transcription_language, :vocabulary_level,
     keyword_init: true
   ) do
     def parser_warnings = []

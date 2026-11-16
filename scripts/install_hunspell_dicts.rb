@@ -8,6 +8,8 @@
 # Usage:
 #   ruby scripts/install_hunspell_dicts.rb               # languages of configured podcasts
 #   ruby scripts/install_hunspell_dicts.rb it sl pl en   # explicit list
+#   ruby scripts/install_hunspell_dicts.rb --check       # report only, no network:
+#                                                        # exit 1 when any is missing
 #
 # Detects target languages from each podcast's ## Podcast → transcription_language.
 
@@ -111,14 +113,21 @@ end
 
 # --- main ---
 
-FileUtils.mkdir_p(DEST_DIR)
-
+check_only = !ARGV.delete("--check").nil?
 requested = ARGV.dup
 requested = detect_podcast_languages if requested.empty?
 
 if requested.empty?
   abort "No languages specified and no podcasts found. Pass language codes as args (e.g. 'it sl pl en')."
 end
+
+if check_only
+  lines, all_installed = Tell::Hunspell.check_report(requested)
+  puts lines
+  exit(all_installed ? 0 : 1)
+end
+
+FileUtils.mkdir_p(DEST_DIR)
 
 puts "Hunspell dict dir: #{DEST_DIR}"
 puts "Source: #{RAW_BASE}"

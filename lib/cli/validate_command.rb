@@ -12,8 +12,12 @@ module PodgenCLI
     def initialize(args, options)
       @options = options
       @all = false
+      @allow_missing_dictionary = false
       OptionParser.new do |opts|
         opts.on("--all", "Validate all podcasts") { @all = true }
+        opts.on("--allow-missing-dictionary", "A missing hunspell dictionary is a warning, not an error") do
+          @allow_missing_dictionary = true
+        end
       end.parse!(args)
       @podcast_name = args.shift
       unless args.empty?
@@ -66,7 +70,7 @@ module PodgenCLI
 
       puts "Validating #{name}..." unless quiet
 
-      result = PodcastValidator.validate(config)
+      result = PodcastValidator.validate(config, allow_missing_dictionary: @allow_missing_dictionary)
 
       unless quiet
         result.passes.each { |msg| puts "  \u2713 #{msg}" } if verbose

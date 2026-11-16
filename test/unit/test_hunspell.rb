@@ -47,6 +47,78 @@ class TestHunspell < Minitest::Test
     end
   end
 
+  # --- missing_for / missing_message (P25-2) ---
+
+  def test_missing_for_names_both_files_when_no_dir_holds_them
+    Dir.mktmpdir do |dir|
+      Tell::Hunspell.stub(:dict_dirs, [dir]) do
+        assert_equal %w[es_ES.dic es_ES.aff], Tell::Hunspell.missing_for("es")
+      end
+    end
+  end
+
+  def test_missing_for_installed_pair_is_empty
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "es_ES.dic"), "1\nx\n")
+      File.write(File.join(dir, "es_ES.aff"), "SET UTF-8\n")
+      Tell::Hunspell.stub(:dict_dirs, ["/nonexistent", dir]) do
+        assert_equal [], Tell::Hunspell.missing_for("es")
+        assert_nil Tell::Hunspell.missing_message("es")
+      end
+    end
+  end
+
+  def test_missing_for_dic_without_aff_is_missing
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "es_ES.dic"), "1\nx\n")
+      Tell::Hunspell.stub(:dict_dirs, [dir]) do
+        assert_equal %w[es_ES.dic es_ES.aff], Tell::Hunspell.missing_for("es")
+      end
+    end
+  end
+
+  def test_missing_for_unmapped_language_is_nil_with_mapping_message
+    assert_nil Tell::Hunspell.missing_for("xx")
+    assert_equal "no dictionary mapping for 'xx': inflections are not expanded", Tell::Hunspell.missing_message("xx")
+  end
+
+  def test_missing_message_names_dictionary_and_install_command
+    Dir.mktmpdir do |dir|
+      Tell::Hunspell.stub(:dict_dirs, [dir]) do
+        assert_equal "no hunspell dictionary for 'es' (es_ES): inflections are not expanded — run scripts/install_hunspell_dicts.rb es",
+          Tell::Hunspell.missing_message("es")
+      end
+    end
+  end
+
+  def test_expansion_problem_installed_files_without_tools_names_the_tools
+    Dir.mktmpdir do |dir|
+      %w[es_ES.dic es_ES.aff].each { File.write(File.join(dir, it), "") }
+      Tell::Hunspell.stub(:dict_dirs, [dir]) do
+        Tell::Hunspell.stub(:available?, false) do
+          assert_match(/hunspell or unmunch not installed/, Tell::Hunspell.expansion_problem("es"))
+        end
+        Tell::Hunspell.stub(:available?, true) do
+          assert_nil Tell::Hunspell.expansion_problem("es")
+        end
+      end
+    end
+  end
+
+  def test_check_report_lists_installed_and_missing_languages
+    Dir.mktmpdir do |dir|
+      %w[sl_SI.dic sl_SI.aff].each { File.write(File.join(dir, it), "") }
+      Tell::Hunspell.stub(:dict_dirs, [dir]) do
+        lines, ok = Tell::Hunspell.check_report(%w[sl es xx])
+        refute ok
+        assert_equal "sl: installed (sl_SI)", lines[0]
+        assert_match(/\Aes: MISSING — no hunspell dictionary for 'es' \(es_ES\)/, lines[1])
+        assert_match(/\Axx: MISSING — no dictionary mapping for 'xx'/, lines[2])
+        assert_equal [["sl: installed (sl_SI)"], true], Tell::Hunspell.check_report(%w[sl])
+      end
+    end
+  end
+
   # --- expand ---
 
   def test_expand_returns_empty_when_unsupported

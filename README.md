@@ -382,6 +382,7 @@ topics:
 ```
 
 4. Optionally add per-podcast voice/model overrides in `podcasts/my_podcast/.env`.
+5. A language show with a `## Vocabulary` section needs `brew install hunspell` and the hunspell dictionary for its `language` (`ruby scripts/install_hunspell_dicts.rb <lang>`; `--check` reports what is missing). Without it inflected forms are neither bolded nor counted: `podgen validate` fails (`--allow-missing-dictionary` makes it a warning), the run logs one counted warning and `podgen status` names the show until the files exist.
 
 ## Customizing
 
@@ -1548,6 +1549,7 @@ To install hunspell dicts for the languages of all configured podcasts:
 ```bash
 ruby scripts/install_hunspell_dicts.rb            # auto-detect from podcasts
 ruby scripts/install_hunspell_dicts.rb it sl pl   # explicit list
+ruby scripts/install_hunspell_dicts.rb --check    # report installed/missing, no network; exit 1 if any missing
 ```
 
 Pulls `.dic`/`.aff` files from [github.com/wooorm/dictionaries](https://github.com/wooorm/dictionaries) and installs them into `~/Library/Spelling`. Idempotent.

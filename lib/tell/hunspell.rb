@@ -112,6 +112,51 @@ module Tell
         DICT_MAP[lang]
       end
 
+      # Directories searched for <DICT>.{dic,aff} (a seam for tests).
+      def dict_dirs
+        DICT_DIRS
+      end
+
+      # The dictionary file names +lang+ needs when no dict_dirs entry holds
+      # both of them, [] when one does; nil when DICT_MAP has no entry.
+      def missing_for(lang)
+        dict = dict_for(lang)
+        return nil unless dict
+
+        files = ["#{dict}.dic", "#{dict}.aff"]
+        installed = dict_dirs.any? { |dir| files.all? { File.exist?(File.join(dir, it)) } }
+        installed ? [] : files
+      end
+
+      # One line naming why +lang+ gets no inflection expansion from the
+      # dictionary files alone (no mapping, files missing), nil when they
+      # are installed. Shared by the annotator, `validate` and the board.
+      def missing_message(lang)
+        missing = missing_for(lang)
+        return "no dictionary mapping for '#{lang}': inflections are not expanded" if missing.nil?
+        return nil if missing.empty?
+
+        "no hunspell dictionary for '#{lang}' (#{dict_for(lang)}): inflections are not expanded " \
+          "— run scripts/install_hunspell_dicts.rb #{lang}"
+      end
+
+      # missing_message, or the missing hunspell/unmunch tools; nil when the
+      # language's inflections can be expanded.
+      def expansion_problem(lang)
+        missing_message(lang) ||
+          (available? ? nil : "hunspell or unmunch not installed: inflections are not expanded")
+      end
+
+      # `scripts/install_hunspell_dicts.rb --check`: one line per language
+      # and whether every language's dictionary is installed.
+      def check_report(langs)
+        problems = langs.to_h { [it, missing_message(it)] }
+        lines = problems.map do |lang, problem|
+          problem ? "#{lang}: MISSING — #{problem}" : "#{lang}: installed (#{dict_for(lang)})"
+        end
+        [lines, problems.values.none?]
+      end
+
       # In-memory cache: dict name → { word => [dic_content_lines] }.
       # Avoids re-reading and re-parsing the .dic file on every expand() call.
       def dic_word_index(dict, dic_path)
@@ -162,7 +207,7 @@ module Tell
 
       # Find the .dic file path for a dictionary name.
       def find_dic_path(dict)
-        DICT_DIRS.each do |dir|
+        dict_dirs.each do |dir|
           path = File.join(dir, "#{dict}.dic")
           return path if File.exist?(path)
         end

@@ -14,6 +14,7 @@ require_relative File.join(root, "lib", "run_outcome")
 require_relative File.join(root, "lib", "served_feed")
 require_relative File.join(root, "lib", "youtube_consent")
 require_relative File.join(root, "lib", "production_run")
+require_relative File.join(root, "lib", "tell", "hunspell")
 
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
@@ -213,6 +214,8 @@ module PodgenCLI
       uploads = upload_progress(config, dormant ? demote : escalate, inform)
       consent = youtube_consent_finding(config)
       escalate.call("WARN", consent) if consent
+      dictionary = dictionary_finding(config)
+      escalate.call("WARN", dictionary) if dictionary
       served_feed_findings(config, inform, escalate).each { |reason| escalate.call("WARN", reason) }
       if QUIET_VERDICTS.include?(verdict) && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
@@ -225,6 +228,15 @@ module PodgenCLI
       {podcast: name, verdict: "WARN", newest: nil, age_days: nil,
        reasons: ["status check failed: #{e.class}: #{e.message}"[0, LINE_MAX]], announcements: nil,
        uploads: nil}
+    end
+
+    # A show that annotates vocabulary without its language's hunspell
+    # dictionary (P25-2): named until the files exist.
+    def dictionary_finding(config)
+      lang = config.transcription_language
+      return nil unless config.type == "language" && config.vocabulary_level && lang
+
+      Tell::Hunspell.missing_message(lang)
     end
 
     # Delegates the staleness rule to Validators::FreshnessValidator.

@@ -815,6 +815,31 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- P25-2: a story show's hunspell dictionary ---
+
+  STORY = "\n## Audio\n- language: es\n\n## Vocabulary\n- level: B1\n"
+
+  def test_board_names_a_show_whose_dictionary_is_missing
+    make_pod("alpha", dates: fresh_dates, extra: "- type: language\n", sections: STORY)
+    dicts = File.join(@tmpdir, "dicts")
+    FileUtils.mkdir_p(dicts)
+    out, code = Tell::Hunspell.stub(:dict_dirs, [dicts]) { run_status }
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*no hunspell dictionary for 'es' \(es_ES\)/, out)
+
+    %w[es_ES.dic es_ES.aff].each { File.write(File.join(dicts, it), "") }
+    out, code = Tell::Hunspell.stub(:dict_dirs, [dicts]) { run_status }
+    assert_equal 0, code, out
+    refute_match(/hunspell/, out)
+  end
+
+  def test_board_news_show_has_no_dictionary_finding
+    make_pod("alpha", dates: fresh_dates)
+    out, code = Tell::Hunspell.stub(:dict_dirs, []) { run_status }
+    assert_equal 0, code, out
+    refute_match(/dictionary/, out)
+  end
+
   # --- YouTube consent age (Q-102, P11-2) ---
 
   CONSENT_WARN = "youtube consent 6 d old — the token expires on day 7 while the OAuth app is in testing; " \
