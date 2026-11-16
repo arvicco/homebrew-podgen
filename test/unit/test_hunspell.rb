@@ -192,7 +192,7 @@ class TestHunspell < Minitest::Test
     refute stems_called
   end
 
-  # --- P24-1 (Q-168): a non-verb lemma whose root is a different word ---
+  # --- P24-1: a non-verb lemma whose root is a different word ---
 
   # Recorded from `hunspell -d it_IT -s`: "nuovamente nuovo",
   # "farcela fare", "moltissimo molto", "casa caso". unmunch of the root's
@@ -216,7 +216,7 @@ class TestHunspell < Minitest::Test
     assert_equal %w[lupina lupino lupini], forms
   end
 
-  # --- P24-1 (Q-168): the .aff SET line decides the dictionary encoding ---
+  # --- P24-1: the .aff SET line decides the dictionary encoding ---
 
   # it_IT.aff carries `SET UTF-8` on line 36, after a comment block.
   def test_utf8_paths_set_line_after_100_bytes_uses_original_files

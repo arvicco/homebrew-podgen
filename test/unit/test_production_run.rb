@@ -207,7 +207,7 @@ class TestProductionRun < Minitest::Test
     assert_equal "production run active: my_show", yield_at("12:00")
   end
 
-  # P18-5 (Q-128): the uploads batch holds output/uploads.lock for its
+  # P18-5: the uploads batch holds output/uploads.lock for its
   # lifetime and loads YouTube code lazily — the yield covers it too.
   def uploads_lock_path
     path = File.join(@root, ProductionRun::UPLOADS_LOCK)

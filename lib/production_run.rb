@@ -19,7 +19,7 @@ module ProductionRun
   WINDOW_BEFORE_MINUTES = 5
   WINDOW_AFTER_MINUTES = 40
 
-  # P18-5 (Q-128): the uploads batch (launchd, 20+ min) holds an
+  # P18-5: the uploads batch (launchd, 20+ min) holds an
   # exclusive flock on output/uploads.lock for its lifetime — it loads its
   # YouTube code lazily, so a lib/ edit mid-batch could load half-edited code.
   UPLOADS_LOCK = "uploads.lock"
