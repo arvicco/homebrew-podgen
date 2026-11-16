@@ -31,9 +31,9 @@ class TestCommitMsgGuard < Minitest::Test
   ].freeze
 
   REFUSED = {
-    "fix: closes Q-218\n" => "private register id 'Q-218'",
-    "fix: x\n\nSee I-25 for the background.\n" => "private register id 'I-25'",
-    "fix: x per R22-03\n" => "private register id 'R22-03'",
+    "fix: closes Q-12\n" => "private register id 'Q-12'",
+    "fix: x\n\nSee I-3 for the background.\n" => "private register id 'I-3'",
+    "fix: x per R4-05\n" => "private register id 'R4-05'",
     "fix: runs at 16:30 now\n" => "clock time '16:30'",
     "fix: x\n\nlast seen 9:05:12 in the log\n" => "clock time '9:05:12'",
     "fix: x\n\nthe job fires at `09:30 UTC`\n" => "clock time with a zone '09:30 UTC'",
