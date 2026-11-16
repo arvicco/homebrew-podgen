@@ -36,7 +36,9 @@ module PodgenCLI
     "init"      => ["Initialize a new podcast (skeleton or from existing)",              "cli/init_command",      "InitCommand",      "<name> | <source> <name>"],
     "fork"      => ["Fork podcast with all content into a new namespace",                "cli/fork_command",      "ForkCommand",      "<old> <new>"],
     "unpublish" => ["Remove podcast from Cloudflare R2",                                 "cli/unpublish_command", "UnpublishCommand", "<podcast>"],
-    "tweet"     => ["Tweet about an episode (--force, --dry-run)",                       "cli/tweet_command",     "TweetCommand",     "<podcast> <episode-id>"]
+    "tweet"     => ["Tweet about an episode (--force, --dry-run)",                       "cli/tweet_command",     "TweetCommand",     "<podcast> <episode-id>"],
+    "backup"    => ["Write one encrypted archive of this installation (--verify <file>)", "cli/backup_command",    "BackupCommand",    "[--out DIR] [--with-media]"],
+    "restore"   => ["Restore a backup archive (--force overwrites: owner-only)",         "cli/restore_command",   "RestoreCommand",   "<file> [--into ROOT] [--dry-run]"]
   }.freeze
 
   # Width of the "<name> <synopsis>" column on the help screen; a longer
@@ -65,6 +67,7 @@ module PodgenCLI
 
   def self.owner_action?(command_name, argv, options)
     return true if OWNER_ACTIONS.include?(command_name)
+    return restore_force?(argv) if command_name == "restore"
     return false unless command_name == "generate"
     return true if options[:lingq]
 
@@ -82,6 +85,22 @@ module PodgenCLI
   def self.generate_dry_parse(argv)
     require_relative "cli/generate_options"
     GenerateOptions.dry_parse(argv)
+  end
+
+  # `restore --force` overwrites existing data: an owner action (P25-3).
+  # Asked of restore's own parser; when that parse fails, any token that
+  # OptionParser could complete to --force counts (`--f`, `--FO`, `-f`).
+  def self.restore_force?(argv)
+    require_relative "cli/restore_options"
+    parsed = RestoreOptions.dry_parse(argv)
+    return !!parsed[:force] if parsed
+
+    argv.any? do |token|
+      next true if token.match?(/\A-f/i)
+
+      name = token[/\A--([^=]+)/, 1]&.downcase
+      !name.nil? && "force".start_with?(name)
+    end
   end
 
   # Conservative fallback, used only when generate's argv does not parse:

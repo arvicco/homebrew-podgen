@@ -147,3 +147,13 @@ Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|
 **Why.** The status board guessed at degradation with `/Warning:|WARNING/` and an `ERROR` on the last line, but the pipelines report trouble in their own words (`⚠ N episode(s) produced (with warnings)`, `  - Language es failed: ...`, a mid-log `ERROR`). A daily translation failure ended its log cleanly and stayed green. The producer knows its outcome; the reader should not reverse-engineer it from prose.
 
 **Implication.** A new degradation joins the run's warnings — the pipeline's `@warnings`, or `Loggable#log_warning` in a library class (a source down, a research or engine failure, a skipped AI review), which the logger counts — not just the log text. Keep the line additive: new fields go before `first=`, and the parser in `RunOutcome` changes in the same commit.
+
+---
+
+## Backup is one encrypted archive with a manifest; restore never trusts it blindly
+
+`podgen backup` (`lib/backup_archive.rb`, `lib/cli/backup_command.rb`) streams Gem::Package::TarWriter → gzip → `openssl enc -aes-256-cbc -pbkdf2` in one pipe; `podgen restore` (`lib/cli/restore_command.rb`) reads it back the same way. Tar entry names are indexes (`f/000001`); the real relative path, base (project root or home), class, size, mode and SHA-256 of each file live in `manifest.json`, the first entry.
+
+**Why.** The system binaries already on every Mac cover encryption, so no gem is added; the stdlib tar writer streams without staging a second copy of a large media set. Index names mean no tar file-name length limit and no tar name ever chooses a write location — every target is derived from the manifest and refused if it would leave its base. The passphrase is passed as `-pass env:PODGEN_BACKUP_PASSPHRASE` in openssl's child environment, so it never appears in argv or `ps`; openssl's stderr is discarded and every decrypt failure reads "wrong passphrase or damaged archive". Restore reads the archive twice — a full digest check, then the writes — because CBC decryption reports a bad passphrase only at the end of the stream, after bytes have already come out.
+
+**Implication.** A new gitignored file class an installation needs to run is added to `BackupArchive::CLASSES` (and to `SECRET_CLASSES` when it holds keys, which forces `0600` on restore), with the fixture tree in `test/unit/test_backup_command.rb` extended in the same commit. `restore --force` is the only overwriting path and is owner-only in the guard (`PodgenCLI.restore_force?`, probe rows in `test/unit/test_owner_guard.rb`).

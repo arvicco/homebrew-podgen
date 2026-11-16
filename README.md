@@ -131,6 +131,8 @@ ruby bin/podgen <command> [options]
 | `podgen schedule <podcast>`           | Install, remove, or inspect a daily launchd scheduler    |
 | `podgen uploads <pods>`               | Per-pod regen + R2 + LingQ, then a YouTube batch across pods (`--mode`, `--max`) |
 | `podgen init <podcast>`               | Initialize a new podcast (skeleton or from existing) |
+| `podgen backup`                       | Write one encrypted archive of this installation; `--verify <file>` proves one restorable ([Backup and restore](#backup-and-restore)) |
+| `podgen restore <file>`               | Restore a backup archive into this or another machine (`--into`, `--dry-run`, `--force`) |
 
 Per-command flags are documented in the dedicated sections below (e.g. [Generate command](#generate-command-options), [Publish command](#publishing-to-cloudflare-r2)).
 
@@ -1551,6 +1553,42 @@ ruby scripts/install_hunspell_dicts.rb it sl pl   # explicit list
 Pulls `.dic`/`.aff` files from [github.com/wooorm/dictionaries](https://github.com/wooorm/dictionaries) and installs them into `~/Library/Spelling`. Idempotent.
 
 When hunspell isn't available for a language, body counts use lemma + historical surface forms only (a warning prints to stderr). Generated forms are cached at `output/<podcast>/word_forms.yml` and regenerate only when the lemma set or hunspell-availability changes.
+
+## Backup and restore
+
+Everything this installation needs that git does not hold lives in
+gitignored files: show configs, ledgers, output text, `.env`, the token
+directory, the launchd plists and the dictionaries. `podgen backup` packs
+them into one encrypted file; `podgen restore` unpacks it on another Mac.
+
+```bash
+export PODGEN_BACKUP_PASSPHRASE=...      # or leave unset to be prompted (twice for backup)
+podgen backup --out /Volumes/External    # writes podgen-backup-<date>.tar.gz + .sha256
+podgen backup --with-media --out DIR     # also mp3/mp4/images/source audio under output/
+podgen backup --verify DIR/podgen-backup-<date>.tar.gz
+podgen restore podgen-backup-<date>.tar.gz --dry-run   # list what would be written
+podgen restore podgen-backup-<date>.tar.gz             # into the project root and ~
+```
+
+| Class | Files (relative to the project root, or `~` for the last three) |
+| --- | --- |
+| guidelines | `podcasts/**` |
+| ledgers | `output/<show>/history.yml`, `output/<show>/uploads.yml` |
+| output | every other non-media file under `output/` (transcripts, scripts, timestamps, caches, listening records) |
+| media | mp3/mp4/m4a/wav/images under `output/` — only with `--with-media` |
+| boards | `.docs/**` |
+| env | `.env` |
+| tokens | `~/.config/podgen/**` |
+| schedule | `~/Library/LaunchAgents/com.podcastagent.*.plist` |
+| dictionaries | `~/Library/Spelling/*.dic`, `*.aff` |
+
+- **Encryption.** The archive is tar + gzip piped through `openssl enc -aes-256-cbc -pbkdf2`. The passphrase comes from `PODGEN_BACKUP_PASSPHRASE` or a no-echo prompt, never from the command line, and reaches openssl through its environment only. Keep the passphrase somewhere other than the backup.
+- **Manifest.** The first entry records the podgen git sha, the Ruby and ffmpeg versions, the device zone and every file with its class, size, mode and SHA-256. Guidelines, ledgers and `.env` are required: without them the backup aborts and writes nothing.
+- **Proven on the day.** `backup` round-trips the new archive into a temp dir and compares every file with the manifest before the archive gets its name; `--verify` repeats that later. A `.sha256` beside the archive catches a damaged or altered copy before decryption. An existing archive of the same date is never overwritten.
+- **Restore** checks the `.sha256`, the passphrase and every entry before it writes anything; then writes each file to its relative path atomically with its recorded mode (`.env` and token files always `0600`), compares the result with the manifest, and runs `bundle install` when the target holds a Gemfile whose bundle is not satisfied. A file that already exists with the same contents is left as is (so a fresh git checkout is a valid target); one with other contents makes restore refuse unless `--force`. `--into ROOT` and `--home DIR` restore somewhere else, e.g. a temp dir to inspect a backup. `restore --force` is an owner action: inside an agent session it is refused like `publish`.
+- **After a restore** three acts are left for the owner, and restore prints them: load the launchd agents with `podgen schedule`, re-consent YouTube from a terminal if the restored token has lapsed, and run `podgen status` as the proof.
+
+Archives hold every key: keep them off public storage. `podgen-backup-*` is gitignored.
 
 ## Project Structure
 

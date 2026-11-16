@@ -50,6 +50,8 @@ class TestCharacterizationCLI < Minitest::Test
       fork <old> <new>               Fork podcast with all content into a new namespace
       unpublish <podcast>            Remove podcast from Cloudflare R2
       tweet <podcast> <episode-id>   Tweet about an episode (--force, --dry-run)
+      backup [--out DIR] [--with-media]  Write one encrypted archive of this installation (--verify <file>)
+      restore <file> [--into ROOT] [--dry-run]  Restore a backup archive (--force overwrites: owner-only)
 
     Pipelines (`- type:` under ## Podcast in guidelines.md):
       news      Research topics, write script, TTS, assemble MP3 (default)
@@ -142,11 +144,12 @@ class TestCharacterizationCLI < Minitest::Test
 
   # --- COMMANDS is the single source of the help screen (P4-6) ---
 
-  def test_commands_hash_lists_29_commands_in_pinned_order
+  def test_commands_hash_lists_31_commands_in_pinned_order
     expected = %w[
       generate translate render voice scrap move rss site publish stats
       validate status list test schedule uploads analytics add links vocab
       revocab reformat exclude cover regen init fork unpublish tweet
+      backup restore
     ]
 
     assert_equal expected, PodgenCLI::COMMANDS.keys
@@ -506,7 +509,9 @@ class TestCharacterizationCLI < Minitest::Test
     "fork" => "a2 a3 a4 zz_leftover",
     "unpublish" => "a1 a2 a3 a4 zz_leftover",
     "tweet" => "a2 a3 a4 zz_leftover",
-    "uploads" => "a1 a2 a3 a4 zz_leftover"
+    "uploads" => "a1 a2 a3 a4 zz_leftover",
+    "backup" => "test_pod a1 a2 a3 a4 zz_leftover", # takes no positional argument
+    "restore" => "a1 a2 a3 a4 zz_leftover"
   }.freeze
 
   def test_run_leftover_positional_args_rejected_per_command
