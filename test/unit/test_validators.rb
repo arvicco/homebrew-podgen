@@ -263,9 +263,13 @@ class TestValidators < Minitest::Test
     end
   end
 
-  def test_validate_unmapped_language_names_the_missing_mapping
-    result = validate(Validators::LanguagePipelineValidator, transcription_language: "xx", vocabulary_level: "B1")
-    assert_equal ["Vocabulary: no dictionary mapping for 'xx': inflections are not expanded"], result[:errors]
+  # No dictionary exists to install for an unmapped language: a warning,
+  # not an error that fails `validate` for good.
+  def test_validate_unmapped_language_warns_expansion_unavailable
+    result = validate(Validators::LanguagePipelineValidator, transcription_language: "ja", vocabulary_level: "B1")
+    assert_empty result[:errors]
+    assert_includes result[:warnings],
+      "Vocabulary: no dictionary mapping for 'ja': inflection expansion is unavailable for this language"
   end
 
   def test_validate_without_vocabulary_section_skips_the_dictionary_check

@@ -48,6 +48,8 @@ module Validators
 
     # Vocabulary annotation expands inflections from the transcription
     # language's hunspell dictionary; without it the annotator degrades.
+    # A language with no dictionary mapping has nothing to install: a
+    # warning. A mapped one with its files missing is an error.
     def check_dictionary
       lang = @config.transcription_language
       return unless @config.vocabulary_level && lang
@@ -59,7 +61,11 @@ module Validators
       end
 
       missing = Tell::Hunspell.missing_for(lang)
-      problem += " (#{missing.join(" + ")} in none of #{Tell::Hunspell.dict_dirs.join(", ")})" if missing
+      if missing.nil?
+        @warnings << "Vocabulary: no dictionary mapping for '#{lang}': inflection expansion is unavailable for this language"
+        return
+      end
+      problem += " (#{missing.join(" + ")} in none of #{Tell::Hunspell.dict_dirs.join(", ")})"
       (@allow_missing_dictionary ? @warnings : @errors) << "Vocabulary: #{problem}"
     end
   end
