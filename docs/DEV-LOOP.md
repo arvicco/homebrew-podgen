@@ -19,10 +19,10 @@ podgen reading.*
 
 - **Machine-checkable done:** `bundle exec rake gate` green is the
   pre-commit gate (syntax + lint + unit + offline integration). Lint
-  covers files not listed in .standard_todo.yml (ruling R1-d: a packet
-  that touches a listed file removes it from the list in the same
-  commit when the lint diff is small). No network in gate-tier tests;
-  fully deterministic verification.
+  covers files not listed in .standard_todo.yml (owner ruling
+  2026-10-11: a packet that touches a listed file removes it from the
+  list in the same commit when the lint diff is small). No network in
+  gate-tier tests; fully deterministic verification.
 - **Frozen contracts as oracles:** pinning tests on feed/site output
   shapes, episode naming, and history/uploads/timestamps schemas
   grade the work, not judgment.
@@ -58,7 +58,7 @@ output/. Every agent prompt carries an explicit
 no-destructive-git-commands constraint (no rm -rf, no git
 checkout/reset of files the agent didn't create).
 
-**Worktree lint parity (Q-49):** Standard ignores `bin/*` by default,
+**Worktree lint parity:** Standard ignores `bin/*` by default,
 but RuboCop skips that Exclude during file discovery when the base
 directory has a dot-component (`.claude/worktrees/...`), so a lane's
 gate linted bin/podgen and bin/tell while the checkout and CI did not.
@@ -70,8 +70,10 @@ only in a worktree until it is added there too.
 ## 3. Work packets and the boards
 
 IDs: packets P<phase>-<n>, rulings R<phase>-<nn>, queue Q-n, incidents
-I-n. BOARDS profile (R1-k, 2026-10-11): gitignored .docs/ holds the
-phase plan (p<N>-plan.md — the owner's one surface per phase; packet
+I-n — ids of the private registers, never written to a tracked file, a
+commit message or a PR body. BOARDS profile (owner ruling 2026-10-11):
+gitignored .docs/ holds the phase plan (p<N>-plan.md — the owner's one
+surface per phase; packet
 status and the phase worklog live in it), WORK-QUEUE.md, DECISIONS.md
 (open rulings only, written for the decision-maker; ruled items
 removed entirely; CALENDAR + slate matters), incident-register.md (a
@@ -144,14 +146,16 @@ only (item 19).
 8. **Phase gate**: the gate PR is opened only when the phase is
    reviewed and ready to merge — never at phase start, never as a
    living document (owner ruling 2026-10-16; the plan in .docs/ is the
-   living document); its body is the final summary + runbook;
+   living document); its body describes the code change and its
+   verification — the runbook goes to the plan doc and the chat (owner
+   ruling 2026-11-16);
    CRPR review (worktree `/cr` agent) of the entire phase diff against
    ARCHITECTURE.md; resolve blocked packets; board hygiene sweep
    (register/queue residue, incident rows advanced, calendar); the
    live health-invariant sweep (`podgen status`, read-only, against
    the live surfaces — a new deviation is gate work, not a note);
-   update the "Current phase" line in CLAUDE.md; produce the gate
-   handoff as a RUNBOOK (numbered steps, one command each, EXPECT
+   produce the gate handoff as a RUNBOOK (numbered steps, one command
+   each, EXPECT
    lines; background quarantined at the end). The handoff text, the
    PR body and the plan doc all carry the phase wall-time line (§21,
    item 10). **The owner executes the gate's human actions and merges
@@ -226,8 +230,8 @@ only (item 19).
    consent token's size, the posted URL), never an absence-of-activity
    surface (process tables, lock files, bare mtimes prove only "not
    running now"). FORMAT CONTRACT: every owner-action line and
-   external-state claim carries its evidence inline — "(checked HH:MM
-   CST: <surface> → <state>)" — and a line that cannot cite its check
+   external-state claim carries its evidence inline — "(checked HH:MM:
+   <surface> → <state>)" — and a line that cannot cite its check
    does not ship. Boards — and the loop's own prior messages, and a
    compaction summary — are never a source for an owner-state line;
    they are what gets corrected when the query contradicts them, in
@@ -262,7 +266,7 @@ only (item 19).
    Podgen's candidates: revocab passes, fixture series, regen chains.
 16. **Owner-fired op outcomes are VERIFIED at first contact; incidents
    LEAD** (§30, 2026-11-11): at the loop's first contact after any
-   owner-fired long op — a production generate, the 10:30 upload
+   owner-fired long op — a production generate, the daily upload
    batch, a manual regen, a history rewrite — verify the op's outcome
    from its durable record (the run log's RUN-OUTCOME line, the batch
    summary, the git refs) BEFORE building anything on its output; a
@@ -279,11 +283,9 @@ only (item 19).
    re-earn every external-state line live. Continuity never lives
    only in context: the plan doc, phase clock, registers and task ids
    in the worklog are kept current DURING work, so a compaction loses
-   prose, never state. On this box the installed plugin is still
-   cache 1.1.1 (no doctrine.md, no nag-guard, no compaction hooks;
-   the marketplace path is the local clone, 45 commits behind
-   origin/main on 2026-11-13) — the session runs unprotected until
-   the clone is brought to origin/main and the plugin refreshed.
+   prose, never state. The installed plugin may lag origin/main; the
+   doctrine is read from origin/main (`git show`), never from the
+   installed copy.
 18. **A chained op's detected failure surfaces itself** (§32,
    2026-11-12): a chained or multi-step background op gets a
    failure-line Monitor armed in the same tool turn it is fired,
@@ -302,11 +304,10 @@ only (item 19).
    grain — never clock times, zone suffixes or offsets, never
    day-parts ("overnight", "this morning"), never working-hours
    narrative; durations ("52m", "1h 5m") measure the work and stay.
-   The gitignored boards keep full timestamps. The CLAUDE.md phase
-   line was stripped of clock times on 2026-11-13; the loop commits
-   with `TZ=UTC`. Upstream's own cadence and listener-facing episode
-   metadata are content, not a leak (the feed's pubDate question is
-   R18-02).
+   The gitignored boards keep full timestamps; the loop commits with
+   `TZ=UTC`. Upstream's own cadence and listener-facing episode
+   metadata are content, not a leak (the feed's pubDate was ruled UTC on
+   2026-11-13).
 20. **One command for an owner-run operation; one canonical home per
    rule** (§1 2026-11-02, §16 2026-11-02): when an identity act
    genuinely needs the owner to RUN something, it is handed over as
@@ -416,25 +417,25 @@ and the RUN-OUTCOME line is the completion record §30 reads first.
   output, not loop-opened channels; the loop opens no channel today.
   If it ever posts anywhere on the owner's behalf, the return path is
   enumerated in the same edit that records the post.
-- **§13 temporal privacy, podgen surfaces:** CLAUDE.md's phase line,
-  README, ARCHITECTURE, commit messages and PR bodies carry dates
-  only. Episode `pubDate` and `lastBuildDate` in the served feeds are
-  listener-facing RSS metadata minted at generation time with the
-  Mac's zone offset — a frozen-domain surface, so whether to normalize
-  them is R18-02, not a loop call.
+- **§13 temporal privacy, podgen surfaces:** tracked files, commit
+  messages and PR bodies carry dates only. Episode `pubDate` and
+  `lastBuildDate` in the served feeds are listener-facing RSS metadata
+  minted at generation time with the Mac's zone offset — a frozen-
+  domain surface, so whether to normalize them was an owner ruling
+  (UTC, 2026-11-13), not a loop call.
 - **§28–§32 in podgen terms:** the loop's chains are regen series,
   fixture recording series and revocab passes — each runs under
   `detached-run.sh` + `chain-run.sh` with a Monitor on the `.events`
   surface, a yield assertion per slice, and an owner line only after
   the log is read. The owner's long ops are the production generates,
-  the 10:30 batch and anything done to the repository between
+  the uploads batch and anything done to the repository between
   sessions; their records (RUN-OUTCOME, the batch summary, `git
   fetch` + the PR state) are read before any work builds on them, and
   a found incident leads the next report.
-- **The merge is the owner's long op the live checkout runs on** (I-14,
-  2026-11-13): the owner's commands execute the live checkout, so a
-  merged gate changes nothing on the Mac until that checkout is
-  fast-forwarded. On "merged" the loop pulls the live checkout FIRST
+- **The merge is the owner's long op the live checkout runs on**: the
+  owner's commands execute the live checkout, so a merged gate changes
+  nothing on the Mac until that checkout is fast-forwarded. On "merged"
+  the loop pulls the live checkout FIRST
   — before boards, cleanup or the slate; a fast-forward of the merged
   PR with no bin/podgen process running is not a lib/ edit in the
   §28 yield sense — verifies `git log -1` against the merge sha, and

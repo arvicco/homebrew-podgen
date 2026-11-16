@@ -4,16 +4,21 @@ Autonomous podcast generation pipeline (Ruby 3.4+, macOS): two
 pipelines (news, language) + Tell CLI/web. See README.md for usage and
 ARCHITECTURE.md for design — read ARCHITECTURE.md before any
 non-trivial task. Read docs/DEV-LOOP.md before any non-trivial task.
-BOARDS profile (owner ruling R1-k, 2026-10-11): ALL coordination state
-lives in gitignored .docs/ — the phase plan (.docs/pXX-plan.md: owner-
-signed BEFORE a phase executes; packet status + the phase worklog live
-in it), the work queue (.docs/WORK-QUEUE.md, Q-nn), the open rulings
-register (.docs/DECISIONS.md, R<phase>-<nn>, removed when ruled), the
-incident register (.docs/incident-register.md, I-n), the phase register
-(.docs/phase-register.md: the owner-faced cost-and-yield ledger,
-appended at every gate closure), the phase clock (.docs/phase-clock),
-closed plans in .docs/old-phases/. Internal workflow state never lands
-in the public repo; git history + plan docs are the record.
+BOARDS profile (owner ruling 2026-10-11): ALL coordination state lives
+in gitignored .docs/ — the phase plan (.docs/pXX-plan.md: owner-signed
+BEFORE a phase executes; packet status + the phase worklog live in
+it), the work queue, the open rulings register (removed when ruled),
+the incident register, the phase register (the owner-faced cost-and-
+yield ledger, appended at every gate closure), the phase clock, closed
+plans in .docs/old-phases/. This repository is PUBLIC. Nothing about
+the production shows' operation — passes over owner data, incident
+and ruling narration, queue items, consents, balances, schedules,
+clock times, owner runbooks — and no id of a private register (queue,
+rulings, incidents) ever appears in a tracked file, a commit message
+or a PR body (owner ruling 2026-11-16; doctrine §13/§18). The boards
+are the
+only record of that work; the public repo records the code and its
+verification, nothing else.
 
 ## Golden rules (non-negotiable)
 
@@ -40,9 +45,9 @@ in the public repo; git history + plan docs are the record.
    `PODGEN_OWNER=1`); the settings.json deny list is a convenience
    layer that catches only the literal flags (`*--youtube*`,
    `*--lingq*`), not the enforcement.
-   While a production generate holds a run lock, the 10:30 batch
-   holds output/uploads.lock (P18-5), or during the 16:25–17:10 launchd
-   window, the loop YIELDS: no edits under lib/
+   While a production generate holds a run lock, the uploads batch
+   holds output/uploads.lock (P18-5), or during a scheduled launchd
+   window (times on the boards), the loop YIELDS: no edits under lib/
    bin/ scripts/, no branch switches or merges — enforced by
    scripts/prod_guard.sh (P2-0).
 4. **Never change the frozen domain silently:** RSS/site output
@@ -93,7 +98,7 @@ in the public repo; git history + plan docs are the record.
    states, run outcomes, consent) are written only from a live query
    of the COMPLETION record the line claims, run in the same turn,
    never copied from boards, prior messages or a compaction summary,
-   and each carries its stamp inline — "(checked HH:MM CST: <surface>
+   and each carries its stamp inline — "(checked HH:MM: <surface>
    → <state>)" (§7/§27); a loop-fired operation over ~10 minutes is
    fired with its watchdog armed in the same turn and its chain emits
    worded verdicts on a dedicated signal surface (§29/§32); every
@@ -101,14 +106,19 @@ in the public repo; git history + plan docs are the record.
    an adjective (§28); an owner-fired operation's outcome is verified
    from its record at first contact and a found incident leads the
    report (§30); tracked files, commit messages and PR bodies carry
-   dates only — no clock times, zones or day-parts (§13); the phase
-   register is appended at every gate closure; lane briefs state how
-   each census was taken (§17a) and batch runners carry timeout /
-   budget-stop / first-failure-stop / tail-verification lines under
-   the plugin's detached-run / chain-run pair (§17b); a turn waiting
-   on background work states "independent items remaining: N" and N
-   is 0; subagent lanes run on Opus-class models (`model: "opus"`),
-   frontier tokens buy judgment.
+   technical content and dates only — no clock times, zones or
+   day-parts, no owner-action lists, no private register ids, nothing
+   about the shows' operation (§13/§18; the owner ruling of 2026-11-16
+   overrides the doctrine's placement of the runbook in the PR body
+   for this repository — the runbook lives in the plan doc and the
+   chat; the wall-time line, a duration, keeps its three places, §21);
+   the phase register is appended at every gate closure; lane briefs
+   state how each census was taken (§17a) and batch runners carry
+   timeout / budget-stop / first-failure-stop / tail-verification lines
+   under the plugin's detached-run / chain-run pair (§17b); a turn
+   waiting on background work states "independent items remaining: N"
+   and N is 0; subagent lanes run on Opus-class models
+   (`model: "opus"`), frontier tokens buy judgment.
 
 ## Commands
 
@@ -143,8 +153,10 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
    skill; fix all BLOCKERs and WARNINGs; re-review until APPROVED.
    On APPROVED, `git update-ref refs/cr/reviewed HEAD`.
 6. **STOP at gates.** Phase boundaries end the turn with a runbook
-   handoff (numbered steps, one command each, EXPECT lines) and an
-   open PR — the owner merges. Never mark a phase done.
+   handoff in the chat and the plan doc (numbered steps, one command
+   each, EXPECT lines) and an open PR whose body describes the code
+   change and its verification only — the owner merges. Never mark a
+   phase done.
 7. If the change invalidates an ARCHITECTURE.md entry, update it in
    the same commit. "Document" = update CLAUDE.md and README.md.
 
@@ -207,8 +219,19 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
   force pushes, no history rewrites on published branches, no tags
   (tags/releases are gate actions, owner-run).
 - Conventional commits (`feat:`/`fix:`/`test:`/`refactor:`/`docs:`/
-  `chore:`) referencing packet IDs; imperative subject ≤ 72 chars;
-  body explains WHY.
+  `chore:`) referencing the packet ID (P<phase>-<n>, a public
+  cross-reference) and nothing from the private registers; imperative
+  subject ≤ 72 chars; body explains WHY in terms of the code.
+- Public surfaces carry code only (owner ruling 2026-11-16, doctrine
+  §13/§18): commit messages, PR titles and bodies, and every tracked
+  file describe the change to the code and how it was verified.
+  Nothing about the production shows' operation leaves .docs/, no
+  owner runbook, no queue/ruling/incident id. The handoff the owner
+  reads is the plan doc and the chat, never the PR body.
+- A phase exists only for a change to the code (owner ruling
+  2026-11-16). Reads, board consolidation and passes over owner data
+  are maintenance work recorded on the boards: no phase number, no
+  branch, no PR; their findings ride the next code phase.
 - One logical change per commit; tests with the code. Never commit
   .env, output/, logs/, or podcast content directories.
 - No AI branding on any public surface (owner ruling 2026-10-16,
@@ -224,92 +247,8 @@ bundle exec ruby -Ilib:test test/unit/<file>.rb   # single file
 
 ## Current phase
 
-Gate 0 CLOSED 2026-09-02 (PR #1, merge cbee0f4). Gate 1 CLOSED 2026-10-11
-(PR #2, merge 82201da). Gate 2 CLOSED 2026-10-12 (PR #3, merge eda37ed).
-Gate 3 CLOSED 2026-10-12 (PR #4, merge 6c45e55). Gate 4 CLOSED 2026-10-12
-(PR #5, merge fed1339 — the dry-up). Gate 5 CLOSED 2026-10-12 (PR #6,
-merge e8b4f6f — correctness and cost sweep). Gate 6 CLOSED 2026-10-14
-(PR #7, merge 8787e7b — spend measured, observability, docs refresh,
-refill, plus the P6-7/P6-8 hotfixes). Gate 7 CLOSED 2026-10-16 (PR #8,
-merge 22114a6 — publication observability and YouTube hardening). Gate 8
-CLOSED 2026-10-28 (PR #10, merge 0198bc1 — quality guards, diagnosis,
-test authority; phase clock 56m). Gate 9 CLOSED 2026-10-28 (PR #11,
-merge 55f000c — vocabulary didactics: ledger, key words, level bands,
-gloss cache, grouped section, vocab-health measurement, revocab ranges;
-phase clock 1h 42m). Gate 10 CLOSED 2026-10-29 (PR #12, merge 75f3c59 —
-resilience of the scheduled run and a truthful board: re-post guard at
-selection, the intended timeout on every Claude call, caffeinate +
-bounded preflight, upload progress read from the batch log, LingQ
-generate path, placeholder-key lint; phase clock 47m). Gate 11 CLOSED
-2026-10-29 (PR #13, merge 635a089 — listening archive of untrimmed
-source audio and rejected candidates, 404 source URLs excluded in-run,
-YouTube rejection reason + consent-age WARN, Exa network retries,
-uncounted content failures counted, trim-prompt re-ask; phase clock
-1h 33m). Phase 12 (small truthfulness sweep: a dead feed costs one
-attempt, a failed first-generation description is counted, periodic
-dead-code review) CLOSED 2026-10-30 (PR #14, merge c64a6a6; phase clock
-17m). Refill read 2026-10-30: Q-108…Q-139 and R12-01…R12-06 minted.
-Phase 13 (data safety: corrupt owner-data files never rewritten, scrap
-removes the right row, transient 5xx/TLS retried, failed site regen
-keeps the live site, ffmpeg outputs land only when complete) CLOSED
-2026-10-30 (PR #15, merge 782de48; phase clock 36m). Phase 14
-(listener-visible correctness, news and YouTube: script-reviewer
-auto-fixes keep content and right weekdays, YouTube captions/playlist
-retried and caption-less uploads visible, subtitle input defects,
-exclusions compared cleaned, unattended length failures excluded
-in-run, counter-only re-post match) CLOSED 2026-11-04 (PR #16, merge
-2107561; phase clock 3d 12h wall, ~1h 45m worked — API outage). Phase
-15 (incident sweep: loudnorm analysis survives ffmpeg's truncated
-metadata echo, `--date` usage error, interactive trim flow defects,
-corrupt uploads.yml stops the YouTube batch before any upload, retry
-and spend hygiene, archived trim record replay) CLOSED 2026-11-09
-(PR #17, merge 8b5d92f; phase clock 48m). Phase 16 (residue sweep:
-Anthropic 4xx retries at the remaining four sites, strict ledger
-pre-read at the LingQ, R2 and tweet publishers, Bluesky authentication
-retry, YouTube owed-step residues, re-post counter rule,
-stage-direction residues, Phase 15 small residues) CLOSED 2026-11-09
-(PR #18, merge 9f3f9e8; phase clock 39m). R12-01…06 ruled or withdrawn
-2026-11-10. Phase 17 (didactics: vocabulary section correctness and
-lemma identity, selection calibration measured first, feed guid never
-reused with `isPermaLink="false"`, subtitle reconciler output cap and
-retries, rendering nits) CLOSED 2026-11-09 (PR #19, merge 31ce640;
-phase clock 39m; I-12 closed by the post-merge regen). Phase 18 (latent
-defects and the small sweep: sources/research defects, translate/voice
-drift, episode-id selection and exit codes, translation request
-timeout, the 10:30 batch lock in the yield, hygiene batch with warnings
-fatal in the gate, Tell nits, Phase 17 residues, blocker-recall tool,
-six DRY extractions) CLOSED 2026-11-09 (PR #20, merge 1d2c460; phase
-clock 1h 5m; R18-01 ruled (c)). Phase 19 (owner-data and site safety:
-HTML escaping in site templates, atomic rewrites of published files,
-move/fork history rows, strict-read residues, guidelines validation;
-plus Phase 18 residues and the review-bundle capture) CLOSED
-2026-11-09 (PR #21, merge 6ff249c; phase clock 52m; gate closed on the
-boards 2026-11-13). The repository history was rewritten 2026-11-10;
-the merge SHAs above are the current ones. Phase 20 (board truthfulness, residue sweep, site
-front page: a killed or setup-failed run never reads OK, dormant and
-unpublished shows named, translated feeds read back, uncounted
-degradations counted once, Phase 16 and 19 residues, the front page
-loads 12 episodes and reveals the rest on demand, feed times in UTC)
-CLOSED 2026-11-13 (PR #22, merge 43a6f60; phase clock 49m). Phase 21
-(R9-02 measurement — `stats --vocab-health --split`; Phase 20 residues:
-template attribute escaping, truthful noscript, counted review-bundle
-failure, parser warning once on a terminal, DORMANT keeps its verdict
-over stale findings) CLOSED 2026-11-13 (PR #23, merge 9b5bc59; phase
-clock 29m). Phase 22 (refill read: seven read-only lanes over the code,
-tests, logs and served surfaces, consolidated into Q-165…Q-189,
-R22-01…R22-05 and I-15…I-21, no code change; plus P22-9, the R9-02
-(b)+(d) vocabulary re-annotation of the last 30 older episodes per story
-show, loop work over owner data — bajke done, cuentos 29 of 30, basnie
-and fiabe held under R22-05) CLOSED 2026-11-15 (PR #24, merge 9194c95;
-phase clock 51m). Phase 23 (improvement read: six read-only lanes over
-the existing functionality — learner experience, news pipeline quality
-and spend, publishing surfaces, operator experience, code health, data
-durability — distilled into dev items Q-190…Q-210, decision rows
-R23-01…R23-07 and incident I-22; no code change) AT GATE 23 — adopted
-2026-11-15 on the owner's words with the Gate 22 merge, all six lanes
-and the consolidation reported; gate PR open, the owner merges. 12 open
-rulings (R22-01…R22-05, R23-01…R23-07); R10-02 returns 11-26. I-11:
-owner re-consented 2026-11-09 (expires ≈ 11-16 while the OAuth app is in
-testing). I-15: since the 2026-11-08 zone change the launchd jobs fire
-seven hours earlier than their plists say (R22-03).
-Update this line at each gate.
+Phase state — gates, packets, rulings, incidents, the phase clock and
+every discussion of the production shows — lives on the gitignored
+.docs/ boards (owner ruling 2026-11-16); the only figure that also
+reaches a PR body is the phase wall-time line, a duration (§21). The
+public gate record is the merged PR list; this file does not carry it.
