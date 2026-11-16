@@ -34,7 +34,9 @@ class TestTrackedTreeHygiene < Minitest::Test
   def tracked_files
     out, _err, status = Open3.capture3("git", "ls-files", "-z", chdir: ROOT)
     skip "not a git checkout" unless status.success?
-    out.split("\0").select { |p| File.file?(File.join(ROOT, p)) }
+    # This file holds the probe strings for its own patterns.
+    own = "test/unit/test_tracked_tree_hygiene.rb"
+    out.split("\0").select { |p| p != own && File.file?(File.join(ROOT, p)) }
   end
 
   # [path, line number, line] for every line of every tracked text file.
