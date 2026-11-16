@@ -815,6 +815,31 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code, out
   end
 
+  # --- P25-2: a story show's hunspell dictionary ---
+
+  STORY = "\n## Audio\n- language: es\n\n## Vocabulary\n- level: B1\n"
+
+  def test_board_names_a_show_whose_dictionary_is_missing
+    make_pod("alpha", dates: fresh_dates, extra: "- type: language\n", sections: STORY)
+    dicts = File.join(@tmpdir, "dicts")
+    FileUtils.mkdir_p(dicts)
+    out, code = Tell::Hunspell.stub(:dict_dirs, [dicts]) { run_status }
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+.*no hunspell dictionary for 'es' \(es_ES\)/, out)
+
+    %w[es_ES.dic es_ES.aff].each { File.write(File.join(dicts, it), "") }
+    out, code = Tell::Hunspell.stub(:dict_dirs, [dicts]) { run_status }
+    assert_equal 0, code, out
+    refute_match(/hunspell/, out)
+  end
+
+  def test_board_news_show_has_no_dictionary_finding
+    make_pod("alpha", dates: fresh_dates)
+    out, code = Tell::Hunspell.stub(:dict_dirs, []) { run_status }
+    assert_equal 0, code, out
+    refute_match(/dictionary/, out)
+  end
+
   # --- YouTube consent age (Q-102, P11-2) ---
 
   CONSENT_WARN = "youtube consent 6 d old — the token expires on day 7 while the OAuth app is in testing; " \
@@ -1384,6 +1409,17 @@ class TestStatusCommand < Minitest::Test
     assert_match(/alpha\s+WARN\s+no history/, out)
   end
 
+  def test_run_missing_history_with_episodes_on_disk_names_the_count
+    make_pod("alpha", dates: nil)
+    episodes = File.join(@tmpdir, "output", "alpha", "episodes")
+    FileUtils.mkdir_p(episodes)
+    %w[alpha-2026-10-10 alpha-2026-10-11].each { |b| FileUtils.touch(File.join(episodes, "#{b}.mp3")) }
+    out, code = run_status
+    assert_equal 1, code
+    assert_match(/alpha\s+WARN\s+history\.yml missing — 2 episodes on disk/, out)
+    refute_includes out, "no episodes yet"
+  end
+
   # --- ordering, scheduling, hint ---
 
   def test_run_scheduled_podcasts_listed_first
@@ -1413,6 +1449,43 @@ class TestStatusCommand < Minitest::Test
     assert_equal 0, code
     assert_equal 1, out.lines.size
     assert_match(%r{bin/podgen schedule --status-check}, out)
+  end
+
+  # --- installed schedules in UTC (P25-1) ---
+
+  def write_schedule_plist(name, hour, minute, note: nil)
+    File.write(File.join(@plist_dir, "com.podcastagent.#{name}.plist"),
+      "#{note && ProductionRun.schedule_note(*note)}\n" \
+      "<key>Hour</key><integer>#{hour}</integer><key>Minute</key><integer>#{minute}</integer>\n")
+  end
+
+  def with_tz(zone)
+    saved = ENV["TZ"]
+    ENV["TZ"] = zone
+    yield
+  ensure
+    ENV["TZ"] = saved
+  end
+
+  def test_run_prints_each_schedule_in_utc
+    make_pod("alpha", dates: fresh_dates)
+    write_schedule_plist("alpha", 9, 15, note: ["07:15", "+02:00"])
+    out, code = with_tz("Etc/GMT-2") { run_status }
+
+    assert_equal 0, code
+    assert_includes out, "schedule alpha: 07:15 UTC"
+    refute_includes out, "WARN schedule"
+  end
+
+  def test_run_warns_when_device_zone_differs_from_the_plists
+    make_pod("alpha", dates: fresh_dates)
+    write_schedule_plist("alpha", 9, 15, note: ["08:15", "+01:00"])
+    write_schedule_plist("uploads", 3, 0)
+    out, = with_tz("Etc/GMT-2") { run_status }
+
+    assert_includes out,
+      "WARN schedule alpha: fires 07:15 UTC, written for 08:15 UTC — re-install: the device zone changed"
+    assert_includes out, "WARN schedule uploads: no UTC time recorded"
   end
 
   # --- --json (frozen shape, CLAUDE.md rule 5) ---

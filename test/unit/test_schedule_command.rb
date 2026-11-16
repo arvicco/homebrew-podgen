@@ -15,9 +15,14 @@ class TestScheduleCommand < Minitest::Test
     @tmpdir = Dir.mktmpdir("podgen_sched_test")
     build_test_podcast(@tmpdir)
     ENV["PODGEN_ROOT"] = @tmpdir
+    # P25-1: --time is UTC; the plist's Hour/Minute follow the device zone,
+    # pinned here so the expectations below hold on any machine.
+    @saved_tz = ENV["TZ"]
+    ENV["TZ"] = "UTC"
   end
 
   def teardown
+    ENV["TZ"] = @saved_tz
     ENV.delete("PODGEN_ROOT")
     FileUtils.rm_rf(@tmpdir)
     cleanup_launchd
@@ -112,19 +117,67 @@ class TestScheduleCommand < Minitest::Test
   def test_installer_args_default
     cmd = PodgenCLI::ScheduleCommand.new(["test_pod"], {})
     args = cmd.installer_args
-    assert_equal ["test_pod", "6", "0"], args
+    assert_equal ["test_pod", "6", "0", "--utc=06:00", "--zone=+00:00"], args
   end
 
   def test_installer_args_with_all_flags
     cmd = PodgenCLI::ScheduleCommand.new(["--time", "18:30", "--publish", "--telegram", "test_pod"], {})
     args = cmd.installer_args
-    assert_equal ["test_pod", "18", "30", "--publish", "--telegram"], args
+    assert_equal ["test_pod", "18", "30", "--publish", "--telegram", "--utc=18:30", "--zone=+00:00"], args
   end
 
   def test_installer_args_publish_only
     cmd = PodgenCLI::ScheduleCommand.new(["--publish", "test_pod"], {})
     args = cmd.installer_args
-    assert_equal ["test_pod", "6", "0", "--publish"], args
+    assert_equal ["test_pod", "6", "0", "--publish", "--utc=06:00", "--zone=+00:00"], args
+  end
+
+  # P25-1: the time given is UTC; the plist gets the device-zone Hour/Minute
+  # and a note with the UTC time and the zone it was written for.
+  def test_time_option_is_utc_and_plist_hour_is_derived_for_the_device_zone
+    ENV["TZ"] = "Etc/GMT-2"
+    now = Time.utc(2026, 1, 15, 12, 0)
+    pod = PodgenCLI::ScheduleCommand.new(["--time", "07:15", "test_pod"], {}, now: now)
+    check = PodgenCLI::ScheduleCommand.new(["--status-check", "--time", "07:15"], {}, now: now)
+    batch = PodgenCLI::ScheduleCommand.new(["--uploads", "pod_a", "--time", "23:30"], {}, now: now)
+
+    assert_equal ["test_pod", "9", "15", "--utc=07:15", "--zone=+02:00"], pod.installer_args
+    plist = check.send(:build_status_check_plist)
+    assert_match(%r{<key>Hour</key>\s*<integer>9</integer>}, plist)
+    assert_match(%r{<key>Minute</key>\s*<integer>15</integer>}, plist)
+    assert_equal ["07:15", "+02:00"], ProductionRun.parse_schedule_note(plist)
+    plist = batch.send(:build_uploads_plist)
+    assert_match(%r{<key>Hour</key>\s*<integer>1</integer>}, plist)
+    assert_equal ["23:30", "+02:00"], ProductionRun.parse_schedule_note(plist)
+  end
+
+  def test_plist_template_carries_the_schedule_note_placeholder
+    template = File.read(File.expand_path("../../com.podcastagent.plist", __dir__))
+    installer = File.read(File.expand_path("../../scripts/install_scheduler.sh", __dir__))
+
+    assert_includes template, "SCHEDULE_NOTE"
+    assert_includes installer, "s|SCHEDULE_NOTE|"
+  end
+
+  def test_status_prints_utc_time_and_warns_when_device_zone_changed
+    ENV["TZ"] = "Etc/GMT-2"
+    cmd = PodgenCLI::ScheduleCommand.new(["--status", "test_pod"], {}, now: Time.utc(2026, 1, 15, 12, 0))
+    out_io = nil
+    cmd.stub :plist_exists?, true do
+      cmd.stub :plist_hour, 9 do
+        cmd.stub :plist_minute, 15 do
+          cmd.stub :plist_note, ["08:15", "+01:00"] do
+            cmd.stub :plist_log_path, "/nonexistent.log" do
+              cmd.stub :launchctl_list_output, nil do
+                out_io, = capture_io { cmd.run }
+              end
+            end
+          end
+        end
+      end
+    end
+    assert_match(/scheduled:\s+07:15 UTC daily/, out_io)
+    assert_includes out_io, "WARN: fires 07:15 UTC, written for 08:15 UTC — re-install: the device zone changed"
   end
 
   # ── --test flag ──
@@ -384,7 +437,7 @@ class TestScheduleCommand < Minitest::Test
     end
     assert_match(/running:\s+yes \(PID 12345\)/, out_io)
     assert_match(/last exit code:\s+0/, out_io)
-    assert_match(/scheduled:\s+06:00 daily/, out_io)
+    assert_match(/scheduled:\s+06:00 UTC daily/, out_io)
   end
 
   def test_status_reports_not_loaded_when_launchctl_returns_nil

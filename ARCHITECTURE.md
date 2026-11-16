@@ -76,6 +76,8 @@ History (`episode_history.rb`), caches (`research_cache.rb`), and upload trackin
 
 **Implication.** Any new persistent state file that the pipeline depends on for correctness should use the same pattern. Import `AtomicWriter` rather than rolling a new one.
 
+**Lost files are not empty ones (P25-4).** A ledger read (`YamlLoader.load(..., raise_on_error: true, empty: :raise)`, used by the strict readers of `history.yml` and `uploads.yml`) raises on a file that exists but is empty or a bare `---`, as it does on a corrupt one, so a writer never rewrites a lost history or ledger as a fresh one; other strict reads (`excluded_urls.yml`, `queue.yml`, the known-vocabulary file, …) still read an empty file as the default. A missing file still reads as the default, so new shows start as before; the places where a missing file would do public damage check for it themselves: the unattended `uploads` batch, for a pod whose `uploads.yml` is absent while its episodes dir holds `.mp4`/`.srt` files (written by uploads, but also before a first upload and by regen), runs only the R2 file sync (no tweets) and skips the YouTube and LingQ uploads, failing the tick, and `R2Publisher` refuses the sync when the episodes dir holds mp3s for fewer dates than `history.yml` lists, and bounds every sync with `rclone --max-delete 25` (`publish --max-delete N` overrides it).
+
 ---
 
 ## Error severity: fatal / retryable / skippable
@@ -145,3 +147,23 @@ Every generate (news and language) ends its run log with `RUN-OUTCOME status=ok|
 **Why.** The status board guessed at degradation with `/Warning:|WARNING/` and an `ERROR` on the last line, but the pipelines report trouble in their own words (`⚠ N episode(s) produced (with warnings)`, `  - Language es failed: ...`, a mid-log `ERROR`). A daily translation failure ended its log cleanly and stayed green. The producer knows its outcome; the reader should not reverse-engineer it from prose.
 
 **Implication.** A new degradation joins the run's warnings — the pipeline's `@warnings`, or `Loggable#log_warning` in a library class (a source down, a research or engine failure, a skipped AI review), which the logger counts — not just the log text. Keep the line additive: new fields go before `first=`, and the parser in `RunOutcome` changes in the same commit.
+
+---
+
+## Backup is one encrypted archive with a manifest; restore never trusts it blindly
+
+`podgen backup` (`lib/backup_archive.rb`, `lib/cli/backup_command.rb`) streams Gem::Package::TarWriter → gzip → `openssl enc -aes-256-cbc -pbkdf2` in one pipe; `podgen restore` (`lib/cli/restore_command.rb`) reads it back the same way. Tar entry names are indexes (`f/000001`); the real relative path, base (project root or home), class, size, mode and SHA-256 of each file live in `manifest.json`, the first entry.
+
+**Why.** The system binaries already on every Mac cover encryption, so no gem is added; the stdlib tar writer streams without staging a second copy of a large media set. Index names mean no tar file-name length limit and no tar name ever chooses a write location — every target is derived from the manifest and refused if it would leave its base. The passphrase is passed as `-pass env:PODGEN_BACKUP_PASSPHRASE` in openssl's child environment, so it never appears in argv or `ps`; openssl's stderr is discarded and every decrypt failure reads "wrong passphrase or damaged archive". Restore reads the archive twice — a full digest check, then the writes — because CBC decryption reports a bad passphrase only at the end of the stream, after bytes have already come out. The write pass digests each entry again against the manifest the check pass verified and renames it into place only on a match, so an archive replaced between the passes stops at its first differing entry; directories created for a secret class are `0700`.
+
+**Implication.** A new gitignored file class an installation needs to run is added to `BackupArchive::CLASSES` (and to `SECRET_CLASSES` when it holds keys, which forces `0600` on restore), with the fixture tree in `test/unit/test_backup_command.rb` extended in the same commit. `restore --force` is the only overwriting path and is owner-only in the guard (`PodgenCLI.restore_force?`, probe rows in `test/unit/test_owner_guard.rb`).
+
+---
+
+## Schedules are UTC, read back from the installed plists
+
+`podgen schedule --time HH:MM` takes the time as UTC. launchd's `StartCalendarInterval` has no zone field and reads Hour/Minute in the device's zone, so the command converts the UTC time to the device's Hour/Minute at install and records the UTC time and the zone offset it was written for in an XML comment in the plist (`<!-- podgen-schedule utc=HH:MM zone=+HH:MM -->`, `ProductionRun.schedule_note`). `ProductionRun.schedules` reads every installed `com.podcastagent.*.plist` back: the recorded UTC time and the UTC time its Hour/Minute fire at in the current zone. `schedule --status` and `podgen status` print the UTC time and WARN when the two differ (the device zone changed; re-install) or when a plist carries no note. The dev-loop's yield guard (`scripts/prod_guard.sh` → `ProductionRun.yield_reason`) holds a window of 5 minutes before to 40 after each job's times, both of them when they differ; the read-only status check job gets none.
+
+**Why.** A schedule written as device-local wall-clock time moves in UTC whenever the device zone changes, while documents and a guard constant keep the old local time; the guard then protects a minute where nothing runs. The plists are the only record of what launchd will actually run, so they are the one source: no schedule time is kept in tracked files.
+
+**Implication.** No plist installed means no time window; the run-lock and uploads-lock yields still apply. A plist written before the note gets a window at its Hour/Minute in the current zone and a WARN until it is re-installed. A new scheduled job written by the CLI must carry the note (both plist builders and `com.podcastagent.plist` do).

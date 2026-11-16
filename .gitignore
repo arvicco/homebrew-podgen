@@ -12,6 +12,7 @@ podcasts/*/
 .claude/worktrees/
 coverage/
 .docs/
+podgen-backup-*
 
 # per-project hook config + CR marker (process artifacts, box-local)
 .claude/config.sh

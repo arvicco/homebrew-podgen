@@ -7,14 +7,70 @@
 module ProductionRun
   module_function
 
-  # The installed launchd schedule (com.podcastagent.fulgur_news: 16:30).
-  # Keep in step with `podgen schedule --time`.
-  LAUNCHD_START = "16:30"
+  # P25-1: the schedule is read from the installed launchd plists, never
+  # from a constant. `podgen schedule --time HH:MM` takes the time as UTC,
+  # writes Hour/Minute for the device's zone and records the UTC time and
+  # the zone offset in an XML comment (schedule_note). No plist installed →
+  # no time window; the lock-based yield still applies.
+  LABEL_PREFIX = "com.podcastagent"
+  # The daily status check is read-only and short: no window for it.
+  UNGUARDED_LABELS = ["#{LABEL_PREFIX}.status"].freeze
+  SCHEDULE_NOTE_RE = /<!--\s*podgen-schedule utc=(\d{2}:\d{2}) zone=(\S+)\s*-->/
+  WINDOW_BEFORE_MINUTES = 5
+  WINDOW_AFTER_MINUTES = 40
 
-  # P18-5 (Q-128): the uploads batch (launchd 10:30, 20+ min) holds an
+  # P18-5: the uploads batch (launchd, 20+ min) holds an
   # exclusive flock on output/uploads.lock for its lifetime — it loads its
   # YouTube code lazily, so a lib/ edit mid-batch could load half-edited code.
   UPLOADS_LOCK = "uploads.lock"
+
+  def default_plist_dir
+    File.join(Dir.home, "Library", "LaunchAgents")
+  end
+
+  def schedule_note(utc, zone)
+    "<!-- podgen-schedule utc=#{utc} zone=#{zone} -->"
+  end
+
+  # [utc "HH:MM", zone] recorded in a plist's text, or nil.
+  def parse_schedule_note(text)
+    m = text.to_s.match(SCHEDULE_NOTE_RE)
+    m ? [m[1], m[2]] : nil
+  end
+
+  # The UTC time a local Hour/Minute fires at on now's date in the device zone.
+  def fires_utc(hour, minute, now:)
+    day = now.getlocal
+    t = Time.local(day.year, day.month, day.day, hour, minute).utc
+    format("%02d:%02d", t.hour, t.min)
+  end
+
+  # Installed jobs: {label:, utc:, zone:, fires_utc:}. utc/zone come from the
+  # schedule note (nil on a plist written before it); fires_utc from the
+  # plist's Hour/Minute read in the device's current zone. A plist without
+  # Hour/Minute is skipped. (map + compact: the guard may run on Ruby 2.6.)
+  def schedules(plist_dir:, now:)
+    Dir.glob(File.join(plist_dir, "#{LABEL_PREFIX}.*.plist")).sort.map do |path|
+      text = File.read(path)
+      hour = text[%r{<key>Hour</key>\s*<integer>(\d+)</integer>}, 1]
+      minute = text[%r{<key>Minute</key>\s*<integer>(\d+)</integer>}, 1]
+      next unless hour && minute
+
+      utc, zone = parse_schedule_note(text)
+      {label: File.basename(path, ".plist"), utc: utc, zone: zone,
+       fires_utc: fires_utc(hour.to_i, minute.to_i, now: now)}
+    rescue SystemCallError, ArgumentError
+      nil
+    end.compact
+  end
+
+  # Why an installed job's plist no longer fires at its UTC time, or nil.
+  def schedule_warning(utc:, fires_utc:)
+    return "no UTC time recorded — re-install with `podgen schedule --time HH:MM` (UTC)" unless utc
+    return nil if utc == fires_utc
+
+    "fires #{fires_utc} UTC, written for #{utc} UTC — re-install: the device zone changed"
+  end
 
   # Podcast names whose run.lock is currently held by another process.
   # Never creates or writes a lock file; unreadable ones count as free.
@@ -27,20 +83,30 @@ module ProductionRun
     !running(output_root: output_root).empty?
   end
 
-  def launchd_window?(now:, start: LAUNCHD_START, before_minutes: 5, after_minutes: 40)
-    from, to = window_bounds(start, before_minutes, after_minutes)
-    minute = now.hour * 60 + now.min
-    minute.between?(from, to)
+  # The yield window ("HH:MM–HH:MM UTC (job)") now falls in, or nil. Both
+  # the recorded UTC time and the one the plist fires at in the current zone
+  # are guarded: after a zone change launchd may keep either.
+  def launchd_window(now:, plist_dir: default_plist_dir)
+    minute = now.utc.hour * 60 + now.utc.min
+    schedules(plist_dir: plist_dir, now: now).each do |job|
+      next if UNGUARDED_LABELS.include?(job[:label])
+
+      [job[:utc], job[:fires_utc]].compact.uniq.each do |start|
+        from, to = window_bounds(start, WINDOW_BEFORE_MINUTES, WINDOW_AFTER_MINUTES)
+        next unless (minute - from) % 1440 <= to - from
+
+        return "#{hhmm(from)}–#{hhmm(to)} UTC (#{job[:label].delete_prefix("#{LABEL_PREFIX}.")})"
+      end
+    end
+    nil
   end
 
   # Window first: inside it nothing touches the lock — the probe's own
   # LOCK_NB attempt would make a generate starting that instant abort
   # (CRPR Gate 2 W1).
-  def yield_reason(output_root:, now: Time.now)
-    if launchd_window?(now: now)
-      from, to = window_bounds(LAUNCHD_START, 5, 40)
-      return "launchd window #{hhmm(from)}–#{hhmm(to)}"
-    end
+  def yield_reason(output_root:, now: Time.now, plist_dir: default_plist_dir)
+    window = launchd_window(now: now, plist_dir: plist_dir)
+    return "launchd window #{window}" if window
 
     names = running(output_root: output_root)
     return "production run active: #{names.join(", ")}" unless names.empty?
@@ -71,6 +137,7 @@ module ProductionRun
   end
 
   def hhmm(minutes)
+    minutes %= 1440
     format("%02d:%02d", minutes / 60, minutes % 60)
   end
 end

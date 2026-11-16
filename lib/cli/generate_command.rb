@@ -609,7 +609,7 @@ module PodgenCLI
     # mid-run, so a corrupt file stops the run here rather than after the
     # episode is produced and moved into place (Q-140).
     def preflight_owner_data!
-      YamlLoader.load(@config.history_path, default: [], raise_on_error: true)
+      YamlLoader.load(@config.history_path, default: [], raise_on_error: true, empty: :raise)
       YamlLoader.load(@config.excluded_urls_path, default: [], raise_on_error: true) if @config.type == "language"
     end
 

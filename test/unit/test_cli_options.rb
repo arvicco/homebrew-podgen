@@ -385,6 +385,11 @@ class TestCLIOptions < Minitest::Test
     assert_equal true, cmd.instance_variable_get(:@all)
   end
 
+  def test_validate_accepts_allow_missing_dictionary
+    cmd = PodgenCLI::ValidateCommand.new(["--allow-missing-dictionary", "test_pod"], {})
+    assert_equal true, cmd.instance_variable_get(:@allow_missing_dictionary)
+  end
+
   def test_rss_accepts_base_url
     cmd = PodgenCLI::RssCommand.new(["--base-url", "https://example.com", "test_pod"], {})
     assert_equal "https://example.com", cmd.instance_variable_get(:@options)[:base_url]

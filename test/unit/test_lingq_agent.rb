@@ -287,7 +287,7 @@ class TestLingQAgent < Minitest::Test
   LESSON_EXISTS_BODY = {
     "originalUrl" => [
       "A lesson with the same URL already exists", "Il Re dei Gamberetti",
-      "https://www.lingq.com/en/learn/it/web/editor/44553346"
+      "https://www.lingq.com/en/learn/it/web/editor/7654321"
     ]
   }.to_json
 
@@ -297,10 +297,10 @@ class TestLingQAgent < Minitest::Test
       assert_raises(LingQAgent::LessonExists) { LingQAgent.new.send(:post_with_retry, "https://x/", {}) }
     end
 
-    assert_equal 44553346, error.lesson_id
+    assert_equal 7654321, error.lesson_id
     assert_kind_of RuntimeError, error, "callers rescuing RuntimeError see no change"
     assert_equal 'LingQ upload failed: HTTP 400: {"originalUrl" => ["A lesson with the same URL already exists", ' \
-                 '"Il Re dei Gamberetti", "https://www.lingq.com/en/learn/it/web/editor/44553346"]}', error.message
+                 '"Il Re dei Gamberetti", "https://www.lingq.com/en/learn/it/web/editor/7654321"]}', error.message
   end
 
   def test_post_with_retry_other_400_raises_plain_runtime_error

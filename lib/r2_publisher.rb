@@ -6,6 +6,7 @@ require_relative "regen_cache"
 require_relative "upload_tracker"
 require_relative "transcript_parser"
 require_relative "episode_filtering"
+require_relative "yaml_loader"
 require_relative "episode_scanner"
 require_relative "publisher_shared"
 
@@ -17,6 +18,12 @@ require_relative "publisher_shared"
 # interface and so RegenCache memoization works across them in-process.
 class R2Publisher
   include PublisherShared
+
+  # Deletions one sync may make before rclone stops and exits non-zero: an
+  # ordinary publish deletes a handful of files (a scrapped episode and its
+  # pages); an emptied or moved output tree would delete the whole mirror.
+  # `options[:max_delete]` overrides it for a deliberate bulk change.
+  MAX_DELETE = 25
 
   # NB: scan_episodes (PublisherShared) scopes only tweet_new_episodes (and
   # refuses an episode id that matches nothing) — the rclone sync runs
@@ -77,6 +84,11 @@ class R2Publisher
       return Result.new(synced: false, tweets_posted: 0, errors: [{ type: :no_match, message: msg }]) # a wrong id is a failed run, as on LingQ/YouTube
     end
 
+    if (msg = missing_episodes_message)
+      $stderr.puts msg
+      return Result.new(synced: false, tweets_posted: 0, errors: [{ type: :episodes_missing, message: msg }])
+    end
+
     RegenCache.ensure_regen(@config) { regenerate! }
 
     success = run_rclone_sync
@@ -89,7 +101,9 @@ class R2Publisher
     print_urls
 
     @tweet_errors = []
-    tweets_posted = @options[:dry_run] ? 0 : tweet_new_episodes
+    # skip_tweets: the uploads batch syncs files for a pod whose uploads.yml
+    # is missing, but posts nothing that ledger would have deduplicated.
+    tweets_posted = (@options[:dry_run] || @options[:skip_tweets]) ? 0 : tweet_new_episodes
 
     Result.new(synced: true, tweets_posted: tweets_posted, errors: @tweet_errors)
   end
@@ -104,6 +118,25 @@ class R2Publisher
     false
   end
 
+  # The feed is rebuilt from the local mp3 scan before the sync, so an
+  # episodes dir that lost files would publish a shorter feed and delete
+  # the mirror's copies. Compared by distinct dates: several history rows
+  # can share one date. A history.yml that is unreadable or empty refuses
+  # too; a missing one (a new show) does not.
+  def missing_episodes_message
+    history_path = File.join(File.dirname(@config.episodes_dir), "history.yml")
+    rows = YamlLoader.load(history_path, default: [], raise_on_error: true, empty: :raise)
+    history_dates = rows.filter_map { |r| r["date"].to_s if r.is_a?(Hash) && r["date"] }.uniq
+    mp3_dates = EpisodeFiltering.all_episodes(@config.episodes_dir)
+      .filter_map { |f| File.basename(f)[/\d{4}-\d{2}-\d{2}/] }.uniq
+    return nil if mp3_dates.size >= history_dates.size
+
+    "R2 sync refused: #{@config.episodes_dir} holds mp3s for #{mp3_dates.size} episode dates but " \
+      "#{history_path} lists #{history_dates.size} — restore the episodes before publishing"
+  rescue RuntimeError => e # fatal for the sync: YamlLoader's strict-read error (corrupt or emptied history.yml)
+    "R2 sync refused: #{e.message}"
+  end
+
   def run_rclone_sync
     source_dir = File.dirname(@config.episodes_dir) # output/<podcast>/
     dest = "r2:#{ENV['R2_BUCKET']}/#{@config.name}/"
@@ -113,6 +146,7 @@ class R2Publisher
 
     args = ["rclone", "sync", source_dir, dest]
     includes.each { |f| args.push("--include", f) }
+    args.push("--max-delete", (@options[:max_delete] || MAX_DELETE).to_s)
     args.push("--dry-run") if @options[:dry_run]
     args.push("-v") if @options[:verbosity] == :verbose
     args.push("--progress") unless @options[:verbosity] == :quiet

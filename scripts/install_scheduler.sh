@@ -1,6 +1,10 @@
 #!/bin/bash
 # Install a launchd scheduler for a specific podcast.
-# Usage: scripts/install_scheduler.sh <podcast_name> <hour> <minute> [--publish] [--telegram]
+# Usage: scripts/install_scheduler.sh <podcast_name> <hour> <minute> [--publish] [--telegram] [--utc=HH:MM --zone=+HH:MM]
+# <hour> <minute> are device-local (launchd reads them in the device zone).
+# `podgen schedule` passes --utc/--zone; they are recorded in the plist as
+# the schedule note that `schedule --status`, `podgen status` and the
+# dev-loop yield guard read back (lib/production_run.rb).
 
 set -e
 
@@ -23,12 +27,20 @@ fi
 # Collect flags for ProgramArguments
 EXTRA_ARGS=""
 FLAGS=""
+UTC_TIME=""
+ZONE=""
 for arg in "$@"; do
   case "$arg" in
     --publish)  EXTRA_ARGS="${EXTRA_ARGS}        <string>--publish</string>\n"; FLAGS="$FLAGS --publish" ;;
     --telegram) EXTRA_ARGS="${EXTRA_ARGS}        <string>--telegram</string>\n"; FLAGS="$FLAGS --telegram" ;;
+    --utc=*)    UTC_TIME="${arg#--utc=}" ;;
+    --zone=*)   ZONE="${arg#--zone=}" ;;
   esac
 done
+NOTE=""
+if [ -n "$UTC_TIME" ]; then
+  NOTE="<!-- podgen-schedule utc=${UTC_TIME} zone=${ZONE} -->"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -41,7 +53,8 @@ printf "  Podcast:  %s\n" "$PODCAST_NAME"
 printf "  Project:  %s\n" "$PROJECT_DIR"
 printf "  Label:    %s\n" "$LABEL"
 printf "  Plist:    %s\n" "$PLIST_DEST"
-printf "  Schedule: daily at %d:%02d\n" "$HOUR" "$MINUTE"
+printf "  Schedule: daily at %d:%02d device time\n" "$HOUR" "$MINUTE"
+[ -n "$UTC_TIME" ] && printf "  UTC:      %s (written for zone %s)\n" "$UTC_TIME" "$ZONE"
 [ -n "$FLAGS" ] && printf "  Flags:   %s\n" "$FLAGS"
 echo
 
@@ -57,6 +70,7 @@ sed -e "s|PODGEN_DIR|$PROJECT_DIR|g" \
     -e "s|com.podcastagent</string>|${LABEL}</string>|g" \
     -e "s|SCHEDULE_HOUR|$HOUR|g" \
     -e "s|SCHEDULE_MINUTE|$MINUTE|g" \
+    -e "s|SCHEDULE_NOTE|$NOTE|" \
     "$PLIST_SRC" > "$PLIST_DEST"
 
 # Replace EXTRA_ARGS placeholder with flag entries (or remove if empty)

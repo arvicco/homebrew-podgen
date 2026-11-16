@@ -14,6 +14,7 @@ require_relative File.join(root, "lib", "run_outcome")
 require_relative File.join(root, "lib", "served_feed")
 require_relative File.join(root, "lib", "youtube_consent")
 require_relative File.join(root, "lib", "production_run")
+require_relative File.join(root, "lib", "tell", "hunspell")
 
 module PodgenCLI
   # Read-only content-progress surface (Q-27, P1-14): one verdict per podcast.
@@ -58,7 +59,7 @@ module PodgenCLI
     GENERATE_START_RE = /\A(?:\[[^\]]*\]\s*)?Podcast Agent started for '/ # GenerateCommand#run
     RUNNING_LOG_SECONDS = 600 # a started run's log written this recently is still running
     STATUS_LABEL = "#{ScheduleCommand::LABEL_PREFIX}.status".freeze
-    INSTALL_HINT = "bin/podgen schedule --status-check --time 07:00"
+    INSTALL_HINT = "bin/podgen schedule --status-check --time HH:MM" # HH:MM in UTC
     # Shared stderr of the per-podcast launchd jobs (scripts/run.sh). A dated
     # rclone line ("2026/09/20 16:52:04 NOTICE: ...") opens a publish entry;
     # undated "Warning:" lines after it belong to that publish. Generate
@@ -169,7 +170,20 @@ module PodgenCLI
         detail = r[:reasons].join("; ")
         puts format("%-#{width}s  %-#{verdict_width}s  %s", r[:podcast], r[:verdict], detail)
       end
+      print_schedules
       puts "\nDaily check not scheduled. Owner command: #{INSTALL_HINT}" unless status_check_scheduled?
+    end
+
+    # P25-1: each installed job's UTC time, WARN when its plist no longer
+    # fires then (device zone changed, or written before the UTC note).
+    def print_schedules
+      jobs = ProductionRun.schedules(plist_dir: @plist_dir, now: @now)
+      puts unless jobs.empty?
+      jobs.each do |job|
+        name = job[:label].delete_prefix("#{ScheduleCommand::LABEL_PREFIX}.")
+        warning = ProductionRun.schedule_warning(utc: job[:utc], fires_utc: job[:fires_utc])
+        puts(warning ? "WARN schedule #{name}: #{warning}" : "schedule #{name}: #{job[:utc]} UTC")
+      end
     end
 
     def status_check_scheduled?
@@ -213,6 +227,8 @@ module PodgenCLI
       uploads = upload_progress(config, dormant ? demote : escalate, inform)
       consent = youtube_consent_finding(config)
       escalate.call("WARN", consent) if consent
+      dictionary = dictionary_finding(config)
+      escalate.call("WARN", dictionary) if dictionary
       served_feed_findings(config, inform, escalate).each { |reason| escalate.call("WARN", reason) }
       if QUIET_VERDICTS.include?(verdict) && newest
         reasons << "newest #{newest} (#{age.negative? ? "scheduled +#{-age}d" : "#{age}d old"}#{"; #{note}" if note})"
@@ -227,10 +243,20 @@ module PodgenCLI
        uploads: nil}
     end
 
+    # A show that annotates vocabulary without its language's hunspell
+    # dictionary (P25-2): named until the files exist.
+    def dictionary_finding(config)
+      lang = config.transcription_language
+      return nil unless config.type == "language" && config.vocabulary_level && lang
+
+      Tell::Hunspell.missing_message(lang)
+    end
+
     # Delegates the staleness rule to Validators::FreshnessValidator.
     def freshness(config, escalate)
       unless File.exist?(config.history_path.to_s)
-        escalate.call("WARN", "no history (no episodes yet)")
+        on_disk = EpisodeFiltering.all_episodes(config.episodes_dir.to_s).length
+        escalate.call("WARN", on_disk.zero? ? "no history (no episodes yet)" : "history.yml missing — #{on_disk} episodes on disk")
         return [nil, nil, nil]
       end
 

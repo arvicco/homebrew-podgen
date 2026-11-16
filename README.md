@@ -131,6 +131,8 @@ ruby bin/podgen <command> [options]
 | `podgen schedule <podcast>`           | Install, remove, or inspect a daily launchd scheduler    |
 | `podgen uploads <pods>`               | Per-pod regen + R2 + LingQ, then a YouTube batch across pods (`--mode`, `--max`) |
 | `podgen init <podcast>`               | Initialize a new podcast (skeleton or from existing) |
+| `podgen backup`                       | Write one encrypted archive of this installation; `--verify <file>` proves one restorable ([Backup and restore](#backup-and-restore)) |
+| `podgen restore <file>`               | Restore a backup archive into this or another machine (`--into`, `--dry-run`, `--force`) |
 
 Per-command flags are documented in the dedicated sections below (e.g. [Generate command](#generate-command-options), [Publish command](#publishing-to-cloudflare-r2)).
 
@@ -380,6 +382,7 @@ topics:
 ```
 
 4. Optionally add per-podcast voice/model overrides in `podcasts/my_podcast/.env`.
+5. A language show with a `## Vocabulary` section needs `brew install hunspell` and the hunspell dictionary for its `language` (`ruby scripts/install_hunspell_dicts.rb <lang>`; `--check` reports what is missing). Without it inflected forms are neither bolded nor counted: `podgen validate` fails (`--allow-missing-dictionary` makes it a warning; a language with no dictionary mapping at all only warns, as there is nothing to install), the run logs one counted warning and `podgen status` names the show until the files exist.
 
 ## Customizing
 
@@ -1099,7 +1102,7 @@ Known words are stored as lemmas (dictionary forms) in `podcasts/<name>/known_vo
 
 ```markdown
 ## LingQ
-- collection: 2629430
+- collection: 1234567
 - level: 3
 - tags: otroci, pravljice
 - status: private
@@ -1152,10 +1155,10 @@ podgen tweet fulgur_news 2026-03-15 --force   # re-tweet even if already posted
 Install a daily launchd scheduler:
 
 ```bash
-# Default: generate at 06:00
+# Default: generate at 06:00 UTC
 podgen schedule ruby_world
 
-# Custom time (24h format)
+# Custom time (24h format, UTC)
 podgen schedule ruby_world --time 18:00
 
 # Generate + publish, with Telegram alerts on failure
@@ -1164,13 +1167,19 @@ podgen schedule fulgur_news --time 18:00 --publish --telegram
 
 | Flag           | Description                                            |
 | -------------- | ------------------------------------------------------ |
-| `--time HH:MM` | Time to run in 24h format (default: `06:00`)           |
+| `--time HH:MM` | UTC time to run in 24h format (default: `06:00`)       |
 | `--publish`    | Run `podgen publish` after a successful generate       |
 | `--telegram`   | Send Telegram alert on generate or publish failure     |
 | `--test`       | Send a test Telegram message and exit                  |
 | `--remove`     | Unload and delete the scheduler for this podcast       |
 | `--status`     | Report scheduled time, loaded/running state, last run  |
 | `--status-check` | Schedule the daily `podgen status` check (no podcast arg) |
+
+Times are UTC. launchd reads a plist's Hour/Minute in the device's zone, so the
+install converts the UTC time for the current zone and records the UTC time and
+zone in the plist (`<!-- podgen-schedule utc=HH:MM zone=+HH:MM -->`). If the
+device zone changes, `--status` and `podgen status` WARN (`re-install: the device
+zone changed`); re-run the same install command.
 
 `--remove`, `--status`, and `--test` are mutually exclusive. `--telegram` requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` (root or per-podcast). Use `--test` after setup to verify alerts are working.
 
@@ -1179,7 +1188,7 @@ Check status of an installed scheduler:
 ```bash
 podgen schedule ruby_world --status
 # ruby_world:
-#   scheduled:       06:00 daily
+#   scheduled:       06:00 UTC daily
 #   loaded:          yes
 #   running:         yes (PID 12345)
 #   last run:        2026-04-23 06:00:14 (1d 5h ago)
@@ -1207,7 +1216,7 @@ podcast's served `base_url/feed.xml` and translated `feed-<code>.xml` (skipped w
 
 ```
 ruby_world  OK    newest 2026-10-10 (1d old)
-fulgur_news WARN  announcements stalled since 2026-08-19 (newest episode 2026-10-11)
+my_show     WARN  announcements stalled since 2026-08-19 (newest episode 2026-10-11)
 old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, threshold 2d)
 ```
 
@@ -1222,7 +1231,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   days old the line says so - `newest 2026-02-19 (235d old; dormant — no cadence)`.
 - **DORMANT** - no `cadence_days` key and no episode for more than 60 days
   (inferred cadence or none): a resting show, not a failure -
-  `lahko_noc DORMANT newest 2026-03-21 (204d old; dormant — no cadence)`.
+  `resting_show DORMANT newest 2026-03-21 (204d old; dormant — no cadence)`.
   Set `cadence_days` to make such a show go OLD instead, or `freshness: off` if it has
   concluded. Its YouTube/LingQ upload findings (including the shared batch-log
   conditions), and its run-log findings while
@@ -1245,7 +1254,8 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   as `<log>: <first warning>` or `<log>: run failed: <first error>`; or
   (older logs, or an `ok` outcome) it ends with an `ERROR` line or
   contains a `Warning:` / `WARNING` line, or the same warning appears in each of
-  the last 3 generate run logs (`--runs N` to change), or there is no history yet.
+  the last 3 generate run logs (`--runs N` to change), or there is no history yet
+  (`history.yml missing — N episodes on disk` when mp3s exist without it).
   Only generate runs count (a log with the `Podcast Agent started` line or a
   `RUN-OUTCOME` line): the `render`, `voice` and `translate` logs in the same
   directory are ignored. Once the podcast's logs carry `RUN-OUTCOME` lines, a
@@ -1308,12 +1318,12 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   batch dated by the begin marker `scripts/run_uploads.sh` writes before it;
   older batches without one pair with the markers in `uploads_stderr.log`): the backlog is
   draining oldest first, so the line is a note, not a WARN —
-  `youtube catching up: 10 uploaded in the last 7 d, 112 behind` (behind =
+  `youtube catching up: 8 uploaded in the last 7 d, 40 behind` (behind =
   eligible episodes not yet tracked). A quota stop in the latest batch joins
   that line as `; batch stops at the daily quota` instead of its own WARN.
   When this show uploaded nothing but another show did in the window, the
   batch's priority order is the cause and the line is a note without the
-  quota WARN: `youtube queued behind bajke (priority mode): 0 uploaded in the last 7 d, 120 behind`.
+  quota WARN: `youtube queued behind other_show (priority mode): 0 uploaded in the last 7 d, 50 behind`.
   The quota condition is a WARN only while no YouTube show uploaded anything
   in the window (the batch is stuck); once some show progressed it is the
   daily cap, so a current show gets no quota line at all (`not authorized`
@@ -1322,7 +1332,7 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
 - **WARN (upload holes)** - per upload platform, eligible episodes dated
   strictly between the oldest and the newest tracked upload, untracked and
   older than 7 days (a stuck episode while newer uploads keep landing):
-  `youtube: 1 untracked episode(s) inside the uploaded range, oldest fiabe-2026-05-14`
+  `youtube: 1 untracked episode(s) inside the uploaded range, oldest my_show-2026-05-14`
   (same for `lingq`). A backlog after the newest tracked upload is never a
   hole.
 - **WARN (YouTube consent)** - for podcasts with a `## YouTube` section: the
@@ -1355,6 +1365,11 @@ old_show    OLD   newest episode 2026-09-04 is 37 days old (cadence ~1d, thresho
   `feed-es.xml: local ahead of served by 3d (owner-paced)`.
 - **OK** - otherwise.
 
+After the rows, one line per installed launchd job gives its UTC time
+(`schedule my_show: HH:MM UTC`), or `WARN schedule my_show: ...` when the plist
+no longer fires at the UTC time it was written for (the device zone changed) or
+was written without one; re-install it. These lines do not change the exit code.
+
 Exit code is `0` when every podcast is OK, DORMANT or UNPUBLISHED, `1` otherwise (`2` for an unknown
 podcast), so a scheduled run can alert on non-zero. `--json` prints a stable
 array; keys are only ever added, never renamed or removed:
@@ -1378,7 +1393,7 @@ entry per platform (`youtube`, `lingq`) of the same shape, with
 it waits behind, or `null`).
 
 The daily check is installed by the owner only (`podgen status --install-hint`
-prints the command): `bin/podgen schedule --status-check --time 07:00` writes
+prints the command): `bin/podgen schedule --status-check --time HH:MM` (UTC) writes
 and loads `com.podcastagent.status`, which runs `scripts/run_status.sh`. That
 wrapper sends the summary to Telegram (`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`
 in `.env`) only when the exit code is non-zero.
@@ -1388,7 +1403,7 @@ in `.env`) only when the exit code is non-zero.
 For households running several podcasts, install a single daily upload job that walks every pod through `regen → R2 → LingQ → YouTube` in one tick:
 
 ```bash
-podgen schedule --uploads bajke,fiabe,basnie --time 10:30
+podgen schedule --uploads <pod1>,<pod2>,<pod3> --time HH:MM
 ```
 
 Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, upload pending LingQ episodes (if configured). YouTube uploads then run across all pods that survived the front-end phase, capped by `--max` if set.
@@ -1396,7 +1411,7 @@ Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, up
 | Flag                 | Description                                                                  |
 | -------------------- | ---------------------------------------------------------------------------- |
 | `--uploads <pods>`   | Comma-separated pod list                                                     |
-| `--time HH:MM`       | Time to run daily (default `06:00`)                                           |
+| `--time HH:MM`       | UTC time to run daily (default `06:00`)                                       |
 | `--mode priority`    | (default) Drain pods in list order; later pods only run when earlier are done |
 | `--mode round-robin` | One YT episode per pod per round, looping until drained / `--max` / rate-limited |
 | `--max N`            | Cap TOTAL YouTube uploads across the tick (LingQ always drains)              |
@@ -1406,6 +1421,7 @@ Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, up
 Failure rules:
 
 - **R2 sync fail** for a pod is fatal — that pod is skipped from LingQ + YouTube for the tick.
+- **Missing `uploads.yml`** while the pod's `episodes/` holds `.mp4`/`.srt` files (written by past uploads, but also before a first upload and by regen): the pod's R2 files are still synced, its YouTube and LingQ uploads and tweets are skipped, and the batch exits non-zero — `uploads ledger missing for <pod> — YouTube, LingQ and tweets skipped (R2 file sync only); restore it or run the first upload interactively`. An `uploads.yml` that exists but is empty is read as corrupt.
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
 - **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.
@@ -1491,8 +1507,11 @@ podgen publish lahko_noc --youtube
 | `--newest`  | Process newest episodes first (useful with quota limits)      |
 | `--force`   | Re-upload even if already tracked in `uploads.yml`            |
 | `--dry-run` | Show what would be published without uploading                |
+| `--max-delete N` | Let the R2 sync delete up to N files (default 25, `-1` = no bound), for a deliberate bulk removal |
 
 Syncs only public-facing files: MP3 episodes, HTML transcripts, feed XML, site pages, and cover image. Internal files (history, research cache, markdown sources) are excluded.
+
+A sync deleting more than 25 files stops and fails ("rclone failed"). The R2 publish refuses before rebuilding the feed when `episodes/` holds mp3s for fewer dates than `history.yml` lists, or when `history.yml` exists but is empty: restore the files first.
 
 ### Download analytics
 
@@ -1541,11 +1560,48 @@ To install hunspell dicts for the languages of all configured podcasts:
 ```bash
 ruby scripts/install_hunspell_dicts.rb            # auto-detect from podcasts
 ruby scripts/install_hunspell_dicts.rb it sl pl   # explicit list
+ruby scripts/install_hunspell_dicts.rb --check    # report installed/missing, no network; exit 1 if any missing
 ```
 
 Pulls `.dic`/`.aff` files from [github.com/wooorm/dictionaries](https://github.com/wooorm/dictionaries) and installs them into `~/Library/Spelling`. Idempotent.
 
 When hunspell isn't available for a language, body counts use lemma + historical surface forms only (a warning prints to stderr). Generated forms are cached at `output/<podcast>/word_forms.yml` and regenerate only when the lemma set or hunspell-availability changes.
+
+## Backup and restore
+
+Everything this installation needs that git does not hold lives in
+gitignored files: show configs, ledgers, output text, `.env`, the token
+directory, the launchd plists and the dictionaries. `podgen backup` packs
+them into one encrypted file; `podgen restore` unpacks it on another Mac.
+
+```bash
+export PODGEN_BACKUP_PASSPHRASE=...      # or leave unset to be prompted (twice for backup)
+podgen backup --out /Volumes/External    # writes podgen-backup-<date>.tar.gz + .sha256
+podgen backup --with-media --out DIR     # also mp3/mp4/images/source audio under output/
+podgen backup --verify DIR/podgen-backup-<date>.tar.gz
+podgen restore podgen-backup-<date>.tar.gz --dry-run   # list what would be written
+podgen restore podgen-backup-<date>.tar.gz             # into the project root and ~
+```
+
+| Class | Files (relative to the project root, or `~` for the last three) |
+| --- | --- |
+| guidelines | `podcasts/**` |
+| ledgers | `output/<show>/history.yml`, `output/<show>/uploads.yml` |
+| output | every other non-media file under `output/` (transcripts, scripts, timestamps, caches, listening records) |
+| media | mp3/mp4/m4a/wav/images under `output/` — only with `--with-media` |
+| boards | `.docs/**` |
+| env | `.env` |
+| tokens | `~/.config/podgen/**` |
+| schedule | `~/Library/LaunchAgents/com.podcastagent.*.plist` |
+| dictionaries | `~/Library/Spelling/*.dic`, `*.aff` |
+
+- **Encryption.** The archive is tar + gzip piped through `openssl enc -aes-256-cbc -pbkdf2`. The passphrase comes from `PODGEN_BACKUP_PASSPHRASE` or a no-echo prompt, never from the command line, and reaches openssl through its environment only. Keep the passphrase somewhere other than the backup.
+- **Manifest.** The first entry records the podgen git sha, the Ruby and ffmpeg versions, the device zone and every file with its class, size, mode and SHA-256. Guidelines, ledgers and `.env` are required: without them the backup aborts and writes nothing.
+- **Proven on the day.** `backup` round-trips the new archive into a temp dir and compares every file with the manifest before the archive gets its name; `--verify` repeats that later. A `.sha256` beside the archive catches a damaged or altered copy before decryption. An existing archive of the same date is never overwritten.
+- **Restore** checks the `.sha256`, the passphrase and every entry before it writes anything; then writes each file to its relative path atomically with its recorded mode (`.env` and token files always `0600`), compares the result with the manifest, and runs `bundle install` when the target holds a Gemfile whose bundle is not satisfied. A file that already exists with the same contents is left as is (so a fresh git checkout is a valid target); one with other contents makes restore refuse unless `--force`. `--into ROOT` and `--home DIR` restore somewhere else, e.g. a temp dir to inspect a backup. `restore --force` is an owner action: inside an agent session it is refused like `publish`.
+- **After a restore** three acts are left for the owner, and restore prints them: load the launchd agents with `podgen schedule`, re-consent YouTube from a terminal if the restored token has lapsed, and run `podgen status` as the proof.
+
+Archives hold every key: keep them off public storage. `podgen-backup-*` is gitignored.
 
 ## Project Structure
 
@@ -1734,10 +1790,12 @@ podgen/
 │   ├── run.sh                # launchd wrapper: generate, optional publish + Telegram alert
 │   ├── run_uploads.sh        # launchd wrapper: podgen uploads
 │   ├── run_status.sh         # launchd wrapper: podgen status → Telegram on non-zero
-│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate or the uploads batch runs
+│   ├── prod_guard.sh         # Dev-loop hook: yield while a production generate or the uploads batch runs, or near an installed job's UTC time
 │   ├── serve.rb              # WEBrick static file server
 │   ├── tell_web.rb           # Tell Web UI launcher
 │   ├── install_hunspell_dicts.rb # Hunspell dictionaries for vocabulary frequency
+│   ├── install_hooks.sh      # Installs the commit-msg guard hook
+│   ├── commit_msg_guard.rb   # commit-msg hook: refuses private ids, clock times, listed terms
 │   └── test_*.rb             # Manual component tests (most dispatched by `podgen test`)
 ├── test/
 │   ├── unit/                 # Fast tier, no I/O (in the gate)
@@ -1756,7 +1814,7 @@ podgen/
 │   ├── research_cache/       # Cached source results (24h)
 │   ├── debug/                # First-attempt review bundles (BLOCKER runs); raw script responses (opt-in)
 │   ├── run.lock              # Held while a generate runs
-│   └── uploads.lock          # Held while the 10:30 batch runs (output/ level, one per install)
+│   └── uploads.lock          # Held while the uploads batch runs (output/ level, one per install)
 └── logs/
     ├── <name>/               # Run logs per podcast (token usage, warnings, phase timings)
     └── launchd_stderr.log    # Shared stderr of the scheduled jobs (publish markers, warnings)
@@ -1772,6 +1830,13 @@ bundle exec rake health    # probe every registered external endpoint (network; 
 bundle exec rake fixtures:record  # re-record the network sources' test fixtures (network + keys; owner-run, never in the gate)
 bundle exec ruby bin/podgen status  # OK/OLD/WARN per podcast; the daily check sends this output to Telegram, so log lines must stay secret-free
 ```
+
+The repository is public, so the gate also scans every tracked file
+(`test/unit/test_tracked_tree_hygiene.rb`): no home directory path, no 7–8 digit
+id outside its placeholder allow-list (recorded fixtures exempt), and no clock
+time written as a schedule in `lib/`, `scripts/`, `bin/` or the README's batch
+lines. Use `HH:MM`, `<pod>` and placeholder ids in examples; schedule times
+live only in the installed plists.
 
 Owner-only commands (`publish`, `unpublish`, `uploads`, `tweet`, `schedule`,
 `analytics`, and `generate --youtube/--lingq`) refuse to run inside a Claude
@@ -1799,6 +1864,21 @@ the scanner — register those hosts manually). `podgen validate` includes a fre
 check: a podcast whose newest episode is older than ~2× its usual
 cadence is flagged OLD (a stalled scheduled pipeline shows up here
 rather than silently).
+
+### Public-surface guards
+
+The repository is public. `scripts/install_hooks.sh` installs
+`scripts/commit_msg_guard.rb` as the `commit-msg` hook (once per clone; a
+worktree shares it; it refuses to replace a hook it did not write unless
+`--force`). The hook refuses a commit message whose subject or body carries an
+id of a private register (`Q-<n>`, `I-<n>`, `R<n>-<n>`; packet ids
+`P<n>-<m>` are fine), a clock time (`H:MM`/`HH:MM` outside backticks — put a
+duration in a code example in backticks; a time with a zone word is refused
+everywhere), a day-part ("overnight", "this morning", "tonight", …), an
+assistant attribution line, or a term from an optional local list (one term
+per line, case-insensitive; `$PODGEN_PUBLIC_TERMS` or the gitignored
+`.docs/public-terms.txt`). Pull request bodies start from
+`.github/pull_request_template.md`.
 
 ## Testing Individual Components
 

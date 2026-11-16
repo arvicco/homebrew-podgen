@@ -112,6 +112,19 @@ module PodgenCLI
 
       pods.each do |pod|
         puts "─── #{pod} ───"
+        if (refusal = missing_ledger_refusal(pod))
+          # The file sync never reads the ledger (the R2 refusals and
+          # --max-delete still guard the bucket); every step that reads it
+          # and could post again is skipped.
+          r2 = run_r2_for(pod, tweets: false)
+          if r2.failed?
+            $stderr.puts "uploads: #{pod} R2 sync FAILED"
+            failures << { pod: pod, phase: :r2, errors: r2.errors }
+          end
+          $stderr.puts refusal
+          failures << { pod: pod, phase: :ledger, errors: [{ type: :ledger_missing, message: refusal }] }
+          next
+        end
         r2 = run_r2_for(pod)
         if r2.failed? && !r2.synced
           $stderr.puts "uploads: #{pod} R2 sync FAILED — skipping LingQ + YT for this pod"
@@ -268,11 +281,31 @@ module PodgenCLI
       arg.split(",").map(&:strip).reject(&:empty?)
     end
 
+    # An absent uploads.yml reads as "nothing uploaded yet", so every
+    # publisher would upload (and tweet) the whole catalogue again. Videos
+    # or captions in the episodes dir may mean earlier uploads (they are
+    # also written before a first upload and by regen): the unattended batch
+    # then syncs the pod's R2 files only; a new show (no such files) runs as
+    # before.
+    def missing_ledger_refusal(pod)
+      config = PodcastConfig.new(pod)
+      tracker = UploadTracker.for_config(config)
+      return nil if tracker.on_disk?
+      return nil if Dir.glob(File.join(config.episodes_dir, "*.{mp4,srt}")).empty?
+
+      ledger = File.join(File.dirname(config.episodes_dir), "uploads.yml")
+      "uploads ledger missing for #{pod} — YouTube, LingQ and tweets skipped (R2 file sync only); " \
+        "restore it or run the first upload interactively " \
+        "(#{ledger}; podgen publish #{pod} --youtube / --lingq from a terminal)"
+    rescue # skippable: a pod whose config does not load fails in its publishers below, as before
+      nil
+    end
+
     # Phase-1 hooks (override-able in tests)
 
-    def run_r2_for(pod)
+    def run_r2_for(pod, tweets: true)
       config = PodcastConfig.new(pod)
-      R2Publisher.new(config: config, options: { verbosity: @options[:verbosity] }).run
+      R2Publisher.new(config: config, options: { verbosity: @options[:verbosity], skip_tweets: !tweets }).run
     rescue => e # skippable per-podcast: recorded as a publisher_crash error; other podcasts continue
       $stderr.puts "uploads: R2 publisher crash for #{pod} (#{e.class}: #{e.message})"
       R2Publisher::Result.new(synced: false, tweets_posted: 0,

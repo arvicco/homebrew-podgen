@@ -56,7 +56,7 @@ class EpisodeHistory
   # uses (explicit basename wins, else same-day position — P4-9, Q-44).
   # Returns the removed entry, or nil if not found.
   def remove_by_date!(date, suffix_index)
-    entries = YamlLoader.load(@path, default: [], raise_on_error: true)
+    entries = YamlLoader.load(@path, default: [], raise_on_error: true, empty: :raise)
 
     global_index = EpisodeNaming.history_entry_index(entries, date, EpisodeNaming.suffix_for(suffix_index))
     return nil unless global_index
@@ -68,7 +68,7 @@ class EpisodeHistory
 
   # Remove a specific entry by basename. Returns the removed entry, or nil if not found.
   def remove_by_basename!(basename)
-    entries = YamlLoader.load(@path, default: [], raise_on_error: true)
+    entries = YamlLoader.load(@path, default: [], raise_on_error: true, empty: :raise)
     idx = entries.index { |e| e["basename"] == basename }
     return nil unless idx
 
@@ -84,7 +84,7 @@ class EpisodeHistory
   # basename it maps to today, so moving one does not shift its siblings
   # (P19-3, Q-124).
   def rename!(old_basename, new_basename:, new_date:)
-    entries = YamlLoader.load(@path, default: [], raise_on_error: true)
+    entries = YamlLoader.load(@path, default: [], raise_on_error: true, empty: :raise)
     idx = entries.index { |e| e["basename"] == old_basename }
     parsed = EpisodeNaming.parse(old_basename)
     idx ||= parsed && EpisodeNaming.history_entry_index(entries, parsed[:date], parsed[:letter])
@@ -102,7 +102,7 @@ class EpisodeHistory
   # `languages:` is an optional Hash mapping language code to per-language metadata
   # (e.g. { "en" => { "duration" => 1234.5, "voiced_at" => "2026-04-26T17:32:00Z" } })
   def record!(date:, title:, topics:, urls:, duration: nil, timestamp: nil, basename: nil, languages: nil)
-    entries = YamlLoader.load(@path, default: [], raise_on_error: true)
+    entries = YamlLoader.load(@path, default: [], raise_on_error: true, empty: :raise)
     entry = {
       "date" => date.to_s,
       "title" => title,
@@ -125,7 +125,7 @@ class EpisodeHistory
   # the feed reads for the suffix-less mp3; Q-123). A missing key is not
   # added: it would land after "languages" and break the frozen key order.
   def record_language!(basename:, language_code:, duration: nil, voiced_at: nil, primary: false)
-    entries = YamlLoader.load(@path, default: [], raise_on_error: true)
+    entries = YamlLoader.load(@path, default: [], raise_on_error: true, empty: :raise)
     idx = entries.index { |e| e["basename"] == basename }
     raise "No history entry for basename #{basename.inspect}" unless idx
 

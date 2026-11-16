@@ -9,6 +9,8 @@ require "cli/publish_options"
 require "cli/tweet_options"
 require "cli/publish_command"
 require "cli/tweet_command"
+require "cli/restore_options"
+require "cli/restore_command"
 
 # Probe table for the owner guard in lib/cli.rb (CLAUDE.md golden rule 3).
 # Every verdict below was written by hand from what the REAL command would
@@ -118,6 +120,28 @@ class TestOwnerGuard < Minitest::Test
     [{}, "schedule", %w[pod --dry-run], true],
     [{dry_run: true}, "analytics", %w[deploy], true],
     [{}, "analytics", %w[deploy --dry-run], true],
+    # --- backup only reads; restore is owner-only when --force overwrites (P25-3) ---
+    [{}, "backup", %w[], false],
+    [{}, "backup", %w[--with-media --out d], false],
+    [{}, "backup", %w[--verify f --force], false],
+    [{}, "restore", %w[f], false],
+    [{}, "restore", %w[f --into r --home h], false],
+    [{}, "restore", %w[f --dry-run], false],
+    [{dry_run: true}, "restore", %w[f], false],
+    [{}, "restore", %w[f --force], true],
+    [{}, "restore", %w[--force f], true],
+    [{}, "restore", %w[f --fo], true],
+    [{}, "restore", %w[f --f], true],
+    [{}, "restore", %w[f --FORCE], true],
+    [{}, "restore", %w[f -f], true],
+    [{}, "restore", %w[f --dry-run --force], true],          # a dry run never exempts --force
+    [{dry_run: true}, "restore", %w[f --force], true],
+    [{}, "restore", %w[f --into --force], false],            # into is "--force"
+    [{}, "restore", %w[f -- --force], false],                # positional; the command rejects it
+    [{}, "restore", %w[f --bogus], false],
+    [{}, "restore", %w[f --bogus --force], true],            # unparseable: token scan
+    [{}, "restore", %w[f --into], false],                    # unparseable, no force-like token
+    [{}, "restore", %w[f --into -- --fo], true],             # unparseable: scan covers tokens after --
     # --- non-owner commands: upload-looking flags are not owner flags ---
     [{}, "rss", %w[pod --youtube], false],
     [{}, "regen", %w[pod --lin], false],
@@ -318,6 +342,16 @@ class TestOwnerGuard < Minitest::Test
       assert_nil PodgenCLI::PublishOptions.dry_parse(argv), argv.join(" ")
     end
     assert_nil PodgenCLI::TweetOptions.dry_parse(%w[pod ep --template])
+  end
+
+  def test_restore_dry_parse_matches_restore_command_options
+    argv = %w[f --into r --home h --dry --fo]
+    parsed = PodgenCLI::RestoreOptions.dry_parse(argv)
+    assert_equal({into: "r", home: "h", dry_run: true, force: true}, parsed)
+
+    cmd = PodgenCLI::RestoreCommand.new(argv.dup, {})
+    assert_equal parsed, cmd.instance_variable_get(:@opts)
+    assert_equal "f", cmd.instance_variable_get(:@file)
   end
 
   # unpublish defines no local --dry-run: only the global flag counts.

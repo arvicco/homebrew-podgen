@@ -37,6 +37,81 @@ class TestR2Publisher < Minitest::Test
     assert_empty result.errors
   end
 
+  def test_sync_args_bound_deletions
+    seed_ep("ep-2026-01-15")
+    calls = []
+    publisher = build_publisher(config: stub_config, runner: ->(env:, args:) {
+      calls << args
+      true
+    })
+
+    capture_io { publisher.run }
+
+    args = calls.first
+    assert_equal "25", args[args.index("--max-delete") + 1]
+  end
+
+  def test_sync_args_max_delete_option_overrides_the_bound
+    seed_ep("ep-2026-01-15")
+    calls = []
+    publisher = build_publisher(config: stub_config, runner: ->(env:, args:) {
+      calls << args
+      true
+    },
+      options: { max_delete: 400 })
+
+    capture_io { publisher.run }
+
+    args = calls.first
+    assert_equal 1, args.count("--max-delete")
+    assert_equal "400", args[args.index("--max-delete") + 1]
+  end
+
+  def test_refuses_sync_when_local_episodes_fewer_than_history_rows
+    seed_ep("ep-2026-01-15")
+    write_history(%w[2026-01-14 2026-01-15])
+    synced = false
+    regen = false
+    publisher = build_publisher(config: stub_config, runner: ->(**) { synced = true })
+    result = nil
+
+    RegenCache.stub(:ensure_regen, ->(*) { regen = true }) do
+      _out, err = capture_io { result = publisher.run }
+      assert_includes err, @episodes_dir
+      assert_includes err, File.join(@tmpdir, "history.yml")
+    end
+
+    refute synced, "no sync may run with episodes missing on disk"
+    refute regen, "the feed is not rebuilt from a short scan"
+    refute result.synced
+    assert_equal :episodes_missing, result.errors.first[:type]
+  end
+
+  def test_sync_allowed_when_several_history_rows_share_a_date_with_fewer_mp3s
+    seed_ep("ep-2026-01-15")
+    write_history(%w[2026-01-15 2026-01-15 2026-01-15])
+    publisher = build_publisher(config: stub_config, runner: ->(**) { true })
+    result = nil
+
+    capture_io { result = publisher.run }
+
+    assert result.synced
+  end
+
+  def test_refuses_sync_when_history_exists_but_is_empty
+    seed_ep("ep-2026-01-15")
+    File.write(File.join(@tmpdir, "history.yml"), "")
+    synced = false
+    publisher = build_publisher(config: stub_config, runner: ->(**) { synced = true })
+    result = nil
+
+    capture_io { result = publisher.run }
+
+    refute synced
+    assert_equal :episodes_missing, result.errors.first[:type]
+    assert_includes result.errors.first[:message], "history.yml"
+  end
+
   def test_rclone_failure_sets_rclone_failed_error
     seed_ep("ep-2026-01-15")
     config = stub_config
@@ -88,6 +163,26 @@ class TestR2Publisher < Minitest::Test
 
     capture_io { publisher.run }
 
+    assert_empty tweets
+  end
+
+  def test_run_skip_tweets_syncs_without_tweeting
+    seed_ep("ep-#{recent_date(1)}")
+    config = stub_config(twitter_enabled: true)
+    tweets = []
+    synced = false
+    publisher = build_publisher(
+      config: config,
+      runner: ->(*) { synced = true },
+      twitter_agent: stub_twitter_agent(tweets),
+      options: { skip_tweets: true }
+    )
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert synced
+    assert result.synced
     assert_empty tweets
   end
 
@@ -311,6 +406,10 @@ class TestR2Publisher < Minitest::Test
   # out of the window and turn the assertions into time bombs.
   def recent_date(days_ago)
     (Date.today - days_ago).iso8601
+  end
+
+  def write_history(dates)
+    File.write(File.join(@tmpdir, "history.yml"), dates.map { |d| { "date" => d, "title" => "t", "topics" => [] } }.to_yaml)
   end
 
   def seed_ep(base)

@@ -8,6 +8,7 @@ require "open3"
 
 root = File.expand_path("../..", __dir__)
 require_relative File.join(root, "lib", "cli", "podcast_command")
+require_relative File.join(root, "lib", "production_run")
 
 module PodgenCLI
   class ScheduleCommand
@@ -19,8 +20,9 @@ module PodgenCLI
 
     attr_reader :hour, :minute
 
-    def initialize(args, options)
+    def initialize(args, options, now: Time.now)
       @options = options
+      @now = now
       @hour = 6
       @minute = 0
       @publish = false
@@ -35,7 +37,7 @@ module PodgenCLI
       @max = nil
 
       OptionParser.new do |opts|
-        opts.on("--time HH:MM", "Time to run in 24h format (default: 06:00)") { |t| parse_time!(t) }
+        opts.on("--time HH:MM", "UTC time to run in 24h format (default: 06:00)") { |t| parse_time!(t) }
         opts.on("--publish", "Run publish after successful generate") { @publish = true }
         opts.on("--telegram", "Send Telegram alert on failure") { @telegram = true }
         opts.on("--test", "Send a test Telegram message and exit") { @test = true }
@@ -63,10 +65,10 @@ module PodgenCLI
     def status? = @status
 
     def installer_args
-      args = [@podcast_name, @hour.to_s, @minute.to_s]
+      args = [@podcast_name, local_time.hour.to_s, local_time.min.to_s]
       args << "--publish" if @publish
       args << "--telegram" if @telegram
-      args
+      args + ["--utc=#{utc_hhmm}", "--zone=#{local_time.strftime("%:z")}"]
     end
 
     def run
@@ -133,6 +135,20 @@ module PodgenCLI
 
     private
 
+    # P25-1: --time is UTC; launchd reads Hour/Minute in the device's zone.
+    def local_time
+      day = @now.utc
+      Time.utc(day.year, day.month, day.day, @hour, @minute).getlocal
+    end
+
+    def utc_hhmm
+      format("%02d:%02d", @hour, @minute)
+    end
+
+    def schedule_note
+      ProductionRun.schedule_note(utc_hhmm, local_time.strftime("%:z"))
+    end
+
     def label
       return "#{LABEL_PREFIX}.uploads" if @uploads
       return "#{LABEL_PREFIX}.status" if @status_check
@@ -174,7 +190,7 @@ module PodgenCLI
         $stderr.puts "Warning: launchctl load may have failed; check #{plist_path} and `launchctl list #{label}`"
       end
 
-      puts "uploads scheduler installed at #{format('%02d:%02d', @hour, @minute)} for: #{@uploads_pods}"
+      puts "uploads scheduler installed at #{utc_hhmm} UTC for: #{@uploads_pods}"
       0
     end
 
@@ -190,7 +206,7 @@ module PodgenCLI
         $stderr.puts "Warning: launchctl load may have failed; check #{plist_path} and `launchctl list #{label}`"
       end
 
-      puts "status check installed at #{format('%02d:%02d', @hour, @minute)} daily"
+      puts "status check installed at #{utc_hhmm} UTC daily"
       0
     end
 
@@ -206,6 +222,7 @@ module PodgenCLI
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         <plist version="1.0">
+        #{schedule_note}
         <dict>
           <key>Label</key>
           <string>#{label}</string>
@@ -220,9 +237,9 @@ module PodgenCLI
           <key>StartCalendarInterval</key>
           <dict>
             <key>Hour</key>
-            <integer>#{@hour}</integer>
+            <integer>#{local_time.hour}</integer>
             <key>Minute</key>
-            <integer>#{@minute}</integer>
+            <integer>#{local_time.min}</integer>
           </dict>
           <key>StandardOutPath</key>
           <string>#{project_dir}/logs/uploads_stdout.log</string>
@@ -248,6 +265,7 @@ module PodgenCLI
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         <plist version="1.0">
+        #{schedule_note}
         <dict>
           <key>Label</key>
           <string>#{label}</string>
@@ -259,9 +277,9 @@ module PodgenCLI
           <key>StartCalendarInterval</key>
           <dict>
             <key>Hour</key>
-            <integer>#{@hour}</integer>
+            <integer>#{local_time.hour}</integer>
             <key>Minute</key>
-            <integer>#{@minute}</integer>
+            <integer>#{local_time.min}</integer>
           </dict>
           <key>StandardOutPath</key>
           <string>#{project_dir}/logs/status_stdout.log</string>
@@ -325,7 +343,10 @@ module PodgenCLI
       exit_code = self.class.decode_wait_status(raw_status)
 
       puts "#{display_name}:"
-      puts "  scheduled:       #{format('%02d:%02d', plist_hour, plist_minute)} daily"
+      fires = ProductionRun.fires_utc(plist_hour, plist_minute, now: @now)
+      puts "  scheduled:       #{fires} UTC daily"
+      warning = ProductionRun.schedule_warning(utc: plist_note&.first, fires_utc: fires)
+      puts "  WARN: #{warning}" if warning
       if @uploads
         pods_str, mode_str, max_str = parse_uploads_args(plist_program_arguments)
         puts "  podcasts:        #{pods_str.split(',').map(&:strip).join(', ')}" if pods_str
@@ -369,6 +390,13 @@ module PodgenCLI
 
     def plist_minute
       plist_read(":StartCalendarInterval:Minute").to_i
+    end
+
+    # [utc, zone] from the plist's schedule note, or nil (P25-1).
+    def plist_note
+      ProductionRun.parse_schedule_note(File.read(plist_path))
+    rescue SystemCallError
+      nil
     end
 
     def plist_log_path

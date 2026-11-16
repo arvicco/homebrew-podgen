@@ -44,12 +44,14 @@ class PodcastValidator
   end
 
   # Validate a podcast config. Returns a Result.
-  def self.validate(config)
-    new(config).run
+  # allow_missing_dictionary: see LanguagePipelineValidator.
+  def self.validate(config, allow_missing_dictionary: false)
+    new(config, allow_missing_dictionary: allow_missing_dictionary).run
   end
 
-  def initialize(config)
+  def initialize(config, allow_missing_dictionary: false)
     @config = config
+    @allow_missing_dictionary = allow_missing_dictionary
     @passes = []
     @warnings = []
     @errors = []
@@ -60,12 +62,18 @@ class PodcastValidator
     validators << PIPELINE_VALIDATORS[@config.type] # an unknown type is a Guidelines error, not news (Q-133)
     validators << Validators::OrphansValidator
 
-    validators.compact.each { |klass| merge_result(klass.new(@config).validate) }
+    validators.compact.each { |klass| merge_result(build(klass).validate) }
 
     Result.new(passes: @passes, warnings: @warnings, errors: @errors)
   end
 
   private
+
+  def build(klass)
+    return klass.new(@config) unless klass == Validators::LanguagePipelineValidator
+
+    klass.new(@config, allow_missing_dictionary: @allow_missing_dictionary)
+  end
 
   def merge_result(result)
     @passes.concat(result[:passes])

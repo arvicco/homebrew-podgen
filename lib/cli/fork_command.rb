@@ -43,7 +43,7 @@ module PodgenCLI
       old_tracking = File.join(old_output_dir, "uploads.yml")
       legacy_tracking = !File.exist?(old_tracking)
       old_tracking = File.join(old_output_dir, "lingq_uploads.yml") if legacy_tracking
-      tracking_data = YamlLoader.load(old_tracking, default: {}, raise_on_error: true)
+      tracking_data = YamlLoader.load(old_tracking, default: {}, raise_on_error: true, empty: :raise)
 
       # 1. Copy config directory
       FileUtils.cp_r(old_config.podcast_dir, new_podcast_dir)

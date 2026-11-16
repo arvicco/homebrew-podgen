@@ -65,6 +65,44 @@ class TestVocabularyAnnotator < Minitest::Test
     end
   end
 
+  # --- P25-2: a language without an installed dictionary is a counted warning ---
+
+  def test_annotate_without_dictionary_for_the_language_logs_a_counted_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    annotator = VocabularyAnnotator.new("test-key", model: "m", logger: logger)
+    Dir.mktmpdir do |dir|
+      Tell::Hunspell.stub(:dict_dirs, [dir]) do
+        Tell::Hunspell.stub(:supports?, false) do
+          annotator.stub(:classify_words, []) { annotator.annotate("hola", language: "es", cutoff: "B1") }
+        end
+      end
+    end
+
+    assert_equal ["[VocabularyAnnotator] Warning: no hunspell dictionary for 'es' (es_ES): inflections are not expanded " \
+      "— run scripts/install_hunspell_dicts.rb es"], warnings
+  end
+
+  def test_annotate_with_dictionary_installed_logs_no_dictionary_warning
+    warnings = []
+    logger = Object.new
+    logger.define_singleton_method(:log) { |_m| nil }
+    logger.define_singleton_method(:warning) { |m| warnings << m }
+    annotator = VocabularyAnnotator.new("test-key", model: "m", logger: logger)
+    Dir.mktmpdir do |dir|
+      %w[es_ES.dic es_ES.aff].each { File.write(File.join(dir, it), "") }
+      Tell::Hunspell.stub(:dict_dirs, [dir]) do
+        Tell::Hunspell.stub(:available?, true) do
+          annotator.stub(:classify_words, []) { annotator.annotate("hola", language: "es", cutoff: "B1") }
+        end
+      end
+    end
+
+    assert_empty warnings
+  end
+
   # --- mark_words ---
 
   def test_mark_words_bolds_all_occurrences

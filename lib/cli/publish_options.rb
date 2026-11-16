@@ -19,6 +19,7 @@ module PodgenCLI
       opts.on("--newest", "Publish newest episodes first") { options[:newest] = true }
       opts.on("--max N", Integer, "Cap number of YouTube uploads per invocation") { |n| options[:max] = n }
       opts.on("--dry-run", "Show what would be published") { options[:dry_run] = true }
+      opts.on("--max-delete N", Integer, "Allow the R2 sync to delete up to N files (default 25; -1 = no bound)") { |n| options[:max_delete] = n }
       opts.on("--date DATE", "Episode date (YYYY-MM-DD)") { |v| on_date&.call(v) }
     end
 

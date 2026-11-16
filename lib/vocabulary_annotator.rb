@@ -50,6 +50,12 @@ class VocabularyAnnotator
 
     target_languages ||= [target_language]
     log("Annotating vocabulary (#{language}, #{cutoff}+ cutoff, definitions in #{target_languages.join(', ')})")
+    # Without the language's dictionary, inflected forms are neither bolded
+    # nor counted: a counted warning, never a quiet mode.
+    unless language.nil? || Tell::Hunspell.supports?(language)
+      problem = Tell::Hunspell.expansion_problem(language)
+      log_warning(problem) if problem
+    end
 
     # Stage 0: story-critical candidates, named to the classifier (loop call 4).
     # They need a ledger with ≥ 1 earlier episode: without document

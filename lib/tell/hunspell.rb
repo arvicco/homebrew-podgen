@@ -3,6 +3,7 @@
 require "open3"
 require "set"
 require "tempfile"
+require_relative "../atomic_writer"
 
 module Tell
   # Wraps hunspell + unmunch for morphological inflection expansion.
@@ -19,6 +20,9 @@ module Tell
       "lv" => "lv_LV", "el" => "el_GR", "tr" => "tr_TR",
       "ru" => "ru_RU", "uk" => "uk_UA", "bg" => "bg_BG"
     }.freeze
+
+    # Bumped when the conversion changes, so older /tmp caches are ignored.
+    CACHE_VERSION = 2
 
     DICT_DIRS = [
       File.join(Dir.home, "Library", "Spelling"),
@@ -92,7 +96,9 @@ module Tell
           forms = stdout.lines.map(&:strip).reject(&:empty?)
             .select { |form| form.start_with?(prefix) }
             .uniq
-          return forms if verb_stem == lemma
+          # A root whose forms do not include the lemma is a different word
+          # ("nuovamente" → "nuovo", "farcela" → "fare"): expand nothing.
+          return (forms.include?(lemma) ? forms : []) if verb_stem == lemma
 
           # The stem search also reaches other words ("leteti" → "leta",
           # years): keep only forms that stem back to one of the lemma's roots.
@@ -104,6 +110,51 @@ module Tell
 
       def dict_for(lang)
         DICT_MAP[lang]
+      end
+
+      # Directories searched for <DICT>.{dic,aff} (a seam for tests).
+      def dict_dirs
+        DICT_DIRS
+      end
+
+      # The dictionary file names +lang+ needs when no dict_dirs entry holds
+      # both of them, [] when one does; nil when DICT_MAP has no entry.
+      def missing_for(lang)
+        dict = dict_for(lang)
+        return nil unless dict
+
+        files = ["#{dict}.dic", "#{dict}.aff"]
+        installed = dict_dirs.any? { |dir| files.all? { File.exist?(File.join(dir, it)) } }
+        installed ? [] : files
+      end
+
+      # One line naming why +lang+ gets no inflection expansion from the
+      # dictionary files alone (no mapping, files missing), nil when they
+      # are installed. Shared by the annotator, `validate` and the board.
+      def missing_message(lang)
+        missing = missing_for(lang)
+        return "no dictionary mapping for '#{lang}': inflections are not expanded" if missing.nil?
+        return nil if missing.empty?
+
+        "no hunspell dictionary for '#{lang}' (#{dict_for(lang)}): inflections are not expanded " \
+          "— run scripts/install_hunspell_dicts.rb #{lang}"
+      end
+
+      # missing_message, or the missing hunspell/unmunch tools; nil when the
+      # language's inflections can be expanded.
+      def expansion_problem(lang)
+        missing_message(lang) ||
+          (available? ? nil : "hunspell or unmunch not installed: inflections are not expanded")
+      end
+
+      # `scripts/install_hunspell_dicts.rb --check`: one line per language
+      # and whether every language's dictionary is installed.
+      def check_report(langs)
+        problems = langs.to_h { [it, missing_message(it)] }
+        lines = problems.map do |lang, problem|
+          problem ? "#{lang}: MISSING — #{problem}" : "#{lang}: installed (#{dict_for(lang)})"
+        end
+        [lines, problems.values.none?]
       end
 
       # In-memory cache: dict name → { word => [dic_content_lines] }.
@@ -156,7 +207,7 @@ module Tell
 
       # Find the .dic file path for a dictionary name.
       def find_dic_path(dict)
-        DICT_DIRS.each do |dir|
+        dict_dirs.each do |dir|
           path = File.join(dir, "#{dict}.dic")
           return path if File.exist?(path)
         end
@@ -175,24 +226,49 @@ module Tell
         aff_path = dic_path.sub(/\.dic$/, ".aff")
         return @utf8_cache[dict] = [nil, nil] unless File.exist?(aff_path)
 
-        # Check if already UTF-8
-        aff_header = File.read(aff_path, 100, encoding: "BINARY")
-        if aff_header.include?("SET UTF-8")
-          return @utf8_cache[dict] = [dic_path, aff_path]
-        end
+        # Already UTF-8: use the originals
+        encoding = aff_encoding(aff_path)
+        return @utf8_cache[dict] = [dic_path, aff_path] if encoding.casecmp?("UTF-8")
 
-        # Convert to UTF-8 in /tmp
-        encoding = aff_header[/SET\s+(\S+)/, 1] || "ISO-8859-2"
-        utf8_dic = "/tmp/hunspell_#{dict}_utf8.dic"
-        utf8_aff = "/tmp/hunspell_#{dict}_utf8.aff"
+        # Convert to UTF-8 in the cache dir; the version in the name keeps a
+        # cache written by an older conversion path from being reused.
+        utf8_dic = File.join(cache_dir, "hunspell_#{dict}_utf8_v#{CACHE_VERSION}.dic")
+        utf8_aff = File.join(cache_dir, "hunspell_#{dict}_utf8_v#{CACHE_VERSION}.aff")
 
         unless File.exist?(utf8_dic) && File.exist?(utf8_aff)
-          system("iconv", "-f", encoding, "-t", "UTF-8", dic_path, out: utf8_dic)
-          aff_content, _, _ = Open3.capture3("iconv", "-f", encoding, "-t", "UTF-8", aff_path)
-          File.write(utf8_aff, aff_content.sub(/SET\s+\S+/, "SET UTF-8"))
+          dic_content = iconv_utf8(dic_path, encoding)
+          aff_content = iconv_utf8(aff_path, encoding)
+          return @utf8_cache[dict] = [nil, nil] unless dic_content && aff_content
+
+          AtomicWriter.write(utf8_dic, dic_content)
+          AtomicWriter.write(utf8_aff, aff_content.sub(/^SET\s+\S+/, "SET UTF-8"))
         end
 
         @utf8_cache[dict] = [utf8_dic, utf8_aff]
+      end
+
+      # The .aff file's SET line (anywhere in the file, not only its header);
+      # ISO-8859-2 when it has none.
+      def aff_encoding(aff_path)
+        File.foreach(aff_path, encoding: "BINARY") do |line|
+          encoding = line[/\ASET\s+(\S+)/, 1]
+          return encoding if encoding
+        end
+        "ISO-8859-2"
+      end
+
+      # The file converted to UTF-8, or nil (with a warning) when iconv fails.
+      def iconv_utf8(path, encoding)
+        stdout, stderr, status = Open3.capture3("iconv", "-f", encoding, "-t", "UTF-8", path)
+        return stdout if status.success?
+
+        $stderr.puts "warn: iconv #{encoding} → UTF-8 failed (#{File.basename(path)}): #{stderr.to_s.lines.first.to_s.strip} — no inflection expansion"
+        nil
+      end
+
+      # Where converted dictionaries are cached (a seam for tests).
+      def cache_dir
+        "/tmp"
       end
     end
   end

@@ -704,6 +704,29 @@ class TestGenerateCommand < Minitest::Test
     assert_match(/excluded_urls\.yml: expected Array, got Hash/, last_log_line)
   end
 
+  # Only the ledgers refuse an existing empty file: a hand-emptied
+  # excluded_urls.yml is a list with nothing in it.
+  def test_run_language_empty_excluded_urls_passes_preflight
+    cmd = owner_data_command("language")
+    File.write(cmd.instance_variable_get(:@config).excluded_urls_path, "")
+    built = false
+    PodgenCLI::LanguagePipeline.stub(:new, ->(**) { (built = true) and Struct.new(:warnings) { def run = 0 }.new([]) }) do
+      capture_io { cmd.run }
+    end
+
+    assert built, "an empty excluded_urls.yml stopped the run"
+  end
+
+  def test_run_empty_history_fails_preflight
+    cmd = owner_data_command("news")
+    File.write(cmd.instance_variable_get(:@config).history_path, "")
+    code = nil
+    capture_io { code = cmd.run }
+
+    assert_equal 1, code
+    assert_match(/history\.yml exists but is empty/, last_log_line)
+  end
+
   def test_run_news_clean_owner_data_passes_preflight
     cmd = owner_data_command("news")
     File.write(cmd.instance_variable_get(:@config).excluded_urls_path, "not: a list\n") # news never writes it

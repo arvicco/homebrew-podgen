@@ -2,9 +2,17 @@
 
 require_relative "base_validator"
 require_relative "../remote_image_cache"
+require_relative "../tell/hunspell"
 
 module Validators
   class LanguagePipelineValidator < BaseValidator
+    # allow_missing_dictionary: a missing hunspell dictionary is a warning,
+    # not an error (`validate --allow-missing-dictionary`).
+    def initialize(config, allow_missing_dictionary: false)
+      super(config)
+      @allow_missing_dictionary = allow_missing_dictionary
+    end
+
     private
 
     def check
@@ -22,6 +30,8 @@ module Validators
         end
       end
 
+      check_dictionary
+
       if @config.lingq_config
         lc = @config.lingq_config
         # A URL is fetched by LingQPublisher (Q-56); say so, not "not found".
@@ -34,6 +44,29 @@ module Validators
           @warnings << "LingQ: base_image file not found: #{lc[:base_image]}"
         end
       end
+    end
+
+    # Vocabulary annotation expands inflections from the transcription
+    # language's hunspell dictionary; without it the annotator degrades.
+    # A language with no dictionary mapping has nothing to install: a
+    # warning. A mapped one with its files missing is an error.
+    def check_dictionary
+      lang = @config.transcription_language
+      return unless @config.vocabulary_level && lang
+
+      problem = Tell::Hunspell.missing_message(lang)
+      unless problem
+        @passes << "Vocabulary: hunspell dictionary for '#{lang}' installed"
+        return
+      end
+
+      missing = Tell::Hunspell.missing_for(lang)
+      if missing.nil?
+        @warnings << "Vocabulary: no dictionary mapping for '#{lang}': inflection expansion is unavailable for this language"
+        return
+      end
+      problem += " (#{missing.join(" + ")} in none of #{Tell::Hunspell.dict_dirs.join(", ")})"
+      (@allow_missing_dictionary ? @warnings : @errors) << "Vocabulary: #{problem}"
     end
   end
 end
