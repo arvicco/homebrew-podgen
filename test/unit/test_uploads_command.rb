@@ -39,14 +39,19 @@ class TestUploadsCommand < Minitest::Test
 
   # ── a missing ledger with evidence of past uploads ──
 
-  def test_batch_refuses_pod_with_missing_ledger_and_past_videos
+  # .mp4/.srt files are written before a first upload too (and by regen),
+  # so they do not prove a lost ledger: the R2 file sync (which never reads
+  # it) still runs; only the ledger-reading steps that could post again —
+  # YouTube, LingQ, tweets — are skipped, and the tick fails.
+  def test_batch_missing_ledger_and_past_videos_syncs_r2_only
     episodes_dir = File.join(@tmpdir, "output", "pod_a", "episodes")
     FileUtils.mkdir_p(episodes_dir)
     FileUtils.touch(File.join(episodes_dir, "pod_a-2026-01-16.mp4"))
+    FileUtils.touch(File.join(episodes_dir, "pod_a-2026-01-16.srt"))
     calls = []
     cmd = stub_cmd(["pod_a"])
-    cmd.define_singleton_method(:run_r2_for) { |pod|
-      calls << [:r2, pod]
+    cmd.define_singleton_method(:run_r2_for) { |pod, **opts|
+      calls << [:r2, pod, opts]
       R2Result.new(synced: true, tweets_posted: 0, errors: [])
     }
     cmd.define_singleton_method(:run_lingq_for) { |pod|
@@ -64,9 +69,10 @@ class TestUploadsCommand < Minitest::Test
       out, err = capture_io { @code = cmd.run }
     end
 
-    assert_empty calls, "no phase may run against a missing ledger"
-    assert_includes err, "uploads ledger missing for pod_a — refusing; restore it or run the first upload interactively"
+    assert_equal [[:r2, "pod_a", { tweets: false }]], calls, "R2 file sync only: no tweets, LingQ or YouTube"
+    assert_includes err, "uploads ledger missing for pod_a — YouTube, LingQ and tweets skipped (R2 file sync only)"
     assert_includes err, File.join(@tmpdir, "output", "pod_a", "uploads.yml")
+    assert_includes err, "podgen publish pod_a --youtube"
     assert_includes out, "pod_a: ledger"
     assert_equal 1, @code
   end

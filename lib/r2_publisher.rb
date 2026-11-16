@@ -101,7 +101,9 @@ class R2Publisher
     print_urls
 
     @tweet_errors = []
-    tweets_posted = @options[:dry_run] ? 0 : tweet_new_episodes
+    # skip_tweets: the uploads batch syncs files for a pod whose uploads.yml
+    # is missing, but posts nothing that ledger would have deduplicated.
+    tweets_posted = (@options[:dry_run] || @options[:skip_tweets]) ? 0 : tweet_new_episodes
 
     Result.new(synced: true, tweets_posted: tweets_posted, errors: @tweet_errors)
   end

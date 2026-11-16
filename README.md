@@ -1421,7 +1421,7 @@ Per pod, sequentially: regenerate RSS+site (memoized), sync to Cloudflare R2, up
 Failure rules:
 
 - **R2 sync fail** for a pod is fatal — that pod is skipped from LingQ + YouTube for the tick.
-- **Missing `uploads.yml`** while the pod's `episodes/` holds `.mp4`/`.srt` files (past uploads): the pod is skipped entirely and the batch exits non-zero — `uploads ledger missing for <pod> — refusing; restore it or run the first upload interactively`. An `uploads.yml` that exists but is empty is read as corrupt.
+- **Missing `uploads.yml`** while the pod's `episodes/` holds `.mp4`/`.srt` files (written by past uploads, but also before a first upload and by regen): the pod's R2 files are still synced, its YouTube and LingQ uploads and tweets are skipped, and the batch exits non-zero — `uploads ledger missing for <pod> — YouTube, LingQ and tweets skipped (R2 file sync only); restore it or run the first upload interactively`. An `uploads.yml` that exists but is empty is read as corrupt.
 - **LingQ fail** is logged but the pod still proceeds to YouTube; LingQ retries naturally next tick.
 - **YouTube rate limit** halts the YT phase but is an expected daily occurrence and does NOT cause a non-zero exit.
 - **Same YouTube error two rounds running** (round-robin; "same" means the same error class, or the same error type such as `upload`/`video` when no class is recorded) stops retrying that pod for the rest of the tick, logging one line: `uploads: <pod> permanently skipped — <error class or type>: <message> (same error 2 rounds running)`. Items stay pending for the next tick; the exit code is unaffected.

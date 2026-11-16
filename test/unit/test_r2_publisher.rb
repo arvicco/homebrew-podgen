@@ -166,6 +166,26 @@ class TestR2Publisher < Minitest::Test
     assert_empty tweets
   end
 
+  def test_run_skip_tweets_syncs_without_tweeting
+    seed_ep("ep-#{recent_date(1)}")
+    config = stub_config(twitter_enabled: true)
+    tweets = []
+    synced = false
+    publisher = build_publisher(
+      config: config,
+      runner: ->(*) { synced = true },
+      twitter_agent: stub_twitter_agent(tweets),
+      options: { skip_tweets: true }
+    )
+
+    result = nil
+    capture_io { result = publisher.run }
+
+    assert synced
+    assert result.synced
+    assert_empty tweets
+  end
+
   def test_tweets_new_episodes_on_success_when_twitter_enabled
     seed_ep("ep-#{recent_date(1)}")
     config = stub_config(twitter_enabled: true)
