@@ -36,7 +36,7 @@ class UploadTracker
   # that would then be saved over it (Q-108); display reads keep the default.
   def load(strict: false)
     migrate_legacy_file(strict: strict) unless @migrated
-    data = YamlLoader.load(@path, default: {}, raise_on_error: strict)
+    data = YamlLoader.load(@path, default: {}, raise_on_error: strict, empty: :raise)
     normalize_keys(data)
   end
 
@@ -45,8 +45,8 @@ class UploadTracker
   # never touches a file, dry runs included (Q-140). With only the legacy
   # file on disk, that file is the ledger and is read the same way.
   def verify!
-    YamlLoader.load(@path, default: {}, raise_on_error: true)
-    YamlLoader.load(legacy_path, default: {}, raise_on_error: true) unless File.exist?(@path)
+    YamlLoader.load(@path, default: {}, raise_on_error: true, empty: :raise)
+    YamlLoader.load(legacy_path, default: {}, raise_on_error: true, empty: :raise) unless File.exist?(@path)
     nil
   end
 
@@ -195,7 +195,7 @@ class UploadTracker
   def migrate_legacy_file(strict: false)
     return @migrated = true if File.exist?(@path) || !File.exist?(legacy_path)
 
-    legacy_data = YamlLoader.load(legacy_path, default: {}, raise_on_error: strict)
+    legacy_data = YamlLoader.load(legacy_path, default: {}, raise_on_error: strict, empty: :raise)
     @migrated = true
     return unless legacy_data.is_a?(Hash) && !legacy_data.empty?
 

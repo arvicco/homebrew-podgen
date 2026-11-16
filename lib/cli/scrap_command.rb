@@ -68,7 +68,7 @@ module PodgenCLI
 
       # Load history and find matching entry
       history = EpisodeHistory.new(config.history_path)
-      entries = YamlLoader.load(config.history_path, default: [], raise_on_error: true) # fail before any file is deleted (Q-108)
+      entries = YamlLoader.load(config.history_path, default: [], raise_on_error: true, empty: :raise) # fail before any file is deleted (Q-108)
       matching_entry = find_history_entry(entries, target_base) || find_history_entry_by_date(entries, date, suffix_index)
 
       # Display what will be removed

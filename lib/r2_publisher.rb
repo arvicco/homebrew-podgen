@@ -123,7 +123,7 @@ class R2Publisher
   # too; a missing one (a new show) does not.
   def missing_episodes_message
     history_path = File.join(File.dirname(@config.episodes_dir), "history.yml")
-    rows = YamlLoader.load(history_path, default: [], raise_on_error: true)
+    rows = YamlLoader.load(history_path, default: [], raise_on_error: true, empty: :raise)
     history_dates = rows.filter_map { |r| r["date"].to_s if r.is_a?(Hash) && r["date"] }.uniq
     mp3_dates = EpisodeFiltering.all_episodes(@config.episodes_dir)
       .filter_map { |f| File.basename(f)[/\d{4}-\d{2}-\d{2}/] }.uniq

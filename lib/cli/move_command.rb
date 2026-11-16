@@ -190,7 +190,7 @@ module PodgenCLI
     # half-moved episode on disk.
     def perform_move(config, pairs, to_date, artifacts_per_base:)
       # Fail before the first rename: the per-pair writers load these strictly.
-      YamlLoader.load(config.history_path, default: [], raise_on_error: true)
+      YamlLoader.load(config.history_path, default: [], raise_on_error: true, empty: :raise)
       UploadTracker.for_config(config).load(strict: true)
       moved_files = 0
       completed_pairs = []
