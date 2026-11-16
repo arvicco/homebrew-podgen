@@ -23,7 +23,11 @@ class TestCommitMsgGuard < Minitest::Test
     "fix: a night run of the morning batch is fine\n",
     "feat: x (P25-2)\n# Please enter the commit message. Q-12 in a comment is dropped\n",
     "feat: x\n# ------------------------ >8 ------------------------\n+ diff line 10:30 UTC Q-12\n",
-    "feat: Co-Authored-By a human\n\nCo-Authored-By: Jane Doe <jane@example.com>\n"
+    "feat: Co-Authored-By a human\n\nCo-Authored-By: Jane Doe <jane@example.com>\n",
+    "fix: mp4 generated with ffmpeg keeps its cover\n",
+    "fix: x\n\nGenerated with ffmpeg from the cover and the mp3.\n",
+    "fix: a lib/foo path and Asia minor are not zones\n",
+    "docs: the zone in code `Europe/Berlin` stays allowed\n"
   ].freeze
 
   REFUSED = {
@@ -40,7 +44,14 @@ class TestCommitMsgGuard < Minitest::Test
     "fix: will rerun tonight\n" => "day-part 'tonight'",
     "fix: done this evening\n" => "day-part 'this evening'",
     "feat: x\n\nCo-Authored-By: Claude Opus <noreply@example.com>\n" => "assistant attribution",
-    "feat: x\n\nGenerated with some tool\n" => "assistant attribution",
+    "feat: x\n\n\u{1F916} Generated with [Some Tool](https://example.com/tool)\n" => "assistant attribution",
+    "feat: x\n\nGenerated with https://example.com/tool\n" => "assistant attribution",
+    "feat: x\n\n  Generated with ChatGPT\n" => "assistant attribution",
+    "fix: closes Q\u2010218\n" => "private register id 'Q\u2010218'",
+    "fix: x per R22\u201103\n" => "private register id 'R22\u201103'",
+    "fix: x\n\nSee I\u201325.\n" => "private register id 'I\u201325'",
+    "fix: jobs run in Europe/Berlin now\n" => "time zone 'Europe/Berlin'",
+    "fix: x\n\nthe host is set to America/Argentina/Buenos_Aires\n" => "time zone 'America/Argentina/Buenos_Aires'",
     "feat: x\n\nClaude-Session: abc\n" => "assistant attribution",
     "feat: new episode of My_Show\n" => "listed term 'my_show'",
     "Merge branch 'placeholder-term-fix'\n" => "listed term 'placeholder-term'"

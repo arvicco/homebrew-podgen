@@ -9,28 +9,35 @@
 # Refused, in the subject or the body (git's "#" comment lines and anything
 # below the verbose-mode scissors line are ignored; merge messages are
 # checked like any other):
-#   - an id of a private register: Q-<n>, I-<n>, R<n>-<n> (packet ids
-#     P<n>-<m> are allowed);
+#   - an id of a private register: Q-<n>, I-<n>, R<n>-<n>, also with a
+#     Unicode hyphen or en dash for the "-" (packet ids P<n>-<m> are
+#     allowed);
 #   - a clock time: H:MM / HH:MM (optionally :SS) outside code — text in
 #     `backticks` or ``` fences is exempt, so a duration in a code example
 #     is written `1:20`; a clock time followed by a zone word (UTC, CET, …)
 #     is refused even inside code;
+#   - a named time zone (<Region>/<City>, e.g. Europe/Berlin) outside code;
 #   - a day-part ("overnight", "this morning", "tonight", "this evening", …);
 #   - an assistant attribution line (Co-Authored-By naming an assistant,
-#     "Generated with", "Claude-Session:");
+#     a "Generated with" footer line — optional emoji, then a link or an
+#     assistant name — "Claude-Session:"); "generated with ffmpeg" in prose
+#     is not one;
 #   - any term of the optional term list: one term per line, matched as a
 #     case-insensitive substring; blank and "#" lines skipped. Read from
 #     $PODGEN_PUBLIC_TERMS, else .docs/public-terms.txt at the repository
 #     root when that file exists (absent = the generic checks only).
 module CommitMsgGuard
-  REGISTER_ID = /(?<![\w-])(?:[QI]-\d+|R\d+-\d+)(?![\w-])/
+  HYPHENS = "\\-\u2010\u2011\u2013"
+  REGISTER_ID = /(?<![\w#{HYPHENS}])(?:[QI][#{HYPHENS}]\d+|R\d+[#{HYPHENS}]\d+)(?![\w#{HYPHENS}])/
   CLOCK = /(?<![\d:.])(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?![\d:])/
   ZONE = /\b(?:UTC|GMT|CES?T|CED?T|[CEMP][SD]T|BST|IST|JST|AE[SD]T|local time)\b/
   ZONED_CLOCK = /#{CLOCK}\s*#{ZONE}/
+  IANA_ZONE = %r{\b(?:Africa|America|Antarctica|Arctic|Asia|Atlantic|Australia|Europe|Indian|Pacific|Etc)(?:/[A-Z][A-Za-z_+-]*)+}
+  ASSISTANT = /\b(?:claude|anthropic|openai|chatgpt|gpt|copilot|gemini|assistant)\b/i
   DAY_PART = /\b(?:overnight|tonight|last night|this (?:morning|afternoon|evening))\b/i
   ATTRIBUTION = [
-    /^\s*Co-Authored-By:.*\b(?:claude|anthropic|openai|chatgpt|gpt|copilot|gemini|assistant)\b/i,
-    /\bgenerated with\b/i,
+    /^\s*Co-Authored-By:.*#{ASSISTANT}/i,
+    /^[^[:alnum:]]*generated with\s+(?:\[|<|https?:\/\/|#{ASSISTANT})/i,
     /\bClaude-Session:/i
   ].freeze
   SCISSORS = /^# -+ >8 -+$/
@@ -60,6 +67,7 @@ module CommitMsgGuard
     prose.scan(CLOCK).uniq.each do |time|
       found << "clock time '#{time}' (a duration in a code example goes in `backticks`)" unless zoned.any? { it.start_with?(time) }
     end
+    prose.scan(IANA_ZONE).uniq.each { found << "time zone '#{it}'" }
     text.scan(DAY_PART).uniq.each { found << "day-part '#{it}'" }
     text.each_line do |line|
       found << "assistant attribution '#{line.strip}'" if ATTRIBUTION.any? { line.match?(it) }
