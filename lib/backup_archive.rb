@@ -244,30 +244,39 @@ module BackupArchive
     result = {manifest: manifest, written: 0, unchanged: 0, conflicts: found}
     return result if dry_run
 
-    each_entry(path, passphrase: passphrase) do |m, entry|
-      meta = m["files"].find { it["name"] == entry.full_name }
+    each_entry(path, passphrase: passphrase) do |_m, entry|
+      meta = manifest["files"].find { it["name"] == entry.full_name } # the checked manifest, not the re-read one
+      raise Error, "entry not in manifest: #{entry.full_name}" unless meta
+
       target = target_for(meta, root: root, home: home)
       if File.file?(target) && file_digest(target) == meta["sha256"]
         File.chmod(mode_for(meta), target)
         result[:unchanged] += 1
         next
       end
-      extract(entry, target, mode_for(meta))
+      extract(entry, target, meta)
       result[:written] += 1
     end
     compare!(manifest, root: root, home: home)
     result
   end
 
-  def extract(entry, target, mode)
-    FileUtils.mkdir_p(File.dirname(target))
+  # Writes one entry through a temp file, renamed into place only when its
+  # bytes match the manifest entry. Parent directories created for a
+  # secret class are private.
+  def extract(entry, target, meta)
+    FileUtils.mkdir_p(File.dirname(target), mode: SECRET_CLASSES.include?(meta["class"]) ? 0o700 : nil)
     tmp = "#{target}.tmp.#{Process.pid}.#{SecureRandom.hex(4)}"
+    digest = Digest::SHA256.new
     File.open(tmp, "wb", 0o600) do |out|
       while (chunk = entry.read(CHUNK))
         out.write(chunk)
+        digest << chunk
       end
     end
-    File.chmod(mode, tmp)
+    raise Error, "digest mismatch: #{meta["path"]}" unless digest.hexdigest == meta["sha256"]
+
+    File.chmod(mode_for(meta), tmp)
     File.rename(tmp, target)
   ensure
     File.delete(tmp) if tmp && File.exist?(tmp)

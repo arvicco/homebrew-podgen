@@ -185,6 +185,44 @@ class TestBackupCommand < Minitest::Test
     assert_match(/Left for the owner:\n  1\. Load the launchd agents/, out)
   end
 
+  def test_restore_creates_secret_parent_directories_private
+    backup
+    home = File.join(@dir, "fresh", "home")
+
+    code, = restore(archive_path, "--into", File.join(@dir, "fresh", "root"), "--home", home)
+
+    assert_equal 0, code
+    assert_equal "700", format("%o", File.stat(File.join(home, ".config/podgen")).mode & 0o777)
+    assert_equal "755", format("%o", File.stat(File.join(home, "Library/Spelling")).mode & 0o777)
+  end
+
+  # The write pass digests each entry against the manifest the check pass
+  # verified: an archive replaced between the passes lands nothing.
+  def test_restore_refuses_an_archive_swapped_after_the_check
+    src = File.join(@dir, "src.txt")
+    files = [{"class" => "guidelines", "base" => "root", "path" => "a.txt", "source" => src}]
+    checked = File.join(@dir, "checked.tar.gz")
+    swapped = File.join(@dir, "swapped.tar.gz")
+    File.write(src, "checked\n")
+    BackupArchive.write(files, checked, passphrase: PASSPHRASE)
+    File.write(src, "swapped\n")
+    BackupArchive.write(files, swapped, passphrase: PASSPHRASE)
+    into = File.join(@dir, "swap")
+    real_check = BackupArchive.method(:check)
+    swap = lambda do |path, **kw|
+      real_check.call(path, **kw).tap { FileUtils.cp(swapped, path) }
+    end
+
+    err = BackupArchive.stub(:check, swap) do
+      assert_raises(BackupArchive::Error) do
+        BackupArchive.restore(checked, passphrase: PASSPHRASE, root: into, home: File.join(@dir, "h3"))
+      end
+    end
+
+    assert_match(/digest mismatch: a.txt/, err.message)
+    assert_empty Dir.glob(File.join(into, "**", "*"), File::FNM_DOTMATCH).select { File.file?(it) }
+  end
+
   def test_restore_refuses_a_target_holding_other_contents_without_force
     backup
     into = File.join(@dir, "busy")
